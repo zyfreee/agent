@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { agentAuditLog, getAgentCapabilities, initializeHistoryEvents, onDisable, probeAgentCapabilities, recordAgentAudit } from './index.js';
+import { agentAuditLog, getAgentCapabilities, initializeHistoryEvents, onActivate, onDelete, onDisable, onInstall, onUpdate, onClean, probeAgentCapabilities, recordAgentAudit } from './index.js';
 
 assert.equal(getAgentCapabilities().status, 'unavailable');
 recordAgentAudit({ event: 'task_start' });
@@ -10,6 +10,11 @@ const ready = probeAgentCapabilities({ root: { SillyTavern: { getContext: () => 
 assert.equal(ready.status, 'ready');
 assert.equal(getAgentCapabilities().status, 'ready');
 assert.equal(initializeHistoryEvents().status, 'unavailable');
+onActivate();
+await onInstall();
+await onUpdate();
+onDelete();
+await onClean();
 onDisable();
 assert.equal(getAgentCapabilities().status, 'unavailable');
 console.log('index lifecycle tests passed');

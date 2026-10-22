@@ -7,6 +7,10 @@ function nonEmpty(value, name) {
     return value.trim();
 }
 function clone(value) { return structuredClone(value); }
+function sameValue(left, right) {
+    try { return JSON.stringify(left) === JSON.stringify(right); }
+    catch { return false; }
+}
 function sizeOf(value) {
     try { return new TextEncoder().encode(JSON.stringify(value)).length; }
     catch { return Number.POSITIVE_INFINITY; }
@@ -212,7 +216,13 @@ export function createTurnPipeline({ stages = {}, maxOutputBytes = MAX_OUTPUT_BY
         if (!commitRecovery) return { status: 'unavailable', reason: 'commit_recovery_not_configured' };
         if (task.public.sessionId !== candidate.sessionId || task.public.branchId !== candidate.branchId || task.public.stateVersion !== candidate.baseStateVersion) return { status: 'rejected', reason: 'candidate_scope_mismatch' };
         if (!candidate.stageResults?.adjudicate?.nextState) return { status: 'rejected', reason: 'missing_next_state' };
-        const prepared = commitRecovery.prepare({ sessionId: candidate.sessionId, branchId: candidate.branchId, baseVersion: candidate.baseStateVersion, commitId: candidate.taskId, candidate: { nextState: candidate.stageResults.adjudicate.nextState, changes: candidate.acceptedChanges ?? [] }, messageId });
+        if (!sameValue(candidate.stageResults, task.candidate.stageResults)
+            || !sameValue(candidate.acceptedChanges ?? [], task.candidate.acceptedChanges ?? [])
+            || !sameValue(candidate.quality ?? null, task.candidate.quality ?? null)
+            || !sameValue(candidate.narrative ?? null, task.candidate.narrative ?? null)) {
+            return { status: 'rejected', reason: 'candidate_tampered' };
+        }
+        const prepared = commitRecovery.prepare({ sessionId: candidate.sessionId, branchId: candidate.branchId, baseVersion: candidate.baseStateVersion, commitId: candidate.taskId, candidate: { nextState: task.candidate.stageResults.adjudicate.nextState, changes: task.candidate.acceptedChanges ?? [] }, messageId });
         if (prepared.status !== 'prepared') return prepared;
         task.status = 'awaiting_message_evidence'; task.public.status = 'awaiting_message_evidence'; report(task, { event: 'awaiting_message_evidence', status: 'awaiting_message_evidence', outcome: 'awaiting_message_evidence', message: '等待确认正文消息已在酒馆中可见。' });
         return { status: 'awaiting_message_evidence', taskId: candidate.taskId, messageId };

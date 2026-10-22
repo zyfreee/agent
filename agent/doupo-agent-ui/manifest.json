@@ -2,7 +2,18 @@
   "display_name": "斗破同人 Agent · 运行反馈",
   "author": "Doupo Agent Project",
   "version": "0.1.0",
+  "homePage": "https://github.com/zyfreee/agent",
+  "loading_order": 10,
   "js": "index.js",
+  "hooks": {
+    "activate": "onActivate",
+    "install": "onInstall",
+    "update": "onUpdate",
+    "delete": "onDelete",
+    "enable": "onEnable",
+    "disable": "onDisable",
+    "clean": "onClean"
+  },
   "css": "style.css",
   "auto_update": false,
   "dependencies": []

@@ -26,6 +26,7 @@ import { createRequestClassifier } from './request-classifier.js';
 import { registerAgentModules } from './agent-modules.js';
 import { createRequestRouter } from './request-router.js';
 import { probeHostCapabilities } from './capability-preflight.js';
+import { createHostStorage } from './host-storage.js';
 
 const EXTENSION_ID = 'doupo-agent-ui';
 const ROOT_ID = `${EXTENSION_ID}-root`;
@@ -51,6 +52,30 @@ let unsubscribe;
 let currentTaskId;
 let agentActiveScope;
 let agentCapabilities = Object.freeze({ status: 'unavailable', versions: Object.freeze({ sillytavern: null }), symbols: Object.freeze([]), missing: Object.freeze([]), fallback: '尚未执行宿主能力预检。' });
+let hostContext;
+let hostStorage;
+let hostLifecycleBindings = [];
+
+function getHostContext() {
+    try { return globalThis.SillyTavern?.getContext?.(); } catch { return undefined; }
+}
+
+function bindHostLifecycle() {
+    const context = getHostContext();
+    if (!context?.eventSource || !context.event_types || typeof context.eventSource.on !== 'function') return { status: 'unavailable' };
+    hostLifecycleBindings.forEach(({ event, handler }) => context.eventSource.removeListener?.(event, handler));
+    hostLifecycleBindings = [];
+    const onReady = () => { hostContext = getHostContext(); hostStorage = createHostStorage({ getContext: getHostContext }); initializeHistoryEvents(); };
+    for (const name of ['APP_INITIALIZED', 'APP_READY']) {
+        const event = context.event_types[name];
+        if (typeof event !== 'string' || !event) continue;
+        context.eventSource.on(event, onReady);
+        hostLifecycleBindings.push({ event, handler: onReady });
+    }
+    hostContext = context;
+    hostStorage = createHostStorage({ getContext: getHostContext });
+    return { status: 'bound', eventCount: hostLifecycleBindings.length };
+}
 
 export function recordAgentAudit(raw) {
     const item = raw && typeof raw === 'object' ? raw : {};
@@ -119,7 +144,7 @@ export function getAgentCapabilities() { return agentCapabilities; }
 
 export function initializeHistoryEvents() {
     agentCapabilities = probeHostCapabilities();
-    const context = globalThis.SillyTavern?.getContext?.();
+    const context = getHostContext();
     if (!context?.eventSource || !context?.event_types) return { status: 'unavailable' };
     agentHistoryEvents?.stop();
     agentHistoryEvents = createHistoryEventAdapter({
@@ -308,8 +333,37 @@ function mount() {
     unsubscribe = () => window.removeEventListener(STATUS_EVENT, handleStatusEvent);
 }
 
+export function onActivate() {
+    bindHostLifecycle();
+    mount();
+}
+
+export async function onInstall() {
+    bindHostLifecycle();
+    hostStorage ??= createHostStorage({ getContext: getHostContext });
+    const settings = hostStorage.settings();
+    if (settings.status === 'ready') await hostStorage.saveSettings();
+}
+
+export async function onUpdate() {
+    hostStorage ??= createHostStorage({ getContext: getHostContext });
+    const settings = hostStorage.settings();
+    if (settings.status === 'ready') await hostStorage.saveSettings();
+}
+
+export function onDelete() {
+    onDisable();
+}
+
+export async function onClean() {
+    hostStorage ??= createHostStorage({ getContext: getHostContext });
+    return hostStorage.clean();
+}
+
 export function onDisable() {
     agentHistoryEvents?.stop();
+    const context = hostContext ?? getHostContext();
+    for (const { event, handler } of hostLifecycleBindings.splice(0)) context?.eventSource?.removeListener?.(event, handler);
     agentCapabilities = Object.freeze({ status: 'unavailable', versions: Object.freeze({ sillytavern: null }), symbols: Object.freeze([]), missing: Object.freeze([]), fallback: '扩展已停用，尚未连接宿主。' });
     unsubscribe?.();
     unsubscribe = undefined;
@@ -322,13 +376,14 @@ export function onDisable() {
 }
 
 export function onEnable() {
+    bindHostLifecycle();
     mount();
     initializeHistoryEvents();
 }
 
 function start() {
-    mount();
-    initializeHistoryEvents();
+    onActivate();
+    onEnable();
 }
 
 if (typeof document !== 'undefined') {
@@ -350,6 +405,9 @@ if (import.meta.hot) {
         agentHistoryEvents?.stop();
         agentCoordinator.clear();
         agentModuleRunner.clear?.();
+        hostContext = undefined;
+        hostStorage = undefined;
+        hostLifecycleBindings = [];
     });
 }
 

@@ -1,3 +1,17 @@
+function sameValue(left, right) {
+    try { return JSON.stringify(left) === JSON.stringify(right); }
+    catch { return false; }
+}
+
+function canonicalCandidate(execution) {
+    for (const item of execution?.results ?? []) {
+        const value = item?.value?.result ?? item?.value;
+        if (value?.candidate && typeof value.candidate === 'object') return value.candidate;
+        if (value?.nextState && typeof value.nextState === 'object') return value;
+    }
+    return null;
+}
+
 const DEFAULT_ROUTE = Object.freeze({
     ordinary_interaction: 'facts-query',
     system_operation: 'facts-query',
@@ -79,6 +93,12 @@ export function createRequestRouter({ classifier, runner, getEnabledModuleIds, o
         const pending = pendingCandidates.get(requestId);
         if (!pending) return { status: 'missing_candidate' };
         if (pending.authorization.requestId !== requestId) return { status: 'request_mismatch' };
+        const expectedCandidate = canonicalCandidate(pending.execution);
+        const hasCommitShape = expectedCandidate && (Object.hasOwn(expectedCandidate, 'nextState') || Object.hasOwn(expectedCandidate, 'changes'));
+        // A module result without a complete commit-shaped candidate is never
+        // eligible for state commit. Do not let the caller replace an opaque
+        // result with an arbitrary { nextState, changes } object.
+        if (!hasCommitShape || !candidate || !sameValue(candidate, expectedCandidate)) return { status: 'rejected', reason: 'candidate_tampered' };
         if (!commitRecovery) return { status: 'unavailable', reason: 'commit_recovery_not_configured' };
         if (npcCommitGate && Array.isArray(candidate?.npcCandidates)) {
             const gate = npcCommitGate.check({ sessionId: pending.authorization.sessionId, branchId: pending.authorization.branchId, stateVersion: pending.authorization.stateVersion, candidates: candidate.npcCandidates });

@@ -144,4 +144,8 @@ const rejectedPipe = createTurnPipeline({ qualityGate: { review: () => ({ status
 const rejected = await rejectedPipe.run({ ...input, taskId: 'rejected-quality' });
 assert.equal(rejected.status, 'rejected');
 assert.equal(rejectedProgress.at(-1).event, 'quality_rejected');
+const tamperedCandidate = await guarded.run({ ...input, taskId: 'commit-tampered', sessionId: 'commit-s', branchId: 'commit-b' });
+const changedCandidate = structuredClone(tamperedCandidate.candidate);
+changedCandidate.stageResults.adjudicate.nextState.hp = 1;
+assert.equal(guarded.commitCandidate({ candidate: changedCandidate, messageId: 'tampered-msg' }).reason, 'candidate_tampered');
 console.log('turn pipeline tests passed');
