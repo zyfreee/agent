@@ -1,0 +1,19 @@
+# Local inspection and harness artifacts
+_inspection-context.txt
+
+# Dependencies and generated output
+node_modules/
+dist/
+build/
+coverage/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Editor and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

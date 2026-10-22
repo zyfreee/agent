@@ -1,0 +1,9 @@
+{
+  "display_name": "斗破同人 Agent · 运行反馈",
+  "author": "Doupo Agent Project",
+  "version": "0.1.0",
+  "js": "index.js",
+  "css": "style.css",
+  "auto_update": false,
+  "dependencies": []
+}

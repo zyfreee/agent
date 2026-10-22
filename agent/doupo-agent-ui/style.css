@@ -1,0 +1,33 @@
+.dai-root {
+    position: fixed;
+    z-index: 10000;
+    inset: auto 1rem 1rem auto;
+    width: min(26rem, calc(100vw - 2rem));
+    color: var(--SmartThemeBodyColor, #f2f2f2);
+    font: 0.95rem/1.5 var(--mainFontFamily, system-ui, sans-serif);
+}
+
+.dai-root[hidden] { display: none; }
+.dai-capability { margin-bottom: 0.45rem; padding: 0.45rem 0.65rem; border: 1px solid var(--SmartThemeBorderColor, #777); border-radius: 0.5rem; background: var(--SmartThemeBlurTintColor, #20232b); box-shadow: 0 0.25rem 0.75rem #0005; font-size: 0.82rem; }
+.dai-capability-ready { border-left: 3px solid #55b879; }
+.dai-capability-degraded { border-left: 3px solid #df8b47; }
+.dai-capability-unknown, .dai-capability-unavailable { border-left: 3px solid #777; }
+.dai-card {
+    padding: 0.9rem 1rem;
+    border: 1px solid var(--SmartThemeBorderColor, #777);
+    border-left: 4px solid #6b8afd;
+    border-radius: 0.65rem;
+    background: var(--SmartThemeBlurTintColor, #20232b);
+    box-shadow: 0 0.5rem 1.5rem #0006;
+}
+.dai-processing { border-left-color: #6b8afd; }
+.dai-waiting_input { border-left-color: #e4b34d; }
+.dai-completed_saved { border-left-color: #55b879; }
+.dai-failed_unapplied { border-left-color: #e15d5d; }
+.dai-save_uncertain { border-left-color: #df8b47; }
+.dai-heading { display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; }
+.dai-status { font-size: 1rem; }
+.dai-task, .dai-time { opacity: 0.75; font-size: 0.82rem; }
+.dai-message { margin: 0.55rem 0 0; overflow-wrap: anywhere; }
+.dai-details { margin: 0.55rem 0 0; padding-left: 1.2rem; }
+.dai-details li + li { margin-top: 0.25rem; }
