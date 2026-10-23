@@ -18,8 +18,10 @@ public/scripts/extensions/third-party/agent/manifest.json
 
 - `agent/doupo-agent-ui/index.js`
 - `agent/doupo-agent-ui/host/style.css`
+- `settings.html`（扩展设置栏目模板，供 `renderExtensionTemplateAsync('third-party/agent', 'settings')` 读取）
+- `agent/doupo-agent-ui/settings.html`（入口脚本的相对路径备用模板）
 
-原来的模块目录仍然保留在 `agent/doupo-agent-ui/`，根目录清单只是为酒馆安装器提供正确入口。
+根目录模板是酒馆标准加载路径；入口目录副本只用于安装目录名变化或本地开发时的备用加载。两份模板由静态测试保持一致。
 
 ## 更新步骤
 

@@ -35,6 +35,7 @@ const CAPABILITY_ID = `${EXTENSION_ID}-capabilities`;
 const SETTINGS_BUTTON_ID = `${EXTENSION_ID}-settings-button`;
 const SETTINGS_PANEL_ID = `${EXTENSION_ID}-settings-panel`;
 const SETTINGS_STATUS_ID = `${EXTENSION_ID}-settings-status`;
+const INLINE_SETTINGS_ID = `${EXTENSION_ID}-inline-settings`;
 const VALID_STATUSES = new Set([
     'processing',
     'waiting_input',
@@ -58,6 +59,11 @@ let agentCapabilities = Object.freeze({ status: 'unavailable', versions: Object.
 let hostContext;
 let hostStorage;
 let hostLifecycleBindings = [];
+let inlineSettingsTimer;
+let inlineSettingsAttempts = 0;
+let inlineSettingsObserver;
+let inlineSettingsLoading = false;
+let inlineSettingsGeneration = 0;
 
 function getHostContext() {
     try { return globalThis.SillyTavern?.getContext?.(); } catch { return undefined; }
@@ -463,6 +469,75 @@ function createSettingsPanel() {
     syncSettingsForm();
 }
 
+async function loadInlineSettingsTemplate() {
+    const context = getHostContext();
+    if (typeof context?.renderExtensionTemplateAsync === 'function') {
+        try {
+            // This is the standard ST template API. The canonical settings.html
+            // lives beside manifest.json, matching the example extension layout.
+            const html = await context.renderExtensionTemplateAsync('third-party/agent', 'settings');
+            if (html) return html;
+        } catch (error) {
+            // A stale install or a differently named folder can make the host
+            // renderer reject. Keep the local entry-module fallback available.
+            console.warn(`[${EXTENSION_ID}] 酒馆模板接口不可用，改用相对路径`, error);
+        }
+    }
+
+    try {
+        const response = await fetch(new URL('./settings.html', import.meta.url));
+        if (response.ok) return await response.text();
+        console.warn(`[${EXTENSION_ID}] settings.html 请求失败：HTTP ${response.status} ${response.url}`);
+    } catch (error) {
+        console.warn(`[${EXTENSION_ID}] 相对路径模板加载失败`, error);
+    }
+    return '';
+}
+
+async function mountInlineSettings() {
+    if (typeof document === 'undefined' || inlineSettingsLoading) return;
+    // Follow the example extension: prefer the visible secondary settings drawer.
+    const container = document.querySelector('#extensions_settings2') ?? document.querySelector('#extensions_settings');
+    if (!container || document.getElementById(INLINE_SETTINGS_ID)) return;
+
+    inlineSettingsLoading = true;
+    const generation = inlineSettingsGeneration;
+    try {
+        const html = await loadInlineSettingsTemplate();
+        if (!html || generation !== inlineSettingsGeneration || !document.body) return;
+        const wrapper = document.createElement('div');
+        wrapper.id = INLINE_SETTINGS_ID;
+        wrapper.className = 'dai-inline-settings-host';
+        wrapper.innerHTML = html;
+        wrapper.querySelector('.dai-inline-open')?.addEventListener('click', openSettingsPanel);
+        const status = wrapper.querySelector('.dai-inline-status');
+        if (status) status.textContent = hostContext ? '已连接酒馆设置' : '等待酒馆连接';
+        container.append(wrapper);
+    } finally {
+        inlineSettingsLoading = false;
+    }
+}
+
+function scheduleInlineSettingsMount() {
+    if (typeof window === 'undefined') return;
+    window.clearTimeout(inlineSettingsTimer);
+    inlineSettingsTimer = window.setTimeout(async () => {
+        await mountInlineSettings();
+        if (!document.getElementById(INLINE_SETTINGS_ID) && inlineSettingsAttempts < 12) {
+            inlineSettingsAttempts += 1;
+            scheduleInlineSettingsMount();
+        }
+    }, 250);
+}
+
+function observeInlineSettingsContainer() {
+    if (inlineSettingsObserver || typeof MutationObserver === 'undefined' || typeof document === 'undefined') return;
+    inlineSettingsObserver = new MutationObserver(() => {
+        if (!document.getElementById(INLINE_SETTINGS_ID)) scheduleInlineSettingsMount();
+    });
+    inlineSettingsObserver.observe(document.body, { childList: true, subtree: true });
+}
+
 function mountSettingsButton() {
     if (typeof document === 'undefined' || !document.body) return;
     let button = document.getElementById(SETTINGS_BUTTON_ID);
@@ -503,6 +578,9 @@ function mount() {
     window.removeEventListener(STATUS_EVENT, handleStatusEvent);
     window.addEventListener(STATUS_EVENT, handleStatusEvent);
     mountSettingsButton();
+    inlineSettingsAttempts = 0;
+    observeInlineSettingsContainer();
+    scheduleInlineSettingsMount();
     unsubscribe = () => window.removeEventListener(STATUS_EVENT, handleStatusEvent);
 }
 
@@ -540,10 +618,15 @@ export function onDisable() {
     agentCapabilities = Object.freeze({ status: 'unavailable', versions: Object.freeze({ sillytavern: null }), symbols: Object.freeze([]), missing: Object.freeze([]), fallback: '扩展已停用，尚未连接宿主。' });
     unsubscribe?.();
     unsubscribe = undefined;
+    inlineSettingsGeneration += 1;
+    inlineSettingsObserver?.disconnect();
+    inlineSettingsObserver = undefined;
+    if (typeof window !== 'undefined') window.clearTimeout(inlineSettingsTimer);
     if (typeof document !== 'undefined') {
         document.getElementById(ROOT_ID)?.remove();
         document.getElementById(SETTINGS_PANEL_ID)?.remove();
         document.getElementById(SETTINGS_BUTTON_ID)?.remove();
+        document.getElementById(INLINE_SETTINGS_ID)?.remove();
         document.getElementById(STYLE_ID)?.remove();
     }
     root = undefined;
@@ -573,10 +656,15 @@ if (import.meta.hot) {
     import.meta.hot.dispose(() => {
         unsubscribe?.();
         unsubscribe = undefined;
+        inlineSettingsGeneration += 1;
+        inlineSettingsObserver?.disconnect();
+        inlineSettingsObserver = undefined;
+        window.clearTimeout(inlineSettingsTimer);
         root?.remove();
         if (typeof document !== 'undefined') {
             document.getElementById(SETTINGS_PANEL_ID)?.remove();
             document.getElementById(SETTINGS_BUTTON_ID)?.remove();
+            document.getElementById(INLINE_SETTINGS_ID)?.remove();
             document.getElementById(STYLE_ID)?.remove();
         }
         root = undefined;
