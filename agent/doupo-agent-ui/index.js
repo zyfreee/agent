@@ -344,8 +344,13 @@ function currentSettings() {
 
 function updateSetting(path, value) {
     const settings = currentSettings();
-    const [group, key] = path.split('.');
-    const patch = group && key ? { [group]: { ...(settings[group] ?? {}), [key]: value } } : { [path]: value };
+    const segments = path.split('.').filter(Boolean);
+    const patch = {};
+    let cursor = patch;
+    segments.forEach((segment, index) => {
+        if (index === segments.length - 1) cursor[segment] = value;
+        else { cursor[segment] = {}; cursor = cursor[segment]; }
+    });
     const result = hostStorage.updateSettings(patch);
     if (result.status === 'ready') {
         hostStorage.saveSettings();
@@ -372,8 +377,7 @@ function openSettingsPanel() {
 }
 
 function fieldValue(settings, path) {
-    const [group, key] = path.split('.');
-    return key ? settings?.[group]?.[key] : settings?.[path];
+    return path.split('.').reduce((value, key) => value?.[key], settings);
 }
 
 function syncSettingsForm() {
@@ -389,6 +393,8 @@ function syncSettingsForm() {
     if (status) status.textContent = hostContext ? '设置会保存到酒馆扩展设置。' : '尚未连接酒馆，当前只展示本地默认值。';
 }
 
+let activeSettingsPage = 'overview';
+
 function createSettingsPanel() {
     if (document.getElementById(SETTINGS_PANEL_ID)) return;
     const panel = makeElement('section', 'dai-settings-panel');
@@ -399,63 +405,70 @@ function createSettingsPanel() {
     panel.setAttribute('aria-labelledby', `${SETTINGS_PANEL_ID}-title`);
     panel.innerHTML = `
         <div class="dai-settings-backdrop" data-settings-close></div>
-        <div class="dai-settings-dialog">
-            <header class="dai-settings-header">
-                <div><span class="dai-settings-kicker">斗破同人 Agent</span><h2 id="${SETTINGS_PANEL_ID}-title">系统设置</h2><p id="${SETTINGS_STATUS_ID}" role="status"></p></div>
-                <button type="button" class="dai-icon-button" data-settings-close aria-label="关闭设置">×</button>
-            </header>
-            <nav class="dai-settings-tabs" role="tablist" aria-label="设置分类">
-                <button type="button" class="dai-tab is-active" role="tab" aria-selected="true" data-settings-tab="general">总览</button>
-                <button type="button" class="dai-tab" role="tab" aria-selected="false" data-settings-tab="llm">LLM</button>
-                <button type="button" class="dai-tab" role="tab" aria-selected="false" data-settings-tab="modules">功能模块</button>
-                <button type="button" class="dai-tab" role="tab" aria-selected="false" data-settings-tab="advanced">运行预算</button>
-            </nav>
-            <div class="dai-settings-body">
-                <div class="dai-settings-section is-active" data-settings-section="general" role="tabpanel">
-                    <div class="dai-settings-intro"><strong>一处管理 Agent 的主要开关</strong><span>关闭某项后，总控不会再调用对应模块。</span></div>
-                    <label class="dai-setting-row dai-setting-toggle"><span><b>启用 Agent</b><small>保留面板与设置，但暂停 Agent 模块。</small></span><input type="checkbox" data-setting="enabled"></label>
-                    <label class="dai-setting-row dai-setting-toggle"><span><b>显示运行反馈</b><small>在右下角显示任务状态与失败原因。</small></span><input type="checkbox" data-setting="showStatusPanel"></label>
-                    <label class="dai-setting-row dai-setting-toggle"><span><b>紧凑界面</b><small>减少面板留白，适合窄屏使用。</small></span><input type="checkbox" data-setting="ui.compact"></label>
+        <div class="dai-settings-dialog dai-settings-app">
+            <aside class="dai-settings-sidebar">
+                <div class="dai-settings-brand"><span class="dai-settings-mark">A</span><div><strong>斗破同人 Agent</strong><small>控制中心</small></div></div>
+                <nav class="dai-settings-nav" aria-label="Agent 功能页面">
+                    <button type="button" class="dai-nav-item is-active" data-settings-page="overview"><span class="dai-nav-icon">⌂</span><span><b>总览</b><small>状态与总控</small></span></button>
+                    <p class="dai-nav-label">核心能力</p>
+                    <button type="button" class="dai-nav-item" data-settings-page="llm"><span class="dai-nav-icon">✦</span><span><b>模型与连接</b><small>LLM 请求配置</small></span></button>
+                    <button type="button" class="dai-nav-item" data-settings-page="facts"><span class="dai-nav-icon">▤</span><span><b>原著资料</b><small>事实与资料查询</small></span></button>
+                    <button type="button" class="dai-nav-item" data-settings-page="action"><span class="dai-nav-icon">➜</span><span><b>行动结算</b><small>结果与资源变化</small></span></button>
+                    <button type="button" class="dai-nav-item" data-settings-page="world"><span class="dai-nav-icon">◌</span><span><b>世界运转</b><small>时间与持续过程</small></span></button>
+                    <button type="button" class="dai-nav-item" data-settings-page="npc"><span class="dai-nav-icon">♙</span><span><b>NPC 决策</b><small>人物自主行动</small></span></button>
+                    <button type="button" class="dai-nav-item" data-settings-page="impact"><span class="dai-nav-icon">⌁</span><span><b>世界影响</b><small>跨系统变化追踪</small></span></button>
+                    <p class="dai-nav-label">系统</p>
+                    <button type="button" class="dai-nav-item" data-settings-page="runtime"><span class="dai-nav-icon">⚙</span><span><b>运行与界面</b><small>预算、反馈和调试</small></span></button>
+                </nav>
+                <div class="dai-sidebar-foot"><span class="dai-status-dot"></span><span>设置会自动保存</span></div>
+            </aside>
+            <main class="dai-settings-main">
+                <header class="dai-settings-header">
+                    <div><span class="dai-settings-kicker">AGENT CONTROL CENTER</span><h2 id="${SETTINGS_PANEL_ID}-title" data-settings-title>总览</h2><p id="${SETTINGS_STATUS_ID}" role="status">${hostContext ? '已连接酒馆设置' : '尚未连接酒馆，当前只展示默认值'}</p></div>
+                    <button type="button" class="dai-icon-button" data-settings-close aria-label="关闭设置">×</button>
+                </header>
+                <div class="dai-settings-body">
+                    <section class="dai-settings-page is-active" data-settings-section="overview" role="tabpanel">
+                        <div class="dai-page-hero"><div><span class="dai-page-eyebrow">系统总览</span><h3>让每个 Agent 能力各司其职</h3><p>从这里开启总控，再进入左侧页面调整每项能力的行为。</p></div><span class="dai-hero-orbit">✦</span></div>
+                        <div class="dai-overview-grid"><label class="dai-overview-switch"><span><b>启用 Agent 总控</b><small>关闭后保留设置，但暂停模块调度。</small></span><input type="checkbox" data-setting="enabled"></label><label class="dai-overview-switch"><span><b>显示运行反馈</b><small>在右下角显示任务状态与失败原因。</small></span><input type="checkbox" data-setting="showStatusPanel"></label></div>
+                        <div class="dai-section-heading"><div><h3>能力状态</h3><p>当前页面只展示配置，不会伪造模型或保存成功状态。</p></div></div>
+                        <div class="dai-capability-list"><button type="button" class="dai-capability-card" data-settings-page="llm"><span class="dai-card-symbol">✦</span><span><b>模型与连接</b><small>配置请求来源和模型参数</small></span><i>›</i></button><button type="button" class="dai-capability-card" data-settings-page="facts"><span class="dai-card-symbol">▤</span><span><b>原著资料查询</b><small>控制事实读取范围和数量</small></span><i>›</i></button><button type="button" class="dai-capability-card" data-settings-page="action"><span class="dai-card-symbol">➜</span><span><b>行动结算</b><small>控制候选结果与确认方式</small></span><i>›</i></button><button type="button" class="dai-capability-card" data-settings-page="world"><span class="dai-card-symbol">◌</span><span><b>世界运转</b><small>控制时间推进与持续变化</small></span><i>›</i></button></div>
+                    </section>
+                    <section class="dai-settings-page" data-settings-section="llm" role="tabpanel" hidden>
+                        <div class="dai-page-heading"><span class="dai-page-eyebrow">核心能力 / 01</span><h3>模型与连接</h3><p>决定 Agent 从哪里发起模型请求，以及使用什么输出参数。</p></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>请求来源</b><small>优先复用酒馆当前连接，避免重复管理密钥。</small></div><label class="dai-setting-row dai-setting-toggle"><span><b>使用酒馆当前连接</b><small>由 SillyTavern 负责实际模型请求。</small></span><input type="checkbox" data-setting="llm.useSillyTavernConnection"></label><label class="dai-setting-row"><span><b>连接方式</b></span><select data-setting="llm.provider"><option value="openai-compatible">OpenAI 兼容接口</option><option value="anthropic">Anthropic 兼容接口</option><option value="custom">自定义</option></select></label><label class="dai-setting-row"><span><b>接口地址</b><small>独立接口的 Base URL；使用酒馆连接时可留空。</small></span><input type="url" data-setting="llm.baseUrl" placeholder="https://api.example.com/v1"></label><label class="dai-setting-row"><span><b>API Key</b><small>只保存到扩展设置，不写入聊天消息。</small></span><input type="password" data-setting="llm.apiKey" autocomplete="off" placeholder="留空表示不使用独立密钥"></label></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>生成参数</b><small>留空模型名称时沿用酒馆当前模型。</small></div><label class="dai-setting-row"><span><b>模型名称</b></span><input type="text" data-setting="llm.model" placeholder="沿用酒馆当前模型"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>Temperature</b><small>0 更稳定，2 更发散。</small></span><input type="number" min="0" max="2" step="0.1" data-setting="llm.temperature"></label><label class="dai-setting-row"><span><b>最大输出 Token</b></span><input type="number" min="128" max="32768" step="128" data-setting="llm.maxTokens"></label></div><label class="dai-setting-row"><span><b>请求等待上限（毫秒）</b></span><input type="number" min="1000" max="600000" step="1000" data-setting="llm.timeoutMs"></label></div>
+                    </section>
+                    <section class="dai-settings-page" data-settings-section="facts" role="tabpanel" hidden>
+                        <div class="dai-page-heading"><span class="dai-page-eyebrow">核心能力 / 02</span><h3>原著资料查询</h3><p>让 Agent 在需要时读取已登记的事实，减少无依据的自由补写。</p></div><div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon">▤</span><span><b>启用资料查询</b><small>关闭后不会调用 facts-query 模块。</small></span><input type="checkbox" data-setting="enableFactsLibrary"></div><label class="dai-setting-row"><span><b>资料来源</b><small>初版只读取已经登记的项目资料。</small></span><select data-setting="facts.sourceMode"><option value="registered">已登记资料</option><option value="chat">当前聊天上下文</option><option value="both">资料 + 当前聊天</option></select></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>单次最多条目</b></span><input type="number" min="1" max="100" step="1" data-setting="facts.maxEntries"></label><label class="dai-setting-row dai-setting-toggle"><span><b>允许未核验资料</b><small>关闭时只使用已确认事实。</small></span><input type="checkbox" data-setting="facts.includeUnverified"></label></div></div></section>
+                    <section class="dai-settings-page" data-settings-section="action" role="tabpanel" hidden>
+                        <div class="dai-page-heading"><span class="dai-page-eyebrow">核心能力 / 03</span><h3>行动结算</h3><p>把玩家行动拆成条件、结果和资源变化候选，再决定是否提交。</p></div><div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon">➜</span><span><b>启用行动结算</b><small>关闭后不会调用 action-resolve 模块。</small></span><input type="checkbox" data-setting="enableActionResolution"></div><label class="dai-setting-row dai-setting-toggle"><span><b>提交前要求确认</b><small>只生成候选，不自动写入状态。</small></span><input type="checkbox" data-setting="action.requireConfirmation"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>最多候选结果</b></span><input type="number" min="1" max="20" step="1" data-setting="action.maxCandidates"></label><label class="dai-setting-row dai-setting-toggle"><span><b>显示资源变化预览</b><small>在确认前展示影响范围。</small></span><input type="checkbox" data-setting="action.showCostPreview"></label></div></div></section>
+                    <section class="dai-settings-page" data-settings-section="world" role="tabpanel" hidden>
+                        <div class="dai-page-heading"><span class="dai-page-eyebrow">核心能力 / 04</span><h3>世界运转</h3><p>管理时间推进和持续过程，避免世界状态在没有明确依据时跳变。</p></div><div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon">◌</span><span><b>启用世界运转</b><small>关闭后不会调用 world-advance 模块。</small></span><input type="checkbox" data-setting="enableWorldProgress"></div><label class="dai-setting-row dai-setting-toggle"><span><b>允许自动推进</b><small>收到时间推进请求时才会生效。</small></span><input type="checkbox" data-setting="world.autoAdvance"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>默认推进分钟数</b></span><input type="number" min="1" max="1440" step="1" data-setting="world.tickMinutes"></label><label class="dai-setting-row dai-setting-toggle"><span><b>保留未确认候选</b><small>不把推测直接当成世界事实。</small></span><input type="checkbox" data-setting="world.preserveUnconfirmed"></label></div></div></section>
+                    <section class="dai-settings-page" data-settings-section="npc" role="tabpanel" hidden>
+                        <div class="dai-page-heading"><span class="dai-page-eyebrow">核心能力 / 05</span><h3>NPC 决策</h3><p>控制相关人物的有限决策候选，不替 NPC 直接越过确认边界。</p></div><div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon">♙</span><span><b>启用 NPC 自主决策</b><small>控制人物候选计划是否参与调度。</small></span><input type="checkbox" data-setting="enableNpcAutonomy"></div><label class="dai-setting-row dai-setting-toggle"><span><b>提交前要求确认</b><small>候选计划必须经过确认才可继续。</small></span><input type="checkbox" data-setting="npc.requireConfirmation"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>最多候选计划</b></span><input type="number" min="1" max="20" step="1" data-setting="npc.maxCandidates"></label><label class="dai-setting-row dai-setting-toggle"><span><b>允许人物冲突候选</b><small>保留冲突供上层处理。</small></span><input type="checkbox" data-setting="npc.allowConflicts"></label></div></div></section>
+                    <section class="dai-settings-page" data-settings-section="impact" role="tabpanel" hidden>
+                        <div class="dai-page-heading"><span class="dai-page-eyebrow">核心能力 / 06</span><h3>世界影响</h3><p>追踪已经确认的行动如何影响资源、人物和后续世界条件。</p></div><div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon">⌁</span><span><b>启用影响追踪</b><small>记录已确认行动的跨系统影响链。</small></span><input type="checkbox" data-setting="enablePlayerImpact"></div><label class="dai-setting-row dai-setting-toggle"><span><b>追踪资源变化</b><small>展示消耗、获得和变化方向。</small></span><input type="checkbox" data-setting="impact.trackResources"></label><label class="dai-setting-row dai-setting-toggle"><span><b>显示影响解释</b><small>在运行反馈中说明变化来源。</small></span><input type="checkbox" data-setting="impact.showExplanation"></label><label class="dai-setting-row"><span><b>最多影响链深度</b><small>防止一次行动展开过长的推导链。</small></span><input type="number" min="1" max="10" step="1" data-setting="impact.maxChainDepth"></label></div></section>
+                    <section class="dai-settings-page" data-settings-section="runtime" role="tabpanel" hidden>
+                        <div class="dai-page-heading"><span class="dai-page-eyebrow">系统 / 07</span><h3>运行与界面</h3><p>这里放全局开关、预算保护和诊断选项。</p></div><div class="dai-settings-card"><div class="dai-card-heading"><b>运行预算</b><small>这是保护上限，不代表模型一定会消耗这些额度。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>单次最多模块数</b></span><input type="number" min="1" max="32" step="1" data-setting="budget.maxModules"></label><label class="dai-setting-row"><span><b>最多 NPC 决策数</b></span><input type="number" min="0" max="20" step="1" data-setting="budget.maxNpcDecisions"></label></div><label class="dai-setting-row"><span><b>总等待上限（毫秒）</b></span><input type="number" min="1000" max="600000" step="1000" data-setting="budget.totalTimeoutMs"></label></div><div class="dai-settings-card"><div class="dai-card-heading"><b>反馈显示</b><small>控制页面和右下角反馈的显示内容。</small></div><label class="dai-setting-row dai-setting-toggle"><span><b>显示历史状态</b></span><input type="checkbox" data-setting="status.showHistory"></label><label class="dai-setting-row dai-setting-toggle"><span><b>显示能力检测提示</b></span><input type="checkbox" data-setting="status.showCapabilityBadge"></label><label class="dai-setting-row dai-setting-toggle"><span><b>紧凑界面</b></span><input type="checkbox" data-setting="ui.compact"></label><label class="dai-setting-row dai-setting-toggle"><span><b>调试信息</b><small>只记录本地诊断信息，不记录提示词或密钥。</small></span><input type="checkbox" data-setting="debug"></label></div></section>
                 </div>
-                <div class="dai-settings-section" data-settings-section="llm" role="tabpanel" hidden>
-                    <div class="dai-settings-intro"><strong>模型连接</strong><span>密钥只保存在酒馆扩展设置中，不会写入聊天消息。</span></div>
-                    <label class="dai-setting-row"><span><b>连接方式</b><small>优先使用酒馆当前连接；需要独立接口时再填写下方地址。</small></span><select data-setting="llm.provider"><option value="openai-compatible">OpenAI 兼容接口</option><option value="anthropic">Anthropic 兼容接口</option><option value="custom">自定义</option></select></label>
-                    <label class="dai-setting-row dai-setting-toggle"><span><b>使用酒馆当前连接</b><small>由 SillyTavern 负责实际模型请求。</small></span><input type="checkbox" data-setting="llm.useSillyTavernConnection"></label>
-                    <label class="dai-setting-row"><span><b>接口地址</b><small>独立接口的 Base URL；使用酒馆连接时可留空。</small></span><input type="url" data-setting="llm.baseUrl" placeholder="https://api.example.com/v1"></label>
-                    <label class="dai-setting-row"><span><b>API Key</b><small>仅在独立接口模式使用。</small></span><input type="password" data-setting="llm.apiKey" autocomplete="off" placeholder="留空表示不使用独立密钥"></label>
-                    <label class="dai-setting-row"><span><b>模型名称</b><small>例如 gpt-4o-mini；留空时沿用酒馆当前模型。</small></span><input type="text" data-setting="llm.model" placeholder="沿用酒馆当前模型"></label>
-                    <div class="dai-setting-grid"><label class="dai-setting-row"><span><b>Temperature</b></span><input type="number" min="0" max="2" step="0.1" data-setting="llm.temperature"></label><label class="dai-setting-row"><span><b>最大输出 Token</b></span><input type="number" min="128" max="32768" step="128" data-setting="llm.maxTokens"></label></div>
-                </div>
-                <div class="dai-settings-section" data-settings-section="modules" role="tabpanel" hidden>
-                    <div class="dai-settings-intro"><strong>Agent 功能模块</strong><span>这些开关只控制模块是否参与调度，不会删除已有状态。</span></div>
-                    <label class="dai-setting-row dai-setting-toggle"><span><b>原著资料查询</b><small>按需读取已登记的资料与事实。</small></span><input type="checkbox" data-setting="enableFactsLibrary"></label>
-                    <label class="dai-setting-row dai-setting-toggle"><span><b>行动结算</b><small>检查条件、直接结果与资源变化候选。</small></span><input type="checkbox" data-setting="enableActionResolution"></label>
-                    <label class="dai-setting-row dai-setting-toggle"><span><b>世界运转</b><small>推进时间、持续过程与世界条件。</small></span><input type="checkbox" data-setting="enableWorldProgress"></label>
-                    <label class="dai-setting-row dai-setting-toggle"><span><b>NPC 自主决策</b><small>只处理相关人物的有限决策候选。</small></span><input type="checkbox" data-setting="enableNpcAutonomy"></label>
-                    <label class="dai-setting-row dai-setting-toggle"><span><b>玩家影响与世界演变</b><small>追踪已确认行动带来的跨系统影响。</small></span><input type="checkbox" data-setting="enablePlayerImpact"></label>
-                </div>
-                <div class="dai-settings-section" data-settings-section="advanced" role="tabpanel" hidden>
-                    <div class="dai-settings-intro"><strong>运行预算</strong><span>这是保护上限，不代表模型一定会消耗这些额度。</span></div>
-                    <div class="dai-setting-grid"><label class="dai-setting-row"><span><b>单次最多模块数</b></span><input type="number" min="1" max="32" step="1" data-setting="budget.maxModules"></label><label class="dai-setting-row"><span><b>最多 NPC 决策数</b></span><input type="number" min="0" max="20" step="1" data-setting="budget.maxNpcDecisions"></label></div>
-                    <label class="dai-setting-row"><span><b>总等待上限（毫秒）</b><small>到达上限后停止本地等待，不承诺远端请求已取消。</small></span><input type="number" min="1000" max="600000" step="1000" data-setting="budget.totalTimeoutMs"></label>
-                    <label class="dai-setting-row dai-setting-toggle"><span><b>调试信息</b><small>记录更多本地诊断信息，不记录提示词或密钥。</small></span><input type="checkbox" data-setting="debug"></label>
-                </div>
-            </div>
-            <footer class="dai-settings-footer"><span>修改会自动保存</span><button type="button" class="dai-secondary-button" data-settings-close>完成</button></footer>
+                <footer class="dai-settings-footer"><span>修改会自动保存到酒馆扩展设置</span><button type="button" class="dai-secondary-button" data-settings-close>完成</button></footer>
+            </main>
         </div>`;
     document.body.append(panel);
+    const selectPage = page => {
+        activeSettingsPage = page || 'overview';
+        for (const item of panel.querySelectorAll('[data-settings-page]')) item.classList.toggle('is-active', item.dataset.settingsPage === activeSettingsPage);
+        for (const section of panel.querySelectorAll('[data-settings-section]')) section.hidden = section.dataset.settingsSection !== activeSettingsPage;
+        const title = panel.querySelector('[data-settings-title]');
+        const selected = panel.querySelector(`[data-settings-page="${activeSettingsPage}"] b`);
+        if (title && selected) title.textContent = selected.textContent;
+    };
     panel.addEventListener('click', event => {
         const close = event.target.closest?.('[data-settings-close]');
-        if (close) closeSettingsPanel();
-        const tab = event.target.closest?.('[data-settings-tab]');
-        if (!tab) return;
-        const selected = tab.dataset.settingsTab;
-        for (const item of panel.querySelectorAll('[data-settings-tab]')) {
-            const active = item === tab;
-            item.classList.toggle('is-active', active);
-            item.setAttribute('aria-selected', String(active));
-        }
-        for (const section of panel.querySelectorAll('[data-settings-section]')) section.hidden = section.dataset.settingsSection !== selected;
+        if (close) return closeSettingsPanel();
+        const page = event.target.closest?.('[data-settings-page]');
+        if (page) selectPage(page.dataset.settingsPage);
     });
     panel.addEventListener('input', event => {
         const input = event.target.closest?.('[data-setting]');
@@ -466,6 +479,7 @@ function createSettingsPanel() {
         panel.querySelector(`#${SETTINGS_STATUS_ID}`).textContent = '已保存。';
     });
     panel.addEventListener('keydown', event => { if (event.key === 'Escape') closeSettingsPanel(); });
+    selectPage(activeSettingsPage);
     syncSettingsForm();
 }
 

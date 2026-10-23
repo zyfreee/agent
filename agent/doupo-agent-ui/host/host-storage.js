@@ -28,7 +28,36 @@ const DEFAULT_SETTINGS = Object.freeze({
     ui: Object.freeze({
         compact: false,
     }),
-    schemaVersion: 2,
+    facts: Object.freeze({
+        sourceMode: 'registered',
+        maxEntries: 12,
+        includeUnverified: false,
+    }),
+    action: Object.freeze({
+        requireConfirmation: true,
+        maxCandidates: 5,
+        showCostPreview: true,
+    }),
+    world: Object.freeze({
+        autoAdvance: false,
+        tickMinutes: 30,
+        preserveUnconfirmed: true,
+    }),
+    npc: Object.freeze({
+        maxCandidates: 3,
+        requireConfirmation: true,
+        allowConflicts: true,
+    }),
+    impact: Object.freeze({
+        trackResources: true,
+        showExplanation: true,
+        maxChainDepth: 3,
+    }),
+    status: Object.freeze({
+        showHistory: true,
+        showCapabilityBadge: true,
+    }),
+    schemaVersion: 3,
 });
 
 function clone(value) {
@@ -37,14 +66,14 @@ function clone(value) {
 
 function mergeSettings(current = {}) {
     const source = current && typeof current === 'object' ? current : {};
-    return {
-        ...clone(DEFAULT_SETTINGS),
-        ...source,
-        llm: { ...clone(DEFAULT_SETTINGS.llm), ...(source.llm && typeof source.llm === 'object' ? source.llm : {}) },
-        budget: { ...clone(DEFAULT_SETTINGS.budget), ...(source.budget && typeof source.budget === 'object' ? source.budget : {}) },
-        ui: { ...clone(DEFAULT_SETTINGS.ui), ...(source.ui && typeof source.ui === 'object' ? source.ui : {}) },
-        schemaVersion: DEFAULT_SETTINGS.schemaVersion,
-    };
+    const nested = ['llm', 'budget', 'ui', 'facts', 'action', 'world', 'npc', 'impact', 'status'];
+    const merged = { ...clone(DEFAULT_SETTINGS), ...source };
+    for (const key of nested) {
+        const incoming = source[key] && typeof source[key] === 'object' && !Array.isArray(source[key]) ? source[key] : {};
+        merged[key] = { ...clone(DEFAULT_SETTINGS[key]), ...incoming };
+    }
+    merged.schemaVersion = DEFAULT_SETTINGS.schemaVersion;
+    return merged;
 }
 
 function contextOf(getContext) {
@@ -68,7 +97,15 @@ export function createHostStorage({ getContext } = {}) {
         const all = context?.extensionSettings;
         if (!all || typeof all !== 'object') return { status: 'unavailable', value: clone(DEFAULT_SETTINGS) };
         const current = all[SETTINGS_KEY] && typeof all[SETTINGS_KEY] === 'object' ? all[SETTINGS_KEY] : {};
-        all[SETTINGS_KEY] = mergeSettings({ ...current, ...(patch && typeof patch === 'object' ? patch : {}) });
+        const incoming = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : {};
+        const nested = ['llm', 'budget', 'ui', 'facts', 'action', 'world', 'npc', 'impact', 'status'];
+        const mergedPatch = { ...current, ...incoming };
+        for (const key of nested) {
+            if (incoming[key] && typeof incoming[key] === 'object' && !Array.isArray(incoming[key])) {
+                mergedPatch[key] = { ...(current[key] && typeof current[key] === 'object' ? current[key] : {}), ...incoming[key] };
+            }
+        }
+        all[SETTINGS_KEY] = mergeSettings(mergedPatch);
         return { status: 'ready', value: clone(all[SETTINGS_KEY]) };
     }
 

@@ -46,39 +46,91 @@
 .dai-settings-backdrop { position: absolute; inset: 0; background: #05070caa; }
 .dai-settings-panel { position: fixed; z-index: 10001; inset: 0; display: grid; place-items: center; color: var(--SmartThemeBodyColor, #f2f2f2); font: 0.95rem/1.45 var(--mainFontFamily, system-ui, sans-serif); }
 .dai-settings-panel[hidden] { display: none; }
-.dai-settings-dialog { position: relative; display: flex; flex-direction: column; width: min(48rem, calc(100vw - 2rem)); max-height: min(44rem, calc(100vh - 2rem)); overflow: hidden; border: 1px solid var(--SmartThemeBorderColor, #777); border-radius: 1rem; background: var(--SmartThemeBlurTintColor, #161a22); box-shadow: 0 1.5rem 4rem #0009; }
-.dai-settings-header { display: flex; justify-content: space-between; gap: 1rem; padding: 1.35rem 1.5rem 1rem; border-bottom: 1px solid var(--SmartThemeBorderColor, #444); }
-.dai-settings-header h2 { margin: 0.1rem 0 0.2rem; font-size: 1.45rem; letter-spacing: -0.02em; }
+.dai-settings-dialog { position: relative; display: flex; width: min(72rem, calc(100vw - 2rem)); height: min(46rem, calc(100vh - 2rem)); overflow: hidden; border: 1px solid var(--SmartThemeBorderColor, #777); border-radius: 1rem; background: var(--SmartThemeBlurTintColor, #161a22); box-shadow: 0 1.5rem 4rem #0009; }
+.dai-settings-sidebar { display: flex; flex: 0 0 14rem; flex-direction: column; padding: 1.1rem 0.75rem 0.85rem; border-right: 1px solid #ffffff12; background: #0d111b99; }
+.dai-settings-brand { display: flex; align-items: center; gap: 0.65rem; padding: 0.35rem 0.55rem 1.25rem; }
+.dai-settings-brand > div { display: grid; gap: 0.12rem; min-width: 0; }
+.dai-settings-brand strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.86rem; }
+.dai-settings-brand small, .dai-settings-nav small { color: color-mix(in srgb, var(--SmartThemeBodyColor, #f2f2f2) 52%, transparent); font-size: 0.7rem; }
+.dai-settings-mark { display: grid; width: 2rem; height: 2rem; place-items: center; border: 1px solid #9bb0ff88; border-radius: 0.6rem; color: #dce3ff; background: #536dcc55; font-weight: 700; }
+.dai-settings-nav { display: grid; gap: 0.18rem; overflow: auto; }
+.dai-nav-label { margin: 0.85rem 0.55rem 0.25rem; color: #9bb0ff; font-size: 0.66rem; letter-spacing: 0.08em; }
+.dai-nav-item { display: flex; align-items: center; gap: 0.6rem; width: 100%; min-height: 2.6rem; padding: 0.4rem 0.55rem; border: 1px solid transparent; border-radius: 0.5rem; color: color-mix(in srgb, var(--SmartThemeBodyColor, #f2f2f2) 74%, transparent); background: transparent; cursor: pointer; text-align: left; }
+.dai-nav-item > span:not(.dai-nav-icon) { display: grid; gap: 0.06rem; min-width: 0; }
+.dai-nav-item b { font-size: 0.8rem; font-weight: 600; }
+.dai-nav-icon { display: grid; width: 1.55rem; height: 1.55rem; place-items: center; border-radius: 0.4rem; color: #aebcff; background: #ffffff08; font-size: 0.9rem; }
+.dai-nav-item:hover, .dai-nav-item:focus-visible { border-color: #8fa8ff55; background: #ffffff08; color: var(--SmartThemeBodyColor, #f2f2f2); }
+.dai-nav-item.is-active { border-color: #8fa8ff44; color: #fff; background: linear-gradient(90deg, #6079e933, #6079e90d); box-shadow: inset 3px 0 #8fa8ff; }
+.dai-sidebar-foot { display: flex; align-items: center; gap: 0.4rem; margin-top: auto; padding: 0.7rem 0.55rem 0; border-top: 1px solid #ffffff12; color: color-mix(in srgb, var(--SmartThemeBodyColor, #f2f2f2) 52%, transparent); font-size: 0.68rem; }
+.dai-status-dot { width: 0.42rem; height: 0.42rem; border-radius: 50%; background: #55b879; box-shadow: 0 0 0 3px #55b87922; }
+.dai-settings-main { display: flex; min-width: 0; flex: 1; flex-direction: column; }
+.dai-settings-header { display: flex; justify-content: space-between; gap: 1rem; padding: 1.35rem 1.65rem 1rem; border-bottom: 1px solid var(--SmartThemeBorderColor, #444); }
+.dai-settings-header h2 { margin: 0.1rem 0 0.2rem; font-size: 1.4rem; letter-spacing: -0.02em; }
 .dai-settings-header p { margin: 0; color: color-mix(in srgb, var(--SmartThemeBodyColor, #f2f2f2) 68%, transparent); font-size: 0.82rem; }
-.dai-settings-kicker { color: #9bb0ff; font-size: 0.75rem; }
+.dai-settings-kicker { color: #9bb0ff; font-size: 0.67rem; letter-spacing: 0.1em; }
 .dai-icon-button { align-self: start; width: 2.2rem; height: 2.2rem; border: 1px solid transparent; border-radius: 50%; color: inherit; background: transparent; cursor: pointer; font-size: 1.5rem; line-height: 1; }
 .dai-icon-button:hover, .dai-icon-button:focus-visible { border-color: var(--SmartThemeBorderColor, #777); background: #ffffff12; }
-.dai-settings-tabs { display: flex; gap: 0.35rem; padding: 0.6rem 1.5rem 0; overflow-x: auto; border-bottom: 1px solid var(--SmartThemeBorderColor, #444); }
-.dai-tab { padding: 0.6rem 0.75rem 0.7rem; border: 0; border-bottom: 2px solid transparent; color: color-mix(in srgb, var(--SmartThemeBodyColor, #f2f2f2) 70%, transparent); background: transparent; cursor: pointer; white-space: nowrap; }
-.dai-tab.is-active, .dai-tab:focus-visible { border-bottom-color: #8fa8ff; color: var(--SmartThemeBodyColor, #f2f2f2); }
-.dai-settings-body { min-height: 0; overflow: auto; padding: 1.2rem 1.5rem; }
-.dai-settings-section[hidden] { display: none; }
-.dai-settings-intro { display: grid; gap: 0.25rem; margin-bottom: 1rem; }
-.dai-settings-intro span, .dai-setting-row small { color: color-mix(in srgb, var(--SmartThemeBodyColor, #f2f2f2) 64%, transparent); font-size: 0.8rem; }
-.dai-setting-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; min-height: 3.65rem; padding: 0.75rem 0; border-bottom: 1px solid #ffffff12; }
+.dai-settings-body { min-height: 0; overflow: auto; padding: 1.35rem 1.65rem; }
+.dai-settings-page[hidden] { display: none; }
+.dai-page-heading { margin-bottom: 1.15rem; }
+.dai-page-heading h3, .dai-page-hero h3 { margin: 0.18rem 0 0.35rem; font-size: 1.55rem; letter-spacing: -0.03em; }
+.dai-page-heading p, .dai-page-hero p { max-width: 40rem; margin: 0; color: color-mix(in srgb, var(--SmartThemeBodyColor, #f2f2f2) 64%, transparent); font-size: 0.86rem; }
+.dai-page-eyebrow { color: #9bb0ff; font-size: 0.7rem; }
+.dai-page-hero { display: flex; justify-content: space-between; gap: 1.5rem; margin: -0.1rem 0 1.3rem; padding: 1.1rem 1.2rem; overflow: hidden; border: 1px solid #8fa8ff33; border-radius: 0.8rem; background: radial-gradient(circle at 90% 30%, #667eea24, transparent 45%), #ffffff06; }
+.dai-hero-orbit { display: grid; width: 3.5rem; height: 3.5rem; flex: 0 0 auto; place-items: center; border: 1px solid #9bb0ff66; border-radius: 50%; color: #c7d0ff; background: #6079e922; font-size: 1.4rem; box-shadow: 0 0 0 0.5rem #6079e90d, 0 0 0 1rem #6079e906; }
+.dai-section-heading { margin: 1.1rem 0 0.6rem; }
+.dai-section-heading h3 { margin: 0; font-size: 1rem; }
+.dai-section-heading p { margin: 0.2rem 0 0; color: #ffffff99; font-size: 0.78rem; }
+.dai-overview-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
+.dai-overview-switch, .dai-feature-toggle { display: flex; align-items: center; gap: 1rem; min-height: 4.2rem; padding: 0.85rem 1rem; border: 1px solid #ffffff12; border-radius: 0.65rem; background: #ffffff06; }
+.dai-overview-switch > span, .dai-feature-toggle > span:nth-child(2) { display: grid; flex: 1; gap: 0.2rem; }
+.dai-overview-switch small, .dai-feature-toggle small, .dai-card-heading small { color: #ffffff99; font-size: 0.75rem; }
+.dai-overview-switch input, .dai-feature-toggle input { width: 1.25rem; height: 1.25rem; accent-color: #8fa8ff; }
+.dai-capability-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
+.dai-capability-card { display: flex; align-items: center; gap: 0.7rem; min-height: 4.2rem; padding: 0.75rem; border: 1px solid #ffffff12; border-radius: 0.65rem; color: inherit; background: #ffffff06; cursor: pointer; text-align: left; }
+.dai-capability-card:hover, .dai-capability-card:focus-visible { border-color: #8fa8ff66; background: #8fa8ff12; }
+.dai-capability-card > span:not(.dai-card-symbol) { display: grid; flex: 1; gap: 0.2rem; }
+.dai-capability-card small { color: #ffffff99; font-size: 0.72rem; }
+.dai-capability-card i { color: #9bb0ff; font-size: 1.2rem; font-style: normal; }
+.dai-card-symbol, .dai-feature-icon { display: grid; width: 2rem; height: 2rem; place-items: center; border-radius: 0.55rem; color: #c8d2ff; background: #6079e922; }
+.dai-settings-card { margin-bottom: 0.9rem; padding: 0.95rem 1rem; border: 1px solid #ffffff12; border-radius: 0.7rem; background: #ffffff05; }
+.dai-card-heading { display: grid; gap: 0.25rem; margin-bottom: 0.35rem; }
+.dai-setting-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; min-height: 3.4rem; padding: 0.7rem 0; border-bottom: 1px solid #ffffff0e; }
+.dai-setting-row:last-child { border-bottom: 0; }
 .dai-setting-row > span { display: grid; gap: 0.15rem; min-width: 0; }
+.dai-setting-row small { color: #ffffff99; font-size: 0.75rem; }
 .dai-setting-row input:not([type="checkbox"]), .dai-setting-row select { width: min(19rem, 52%); min-height: 2.25rem; padding: 0.4rem 0.55rem; border: 1px solid var(--SmartThemeBorderColor, #666); border-radius: 0.4rem; color: inherit; background: #0003; }
 .dai-setting-row input:focus-visible, .dai-setting-row select:focus-visible { outline: 2px solid #8fa8ff; outline-offset: 2px; }
 .dai-setting-toggle input[type="checkbox"] { width: 1.2rem; height: 1.2rem; accent-color: #8fa8ff; }
 .dai-setting-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
 .dai-setting-grid .dai-setting-row { display: grid; align-items: start; }
 .dai-setting-grid .dai-setting-row input { width: 100%; }
-.dai-settings-footer { display: flex; justify-content: space-between; align-items: center; padding: 0.8rem 1.5rem; border-top: 1px solid var(--SmartThemeBorderColor, #444); color: color-mix(in srgb, var(--SmartThemeBodyColor, #f2f2f2) 64%, transparent); font-size: 0.8rem; }
+.dai-settings-footer { display: flex; justify-content: space-between; align-items: center; padding: 0.8rem 1.65rem; border-top: 1px solid var(--SmartThemeBorderColor, #444); color: #ffffff99; font-size: 0.75rem; }
 .dai-secondary-button { min-height: 2.2rem; padding: 0.4rem 0.9rem; border: 1px solid var(--SmartThemeBorderColor, #777); border-radius: 0.4rem; color: inherit; background: transparent; cursor: pointer; }
 .dai-secondary-button:hover, .dai-secondary-button:focus-visible { background: #ffffff12; }
 
-@media (max-width: 640px) {
-    .dai-settings-dialog { width: calc(100vw - 1rem); max-height: calc(100vh - 1rem); border-radius: 0.75rem; }
+@media (max-width: 720px) {
+    .dai-settings-dialog { width: calc(100vw - 1rem); height: calc(100vh - 1rem); border-radius: 0.75rem; }
+    .dai-settings-sidebar { flex-basis: 10.5rem; padding-left: 0.45rem; padding-right: 0.45rem; }
+    .dai-settings-brand { padding-left: 0.35rem; }
     .dai-settings-header, .dai-settings-body, .dai-settings-footer { padding-left: 1rem; padding-right: 1rem; }
-    .dai-settings-tabs { padding-left: 1rem; padding-right: 1rem; }
+    .dai-page-heading h3, .dai-page-hero h3 { font-size: 1.3rem; }
     .dai-setting-row { align-items: flex-start; }
     .dai-setting-row input:not([type="checkbox"]), .dai-setting-row select { width: 45%; }
-    .dai-setting-grid { grid-template-columns: 1fr; gap: 0; }
+    .dai-setting-grid, .dai-overview-grid, .dai-capability-list { grid-template-columns: 1fr; gap: 0; }
 }
+
+@media (max-width: 520px) {
+    .dai-settings-dialog { display: block; overflow: auto; }
+    .dai-settings-sidebar { display: block; padding: 0.55rem; border-right: 0; border-bottom: 1px solid #ffffff12; }
+    .dai-settings-brand { padding: 0.25rem 0.35rem 0.55rem; }
+    .dai-settings-nav { display: flex; gap: 0.25rem; overflow-x: auto; }
+    .dai-nav-label, .dai-sidebar-foot, .dai-nav-item small { display: none; }
+    .dai-nav-item { flex: 0 0 auto; width: auto; min-height: 2.2rem; padding: 0.35rem 0.55rem; }
+    .dai-nav-item > span:not(.dai-nav-icon) { display: block; }
+    .dai-nav-item b { font-size: 0.72rem; }
+    .dai-settings-main { min-height: 34rem; }
+}
+
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; } }
