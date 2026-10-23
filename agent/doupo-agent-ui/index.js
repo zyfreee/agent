@@ -1,37 +1,40 @@
-import { createAgentCoordinator, STATUS_EVENT } from './coordinator.js';
-import { createModuleRunner } from './module-runner.js';
-import { createTurnPipeline } from './turn-pipeline.js';
-import { createQualityGate } from './quality-gate.js';
-import { createDataContractRegistry } from './data-contract.js';
-import { createAuditLog } from './audit-log.js';
-import { createFactsLibrary } from './facts-library.js';
-import { createImpactEngine } from './impact-engine.js';
-import { createActionResolver } from './action-resolver.js';
-import { createNpcDecisionGuard } from './npc-decision-guard.js';
-import { createNpcAutonomyPlanner } from './npc-autonomy.js';
-import { createNpcPlanReassessment } from './npc-plan-reassessment.js';
-import { createNpcConflictCoordinator } from './npc-conflict.js';
-import { createNpcOutcomeBridge } from './npc-outcome-bridge.js';
-import { createNpcCommitGate } from './npc-commit-gate.js';
-import { createWorldSimulator } from './world-simulator.js';
-import { createUiState } from './ui-state.js';
-import { createNarrativeGuard } from './narrative-guard.js';
-import { createStateStore } from './state-store.js';
-import { createCommitRecovery } from './commit-recovery.js';
-import { createOperationLedger } from './operation-ledger.js';
-import { createHistoryEventAdapter } from './history-events.js';
-import { classifyHistoryOperation, classifyMappedHistoryOperation } from './history-operation.js';
-import { createHistoryRestore } from './history-restore.js';
-import { createRequestClassifier } from './request-classifier.js';
-import { registerAgentModules } from './agent-modules.js';
-import { createRequestRouter } from './request-router.js';
-import { probeHostCapabilities } from './capability-preflight.js';
-import { createHostStorage } from './host-storage.js';
+import { createAgentCoordinator, STATUS_EVENT } from './core/coordinator.js';
+import { createModuleRunner } from './core/module-runner.js';
+import { createTurnPipeline } from './core/turn-pipeline.js';
+import { createQualityGate } from './core/quality-gate.js';
+import { createDataContractRegistry } from './core/data-contract.js';
+import { createAuditLog } from './core/audit-log.js';
+import { createFactsLibrary } from './narrative/facts-library.js';
+import { createImpactEngine } from './core/impact-engine.js';
+import { createActionResolver } from './request/action-resolver.js';
+import { createNpcDecisionGuard } from './npc/npc-decision-guard.js';
+import { createNpcAutonomyPlanner } from './npc/npc-autonomy.js';
+import { createNpcPlanReassessment } from './npc/npc-plan-reassessment.js';
+import { createNpcConflictCoordinator } from './npc/npc-conflict.js';
+import { createNpcOutcomeBridge } from './npc/npc-outcome-bridge.js';
+import { createNpcCommitGate } from './npc/npc-commit-gate.js';
+import { createWorldSimulator } from './request/world-simulator.js';
+import { createUiState } from './host/ui-state.js';
+import { createNarrativeGuard } from './narrative/narrative-guard.js';
+import { createStateStore } from './core/state-store.js';
+import { createCommitRecovery } from './core/commit-recovery.js';
+import { createOperationLedger } from './core/operation-ledger.js';
+import { createHistoryEventAdapter } from './narrative/history-events.js';
+import { classifyHistoryOperation, classifyMappedHistoryOperation } from './narrative/history-operation.js';
+import { createHistoryRestore } from './narrative/history-restore.js';
+import { createRequestClassifier } from './request/request-classifier.js';
+import { registerAgentModules } from './core/agent-modules.js';
+import { createRequestRouter } from './request/request-router.js';
+import { probeHostCapabilities } from './host/capability-preflight.js';
+import { createHostStorage } from './host/host-storage.js';
 
 const EXTENSION_ID = 'doupo-agent-ui';
 const ROOT_ID = `${EXTENSION_ID}-root`;
 const STYLE_ID = `${EXTENSION_ID}-style`;
 const CAPABILITY_ID = `${EXTENSION_ID}-capabilities`;
+const SETTINGS_BUTTON_ID = `${EXTENSION_ID}-settings-button`;
+const SETTINGS_PANEL_ID = `${EXTENSION_ID}-settings-panel`;
+const SETTINGS_STATUS_ID = `${EXTENSION_ID}-settings-status`;
 const VALID_STATUSES = new Set([
     'processing',
     'waiting_input',
@@ -65,7 +68,12 @@ function bindHostLifecycle() {
     if (!context?.eventSource || !context.event_types || typeof context.eventSource.on !== 'function') return { status: 'unavailable' };
     hostLifecycleBindings.forEach(({ event, handler }) => context.eventSource.removeListener?.(event, handler));
     hostLifecycleBindings = [];
-    const onReady = () => { hostContext = getHostContext(); hostStorage = createHostStorage({ getContext: getHostContext }); initializeHistoryEvents(); };
+    const onReady = () => {
+        hostContext = getHostContext();
+        hostStorage = createHostStorage({ getContext: getHostContext });
+        initializeHistoryEvents();
+        mount();
+    };
     for (const name of ['APP_INITIALIZED', 'APP_READY']) {
         const event = context.event_types[name];
         if (typeof event !== 'string' || !event) continue;
@@ -110,7 +118,16 @@ export const agentCommitRecovery = createCommitRecovery({ stateStore: agentState
 export const agentHistoryRestore = createHistoryRestore({ stateStore: agentStateStore, commitRecovery: agentCommitRecovery });
 export const agentRequestClassifier = createRequestClassifier();
 export const agentModuleRegistration = registerAgentModules(agentModuleRunner, { facts: agentFactsLibrary, actions: agentActionResolver, world: agentWorldSimulator });
-export const agentRequestRouter = createRequestRouter({ classifier: agentRequestClassifier, runner: agentModuleRunner, operationLedger: agentOperations, commitRecovery: agentCommitRecovery, npcCommitGate: agentNpcCommitGate, getCapabilities: () => agentCapabilities, getEnabledModuleIds: () => agentModuleRunner.list().map(module => module.id) });
+function getEnabledModuleIds() {
+    const settings = currentSettings();
+    const enabled = new Set();
+    if (settings.enableFactsLibrary) enabled.add('facts-query');
+    if (settings.enableActionResolution) enabled.add('action-resolve');
+    if (settings.enableWorldProgress) enabled.add('world-advance');
+    return agentModuleRunner.list().map(module => module.id).filter(id => enabled.has(id));
+}
+
+export const agentRequestRouter = createRequestRouter({ classifier: agentRequestClassifier, runner: agentModuleRunner, operationLedger: agentOperations, commitRecovery: agentCommitRecovery, npcCommitGate: agentNpcCommitGate, getCapabilities: () => agentCapabilities, getEnabledModuleIds });
 export const unsubscribeNpcPlanChanges = agentNpcAutonomyPlanner.subscribePlanChanges(change => {
     const narrativeResult = agentNarrativeGuard.invalidateNpcPlanVersion({ sessionId: change.plan.sessionId, branchId: change.plan.branchId, stateVersion: change.plan.stateVersion, npcId: change.plan.npcId, planId: change.plan.planId, previousVersion: change.previousVersion });
     if (narrativeResult.status === 'invalidated') for (const taskId of narrativeResult.taskIds) recordAgentAudit({ event: 'narrative_candidates_invalidated', taskId, sessionId: change.plan.sessionId, branchId: change.plan.branchId, stateVersion: change.plan.stateVersion, npcId: change.plan.npcId, planId: change.plan.planId, planVersion: change.previousVersion, currentPlanVersion: change.currentVersion, outcome: narrativeResult.reason });
@@ -259,6 +276,11 @@ function renderCapabilities(capabilities) {
 
 function renderStatus(payload) {
     if (!root || !payload || typeof payload !== 'object') return;
+    const settings = currentSettings();
+    if (!settings.enabled || !settings.showStatusPanel) {
+        root.hidden = true;
+        return;
+    }
     if (!VALID_STATUSES.has(payload.status)) return;
 
     // Ignore late results from a previous task; explicit new task ids replace the view.
@@ -309,13 +331,163 @@ function handleStatusEvent(event) {
     renderStatus(event?.detail);
 }
 
+function currentSettings() {
+    hostStorage ??= createHostStorage({ getContext: getHostContext });
+    return hostStorage.settings().value;
+}
+
+function updateSetting(path, value) {
+    const settings = currentSettings();
+    const [group, key] = path.split('.');
+    const patch = group && key ? { [group]: { ...(settings[group] ?? {}), [key]: value } } : { [path]: value };
+    const result = hostStorage.updateSettings(patch);
+    if (result.status === 'ready') {
+        hostStorage.saveSettings();
+        if (path === 'enabled' || path === 'showStatusPanel') {
+            root.hidden = !(result.value.enabled && result.value.showStatusPanel);
+        }
+    }
+    return result;
+}
+
+function closeSettingsPanel() {
+    const panel = document.getElementById(SETTINGS_PANEL_ID);
+    if (panel) panel.hidden = true;
+    document.getElementById(SETTINGS_BUTTON_ID)?.setAttribute('aria-expanded', 'false');
+}
+
+function openSettingsPanel() {
+    const panel = document.getElementById(SETTINGS_PANEL_ID);
+    if (!panel) return;
+    panel.hidden = false;
+    document.getElementById(SETTINGS_BUTTON_ID)?.setAttribute('aria-expanded', 'true');
+    syncSettingsForm();
+    panel.querySelector('[data-settings-close]')?.focus();
+}
+
+function fieldValue(settings, path) {
+    const [group, key] = path.split('.');
+    return key ? settings?.[group]?.[key] : settings?.[path];
+}
+
+function syncSettingsForm() {
+    const panel = document.getElementById(SETTINGS_PANEL_ID);
+    if (!panel) return;
+    const settings = currentSettings();
+    for (const input of panel.querySelectorAll('[data-setting]')) {
+        const value = fieldValue(settings, input.dataset.setting);
+        if (input.type === 'checkbox') input.checked = Boolean(value);
+        else input.value = value == null ? '' : String(value);
+    }
+    const status = panel.querySelector(`#${SETTINGS_STATUS_ID}`);
+    if (status) status.textContent = hostContext ? '设置会保存到酒馆扩展设置。' : '尚未连接酒馆，当前只展示本地默认值。';
+}
+
+function createSettingsPanel() {
+    if (document.getElementById(SETTINGS_PANEL_ID)) return;
+    const panel = makeElement('section', 'dai-settings-panel');
+    panel.id = SETTINGS_PANEL_ID;
+    panel.hidden = true;
+    panel.setAttribute('role', 'dialog');
+    panel.setAttribute('aria-modal', 'true');
+    panel.setAttribute('aria-labelledby', `${SETTINGS_PANEL_ID}-title`);
+    panel.innerHTML = `
+        <div class="dai-settings-backdrop" data-settings-close></div>
+        <div class="dai-settings-dialog">
+            <header class="dai-settings-header">
+                <div><span class="dai-settings-kicker">斗破同人 Agent</span><h2 id="${SETTINGS_PANEL_ID}-title">系统设置</h2><p id="${SETTINGS_STATUS_ID}" role="status"></p></div>
+                <button type="button" class="dai-icon-button" data-settings-close aria-label="关闭设置">×</button>
+            </header>
+            <nav class="dai-settings-tabs" role="tablist" aria-label="设置分类">
+                <button type="button" class="dai-tab is-active" role="tab" aria-selected="true" data-settings-tab="general">总览</button>
+                <button type="button" class="dai-tab" role="tab" aria-selected="false" data-settings-tab="llm">LLM</button>
+                <button type="button" class="dai-tab" role="tab" aria-selected="false" data-settings-tab="modules">功能模块</button>
+                <button type="button" class="dai-tab" role="tab" aria-selected="false" data-settings-tab="advanced">运行预算</button>
+            </nav>
+            <div class="dai-settings-body">
+                <div class="dai-settings-section is-active" data-settings-section="general" role="tabpanel">
+                    <div class="dai-settings-intro"><strong>一处管理 Agent 的主要开关</strong><span>关闭某项后，总控不会再调用对应模块。</span></div>
+                    <label class="dai-setting-row dai-setting-toggle"><span><b>启用 Agent</b><small>保留面板与设置，但暂停 Agent 模块。</small></span><input type="checkbox" data-setting="enabled"></label>
+                    <label class="dai-setting-row dai-setting-toggle"><span><b>显示运行反馈</b><small>在右下角显示任务状态与失败原因。</small></span><input type="checkbox" data-setting="showStatusPanel"></label>
+                    <label class="dai-setting-row dai-setting-toggle"><span><b>紧凑界面</b><small>减少面板留白，适合窄屏使用。</small></span><input type="checkbox" data-setting="ui.compact"></label>
+                </div>
+                <div class="dai-settings-section" data-settings-section="llm" role="tabpanel" hidden>
+                    <div class="dai-settings-intro"><strong>模型连接</strong><span>密钥只保存在酒馆扩展设置中，不会写入聊天消息。</span></div>
+                    <label class="dai-setting-row"><span><b>连接方式</b><small>优先使用酒馆当前连接；需要独立接口时再填写下方地址。</small></span><select data-setting="llm.provider"><option value="openai-compatible">OpenAI 兼容接口</option><option value="anthropic">Anthropic 兼容接口</option><option value="custom">自定义</option></select></label>
+                    <label class="dai-setting-row dai-setting-toggle"><span><b>使用酒馆当前连接</b><small>由 SillyTavern 负责实际模型请求。</small></span><input type="checkbox" data-setting="llm.useSillyTavernConnection"></label>
+                    <label class="dai-setting-row"><span><b>接口地址</b><small>独立接口的 Base URL；使用酒馆连接时可留空。</small></span><input type="url" data-setting="llm.baseUrl" placeholder="https://api.example.com/v1"></label>
+                    <label class="dai-setting-row"><span><b>API Key</b><small>仅在独立接口模式使用。</small></span><input type="password" data-setting="llm.apiKey" autocomplete="off" placeholder="留空表示不使用独立密钥"></label>
+                    <label class="dai-setting-row"><span><b>模型名称</b><small>例如 gpt-4o-mini；留空时沿用酒馆当前模型。</small></span><input type="text" data-setting="llm.model" placeholder="沿用酒馆当前模型"></label>
+                    <div class="dai-setting-grid"><label class="dai-setting-row"><span><b>Temperature</b></span><input type="number" min="0" max="2" step="0.1" data-setting="llm.temperature"></label><label class="dai-setting-row"><span><b>最大输出 Token</b></span><input type="number" min="128" max="32768" step="128" data-setting="llm.maxTokens"></label></div>
+                </div>
+                <div class="dai-settings-section" data-settings-section="modules" role="tabpanel" hidden>
+                    <div class="dai-settings-intro"><strong>Agent 功能模块</strong><span>这些开关只控制模块是否参与调度，不会删除已有状态。</span></div>
+                    <label class="dai-setting-row dai-setting-toggle"><span><b>原著资料查询</b><small>按需读取已登记的资料与事实。</small></span><input type="checkbox" data-setting="enableFactsLibrary"></label>
+                    <label class="dai-setting-row dai-setting-toggle"><span><b>行动结算</b><small>检查条件、直接结果与资源变化候选。</small></span><input type="checkbox" data-setting="enableActionResolution"></label>
+                    <label class="dai-setting-row dai-setting-toggle"><span><b>世界运转</b><small>推进时间、持续过程与世界条件。</small></span><input type="checkbox" data-setting="enableWorldProgress"></label>
+                    <label class="dai-setting-row dai-setting-toggle"><span><b>NPC 自主决策</b><small>只处理相关人物的有限决策候选。</small></span><input type="checkbox" data-setting="enableNpcAutonomy"></label>
+                    <label class="dai-setting-row dai-setting-toggle"><span><b>玩家影响与世界演变</b><small>追踪已确认行动带来的跨系统影响。</small></span><input type="checkbox" data-setting="enablePlayerImpact"></label>
+                </div>
+                <div class="dai-settings-section" data-settings-section="advanced" role="tabpanel" hidden>
+                    <div class="dai-settings-intro"><strong>运行预算</strong><span>这是保护上限，不代表模型一定会消耗这些额度。</span></div>
+                    <div class="dai-setting-grid"><label class="dai-setting-row"><span><b>单次最多模块数</b></span><input type="number" min="1" max="32" step="1" data-setting="budget.maxModules"></label><label class="dai-setting-row"><span><b>最多 NPC 决策数</b></span><input type="number" min="0" max="20" step="1" data-setting="budget.maxNpcDecisions"></label></div>
+                    <label class="dai-setting-row"><span><b>总等待上限（毫秒）</b><small>到达上限后停止本地等待，不承诺远端请求已取消。</small></span><input type="number" min="1000" max="600000" step="1000" data-setting="budget.totalTimeoutMs"></label>
+                    <label class="dai-setting-row dai-setting-toggle"><span><b>调试信息</b><small>记录更多本地诊断信息，不记录提示词或密钥。</small></span><input type="checkbox" data-setting="debug"></label>
+                </div>
+            </div>
+            <footer class="dai-settings-footer"><span>修改会自动保存</span><button type="button" class="dai-secondary-button" data-settings-close>完成</button></footer>
+        </div>`;
+    document.body.append(panel);
+    panel.addEventListener('click', event => {
+        const close = event.target.closest?.('[data-settings-close]');
+        if (close) closeSettingsPanel();
+        const tab = event.target.closest?.('[data-settings-tab]');
+        if (!tab) return;
+        const selected = tab.dataset.settingsTab;
+        for (const item of panel.querySelectorAll('[data-settings-tab]')) {
+            const active = item === tab;
+            item.classList.toggle('is-active', active);
+            item.setAttribute('aria-selected', String(active));
+        }
+        for (const section of panel.querySelectorAll('[data-settings-section]')) section.hidden = section.dataset.settingsSection !== selected;
+    });
+    panel.addEventListener('input', event => {
+        const input = event.target.closest?.('[data-setting]');
+        if (!input) return;
+        let value = input.type === 'checkbox' ? input.checked : input.value;
+        if (input.type === 'number') value = Number(value);
+        updateSetting(input.dataset.setting, value);
+        panel.querySelector(`#${SETTINGS_STATUS_ID}`).textContent = '已保存。';
+    });
+    panel.addEventListener('keydown', event => { if (event.key === 'Escape') closeSettingsPanel(); });
+    syncSettingsForm();
+}
+
+function mountSettingsButton() {
+    if (typeof document === 'undefined' || !document.body) return;
+    let button = document.getElementById(SETTINGS_BUTTON_ID);
+    if (!button) {
+        button = makeElement('button', 'dai-settings-button', 'Agent 设置');
+        button.id = SETTINGS_BUTTON_ID;
+        button.type = 'button';
+        button.title = '打开斗破同人 Agent 设置';
+        button.setAttribute('aria-controls', SETTINGS_PANEL_ID);
+        button.setAttribute('aria-expanded', 'false');
+        button.addEventListener('click', openSettingsPanel);
+    }
+    const host = document.querySelector('#top-bar, #top-bar-items, #extensionsMenu');
+    if (host && !host.contains(button)) host.append(button);
+    else if (!button.isConnected) document.body.append(button);
+    createSettingsPanel();
+}
+
 function mount() {
     if (typeof document === 'undefined' || typeof window === 'undefined' || !document.body) return;
     if (!document.getElementById(STYLE_ID)) {
         const link = document.createElement('link');
         link.id = STYLE_ID;
         link.rel = 'stylesheet';
-        link.href = new URL('./style.css', import.meta.url).href;
+        link.href = new URL('./host/style.css', import.meta.url).href;
         document.head.append(link);
     }
 
@@ -330,6 +502,7 @@ function mount() {
 
     window.removeEventListener(STATUS_EVENT, handleStatusEvent);
     window.addEventListener(STATUS_EVENT, handleStatusEvent);
+    mountSettingsButton();
     unsubscribe = () => window.removeEventListener(STATUS_EVENT, handleStatusEvent);
 }
 
@@ -369,6 +542,8 @@ export function onDisable() {
     unsubscribe = undefined;
     if (typeof document !== 'undefined') {
         document.getElementById(ROOT_ID)?.remove();
+        document.getElementById(SETTINGS_PANEL_ID)?.remove();
+        document.getElementById(SETTINGS_BUTTON_ID)?.remove();
         document.getElementById(STYLE_ID)?.remove();
     }
     root = undefined;
@@ -399,7 +574,11 @@ if (import.meta.hot) {
         unsubscribe?.();
         unsubscribe = undefined;
         root?.remove();
-        if (typeof document !== 'undefined') document.getElementById(STYLE_ID)?.remove();
+        if (typeof document !== 'undefined') {
+            document.getElementById(SETTINGS_PANEL_ID)?.remove();
+            document.getElementById(SETTINGS_BUTTON_ID)?.remove();
+            document.getElementById(STYLE_ID)?.remove();
+        }
         root = undefined;
         currentTaskId = undefined;
         agentHistoryEvents?.stop();

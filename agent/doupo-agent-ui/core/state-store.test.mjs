@@ -1,0 +1,26 @@
+import assert from 'node:assert/strict';
+import { createStateStore } from '../core/state-store.js';
+
+const store = createStateStore();
+const initial = store.seed({ sessionId: 'session-A', branchId: 'main', stateVersion: 'v1', state: { hp: 10, coins: 5 } });
+assert.equal(initial.state.hp, 10);
+const prepared = store.begin({ sessionId: 'session-A', branchId: 'main', baseVersion: 'v1', commitId: 'commit-1', candidate: { nextState: { hp: 8, coins: 5 }, changes: [{ type: 'damage', value: 2 }] } });
+assert.equal(prepared.status, 'ready');
+const result = store.commit({ sessionId: 'session-A', branchId: 'main', baseVersion: 'v1', commitId: 'commit-1', candidate: prepared.candidate, messageId: 'message-1' });
+assert.equal(result.status, 'committed');
+assert.equal(result.stateVersion, 'v2');
+assert.deepEqual(store.read({ sessionId: 'session-A', branchId: 'main' }).state, { hp: 8, coins: 5 });
+assert.equal(store.commit({ sessionId: 'session-A', branchId: 'main', baseVersion: 'v1', commitId: 'commit-1', candidate: prepared.candidate }).status, 'duplicate_commit');
+assert.equal(store.commit({ sessionId: 'session-A', branchId: 'main', baseVersion: 'v1', commitId: 'commit-2', candidate: prepared.candidate }).status, 'stale_state');
+assert.equal(store.commit({ sessionId: 'session-A', branchId: 'main', baseVersion: 'v2', commitId: 'commit-invalid', candidate: { changes: [] } }).reason, 'missing_next_state');
+const fork = store.fork({ sessionId: 'session-A', fromBranchId: 'main', newBranchId: 'swipe-1', baseVersion: 'v2' });
+assert.equal(fork.status, 'forked');
+assert.deepEqual(store.read({ sessionId: 'session-A', branchId: 'swipe-1' }).state, { hp: 8, coins: 5 });
+assert.equal(store.commit({ sessionId: 'session-A', branchId: 'swipe-1', baseVersion: 'v2', commitId: 'fork-only', candidate: { nextState: { hp: 1 }, changes: [] } }).status, 'committed');
+assert.equal(store.read({ sessionId: 'session-A', branchId: 'main' }).state.hp, 8);
+const snapshot = store.read({ sessionId: 'session-A', branchId: 'main' });
+snapshot.state.hp = 999;
+assert.equal(store.read({ sessionId: 'session-A', branchId: 'main' }).state.hp, 8);
+assert.equal(store.commit({ sessionId: 'session-A', branchId: 'missing', baseVersion: 'v1', commitId: 'x', candidate: { nextState: {} } }).status, 'missing_branch');
+assert.throws(() => createStateStore({ maxRecords: 0 }), /maxRecords/);
+console.log('state store tests passed');

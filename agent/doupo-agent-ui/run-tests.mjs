@@ -1,17 +1,30 @@
 import { readdir } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
-const tests = (await readdir(directory)).filter(name => name.endsWith('.test.mjs')).sort();
+
+async function findTests(currentDirectory) {
+    const entries = await readdir(currentDirectory, { withFileTypes: true });
+    const tests = [];
+    for (const entry of entries) {
+        const fullPath = path.join(currentDirectory, entry.name);
+        if (entry.isDirectory()) tests.push(...await findTests(fullPath));
+        else if (entry.isFile() && entry.name.endsWith('.test.mjs')) tests.push(fullPath);
+    }
+    return tests;
+}
+
+const tests = (await findTests(directory)).sort();
 if (!tests.length) throw new Error('未发现模块测试');
 let failures = 0;
 for (const test of tests) {
+    const label = path.relative(directory, test).replaceAll(path.sep, '/');
     try {
-        await import(new URL(`./${test}`, import.meta.url));
+        await import(pathToFileURL(test).href);
     } catch (error) {
         failures++;
-        console.error(`FAIL ${test}:`, error);
+        console.error(`FAIL ${label}:`, error);
     }
 }
 console.log(`\n模块测试汇总：${tests.length - failures}/${tests.length} 通过`);

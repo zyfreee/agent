@@ -17,7 +17,7 @@ public/scripts/extensions/third-party/agent/manifest.json
 当前清单引用：
 
 - `agent/doupo-agent-ui/index.js`
-- `agent/doupo-agent-ui/style.css`
+- `agent/doupo-agent-ui/host/style.css`
 
 原来的模块目录仍然保留在 `agent/doupo-agent-ui/`，根目录清单只是为酒馆安装器提供正确入口。
 

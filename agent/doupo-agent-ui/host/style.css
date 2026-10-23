@@ -1,0 +1,78 @@
+.dai-root {
+    position: fixed;
+    z-index: 10000;
+    inset: auto 1rem 1rem auto;
+    width: min(26rem, calc(100vw - 2rem));
+    color: var(--SmartThemeBodyColor, #f2f2f2);
+    font: 0.95rem/1.5 var(--mainFontFamily, system-ui, sans-serif);
+}
+
+.dai-root[hidden] { display: none; }
+.dai-capability { margin-bottom: 0.45rem; padding: 0.45rem 0.65rem; border: 1px solid var(--SmartThemeBorderColor, #777); border-radius: 0.5rem; background: var(--SmartThemeBlurTintColor, #20232b); box-shadow: 0 0.25rem 0.75rem #0005; font-size: 0.82rem; }
+.dai-capability-ready { border-left: 3px solid #55b879; }
+.dai-capability-degraded { border-left: 3px solid #df8b47; }
+.dai-capability-unknown, .dai-capability-unavailable { border-left: 3px solid #777; }
+.dai-card { padding: 0.9rem 1rem; border: 1px solid var(--SmartThemeBorderColor, #777); border-left: 4px solid #6b8afd; border-radius: 0.65rem; background: var(--SmartThemeBlurTintColor, #20232b); box-shadow: 0 0.5rem 1.5rem #0006; }
+.dai-processing { border-left-color: #6b8afd; }
+.dai-waiting_input { border-left-color: #e4b34d; }
+.dai-completed_saved { border-left-color: #55b879; }
+.dai-failed_unapplied { border-left-color: #e15d5d; }
+.dai-save_uncertain { border-left-color: #df8b47; }
+.dai-heading { display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; }
+.dai-status { font-size: 1rem; }
+.dai-task, .dai-time { opacity: 0.75; font-size: 0.82rem; }
+.dai-message { margin: 0.55rem 0 0; overflow-wrap: anywhere; }
+.dai-details { margin: 0.55rem 0 0; padding-left: 1.2rem; }
+.dai-details li + li { margin-top: 0.25rem; }
+
+.dai-settings-button {
+    min-height: 2.2rem;
+    margin: 0.2rem;
+    padding: 0.45rem 0.8rem;
+    border: 1px solid var(--SmartThemeBorderColor, #777);
+    border-radius: 0.45rem;
+    color: var(--SmartThemeBodyColor, #f2f2f2);
+    background: var(--SmartThemeBlurTintColor, #252934);
+    cursor: pointer;
+    font: inherit;
+}
+.dai-settings-button:hover, .dai-settings-button:focus-visible { border-color: #8fa8ff; background: #30384e; }
+.dai-settings-backdrop { position: absolute; inset: 0; background: #05070caa; }
+.dai-settings-panel { position: fixed; z-index: 10001; inset: 0; display: grid; place-items: center; color: var(--SmartThemeBodyColor, #f2f2f2); font: 0.95rem/1.45 var(--mainFontFamily, system-ui, sans-serif); }
+.dai-settings-panel[hidden] { display: none; }
+.dai-settings-dialog { position: relative; display: flex; flex-direction: column; width: min(48rem, calc(100vw - 2rem)); max-height: min(44rem, calc(100vh - 2rem)); overflow: hidden; border: 1px solid var(--SmartThemeBorderColor, #777); border-radius: 1rem; background: var(--SmartThemeBlurTintColor, #161a22); box-shadow: 0 1.5rem 4rem #0009; }
+.dai-settings-header { display: flex; justify-content: space-between; gap: 1rem; padding: 1.35rem 1.5rem 1rem; border-bottom: 1px solid var(--SmartThemeBorderColor, #444); }
+.dai-settings-header h2 { margin: 0.1rem 0 0.2rem; font-size: 1.45rem; letter-spacing: -0.02em; }
+.dai-settings-header p { margin: 0; color: color-mix(in srgb, var(--SmartThemeBodyColor, #f2f2f2) 68%, transparent); font-size: 0.82rem; }
+.dai-settings-kicker { color: #9bb0ff; font-size: 0.75rem; }
+.dai-icon-button { align-self: start; width: 2.2rem; height: 2.2rem; border: 1px solid transparent; border-radius: 50%; color: inherit; background: transparent; cursor: pointer; font-size: 1.5rem; line-height: 1; }
+.dai-icon-button:hover, .dai-icon-button:focus-visible { border-color: var(--SmartThemeBorderColor, #777); background: #ffffff12; }
+.dai-settings-tabs { display: flex; gap: 0.35rem; padding: 0.6rem 1.5rem 0; overflow-x: auto; border-bottom: 1px solid var(--SmartThemeBorderColor, #444); }
+.dai-tab { padding: 0.6rem 0.75rem 0.7rem; border: 0; border-bottom: 2px solid transparent; color: color-mix(in srgb, var(--SmartThemeBodyColor, #f2f2f2) 70%, transparent); background: transparent; cursor: pointer; white-space: nowrap; }
+.dai-tab.is-active, .dai-tab:focus-visible { border-bottom-color: #8fa8ff; color: var(--SmartThemeBodyColor, #f2f2f2); }
+.dai-settings-body { min-height: 0; overflow: auto; padding: 1.2rem 1.5rem; }
+.dai-settings-section[hidden] { display: none; }
+.dai-settings-intro { display: grid; gap: 0.25rem; margin-bottom: 1rem; }
+.dai-settings-intro span, .dai-setting-row small { color: color-mix(in srgb, var(--SmartThemeBodyColor, #f2f2f2) 64%, transparent); font-size: 0.8rem; }
+.dai-setting-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; min-height: 3.65rem; padding: 0.75rem 0; border-bottom: 1px solid #ffffff12; }
+.dai-setting-row > span { display: grid; gap: 0.15rem; min-width: 0; }
+.dai-setting-row input:not([type="checkbox"]), .dai-setting-row select { width: min(19rem, 52%); min-height: 2.25rem; padding: 0.4rem 0.55rem; border: 1px solid var(--SmartThemeBorderColor, #666); border-radius: 0.4rem; color: inherit; background: #0003; }
+.dai-setting-row input:focus-visible, .dai-setting-row select:focus-visible { outline: 2px solid #8fa8ff; outline-offset: 2px; }
+.dai-setting-toggle input[type="checkbox"] { width: 1.2rem; height: 1.2rem; accent-color: #8fa8ff; }
+.dai-setting-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.dai-setting-grid .dai-setting-row { display: grid; align-items: start; }
+.dai-setting-grid .dai-setting-row input { width: 100%; }
+.dai-settings-footer { display: flex; justify-content: space-between; align-items: center; padding: 0.8rem 1.5rem; border-top: 1px solid var(--SmartThemeBorderColor, #444); color: color-mix(in srgb, var(--SmartThemeBodyColor, #f2f2f2) 64%, transparent); font-size: 0.8rem; }
+.dai-secondary-button { min-height: 2.2rem; padding: 0.4rem 0.9rem; border: 1px solid var(--SmartThemeBorderColor, #777); border-radius: 0.4rem; color: inherit; background: transparent; cursor: pointer; }
+.dai-secondary-button:hover, .dai-secondary-button:focus-visible { background: #ffffff12; }
+
+@media (max-width: 640px) {
+    .dai-settings-dialog { width: calc(100vw - 1rem); max-height: calc(100vh - 1rem); border-radius: 0.75rem; }
+    .dai-settings-header, .dai-settings-body, .dai-settings-footer { padding-left: 1rem; padding-right: 1rem; }
+    .dai-settings-tabs { padding-left: 1rem; padding-right: 1rem; }
+    .dai-setting-row { align-items: flex-start; }
+    .dai-setting-row input:not([type="checkbox"]), .dai-setting-row select { width: 45%; }
+    .dai-setting-grid { grid-template-columns: 1fr; gap: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; } }

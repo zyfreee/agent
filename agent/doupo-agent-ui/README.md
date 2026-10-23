@@ -6,6 +6,15 @@
 
 `doupoAgent.contracts` 登记稳定对象 ID、类型、名称/别名、来源、创建者、唯一写入者、允许读取者、版本，以及字段类型、默认值和缺失含义。`validateValue` 检查写入者、读取权限和值类型；不同 `false`、`0`、空文本、null 和缺失默认含义不混淆。迁移由显式本地函数注册并生成未提交候选。合同保存在内存，不会自动改写其他模块存档或对象，也不证明真实状态接口已经采用它。
 
+## 目录结构
+
+- `core/`：任务协调、回合管线、模块白名单、状态与提交门禁、质量合同、审计和影响处理。
+- `narrative/`：事实库、正文核验、历史事件适配、历史操作分类与恢复。
+- `npc/`：NPC 自主计划、决定守卫、重评估、冲突协调、结果桥接和提交门禁。
+- `request/`：请求分类、请求路由、动作解析和世界推进候选。
+- `host/`：宿主能力预检、宿主设置存储、UI 状态和扩展样式。
+- `index.js`：唯一浏览器入口；`run-tests.mjs`：递归发现并运行全部模块测试。
+
 ## 模块概览
 
 - `coordinator` 与 `modules`：任务生命周期及白名单模块编排。
@@ -34,4 +43,4 @@
 
 ## 边界与验证
 
-扩展清单当前为 `agent/doupo-agent-ui/manifest.json`。模块测试可在项目根目录运行 `node agent/doupo-agent-ui/run-tests.mjs`，脚本会自动发现并依次导入全部 `.test.mjs`，新增测试无需手动追加到命令中。Node 本地检查只证明纯逻辑，不等于真实 SillyTavern 安装或运行证据。尚无真实酒馆DOM/消息/变量适配、正式持久化、模型调用、联网资料收集、卡片打包或发布；相关操作未执行。
+扩展清单当前为项目根目录的 `manifest.json`，入口为 `agent/doupo-agent-ui/index.js`，样式为 `agent/doupo-agent-ui/host/style.css`。模块测试可在项目根目录运行 `node agent/doupo-agent-ui/run-tests.mjs`，脚本会递归发现并依次导入全部 `.test.mjs`，新增测试无需手动追加到命令中。Node 本地检查只证明纯逻辑，不等于真实 SillyTavern 安装或运行证据。尚无真实酒馆DOM/消息/变量适配、正式持久化、模型调用、联网资料收集、卡片打包或发布；相关操作未执行。
