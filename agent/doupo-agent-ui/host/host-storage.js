@@ -1,3 +1,5 @@
+import { normalizeTheme } from './control-dashboard.js';
+
 const SETTINGS_KEY = 'doupo_agent_ui';
 const CHAT_KEY = 'doupo_agent_state';
 
@@ -27,6 +29,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     }),
     ui: Object.freeze({
         compact: false,
+        theme: 'black',
     }),
     facts: Object.freeze({
         sourceMode: 'registered',
@@ -57,7 +60,7 @@ const DEFAULT_SETTINGS = Object.freeze({
         showHistory: true,
         showCapabilityBadge: true,
     }),
-    schemaVersion: 3,
+    schemaVersion: 4,
 });
 
 function clone(value) {
@@ -72,6 +75,7 @@ function mergeSettings(current = {}) {
         const incoming = source[key] && typeof source[key] === 'object' && !Array.isArray(source[key]) ? source[key] : {};
         merged[key] = { ...clone(DEFAULT_SETTINGS[key]), ...incoming };
     }
+    merged.ui.theme = normalizeTheme(merged.ui.theme);
     merged.schemaVersion = DEFAULT_SETTINGS.schemaVersion;
     return merged;
 }

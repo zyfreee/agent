@@ -27,6 +27,7 @@ import { registerAgentModules } from './core/agent-modules.js';
 import { createRequestRouter } from './request/request-router.js';
 import { probeHostCapabilities } from './host/capability-preflight.js';
 import { createHostStorage } from './host/host-storage.js';
+import { buildControlDashboard, normalizeTheme } from './host/control-dashboard.js';
 
 const EXTENSION_ID = 'doupo-agent-ui';
 const ROOT_ID = `${EXTENSION_ID}-root`;
@@ -55,6 +56,8 @@ let root;
 let unsubscribe;
 let currentTaskId;
 let agentActiveScope;
+let dashboardScope;
+let settingsSaveSequence = 0;
 let agentCapabilities = Object.freeze({ status: 'unavailable', versions: Object.freeze({ sillytavern: null }), symbols: Object.freeze([]), missing: Object.freeze([]), fallback: '尚未执行宿主能力预检。' });
 let hostContext;
 let hostStorage;
@@ -86,6 +89,13 @@ function bindHostLifecycle() {
         context.eventSource.on(event, onReady);
         hostLifecycleBindings.push({ event, handler: onReady });
     }
+    // Use the host-provided constant only; no event payload or chat id is assumed.
+    const chatChanged = context.event_types.CHAT_CHANGED;
+    if (typeof chatChanged === 'string' && chatChanged) {
+        const handler = () => { dashboardScope = undefined; refreshControlDashboard(); };
+        context.eventSource.on(chatChanged, handler);
+        hostLifecycleBindings.push({ event: chatChanged, handler });
+    }
     hostContext = context;
     hostStorage = createHostStorage({ getContext: getHostContext });
     return { status: 'bound', eventCount: hostLifecycleBindings.length };
@@ -93,13 +103,15 @@ function bindHostLifecycle() {
 
 export function recordAgentAudit(raw) {
     const item = raw && typeof raw === 'object' ? raw : {};
-    return agentAuditLog.record({
+    const result = agentAuditLog.record({
         ...item,
         taskId: typeof item.taskId === 'string' && item.taskId.trim() ? item.taskId : 'unknown-task',
         sessionId: typeof item.sessionId === 'string' && item.sessionId.trim() ? item.sessionId : 'unknown-session',
         branchId: typeof item.branchId === 'string' && item.branchId.trim() ? item.branchId : 'unknown-branch',
         stateVersion: typeof item.stateVersion === 'string' && item.stateVersion.trim() ? item.stateVersion : 'unknown-version',
     });
+    refreshControlDashboard();
+    return result;
 }
 
 export const agentCoordinator = createAgentCoordinator();
@@ -335,6 +347,56 @@ function renderStatus(payload) {
 
 function handleStatusEvent(event) {
     renderStatus(event?.detail);
+    refreshControlDashboard();
+}
+
+function applyAppearance(settings = currentSettings()) {
+    if (typeof document === 'undefined') return;
+    for (const element of [document.getElementById(SETTINGS_PANEL_ID), root]) {
+        if (!element) continue;
+        element.dataset.theme = normalizeTheme(settings.ui?.theme);
+        element.classList.toggle('dai-compact', settings.ui?.compact === true);
+    }
+}
+
+function refreshControlDashboard() {
+    if (typeof document === 'undefined') return;
+    const panel = document.getElementById(SETTINGS_PANEL_ID);
+    if (!panel || panel.hidden) return;
+    const list = panel.querySelector('[data-module-list]');
+    if (!list) return;
+    const view = buildControlDashboard({
+        settings: currentSettings(), records: agentAuditLog.list({ limit: 2000 }),
+        tasks: agentCoordinator.list(), scope: dashboardScope,
+    });
+    const summary = panel.querySelector('[data-dashboard-summary]');
+    if (summary) summary.textContent = `总控${view.enabled ? '已开启' : '已暂停'} · 最近任务：${view.taskLabel}${view.taskId ? `（${view.taskId}）` : ''}`;
+    const rows = view.modules.map(module => {
+        const row = makeElement('article', 'dai-module-row');
+        const heading = makeElement('div', 'dai-module-heading');
+        const badge = makeElement('span', 'dai-run-badge', module.label);
+        badge.dataset.state = module.state;
+        heading.append(makeElement('b', '', module.title), badge);
+        const summary = makeElement('p', 'dai-module-summary', module.summary);
+        const meta = makeElement('div', 'dai-module-meta');
+        meta.append(makeElement('small', '', module.configuration));
+        if (module.timestamp !== null) {
+            const date = new Date(module.timestamp);
+            if (Number.isFinite(date.getTime())) {
+                const time = makeElement('time', '', date.toLocaleString('zh-CN', { hour12: false }));
+                time.dateTime = date.toISOString();
+                meta.append(time);
+            }
+        }
+        if (module.taskId) meta.append(makeElement('small', '', `任务：${module.taskId}`));
+        const button = makeElement('button', 'dai-secondary-button', '设置');
+        button.type = 'button';
+        button.dataset.settingsPage = module.id;
+        button.setAttribute('aria-label', `打开${module.title}设置`);
+        row.append(heading, summary, meta, button);
+        return row;
+    });
+    list.replaceChildren(...rows);
 }
 
 function currentSettings() {
@@ -343,7 +405,7 @@ function currentSettings() {
 }
 
 function updateSetting(path, value) {
-    const settings = currentSettings();
+    currentSettings();
     const segments = path.split('.').filter(Boolean);
     const patch = {};
     let cursor = patch;
@@ -353,10 +415,11 @@ function updateSetting(path, value) {
     });
     const result = hostStorage.updateSettings(patch);
     if (result.status === 'ready') {
-        hostStorage.saveSettings();
-        if (path === 'enabled' || path === 'showStatusPanel') {
+        if (root && (path === 'enabled' || path === 'showStatusPanel')) {
             root.hidden = !(result.value.enabled && result.value.showStatusPanel);
         }
+        applyAppearance(result.value);
+        refreshControlDashboard();
     }
     return result;
 }
@@ -387,8 +450,11 @@ function syncSettingsForm() {
     for (const input of panel.querySelectorAll('[data-setting]')) {
         const value = fieldValue(settings, input.dataset.setting);
         if (input.type === 'checkbox') input.checked = Boolean(value);
+        else if (input.type === 'radio') input.checked = input.value === value;
         else input.value = value == null ? '' : String(value);
     }
+    applyAppearance(settings);
+    refreshControlDashboard();
     const status = panel.querySelector(`#${SETTINGS_STATUS_ID}`);
     if (status) status.textContent = hostContext ? '设置会保存到酒馆扩展设置。' : '尚未连接酒馆，当前只展示本地默认值。';
 }
@@ -409,7 +475,7 @@ function createSettingsPanel() {
             <aside class="dai-settings-sidebar">
                 <div class="dai-settings-brand"><span class="dai-settings-mark">A</span><div><strong>斗破同人 Agent</strong><small>控制中心</small></div></div>
                 <nav class="dai-settings-nav" aria-label="Agent 功能页面">
-                    <button type="button" class="dai-nav-item is-active" data-settings-page="overview"><span class="dai-nav-icon">⌂</span><span><b>总览</b><small>状态与总控</small></span></button>
+                    <button type="button" class="dai-nav-item is-active" data-settings-page="overview"><span class="dai-nav-icon">⌂</span><span><b>总控</b><small>模块简况与外观</small></span></button>
                     <p class="dai-nav-label">核心能力</p>
                     <button type="button" class="dai-nav-item" data-settings-page="llm"><span class="dai-nav-icon">✦</span><span><b>模型与连接</b><small>LLM 请求配置</small></span></button>
                     <button type="button" class="dai-nav-item" data-settings-page="facts"><span class="dai-nav-icon">▤</span><span><b>原著资料</b><small>事实与资料查询</small></span></button>
@@ -424,15 +490,19 @@ function createSettingsPanel() {
             </aside>
             <main class="dai-settings-main">
                 <header class="dai-settings-header">
-                    <div><span class="dai-settings-kicker">AGENT CONTROL CENTER</span><h2 id="${SETTINGS_PANEL_ID}-title" data-settings-title>总览</h2><p id="${SETTINGS_STATUS_ID}" role="status">${hostContext ? '已连接酒馆设置' : '尚未连接酒馆，当前只展示默认值'}</p></div>
+                    <div><h2 id="${SETTINGS_PANEL_ID}-title" data-settings-title>总控</h2><p id="${SETTINGS_STATUS_ID}" role="status">${hostContext ? '已连接酒馆设置' : '尚未连接酒馆，当前只展示默认值'}</p></div>
                     <button type="button" class="dai-icon-button" data-settings-close aria-label="关闭设置">×</button>
                 </header>
                 <div class="dai-settings-body">
                     <section class="dai-settings-page is-active" data-settings-section="overview" role="tabpanel">
-                        <div class="dai-page-hero"><div><span class="dai-page-eyebrow">系统总览</span><h3>让每个 Agent 能力各司其职</h3><p>从这里开启总控，再进入左侧页面调整每项能力的行为。</p></div><span class="dai-hero-orbit">✦</span></div>
-                        <div class="dai-overview-grid"><label class="dai-overview-switch"><span><b>启用 Agent 总控</b><small>关闭后保留设置，但暂停模块调度。</small></span><input type="checkbox" data-setting="enabled"></label><label class="dai-overview-switch"><span><b>显示运行反馈</b><small>在右下角显示任务状态与失败原因。</small></span><input type="checkbox" data-setting="showStatusPanel"></label></div>
-                        <div class="dai-section-heading"><div><h3>能力状态</h3><p>当前页面只展示配置，不会伪造模型或保存成功状态。</p></div></div>
-                        <div class="dai-capability-list"><button type="button" class="dai-capability-card" data-settings-page="llm"><span class="dai-card-symbol">✦</span><span><b>模型与连接</b><small>配置请求来源和模型参数</small></span><i>›</i></button><button type="button" class="dai-capability-card" data-settings-page="facts"><span class="dai-card-symbol">▤</span><span><b>原著资料查询</b><small>控制事实读取范围和数量</small></span><i>›</i></button><button type="button" class="dai-capability-card" data-settings-page="action"><span class="dai-card-symbol">➜</span><span><b>行动结算</b><small>控制候选结果与确认方式</small></span><i>›</i></button><button type="button" class="dai-capability-card" data-settings-page="world"><span class="dai-card-symbol">◌</span><span><b>世界运转</b><small>控制时间推进与持续变化</small></span><i>›</i></button></div>
+                        <div class="dai-page-heading"><h3>模块运行简况</h3><p>查看各项功能最近做了什么，再进入对应页面调整设置。</p></div>
+                        <p class="dai-dashboard-summary" data-dashboard-summary role="status">暂无任务</p>
+                        <div class="dai-module-list" data-module-list></div>
+                        <p class="dai-dashboard-note">仅显示当前会话与分支在本次加载期间的记录；刷新后重新记录。模块“已返回”不代表正式状态已保存。</p>
+                        <div class="dai-section-heading"><h3>简单设置</h3></div>
+                        <div class="dai-overview-grid"><label class="dai-overview-switch"><span><b>启用 Agent 总控</b><small>保留原有设置，控制后续模块调度。</small></span><input type="checkbox" data-setting="enabled"></label><label class="dai-overview-switch"><span><b>显示运行反馈</b><small>在右下角显示任务状态与失败原因。</small></span><input type="checkbox" data-setting="showStatusPanel"></label></div>
+                        <fieldset class="dai-theme-picker"><legend>界面颜色</legend><label class="dai-theme-option"><input type="radio" name="dai-theme" value="white" data-setting="ui.theme"><span class="dai-theme-swatch" data-swatch="white" aria-hidden="true"></span><b>白色</b></label><label class="dai-theme-option"><input type="radio" name="dai-theme" value="black" data-setting="ui.theme"><span class="dai-theme-swatch" data-swatch="black" aria-hidden="true"></span><b>黑色</b></label><label class="dai-theme-option"><input type="radio" name="dai-theme" value="beige" data-setting="ui.theme"><span class="dai-theme-swatch" data-swatch="beige" aria-hidden="true"></span><b>米色</b></label></fieldset>
+                        <p class="dai-dashboard-note">只改变 Agent 界面，不改变酒馆整体配色。</p>
                     </section>
                     <section class="dai-settings-page" data-settings-section="llm" role="tabpanel" hidden>
                         <div class="dai-page-heading"><span class="dai-page-eyebrow">核心能力 / 01</span><h3>模型与连接</h3><p>决定 Agent 从哪里发起模型请求，以及使用什么输出参数。</p></div>
@@ -470,13 +540,22 @@ function createSettingsPanel() {
         const page = event.target.closest?.('[data-settings-page]');
         if (page) selectPage(page.dataset.settingsPage);
     });
-    panel.addEventListener('input', event => {
+    panel.addEventListener('input', async event => {
         const input = event.target.closest?.('[data-setting]');
-        if (!input) return;
+        if (!input || (input.type === 'radio' && !input.checked)) return;
         let value = input.type === 'checkbox' ? input.checked : input.value;
         if (input.type === 'number') value = Number(value);
-        updateSetting(input.dataset.setting, value);
-        panel.querySelector(`#${SETTINGS_STATUS_ID}`).textContent = '已保存。';
+        const sequence = ++settingsSaveSequence;
+        const result = updateSetting(input.dataset.setting, value);
+        const status = panel.querySelector(`#${SETTINGS_STATUS_ID}`);
+        if (result.status !== 'ready') { status.textContent = '酒馆设置不可用，本次修改未保存。'; return; }
+        status.textContent = '正在交给酒馆保存…';
+        try {
+            const saved = await hostStorage.saveSettings();
+            if (sequence === settingsSaveSequence) status.textContent = saved.status === 'saved' ? '已交给酒馆保存。' : '已修改，但酒馆保存接口不可用。';
+        } catch {
+            if (sequence === settingsSaveSequence) status.textContent = '设置保存失败，请重新打开页面核对。';
+        }
     });
     panel.addEventListener('keydown', event => { if (event.key === 'Escape') closeSettingsPanel(); });
     selectPage(activeSettingsPage);
@@ -592,6 +671,7 @@ function mount() {
     window.removeEventListener(STATUS_EVENT, handleStatusEvent);
     window.addEventListener(STATUS_EVENT, handleStatusEvent);
     mountSettingsButton();
+    applyAppearance();
     inlineSettingsAttempts = 0;
     observeInlineSettingsContainer();
     scheduleInlineSettingsMount();
@@ -645,6 +725,8 @@ export function onDisable() {
     }
     root = undefined;
     currentTaskId = undefined;
+    dashboardScope = undefined;
+    settingsSaveSequence += 1;
 }
 
 export function onEnable() {
@@ -705,6 +787,7 @@ export function beginAgentTask(task) {
     if (task?.sessionId && task?.branchId && task?.taskId) {
         const current = agentActiveScope?.sessionId === task.sessionId && agentActiveScope?.branchId === task.branchId ? agentActiveScope.taskIds : [];
         agentActiveScope = { sessionId: task.sessionId, branchId: task.branchId, taskIds: [...new Set([...current, task.taskId])] };
+        dashboardScope = agentActiveScope;
     }
     const result = agentCoordinator.begin(task);
     initializeHistoryEvents();
@@ -714,6 +797,8 @@ export function beginAgentTask(task) {
 export function setAgentHistoryScope(scope) {
     if (!scope || typeof scope.sessionId !== 'string' || typeof scope.branchId !== 'string' || !Array.isArray(scope.taskIds) || scope.taskIds.some(id => typeof id !== 'string')) throw new TypeError('scope 必须包含会话、分支和任务 ID 列表');
     agentActiveScope = { sessionId: scope.sessionId, branchId: scope.branchId, taskIds: [...new Set(scope.taskIds)] };
+    dashboardScope = agentActiveScope;
+    refreshControlDashboard();
     const scopeResult = agentHistoryEvents?.refreshScope?.();
     return { status: 'set', taskCount: agentActiveScope.taskIds.length, scopeResult: scopeResult?.status ?? 'not_listening' };
 }

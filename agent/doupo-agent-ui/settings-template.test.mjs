@@ -22,6 +22,12 @@ for (const setting of ['llm.provider', 'facts.maxEntries', 'action.requireConfir
     assert.match(entry, new RegExp(`data-setting="${setting.replace('.', '\\.')}`), `缺少设置绑定：${setting}`);
 }
 assert.match(entry, /activeSettingsPage/);
+assert.match(entry, /data-module-list/);
+for (const theme of ['white', 'black', 'beige']) {
+    assert.match(entry, new RegExp(`type="radio"[^>]+value="${theme}"[^>]+data-setting="ui\\.theme"`));
+}
+assert.match(entry, /await hostStorage\.saveSettings\(\)/);
+assert.match(entry, /settingsSaveSequence/);
 assert.match(entry, /function selectPage|const selectPage/);
 assert.match(entry, /#extensions_settings/);
 assert.match(entry, /new MutationObserver/);

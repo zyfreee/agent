@@ -25,4 +25,25 @@ assert.equal(context.saveMetadataCalls, 1);
 assert.equal((await storage.clean()).status, 'cleaned');
 assert.equal(context.extensionSettings.doupo_agent_ui, undefined);
 assert.equal(context.chatMetadata.doupo_agent_state, undefined);
+// Migrate pre-theme settings without discarding the user's existing nested fields.
+context.extensionSettings.doupo_agent_ui = {
+    schemaVersion: 3, ui: { compact: true }, llm: { model: 'existing-model', apiKey: 'fixture-key' },
+};
+assert.equal(storage.settings().value.ui.theme, 'black');
+assert.equal(storage.settings().value.schemaVersion, 4);
+for (const theme of ['white', 'beige', 'black']) {
+    const updated = storage.updateSettings({ ui: { theme } }).value;
+    assert.equal(updated.ui.theme, theme);
+    assert.equal(updated.ui.compact, true);
+    assert.equal(updated.llm.model, 'existing-model');
+    await storage.saveSettings();
+    assert.equal(createHostStorage({ getContext: () => context }).settings().value.ui.theme, theme);
+}
+assert.equal(storage.updateSettings({ ui: { theme: 'invalid' } }).value.ui.theme, 'black');
+assert.equal(storage.updateSettings({ llm: { temperature: 0.4 } }).value.llm.model, 'existing-model');
+assert.equal(storage.settings().value.llm.apiKey, 'fixture-key');
+assert.equal(createHostStorage().settings().status, 'unavailable');
+assert.equal(createHostStorage().updateSettings({ ui: { theme: 'white' } }).status, 'unavailable');
+assert.equal((await createHostStorage().saveSettings()).status, 'unavailable');
+await assert.rejects(createHostStorage({ getContext: () => ({ saveSettingsDebounced() { throw new Error('fixture save failure'); } }) }).saveSettings(), /fixture save failure/);
 console.log('host storage tests passed');
