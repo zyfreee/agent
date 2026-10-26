@@ -2,6 +2,7 @@ const TASKS = Object.freeze({
     query: ['ordinary_interaction', 'system_operation'],
     action: ['explicit_action', 'complex_action'],
     world: ['time_advance'],
+    sandbox: ['time_advance'],
 });
 
 function makeAdapter(id, api, method, taskTypes, stateChanging = false, dependsOn = []) {
@@ -16,13 +17,14 @@ function makeAdapter(id, api, method, taskTypes, stateChanging = false, dependsO
 }
 
 /** Explicit allowlist of adapters; deliberately avoids auto-discovering arbitrary object methods. */
-export function registerAgentModules(runner, { facts, actions, world } = {}) {
+export function registerAgentModules(runner, { facts, actions, world, sandbox } = {}) {
     if (!runner || typeof runner.register !== 'function') throw new TypeError('runner 必须提供 register');
     const registrations = [];
     const adapters = [
         facts && makeAdapter('facts-query', facts, 'query', TASKS.query),
         actions && makeAdapter('action-resolve', actions, 'resolve', TASKS.action, true),
         world && makeAdapter('world-advance', world, 'advance', TASKS.world, true),
+        sandbox && makeAdapter('sandbox-advance', sandbox, 'advance', TASKS.sandbox, true),
     ].filter(Boolean);
     try {
         for (const adapter of adapters) registrations.push(runner.register(adapter));

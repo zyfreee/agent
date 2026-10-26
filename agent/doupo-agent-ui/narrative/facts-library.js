@@ -94,28 +94,56 @@ export function createFactsLibrary({ onRegister } = {}) {
         facts.set(fact.id, fact);
         return fact.id;
     }
+    const QUERY_STOP_WORDS = new Set(['什么', '怎么', '如何', '为何', '多少', '哪里', '哪儿', '这个', '那个', '请问', '一下', '是不', '不是', '我们', '你们', '他们', '一个', '可以', '没有', '就是', '还是', '这些', '那些', '知道', '告诉', '觉得', '现在', '然后']);
+    function queryTokens(needle) {
+        const tokens = new Set();
+        for (const chunk of needle.replace(/[^\p{L}\p{N}]+/gu, ' ').split(/\s+/)) {
+            if (!chunk) continue;
+            if (/^[\u4e00-\u9fff]+$/u.test(chunk)) {
+                if (chunk.length === 1) tokens.add(chunk);
+                for (let index = 0; index < chunk.length - 1; index += 1) {
+                    const pair = chunk.slice(index, index + 2);
+                    if (!QUERY_STOP_WORDS.has(pair)) tokens.add(pair);
+                }
+            } else if (chunk.length >= 2) {
+                tokens.add(chunk);
+            }
+        }
+        return [...tokens].slice(0, 24);
+    }
+    function factTexts(fact) {
+        return [fact.subject, ...(Array.isArray(fact.aliases) ? fact.aliases : []), fact.predicate, fact.text]
+            .map(part => (typeof part === 'string' ? part : String(part ?? '')))
+            .map(part => part.toLocaleLowerCase());
+    }
     function query({ query, sourceIds, continuity, realm, asOf, limit = 12 } = {}) {
         const needle = requireText(query, '查询词').toLocaleLowerCase();
         if (!Array.isArray(sourceIds) || sourceIds.length === 0) return { status: 'needs_scope', results: [], conflicts: [], note: '必须由调用方明确提供允许查询的来源范围。' };
         if (!Number.isInteger(limit) || limit < 1 || limit > 50) throw new RangeError('limit 必须为 1 到 50');
         const allowed = new Set(sourceIds);
-        const matches = [...facts.values()].filter(fact => {
-            if (!allowed.has(fact.sourceId)) return false;
-            if (continuity && fact.continuity !== continuity) return false;
-            if (realm && fact.realm !== realm) return false;
-            if (fact.reviewStatus === 'needs-review') return false;
-            if (Number.isInteger(asOf) && (fact.phase === null || fact.phase > asOf)) return false;
-            return [fact.subject, ...fact.aliases, fact.predicate, fact.text].some(part => part.toLocaleLowerCase().includes(needle));
-        });
+        const tokens = queryTokens(needle);
+        const matches = [];
+        for (const fact of facts.values()) {
+            if (!allowed.has(fact.sourceId)) continue;
+            if (continuity && fact.continuity !== continuity) continue;
+            if (realm && fact.realm !== realm) continue;
+            if (fact.reviewStatus === 'needs-review') continue;
+            if (Number.isInteger(asOf) && (fact.phase === null || fact.phase > asOf)) continue;
+            const texts = factTexts(fact);
+            let score = texts.some(text => text.includes(needle)) ? 5 : 0;
+            for (const token of tokens) if (texts.some(text => text.includes(token))) score += 1;
+            if (score > 0) matches.push({ fact, score });
+        }
+        matches.sort((left, right) => right.score - left.score || String(left.fact.id).localeCompare(String(right.fact.id)));
         const groups = new Map();
-        for (const fact of matches) {
+        for (const { fact } of matches) {
             const key = `${fact.subject.toLocaleLowerCase()}|${fact.predicate.toLocaleLowerCase()}`;
             if (!groups.has(key)) groups.set(key, []);
             groups.get(key).push(fact);
         }
         const conflicts = [...groups.values()].filter(group => new Set(group.map(item => item.polarity)).size > 1)
             .map(group => ({ subject: group[0].subject, predicate: group[0].predicate, factIds: group.map(item => item.id) }));
-        const results = matches.slice(0, limit).map(fact => ({ ...fact }));
+        const results = matches.slice(0, limit).map(item => ({ ...item.fact }));
         const sourceInfo = [...new Set(results.map(item => item.sourceId))].map(id => {
             const source = sources.get(id);
             return { id, title: source.title, edition: source.edition, continuity: source.continuity, realm: source.realm, provenance: source.provenance, coveredThrough: source.coveredThrough, missing: [...source.missing], revision: sourceHistory.get(id).at(-1).revision };

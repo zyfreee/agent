@@ -130,6 +130,8 @@
 .dai-setting-row input:not([type="checkbox"]), .dai-setting-row select { width: min(19rem, 52%); min-height: 2.5rem; padding: 0.4rem 0.55rem; border: 1px solid var(--dai-border); border-radius: 0.4rem; color: var(--dai-text); background: var(--dai-field); }
 .dai-settings-panel option { color: var(--dai-text); background: var(--dai-field); }
 .dai-setting-toggle input[type="checkbox"] { width: 1.2rem; height: 1.2rem; accent-color: var(--dai-accent); }
+.dai-setting-row textarea { width: min(30rem, 56%); min-height: 11rem; padding: 0.5rem 0.6rem; border: 1px solid var(--dai-border); border-radius: 0.4rem; color: var(--dai-text); background: var(--dai-field); font: inherit; line-height: 1.5; resize: vertical; }
+.dai-setting-actions { justify-content: flex-start; gap: 0.6rem; }
 .dai-setting-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
 .dai-setting-grid .dai-setting-row { display: grid; align-items: start; }
 .dai-setting-grid .dai-setting-row input { width: 100%; }
@@ -187,3 +189,48 @@
 @media (prefers-reduced-motion: reduce) {
     .dai-settings-panel *, .dai-settings-panel *::before, .dai-settings-panel *::after { scroll-behavior: auto !important; transition: none !important; }
 }
+
+.dai-turn-card { display: flex; flex-direction: column; gap: 0.55rem; }
+.dai-run-button { align-self: flex-start; min-height: 2.75rem; padding: 0.45rem 1.1rem; border: 1px solid var(--dai-accent); border-radius: 0.45rem; background: var(--dai-accent); color: var(--dai-field); font-weight: 700; cursor: pointer; }
+.dai-run-button:hover:not(:disabled) { filter: brightness(1.08); }
+.dai-run-button:disabled { opacity: 0.55; cursor: progress; }
+.dai-turn-result { margin: 0; color: var(--dai-muted); font-size: 0.85rem; line-height: 1.5; white-space: pre-wrap; }
+
+.dai-state-strip { margin: 0; padding: 0.45rem 0.6rem; border: 1px solid var(--dai-border); border-radius: 0.45rem; background: var(--dai-field-hover, rgba(255,255,255,0.04)); color: var(--dai-text); font-size: 0.85rem; line-height: 1.55; }
+.dai-turn-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.dai-run-button.is-secondary { background: transparent; color: var(--dai-accent); }
+.dai-version-list { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.dai-version-button { padding: 0.2rem 0.55rem; border: 1px solid var(--dai-border); border-radius: 999px; background: transparent; color: var(--dai-muted); font-size: 0.78rem; cursor: pointer; }
+.dai-version-button:hover:not(:disabled) { border-color: var(--dai-accent); color: var(--dai-accent); }
+.dai-version-button:disabled { opacity: 0.9; border-color: var(--dai-accent); color: var(--dai-accent); cursor: default; }
+
+.dai-status-list { display: grid; gap: 0.3rem; margin: 0; padding: 0; list-style: none; }
+.dai-status-list li { display: grid; grid-template-columns: minmax(5.5rem, max-content) 1fr; gap: 0.6rem; padding: 0.32rem 0.5rem; border: 1px solid var(--dai-border); border-radius: 0.4rem; background: var(--dai-field-hover, rgba(255,255,255,0.04)); font-size: 0.82rem; line-height: 1.5; }
+
+/* 世界页：双栏事件列表与指令流水 */
+.dai-world-events { display: grid; gap: 0.4rem; }
+
+/* 世界状态浮层：顶栏「世界」按钮点开，复用设置面板的遮罩层 */
+.dai-world-overlay-card { position: relative; display: grid; gap: 0.55rem; width: min(24rem, calc(100vw - 2rem)); max-height: calc(100vh - 4rem); overflow-y: auto; padding: 0.9rem 1rem; border: 1px solid var(--dai-border); border-radius: 0.65rem; background: var(--dai-surface); box-shadow: 0 0.5rem 1.5rem #0005; }
+.dai-world-overlay-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.8rem; }
+.dai-world-overlay-head small { display: block; color: var(--dai-muted); font-size: 0.75rem; }
+.dai-world-overlay-head strong { font-size: 1.05rem; line-height: 1.4; }
+.dai-world-overlay-info { margin: 0; padding: 0.4rem 0.6rem; border: 1px solid var(--dai-border); border-radius: 0.45rem; background: var(--dai-field-hover, rgba(255,255,255,0.04)); color: var(--dai-muted); font-size: 0.82rem; }
+.dai-world-overlay-card h4 { margin: 0.2rem 0 0; color: var(--dai-muted); font-size: 0.85rem; font-weight: 600; }
+.dai-world-overlay-foot { display: flex; justify-content: space-between; align-items: flex-end; gap: 0.8rem; }
+.dai-world-overlay-foot small { color: var(--dai-muted); font-size: 0.75rem; line-height: 1.45; word-break: break-word; }
+.dai-world-overlay-foot .dai-secondary-button { flex-shrink: 0; min-height: 2rem; padding: 0.2rem 0.7rem; font-size: 0.8rem; }
+.dai-world-event { display: flex; flex-direction: column; gap: 0.3rem; padding: 0.45rem 0.6rem; border: 1px solid var(--dai-border); border-radius: 0.45rem; background: var(--dai-field-hover, rgba(255,255,255,0.04)); }
+.dai-world-event[data-weight="major"] { border-color: var(--dai-accent); }
+.dai-world-event[data-pinned="true"] { border-style: dashed; border-color: var(--dai-warn); }
+.dai-world-event-head { display: flex; justify-content: space-between; gap: 0.6rem; align-items: baseline; }
+.dai-world-event-head b { color: var(--dai-text); font-size: 0.85rem; line-height: 1.5; word-break: break-word; }
+.dai-world-event-head small { flex-shrink: 0; color: var(--dai-muted); font-size: 0.75rem; }
+.dai-world-event-basis { color: var(--dai-muted); font-size: 0.75rem; line-height: 1.45; word-break: break-word; }
+.dai-world-event-actions { display: flex; gap: 0.4rem; }
+.dai-world-event-actions .dai-secondary-button { min-height: 1.9rem; padding: 0.15rem 0.7rem; font-size: 0.78rem; }
+.dai-world-journal { display: grid; gap: 0.3rem; }
+.dai-world-journal .dai-turn-result b { color: var(--dai-muted); }
+.dai-status-list b { color: var(--dai-muted); font-weight: 600; }
+.dai-status-list span { color: var(--dai-text); word-break: break-word; }
+.dai-status-list li[data-tone="warn"] { border-color: var(--dai-accent); }

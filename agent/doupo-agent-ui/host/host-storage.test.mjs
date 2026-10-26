@@ -22,15 +22,27 @@ assert.equal(context.saveSettingsDebouncedCalls, 1);
 assert.equal((await storage.saveChatState({ stateVersion: 'v1', state: { hp: 10 } })).status, 'saved');
 assert.deepEqual(storage.chatState().value, { stateVersion: 'v1', state: { hp: 10 } });
 assert.equal(context.saveMetadataCalls, 1);
+// 世界台账：独立于回合快照的聊天级存取；坏值拒绝写入。
+assert.equal(storage.worldState().value, undefined);
+assert.equal((await storage.saveWorldState({ clock: { day: 5 } })).status, 'saved');
+assert.deepEqual(storage.worldState().value, { clock: { day: 5 } });
+assert.equal((await storage.saveWorldState('junk')).status, 'rejected');
+assert.equal((await storage.saveWorldState(null)).status, 'rejected');
+assert.equal(context.saveMetadataCalls, 2);
 assert.equal((await storage.clean()).status, 'cleaned');
 assert.equal(context.extensionSettings.doupo_agent_ui, undefined);
 assert.equal(context.chatMetadata.doupo_agent_state, undefined);
+assert.equal(context.chatMetadata.doupo_agent_world, undefined);
 // Migrate pre-theme settings without discarding the user's existing nested fields.
 context.extensionSettings.doupo_agent_ui = {
     schemaVersion: 3, ui: { compact: true }, llm: { model: 'existing-model', apiKey: 'fixture-key' },
 };
 assert.equal(storage.settings().value.ui.theme, 'black');
-assert.equal(storage.settings().value.schemaVersion, 4);
+assert.equal(storage.settings().value.schemaVersion, 6);
+assert.equal(storage.settings().value.sandbox.inertia, 'medium');
+assert.equal(storage.updateSettings({ sandbox: { inertia: 'nonsense', maxActiveGoals: 6 } }).value.sandbox.inertia, 'medium');
+assert.equal(storage.settings().value.sandbox.maxActiveGoals, 6);
+assert.equal(DEFAULT_SETTINGS.enableSandboxMode, false);
 for (const theme of ['white', 'beige', 'black']) {
     const updated = storage.updateSettings({ ui: { theme } }).value;
     assert.equal(updated.ui.theme, theme);

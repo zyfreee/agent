@@ -1,4 +1,7 @@
 const ORDER = ['classify', 'plan', 'gather', 'adjudicate', 'compose', 'validate'];
+// Helper capabilities exposed next to the six stages (for example the prompt
+// interceptor's resolveInjection). They are accepted but never scheduled.
+const HELPERS = new Set(['resolveInjection']);
 const MAX_OUTPUT_BYTES = 128 * 1024;
 const DEFAULT_TOTAL_TIMEOUT_MS = 90000;
 
@@ -25,6 +28,10 @@ export function createTurnPipeline({ stages = {}, maxOutputBytes = MAX_OUTPUT_BY
     for (const [id, timeout] of Object.entries(stageTimeoutMs)) if (!ORDER.includes(id) || !Number.isInteger(timeout) || timeout < 1 || timeout > 120000) throw new RangeError(`阶段超时配置无效：${id}`);
     const enabled = new Map();
     for (const [id, run] of Object.entries(stages)) {
+        if (HELPERS.has(id)) {
+            if (typeof run !== 'function') throw new TypeError(`辅助能力 ${id} 必须提供函数`);
+            continue;
+        }
         if (!ORDER.includes(id)) throw new Error(`未知或不允许的回合阶段：${id}`);
         if (typeof run !== 'function') throw new TypeError(`阶段 ${id} 必须提供函数`);
         enabled.set(id, run);
@@ -78,10 +85,11 @@ export function createTurnPipeline({ stages = {}, maxOutputBytes = MAX_OUTPUT_BY
         return { status: 'cancelled' };
     }
 
-    async function run({ taskId, sessionId, branchId, triggerMessageId, stateVersion, playerInput, allowedPlayerActions = [], signal } = {}) {
+    async function run({ taskId, sessionId, branchId, triggerMessageId, stateVersion, playerInput, allowedPlayerActions = [], data, signal } = {}) {
         taskId = nonEmpty(taskId, 'taskId'); sessionId = nonEmpty(sessionId, 'sessionId'); branchId = nonEmpty(branchId, 'branchId');
         triggerMessageId = nonEmpty(triggerMessageId, 'triggerMessageId'); stateVersion = nonEmpty(stateVersion, 'stateVersion');
         if (typeof playerInput !== 'string' || playerInput.length > 50000) throw new TypeError('playerInput 必须是长度不超过 50000 的文本');
+        if (data !== undefined && (!data || typeof data !== 'object' || Array.isArray(data))) throw new TypeError('data 必须是对象');
         if (!Array.isArray(allowedPlayerActions) || allowedPlayerActions.length > 32 || allowedPlayerActions.some(action => typeof action !== 'string' || action.length > 500)) throw new TypeError('allowedPlayerActions 必须是有界文本数组');
         if (tasks.has(taskId)) return { status: 'duplicate_task', task: clone(tasks.get(taskId).public) };
         const controller = new AbortController();
@@ -114,7 +122,9 @@ export function createTurnPipeline({ stages = {}, maxOutputBytes = MAX_OUTPUT_BY
                 const context = Object.freeze({
                     taskId, sessionId, branchId, triggerMessageId, stateVersion,
                     playerInput, allowedPlayerActions: Object.freeze([...allowedPlayerActions]),
-                    previous: Object.freeze(clone(results)), signal: controller.signal,
+                    previous: Object.freeze(clone(results)),
+                    data: data === undefined ? undefined : Object.freeze(clone(data)),
+                    signal: controller.signal,
                 });
                 let timer;
                 let outcome;
