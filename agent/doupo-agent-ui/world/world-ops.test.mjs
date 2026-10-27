@@ -3,12 +3,13 @@ import { buildWorldInjection, extractOpsBlock, parseOps, stripOpsBlock, OPS_GUID
 
 const snapshot = {
     clock: { day: 5, minute: 500, label: '三年之约倒计时' },
-    info: { era: '萧家废物时期', location: '乌坦城', weather: '晴' },
+    info: { era: '萧家废物时期', location: '乌坦城', weather: '晴', reputation: '乌坦城小有名气', wanted: '被米特尔家族记恨' },
     nearEvents: [
         { id: 'e3', day: 5, text: '城东三家铺子夜里失窃', basis: '最近几楼提到的失窃传闻', weight: 'minor', pinned: false, done: false },
         { id: 'e1', day: 2, text: '已了结的旧事', done: true },
         { id: 'e4', day: 5, text: '限期比武报名', endDay: 7, done: false },
         { id: 'e5', day: 5, text: '今日到期悬赏', endDay: 4, done: false },
+        { id: 'e6', day: 5, text: '有人在收异火消息', weight: 'rumor', done: false },
     ],
     worldEvents: [
         { id: 'e9', day: 3, text: '云岚宗与纳兰家密谈退婚', weight: 'major', done: false, pinned: true },
@@ -19,11 +20,12 @@ const snapshot = {
 const injected = buildWorldInjection(snapshot);
 assert.ok(injected.includes('第 5 天 08:20'), injected);
 assert.ok(injected.includes('三年之约倒计时'));
-assert.ok(injected.includes('时期：萧家废物时期；所在地：乌坦城；天气：晴'));
+assert.ok(injected.includes('时期：萧家废物时期；所在地：乌坦城；天气：晴；名声：乌坦城小有名气；通缉度：被米特尔家族记恨'));
 assert.ok(injected.includes('身边事件'));
 assert.ok(injected.includes('(e3 第5天) 城东三家铺子夜里失窃（依据：最近几楼提到的失窃传闻）'));
 assert.ok(injected.includes('(e4 第5天) 限期比武报名（剩 3 天）'), '剩余天数按 clock.day 算');
 assert.ok(injected.includes('(e5 第5天) 今日到期悬赏（今日到期）'));
+assert.ok(injected.includes('？(e6 第5天) 有人在收异火消息（传闻·未证实）'), '传闻事件要带未证实标记');
 assert.ok(injected.includes('世界大事'));
 assert.ok(injected.includes('(e9 第3天) 云岚宗与纳兰家密谈退婚 [置顶]'));
 assert.ok(!injected.includes('已了结的旧事'));

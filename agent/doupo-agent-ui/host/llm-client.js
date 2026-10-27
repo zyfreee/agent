@@ -44,6 +44,31 @@ export function extractJson(raw) {
     }
 }
 
+/**
+ * 跟随酒馆时的采样参数：酒馆的静默生成没有“温度/top_p/惩罚项”入参，
+ * 这些值来自它自己的“聊天补全”设置对象。这里在这一轮调用期间临时换掉、
+ * 生成结束立刻还原（不写回设置、不触发保存）。
+ * 文本补全的参数来自预设（preset），没有统一的单次入口，所以只处理聊天补全。
+ */
+function applyTavernSampling(context, { temperature, topP, presencePenalty, frequencyPenalty } = {}) {
+    const settings = context?.chatCompletionSettings;
+    const mainApi = context?.mainApi;
+    const isChatCompletion = mainApi === undefined || mainApi === 'openai';
+    if (!isChatCompletion || !settings || typeof settings !== 'object') return () => {};
+    const changes = [
+        ['temp_openai', temperature],
+        ['top_p_openai', topP],
+        ['pres_pen_openai', presencePenalty],
+        ['freq_pen_openai', frequencyPenalty],
+    ].filter(([, value]) => Number.isFinite(value));
+    if (!changes.length) return () => {};
+    const saved = changes.map(([key]) => [key, settings[key]]);
+    for (const [key, value] of changes) settings[key] = value;
+    return () => {
+        for (const [key, value] of saved) settings[key] = value;
+    };
+}
+
 function coerce(type, value) {
     if (type === 'number') {
         const number = Number(value);
@@ -91,6 +116,7 @@ export function normalizeInterpretation(raw, { allowedFields = [], maxEffects = 
         && typeof rawAction.method === 'string' && rawAction.method.trim()
         ? { targetId: rawAction.targetId.trim(), method: rawAction.method.trim() }
         : null;
+    const category = typeof object.category === 'string' ? object.category.trim().slice(0, 24) : '';
     const ambiguities = Array.isArray(object.ambiguities) ? object.ambiguities.filter(item => typeof item === 'string' && item.trim()).slice(0, 32) : [];
     const requiredModules = Array.isArray(object.requiredModules) ? object.requiredModules.filter(item => typeof item === 'string' && item.trim()).slice(0, 32) : [];
     const days = Number.isFinite(Number(object.days)) && Number(object.days) > 0 ? Math.min(365, Math.floor(Number(object.days))) : 1;
@@ -100,6 +126,7 @@ export function normalizeInterpretation(raw, { allowedFields = [], maxEffects = 
         confidence,
         explicitAction: object.explicitAction === true,
         playerAction,
+        category,
         effects,
         rejectedEffects,
         outcome: typeof object.outcome === 'string' ? object.outcome.slice(0, 500) : '',
@@ -109,19 +136,25 @@ export function normalizeInterpretation(raw, { allowedFields = [], maxEffects = 
     };
 }
 
-export function buildInterpretPrompt({ input, state, allowedFields }) {
+/** 共享的字段表：给 interpret 与类别判定同一份"可写字段 + 当前值"清单。 */
+function fieldTable(allowedFields, state) {
     const fields = Array.isArray(allowedFields) ? allowedFields : [];
     const current = field => {
         const value = state && typeof state === 'object' ? state?.[field.targetId]?.[field.field] : undefined;
         return value === undefined ? '未设定' : JSON.stringify(value);
     };
-    const fieldList = fields
+    return fields
         .map(field => `- ${field.targetId}.${field.field}（${field.type}，当前 ${current(field)}${field.writer ? `，写入者 ${field.writer}` : ''}）`)
         .join('\n') || '- （没有可用字段）';
+}
+
+export function buildInterpretPrompt({ input, state, allowedFields }) {
+    const fieldList = fieldTable(allowedFields, state);
     return [
         '请把玩家这一轮的消息解析成下面这个 JSON 结构：',
         '{"type":"query|conversation|explicit_action|time_advance|due_event|historical_operation|system_operation|unclear",',
         ' "task":"ordinary_interaction|explicit_action|complex_action|system_operation|historical_operation|time_advance|unclear",',
+        ' "category":"alchemy=丹药相关|cultivation=修炼或冲击境界|combat=战斗伤害|general=其他行动|none=非行动",',
         ' "explicitAction": true/false, "confidence": 0到1, "ambiguities": ["需要玩家补充的点"],',
         ' "requiredModules": [], "playerAction": {"targetId":"目标","method":"动作"} 或 null,',
         ' "effects": [{"targetId":"目标","field":"字段","type":"set|add|remove","value":数值,"reason":"依据"}],',
@@ -135,6 +168,26 @@ export function buildInterpretPrompt({ input, state, allowedFields }) {
         `当前状态：${state && typeof state === 'object' ? JSON.stringify(state) : '{}'}`,
         '',
         `玩家消息：${input}`,
+    ].join('\n');
+}
+
+/** 类别判定的 user 提示词：类别规则在 system 里，这里带输入、初步提议和字段表。 */
+export function buildAdjudicatePrompt({ categoryLabel, input, state, allowedFields, preliminary }) {
+    const fieldList = fieldTable(allowedFields, state);
+    const prelimLines = (Array.isArray(preliminary) ? preliminary : [])
+        .map(effect => `- ${effect?.targetId}.${effect?.field} ${effect?.type} ${JSON.stringify(effect?.value)}${effect?.reason ? `（${effect.reason}）` : ''}`)
+        .join('\n') || '- （无初步提议）';
+    return [
+        `判定类别：${categoryLabel ?? '通用判定'}`,
+        `玩家消息：${input}`,
+        '解析器的初步提议（仅供参考，可以推翻）：',
+        prelimLines,
+        '',
+        `当前状态：${state && typeof state === 'object' ? JSON.stringify(state) : '{}'}`,
+        '可用字段表：',
+        fieldList,
+        '',
+        '请按判定规则复核并输出最终的 {"effects":[…],"outcome":"…"}；规则没让写的一律不写，与初步提议不一致时以你的判定为准。只输出 JSON。',
     ].join('\n');
 }
 
@@ -205,20 +258,76 @@ function withTimeout(promise, timeoutMs, signal) {
     });
 }
 
+/** 拉取自定义接口的模型清单：面板上“拉取模型”用它列出可选模型，省得手抄模型名。 */
+export async function listModels({ baseUrl = '', apiKey = '', provider = '', fetchImpl, signal } = {}) {
+    const base = String(baseUrl || '').trim().replace(/\/+$/, '');
+    if (!base) return { status: 'no_endpoint', models: [], error: '先填接口地址' };
+    const fetchFn = fetchImpl ?? globalThis.fetch;
+    if (typeof fetchFn !== 'function') return { status: 'failed', models: [], error: '当前环境没有可用的网络请求接口' };
+    const isAnthropic = provider === 'anthropic';
+    // 大多数接口把 /v1 放在地址里，但也有人只填到域名：两种都照顾，别让人为了拉模型去猜路径。
+    const url = /\/v\d+$/.test(base)
+        ? `${base}/models`
+        : `${base}/v1/models`;
+    const headers = {};
+    const key = String(apiKey || '').trim();
+    if (key) {
+        if (isAnthropic) {
+            headers['x-api-key'] = key;
+            headers['anthropic-version'] = '2023-06-01';
+        } else {
+            headers.authorization = `Bearer ${key}`;
+        }
+    }
+    try {
+        const response = await fetchFn(url, { method: 'GET', headers, signal });
+        if (!response?.ok) return { status: 'failed', models: [], error: `接口返回 HTTP ${response?.status ?? '未知'}` };
+        const payload = await response.json();
+        const rows = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload?.models) ? payload.models : [];
+        const models = rows
+            .map(row => (typeof row === 'string' ? row : row?.id || row?.name || ''))
+            .filter(Boolean)
+            .slice(0, 200);
+        return { status: models.length ? 'ok' : 'empty', models };
+    } catch (error) {
+        return { status: 'failed', models: [], error: `拉取模型失败：${error?.message ?? error}` };
+    }
+}
+
 /** Real model client: reuses the Tavern connection by default, or an OpenAI-compatible endpoint. */
 export function createLlmClient({ getSettings, getContext, fetchImpl } = {}) {
     if (typeof getSettings !== 'function') throw new TypeError('getSettings 必须是函数');
 
-    function resolveConnection() {
+    /**
+     * 选连接：hint 是这一次调用自己的要求（记录员/场记可以各自选跟随酒馆或自定义），
+     * 没给 hint 才看设置页的全局模式。custom 是这一次调用自带的一套接口参数（地址/密钥/模型），
+     * 有不完整的地方就沿用“模型与连接”页填的值。
+     */
+    function resolveConnection(hint, modelHint, custom) {
         const settings = getSettings() ?? {};
         const llm = settings.llm ?? {};
         const context = getContext?.();
-        if (llm.useSillyTavernConnection !== false && typeof context?.generateQuietPrompt === 'function') {
+        // 这一次调用自带的自定义接口：地址优先用它，密钥/服务商/模型缺哪项就沿用全局。
+        const own = custom && typeof custom === 'object' && typeof custom.baseUrl === 'string' && custom.baseUrl.trim()
+            ? { ...llm, baseUrl: custom.baseUrl.trim(), apiKey: typeof custom.apiKey === 'string' && custom.apiKey.trim() ? custom.apiKey.trim() : llm.apiKey, provider: custom.provider || llm.provider, model: typeof custom.model === 'string' && custom.model.trim() ? custom.model.trim() : llm.model }
+            : null;
+        // 设置页的“跟随酒馆 / 自定义”优先；旧版布尔开关只在没写 mode 时兜底。
+        const mode = hint === 'custom' || hint === 'tavern' ? hint
+            : llm.mode === 'custom' ? 'custom'
+                : llm.mode === 'tavern' ? 'tavern'
+                    : llm.useSillyTavernConnection === false ? 'custom' : 'tavern';
+        const usable = typeof context?.generateQuietPrompt === 'function';
+        if (mode === 'tavern' && usable && !own) {
             return { kind: 'sillytavern', context, llm };
         }
-        if (typeof llm.baseUrl === 'string' && llm.baseUrl.trim() && typeof llm.model === 'string' && llm.model.trim()) {
-            return { kind: 'openai', llm, fetchImpl: fetchImpl ?? globalThis.fetch };
+        const source = own ?? llm;
+        const hasEndpoint = typeof source.baseUrl === 'string' && source.baseUrl.trim()
+            && ((typeof source.model === 'string' && source.model.trim()) || (typeof modelHint === 'string' && modelHint.trim()));
+        if (hasEndpoint) {
+            return { kind: 'openai', llm: source, fetchImpl: fetchImpl ?? globalThis.fetch };
         }
+        // 选了“跟随酒馆”，但宿主没有静默生成接口：能拿到上下文就按酒馆连接记账，否则视为未配置。
+        if (mode === 'tavern' && context && !own) return { kind: 'sillytavern', context, llm };
         return null;
     }
 
@@ -226,17 +335,49 @@ export function createLlmClient({ getSettings, getContext, fetchImpl } = {}) {
         return resolveConnection() !== null;
     }
 
-    async function complete({ system, user, jsonSchema, signal }) {
-        const connection = resolveConnection();
+    async function complete({ system, user, jsonSchema, signal, overrides = {} } = {}) {
+        // overrides.connection 让单次调用自己选连接：'tavern' = 跟随酒馆，'custom' = 自定义接口。
+        const requested = overrides.connection === 'custom' ? 'custom'
+            : overrides.connection === 'tavern' ? 'tavern' : null;
+        const custom = overrides.custom && typeof overrides.custom === 'object' ? overrides.custom : null;
+        const connection = resolveConnection(requested, overrides.model, custom);
         if (!connection) {
-            const error = new Error('模型连接未配置：请启用“使用酒馆当前连接”，或填写接口地址与模型名称。');
-            error.code = 'llm_not_configured';
+            const error = new Error(requested === 'custom'
+                ? '这次调用要用的自定义模型还没配好：填上接口地址和模型名（世界影响页的模型设置里），或把它改回跟随酒馆。'
+                : '模型连接未配置：请启用“使用酒馆当前连接”，或填写接口地址与模型名称。');
+            error.code = requested === 'custom' ? 'llm_custom_not_configured' : 'llm_not_configured';
             throw error;
         }
         const llm = connection.llm ?? {};
-        const temperature = Number.isFinite(Number(llm.temperature)) ? Number(llm.temperature) : 0.7;
-        const maxTokens = Number.isFinite(Number(llm.maxTokens)) ? Math.max(64, Math.floor(Number(llm.maxTokens))) : 2048;
+        // 单次覆盖：世界决定等调用可以在设置里指定自己的模型与温度（酒馆连接模式下模型沿用当前选择）。
+        const temperature = Number.isFinite(Number(overrides.temperature))
+            ? Math.min(2, Math.max(0, Number(overrides.temperature)))
+            : Number.isFinite(Number(llm.temperature)) ? Number(llm.temperature) : 0.7;
+        const maxTokens = Number.isFinite(Number(overrides.maxTokens)) && Number(overrides.maxTokens) > 0
+            ? Math.max(64, Math.floor(Number(overrides.maxTokens)))
+            : Number.isFinite(Number(llm.maxTokens)) ? Math.max(64, Math.floor(Number(llm.maxTokens))) : 2048;
+        const model = typeof overrides.model === 'string' && overrides.model.trim() ? overrides.model.trim() : llm.model;
         const timeoutMs = Number.isFinite(Number(llm.timeoutMs)) ? Math.min(600000, Math.max(1000, Math.floor(Number(llm.timeoutMs)))) : 60000;
+        // 采样参数：没填（0/空）就不指定，沿用当前连接自己的设置。
+        const topP = Number.isFinite(Number(overrides.topP)) && Number(overrides.topP) > 0 && Number(overrides.topP) <= 1
+            ? Number(overrides.topP) : undefined;
+        const presencePenalty = Number.isFinite(Number(overrides.presencePenalty)) && Number(overrides.presencePenalty) !== 0
+            ? Math.min(2, Math.max(-2, Number(overrides.presencePenalty))) : undefined;
+        const frequencyPenalty = Number.isFinite(Number(overrides.frequencyPenalty)) && Number(overrides.frequencyPenalty) !== 0
+            ? Math.min(2, Math.max(-2, Number(overrides.frequencyPenalty))) : undefined;
+        const temperatureSet = Number.isFinite(Number(overrides.temperature)) && Number(overrides.temperature) > 0;
+        const maxTokensSet = Number.isFinite(Number(overrides.maxTokens)) && Number(overrides.maxTokens) > 0;
+        // 自定义接口路径的兜底：这次调用没指定采样参数时，用“模型与连接”页填的全局值（0 = 不指定）。
+        // 跟随酒馆的路径不用全局兜底——酒馆有自己的采样设置，不越权临时改。
+        const fallbackNumber = (value, { min, max, exclusiveZero = true }) => {
+            const num = Number(value);
+            if (!Number.isFinite(num)) return undefined;
+            if (exclusiveZero ? num <= 0 : num === 0) return undefined;
+            return Math.min(max, Math.max(min, num));
+        };
+        const effectiveTopP = Number.isFinite(topP) ? topP : fallbackNumber(llm.topP, { min: 0, max: 1 });
+        const effectivePresence = Number.isFinite(presencePenalty) ? presencePenalty : fallbackNumber(llm.presencePenalty, { min: -2, max: 2, exclusiveZero: false });
+        const effectiveFrequency = Number.isFinite(frequencyPenalty) ? frequencyPenalty : fallbackNumber(llm.frequencyPenalty, { min: -2, max: 2, exclusiveZero: false });
 
         if (connection.kind === 'sillytavern') {
             // 酒馆文档里的签名是对象形式 generateQuietPrompt({ quietPrompt, jsonSchema })。
@@ -244,8 +385,21 @@ export function createLlmClient({ getSettings, getContext, fetchImpl } = {}) {
             // 会让静默生成的 JSON 直接落进聊天记录，必须用对象形式。
             const options = { quietPrompt: `${system}\n\n${user}` };
             if (jsonSchema && typeof jsonSchema === 'object') options.jsonSchema = jsonSchema;
-            const reply = await withTimeout(Promise.resolve(connection.context.generateQuietPrompt(options)), timeoutMs, signal);
-            return typeof reply === 'string' ? reply : String(reply?.text ?? '');
+            // 输出长度是酒馆官方支持的覆盖项（responseLength）：生成期间临时换，结束自动还原。
+            if (maxTokensSet) options.responseLength = maxTokens;
+            // 温度/top_p/惩罚项没有单次参数，只能临时改酒馆“聊天补全”的采样设置，生成完立刻还原。
+            const restoreSampling = applyTavernSampling(connection.context, {
+                temperature: temperatureSet ? temperature : undefined,
+                topP,
+                presencePenalty,
+                frequencyPenalty,
+            });
+            try {
+                const reply = await withTimeout(Promise.resolve(connection.context.generateQuietPrompt(options)), timeoutMs, signal);
+                return typeof reply === 'string' ? reply : String(reply?.text ?? '');
+            } finally {
+                restoreSampling();
+            }
         }
 
         const fetchFn = connection.fetchImpl;
@@ -254,21 +408,47 @@ export function createLlmClient({ getSettings, getContext, fetchImpl } = {}) {
         const onAbort = () => controller.abort();
         if (signal?.aborted) onAbort();
         else signal?.addEventListener('abort', onAbort, { once: true });
-        const url = `${String(llm.baseUrl).replace(/\/+$/, '')}/chat/completions`;
+        // Anthropic 兼容接口走 /v1/messages，鉴权头、请求体和返回结构都和 OpenAI 不同。
+        const isAnthropic = llm.provider === 'anthropic';
+        const base = String(llm.baseUrl).replace(/\/+$/, '');
+        const url = isAnthropic
+            ? (base.endsWith('/v1') ? `${base}/messages` : `${base}/v1/messages`)
+            : `${base}/chat/completions`;
         const headers = { 'content-type': 'application/json' };
-        if (typeof llm.apiKey === 'string' && llm.apiKey.trim()) headers.authorization = `Bearer ${llm.apiKey.trim()}`;
+        const apiKey = typeof llm.apiKey === 'string' ? llm.apiKey.trim() : '';
+        if (apiKey) {
+            if (isAnthropic) {
+                headers['x-api-key'] = apiKey;
+                headers['anthropic-version'] = '2023-06-01';
+            } else {
+                headers.authorization = `Bearer ${apiKey}`;
+            }
+        }
+        const body = isAnthropic
+            ? {
+                model: model || undefined,
+                max_tokens: maxTokens,
+                temperature,
+                ...(Number.isFinite(effectiveTopP) ? { top_p: effectiveTopP } : {}),
+                system,
+                messages: [{ role: 'user', content: user }],
+            }
+            : {
+                model: model || undefined,
+                temperature,
+                max_tokens: maxTokens,
+                ...(Number.isFinite(effectiveTopP) ? { top_p: effectiveTopP } : {}),
+                ...(Number.isFinite(effectivePresence) ? { presence_penalty: effectivePresence } : {}),
+                ...(Number.isFinite(effectiveFrequency) ? { frequency_penalty: effectiveFrequency } : {}),
+                messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+            };
         let response;
         try {
             response = await withTimeout(fetchFn(url, {
                 method: 'POST',
                 headers,
                 signal: controller.signal,
-                body: JSON.stringify({
-                    model: llm.model,
-                    temperature,
-                    max_tokens: maxTokens,
-                    messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
-                }),
+                body: JSON.stringify(body),
             }), timeoutMs, signal);
         } catch (error) {
             if (error?.name === 'AbortError') throw new Error('模型请求已取消');
@@ -278,7 +458,9 @@ export function createLlmClient({ getSettings, getContext, fetchImpl } = {}) {
         }
         if (!response?.ok) throw new Error(`模型接口返回 HTTP ${response?.status ?? '未知'}`);
         const payload = await response.json();
-        const content = payload?.choices?.[0]?.message?.content;
+        const content = isAnthropic
+            ? (Array.isArray(payload?.content) ? payload.content.filter(part => part?.type === 'text' && typeof part.text === 'string').map(part => part.text).join('') : undefined)
+            : payload?.choices?.[0]?.message?.content;
         if (typeof content !== 'string' || !content.trim()) throw new Error('模型返回内容为空');
         return content;
     }
@@ -287,6 +469,20 @@ export function createLlmClient({ getSettings, getContext, fetchImpl } = {}) {
         needText(input, 'input');
         const raw = await complete({ system: INTERPRET_SYSTEM, user: buildInterpretPrompt({ input, state, allowedFields }), signal });
         return normalizeInterpretation(extractJson(raw), { allowedFields });
+    }
+
+    /** 类别判定：system 是可改的类别规则，输出复用行动单的校验管道。失败直接抛出，由调用方退回初步解析。 */
+    async function adjudicateAction({ system, categoryLabel, input, state, allowedFields, preliminary, signal, overrides } = {}) {
+        needText(input, 'input');
+        if (typeof system !== 'string' || !system.trim()) throw new Error('缺少类别判定提示词');
+        const raw = await complete({
+            system,
+            user: buildAdjudicatePrompt({ categoryLabel, input, state, allowedFields, preliminary }),
+            signal,
+            ...(overrides && typeof overrides === 'object' ? { overrides } : {}),
+        });
+        const normalized = normalizeInterpretation(extractJson(raw), { allowedFields });
+        return { effects: normalized.effects, outcome: normalized.outcome, rejectedEffects: normalized.rejectedEffects };
     }
 
     /**
@@ -338,5 +534,5 @@ export function createLlmClient({ getSettings, getContext, fetchImpl } = {}) {
         return { text, claims: Array.isArray(parsed?.claims) ? parsed.claims : [] };
     }
 
-    return Object.freeze({ configured, interpret, selectSettings, compose, complete });
+    return Object.freeze({ configured, interpret, adjudicateAction, selectSettings, compose, complete });
 }

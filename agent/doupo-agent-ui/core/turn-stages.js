@@ -1,4 +1,5 @@
 import { applyChanges } from './turn-state.js';
+import { checkEffects, resolveCategory } from './settle-categories.js';
 
 const MAX_CLAIMS = 50;
 const MAX_CLAIM_TEXT = 2000;
@@ -39,6 +40,8 @@ export function createTurnStages({
     getLimits = () => ({ maxEntries: 8 }),
     getWriter = () => 'actions',
     getRules,
+    settleAdjudicator = null,
+    getWritableFields = () => [],
     settings = null,
     select = null,
     getSettingBudget = () => ({ maxCandidates: 40, maxItems: 8, injectionBudget: 0 }),
@@ -273,12 +276,9 @@ export function createTurnStages({
         };
     }
 
-    function synthesizeRules(ctx, data) {
-        if (typeof getRules === 'function') {
-            const custom = getRules({ taskType: data.taskType, interpretation: data.interpretation, state: readState(ctx), taskId: ctx.taskId });
-            if (Array.isArray(custom) && custom.length) return custom;
-        }
-        const effects = Array.isArray(data.interpretation?.effects) ? data.interpretation.effects : [];
+    function synthesizeRules(ctx, data, effectsSource, customRules) {
+        if (customRules) return customRules;
+        const effects = Array.isArray(effectsSource) && effectsSource.length ? effectsSource : (Array.isArray(data.interpretation?.effects) ? data.interpretation.effects : []);
         return [{
             id: `turn-${ctx.taskId}`,
             version: '1',
@@ -321,9 +321,43 @@ export function createTurnStages({
     async function resolveAction(ctx, data, state) {
         const action = data.authorization?.playerAction;
         if (!action || typeof action !== 'object') throw new Error('缺少已确认的玩家行动，不能结算。');
-        const effects = Array.isArray(data.interpretation?.effects) ? data.interpretation.effects : [];
-        if (!effects.length) throw new Error('模型没有给出可结算的效果，本轮不写入状态。');
-        const rules = synthesizeRules(ctx, data);
+        const interpretation = data.interpretation ?? {};
+        const customRules = typeof getRules === 'function'
+            ? getRules({ taskType: data.taskType, interpretation, state, taskId: ctx.taskId })
+            : null;
+        const useCustomRules = Array.isArray(customRules) && customRules.length > 0;
+        let effects = Array.isArray(interpretation.effects) ? interpretation.effects : [];
+        let described = typeof interpretation.outcome === 'string' && interpretation.outcome.trim() ? interpretation.outcome.trim() : '';
+        const notes = [];
+        // 分类判定：interpret 给出类别与初步效果，类别提示词再独立判一次；
+        // 判定失败或未接入时退回初步效果，不阻断回合。自定义规则路径不经过类别判定。
+        const category = resolveCategory(interpretation.category);
+        if (!useCustomRules && category && typeof settleAdjudicator === 'function') {
+            try {
+                const decided = await settleAdjudicator({
+                    category: category.id,
+                    input: ctx.playerInput,
+                    state,
+                    allowedFields: getWritableFields(),
+                    preliminary: effects,
+                });
+                if (Array.isArray(decided?.effects)) {
+                    effects = decided.effects;
+                    if (typeof decided?.outcome === 'string' && decided.outcome.trim()) described = decided.outcome.trim();
+                    if (decided.rejectedEffects > 0) notes.push(`类别判定剔除 ${decided.rejectedEffects} 条越界效果`);
+                }
+            } catch (error) {
+                notes.push(`类别判定失败，退回初步解析：${String(error?.message ?? error).slice(0, 100)}`);
+            }
+        }
+        // 类别复核：脚本按类别规则逐条把关，不通过的丢弃；未识别类别不设限（兼容旧解析输出）。
+        if (!useCustomRules) {
+            const checked = checkEffects(category?.id ?? '', effects, state);
+            effects = checked.effects;
+            if (checked.rejected.length) notes.push(`类别复核剔除 ${checked.rejected.length} 条：${checked.rejected.slice(0, 3).map(item => item.reason).join('；')}`);
+        }
+        if (!useCustomRules && !effects.length) throw new Error('模型没有给出可结算的效果，本轮不写入状态。');
+        const rules = synthesizeRules(ctx, data, effects, useCustomRules ? customRules : null);
         if (!rules[0]?.effects?.length) throw new Error('结算规则为空，本轮不写入状态。');
         const resolved = actions.resolve({
             actionId: ctx.taskId,
@@ -339,7 +373,6 @@ export function createTurnStages({
         if (resolved.status !== 'candidate') throw new Error(`行动结算未通过：${resolved.reason ?? resolved.status}`);
         const changes = normalizeChanges(ctx, 'action', resolved.changes);
         if (!changes.length) throw new Error('行动没有产生可写入的变化。');
-        const described = typeof data.interpretation?.outcome === 'string' && data.interpretation.outcome.trim();
         return {
             changes,
             nextState: applyChanges(state, changes),
@@ -347,7 +380,7 @@ export function createTurnStages({
             outcome: described || OUTCOME_TEXT[resolved.outcome] || '行动已结算',
             ruleOutcome: resolved.outcome,
             elapsed: resolved.elapsed ?? 0,
-            note: '变更已由规则引擎计算，等待总控审核。',
+            note: notes.length ? `变更已由规则引擎计算，等待总控审核。${notes.join(' ')}` : '变更已由规则引擎计算，等待总控审核。',
         };
     }
 

@@ -53,6 +53,21 @@ assert.equal(runtime.status().info.weather, '晴');
 assert.equal(runtime.status().clock.day, 10);
 assert.equal(runtime.status().clock.label, '三年之约倒计时');
 
+// —— 传闻档与名声/通缉字段 ——
+result = runtime.apply([
+    { op: 'addEvent', scope: 'near', text: '酒馆传闻：有人在收异火消息', weight: 'rumor' },
+    { op: 'addEvent', scope: 'near', text: '坏档位', weight: 'secret' },
+    { op: 'setInfo', field: 'reputation', text: '乌坦城小有名气' },
+    { op: 'setInfo', field: 'wanted', text: '被米特尔家族记恨' },
+]);
+assert.equal(result.applied.length, 4, '不认识的档位静默归一，不整条拒绝');
+const rumorEvent = runtime.snapshot().nearEvents.find(event => event.text.startsWith('酒馆传闻'));
+const normalizedEvent = runtime.snapshot().nearEvents.find(event => event.text === '坏档位');
+assert.equal(rumorEvent.weight, 'rumor', '传闻档位要保留');
+assert.equal(normalizedEvent.weight, 'minor', '未知档位归一为普通');
+assert.equal(runtime.status().info.reputation, '乌坦城小有名气');
+assert.equal(runtime.status().info.wanted, '被米特尔家族记恨');
+
 // —— opId 幂等：重放同一批指令不再二次记账 ——
 const batch = [{ op: 'addEvent', scope: 'near', text: '重放测试', opId: 'tick-1' }];
 result = runtime.apply(batch, { source: 'llm' });
@@ -132,6 +147,16 @@ assert.equal(runtime.snapshot().info.weather, '', '非字符串信息应被清�
 assert.equal(runtime.snapshot().nearEvents.length, 1);
 assert.equal(runtime.snapshot().nearEvents[0].text, '存档事件');
 assert.equal(runtime.snapshot().nearEvents[0].basis.length, 80, '超长依据截到 80 字');
+
+// —— 存档 roundtrip：名声/通缉度与时间戳不许在恢复时丢失 ——
+runtime.apply([{ op: 'setInfo', field: 'reputation', text: '乌坦城小有名气' }, { op: 'setInfo', field: 'wanted', text: '被米特尔家族记恨' }]);
+const saved = JSON.parse(JSON.stringify(runtime.snapshot()));
+const reloaded = createWorldRuntime({ now: () => 'restore-time' });
+reloaded.restore(saved);
+const back = reloaded.snapshot();
+assert.equal(back.info.reputation, '乌坦城小有名气', '名声要随存档恢复');
+assert.equal(back.info.wanted, '被米特尔家族记恨', '通缉度要随存档恢复');
+assert.equal(back.updatedAt, saved.updatedAt, '存档时间戳要保留，不能被恢复时刻覆盖');
 result = runtime.apply([{ op: 'addEvent', scope: 'near', text: '新事件' }]);
 const ids = runtime.snapshot().nearEvents.map(event => event.id);
 assert.ok(ids.some(id => Number(id.slice(1)) > 9), `恢复后编号应接续最大值：${ids.join(',')}`);

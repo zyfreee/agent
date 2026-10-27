@@ -108,4 +108,17 @@ assert.equal((await router.run({ request: tamperRequest, input: { actionId: 't',
 assert.equal(router.prepareCommit({ requestId: 'route-tamper', messageId: 'tamper-msg', candidate: { nextState: { hp: 1 } } }).reason, 'candidate_tampered');
 const retryRun = await router.run({ request: failedRequest, input: { query: '重试', sourceIds: ['manual'] }, taskId: 'route-9' });
 assert.equal(retryRun.status, 'executed');
+// 行动结算总开关关闭：行动请求不再被拦截，降级为普通交互。
+const settleOffRouter = createRequestRouter({ classifier: createRequestClassifier(), runner, getEnabledModuleIds: () => ['facts-query'] });
+const downgraded = settleOffRouter.prepare({ ...base, requestId: 'route-settle-off', playerConfirmed: true, interpretation: actionInput });
+assert.equal(downgraded.status, 'ready');
+assert.equal(downgraded.taskType, 'ordinary_interaction');
+assert.equal(downgraded.authorization.playerAction, null);
+assert.deepEqual(downgraded.plan.moduleIds, ['facts-query']);
+const unconfirmedDowngraded = settleOffRouter.prepare({ ...base, requestId: 'route-settle-off-2', interpretation: actionInput });
+assert.equal(unconfirmedDowngraded.status, 'ready');
+assert.equal(unconfirmedDowngraded.taskType, 'ordinary_interaction');
+// 总开关只影响行动类请求；普通闲聊里的含糊仍照常要求补充。
+const ordinaryClarify = settleOffRouter.prepare({ ...base, requestId: 'route-settle-off-3', interpretation: { type: 'conversation', task: 'ordinary_interaction', ambiguities: ['是否购买？'] } });
+assert.equal(ordinaryClarify.status, 'needs_clarification');
 console.log('request router tests passed');

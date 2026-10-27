@@ -8,7 +8,8 @@
  */
 
 const SCOPES = Object.freeze(['near', 'world']);
-const INFO_FIELDS = Object.freeze(['weather', 'location', 'era']);
+const WEIGHTS = Object.freeze(['minor', 'major', 'rumor']);
+const INFO_FIELDS = Object.freeze(['weather', 'location', 'era', 'reputation', 'wanted']);
 const MAX_EVENT_TEXT = 300;
 const MAX_BASIS_TEXT = 80;
 const MAX_EVENT_DAYS = 90;
@@ -79,7 +80,7 @@ function normalizeState(raw, now) {
                 text: body.slice(0, MAX_EVENT_TEXT),
                 basis: text(item.basis).slice(0, MAX_BASIS_TEXT),
                 endDay: clampInt(item.endDay, 1, 99999, null),
-                weight: item.weight === 'major' ? 'major' : 'minor',
+                weight: WEIGHTS.includes(item.weight) ? item.weight : 'minor',
                 pinned: item.pinned === true,
                 done: item.done === true,
                 resolvedDay: clampInt(item.resolvedDay, 1, 99999, null),
@@ -93,15 +94,11 @@ function normalizeState(raw, now) {
             minute: clampInt(clockSource.minute, 0, MINUTE_OF_DAY - 1, 480),
             label: text(clockSource.label).slice(0, MAX_LABEL_TEXT),
         },
-        info: {
-            weather: text(infoSource.weather).slice(0, MAX_INFO_TEXT),
-            location: text(infoSource.location).slice(0, MAX_INFO_TEXT),
-            era: text(infoSource.era).slice(0, MAX_INFO_TEXT),
-        },
+        info: Object.fromEntries(INFO_FIELDS.map(field => [field, text(infoSource[field]).slice(0, MAX_INFO_TEXT)])),
         nearEvents: cleanEvents(source.nearEvents, 'near'),
         worldEvents: cleanEvents(source.worldEvents, 'world'),
         log: (Array.isArray(source.log) ? source.log : []).slice(-DEFAULT_MAX_LOG),
-        updatedAt: now(),
+        updatedAt: text(source.updatedAt) || now(),
     };
 }
 
@@ -214,8 +211,10 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
                 if (span === null) return { ok: false, reason: 'bad_days' };
                 endDay = day + span - 1;
             }
+            // 同栏里已有同文进行中的事件就不重记，防止模型一轮里反复登记同一件事。
+            if (eventsOf(scope).some(event => !event.done && event.text === body)) return { ok: false, reason: 'duplicate_text' };
             const basis = text(op.basis).slice(0, MAX_BASIS_TEXT);
-            const event = { id: nextId(), scope, day, text: body, basis, endDay, weight: op.weight === 'major' ? 'major' : 'minor', pinned: false, done: false, resolvedDay: null };
+            const event = { id: nextId(), scope, day, text: body, basis, endDay, weight: WEIGHTS.includes(op.weight) ? op.weight : 'minor', pinned: false, done: false, resolvedDay: null };
             eventsOf(scope).push(event);
             prune(scope);
             const expiryNote = endDay !== null ? `，有效至第 ${endDay} 天` : '';
@@ -268,8 +267,9 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
 
     function apply(operations, { source = 'llm', floor = null } = {}) {
         const floorKey = Number.isInteger(floor) && floor >= 0 ? floor : null;
+        const fromModel = source === 'llm' || source === 'decide';
         // 同一楼重新生成（重 roll/换 swipe）：先把上一版指令原样撤销，再执行新指令，避免重复记账。
-        if (source === 'llm' && floorKey !== null && lastFloor && lastFloor.floor === floorKey) {
+        if (fromModel && floorKey !== null && lastFloor && lastFloor.floor === floorKey) {
             for (const undo of [...lastFloor.undo].reverse()) runOne(undo, 'revert');
             state.log.push({ at: now(), source: 'revert', summaries: [`第 ${floorKey + 1} 楼重新生成：已撤销上一版世界指令`], rejected: 0 });
             state.log = state.log.slice(-maxLog);
@@ -297,7 +297,7 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
                 rejected.push({ op: text(op?.op), reason: result.reason });
             }
         }
-        if (source === 'llm' && floorKey !== null) lastFloor = { floor: floorKey, undo: undoSteps };
+        if (fromModel && floorKey !== null) lastFloor = { floor: floorKey, undo: undoSteps };
         if (applied.length) {
             state.updatedAt = now();
             state.log.push({ at: now(), source, summaries: applied.map(item => item.summary), rejected: rejected.length });
@@ -336,5 +336,12 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
         return { status: 'reset', ...status() };
     }
 
-    return Object.freeze({ apply, snapshot, status, restore, reset, formatClock: () => formatClock(state.clock), config: Object.freeze({ maxEvents, maxLog, maxOps }) });
+    /** 不改世界、只往流水里记一笔（模型判断无变化、解析失败这类"决定结果"）。 */
+    function note(message, { source = 'decide' } = {}) {
+        state.log.push({ at: now(), source, summaries: [String(message).slice(0, MAX_EVENT_TEXT)], rejected: 0 });
+        state.log = state.log.slice(-maxLog);
+        return { status: 'noted' };
+    }
+
+    return Object.freeze({ apply, snapshot, status, restore, reset, note, formatClock: () => formatClock(state.clock), config: Object.freeze({ maxEvents, maxLog, maxOps }) });
 }

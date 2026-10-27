@@ -49,7 +49,14 @@ export function createRequestRouter({ classifier, runner, getEnabledModuleIds, o
 
     function prepare(request) {
         const capabilities = getCapabilities?.() ?? { status: 'unknown' };
-        const classified = classifier.classify(request);
+        let classified = classifier.classify(request);
+        const enabledModuleIds = getEnabledModuleIds();
+        // 行动结算总开关关闭：行动类请求降级为普通交互——正文照常生成，只是不结算、
+        // 不改状态，也不再因行动未确认或含糊而拦截回合。时间推进走世界运转，不受此开关影响。
+        const actionShaped = ['explicit_action', 'complex_action'].includes(classified.task) || classified.type === 'explicit_action';
+        if (!enabledModuleIds.includes('action-resolve') && actionShaped && ['classified', 'needs_clarification'].includes(classified.status)) {
+            classified = { ...classified, status: 'classified', task: 'ordinary_interaction', executionMode: 'read_only', playerAction: null, requiredModules: [], ambiguities: [], reason: undefined, note: '行动结算已关闭，本轮按普通交互处理。' };
+        }
         if (classified.status !== 'classified') return { status: classified.status, reason: classified.reason, classified, capabilities };
         if (capabilities.status === 'degraded' && classified.task !== 'ordinary_interaction' && classified.task !== 'system_operation') return { status: 'needs_review', reason: 'host_capability_degraded', classified, capabilities };
         const authorization = Object.freeze({ requestId: classified.requestId, sessionId: classified.sessionId, branchId: classified.branchId, stateVersion: classified.stateVersion, task: classified.task, executionMode: classified.executionMode, playerAction: classified.playerAction ? structuredClone(classified.playerAction) : null });
@@ -58,7 +65,6 @@ export function createRequestRouter({ classifier, runner, getEnabledModuleIds, o
         if (!allowedModuleId) return { status: 'needs_review', reason: 'no_safe_default_route', classified, authorization, capabilities };
         const requestedModuleIds = classified.requiredModules.length ? classified.requiredModules : [allowedModuleId];
         if (requestedModuleIds.some(id => id !== allowedModuleId)) return { status: 'needs_review', reason: 'requested_module_outside_task_route', classified, authorization, capabilities };
-        const enabledModuleIds = getEnabledModuleIds();
         const plan = runner.plan({ taskType, requestedModuleIds, enabledModuleIds });
         if (plan.status !== 'planned') return { status: 'needs_review', reason: plan.reason, classified, authorization, capabilities, plan };
         return { status: 'ready', classified, authorization, capabilities, taskType, plan, enabledModuleIds: [...enabledModuleIds] };

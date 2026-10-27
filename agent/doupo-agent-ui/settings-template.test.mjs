@@ -15,11 +15,11 @@ assert.match(entry, /renderExtensionTemplateAsync\('third-party\/agent', 'settin
 assert.match(entry, /new URL\('\.\/settings\.html', import\.meta\.url\)/);
 assert.match(entry, /#extensions_settings2/);
 assert.match(entry, /data-settings-page="overview"/);
-for (const page of ['llm', 'facts', 'action', 'world', 'npc', 'impact', 'sandbox', 'runtime']) {
+for (const page of ['llm', 'facts', 'action', 'world', 'npc', 'npcledger', 'impact', 'sandbox', 'runtime']) {
     assert.match(entry, new RegExp(`data-settings-page="${page}"`), `缺少独立页面：${page}`);
     assert.match(entry, new RegExp(`data-settings-section="${page}"`), `缺少页面内容：${page}`);
 }
-for (const setting of ['llm.provider', 'facts.maxEntries', 'action.requireConfirmation', 'world.tickMinutes', 'npc.maxCandidates', 'impact.maxChainDepth', 'enableSandboxMode', 'sandbox.inertia', 'sandbox.maxActiveGoals', 'budget.maxModules', 'status.showHistory', 'setting.progress', 'injection.depth', 'ui.legacyTurn', 'prompt.select']) {
+for (const setting of ['llm.provider', 'facts.maxEntries', 'action.requireConfirmation', 'world.tickMinutes', 'npc.maxCandidates', 'impact.maxChainDepth', 'impact.decideTemperature', 'impact.decideMaxTokens', 'impact.decideTopP', 'impact.injectTemperature', 'impact.injectMaxTokens', 'impact.injectPresencePenalty', 'enableSandboxMode', 'sandbox.inertia', 'sandbox.maxActiveGoals', 'budget.maxModules', 'status.showHistory', 'setting.progress', 'injection.depth', 'ui.legacyTurn', 'prompt.select']) {
     assert.match(entry, new RegExp(`data-setting="${setting.replace('.', '\\.')}`), `缺少设置绑定：${setting}`);
 }
 assert.match(entry, /activeSettingsPage/);

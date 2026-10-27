@@ -1,4 +1,4 @@
-/* Scoped palettes: never change SillyTavern's own theme variables. */
+﻿/* Scoped palettes: never change SillyTavern's own theme variables. */
 .dai-settings-panel, .dai-root {
     --dai-bg: #191b20;
     --dai-sidebar: #121419;
@@ -133,8 +133,48 @@
 .dai-setting-row textarea { width: min(30rem, 56%); min-height: 11rem; padding: 0.5rem 0.6rem; border: 1px solid var(--dai-border); border-radius: 0.4rem; color: var(--dai-text); background: var(--dai-field); font: inherit; line-height: 1.5; resize: vertical; }
 .dai-setting-actions { justify-content: flex-start; gap: 0.6rem; }
 .dai-setting-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.dai-setting-grid[hidden] { display: none; }
 .dai-setting-grid .dai-setting-row { display: grid; align-items: start; }
 .dai-setting-grid .dai-setting-row input { width: 100%; }
+.dai-impact-list { display: grid; gap: 0.55rem; margin: 0.4rem 0 0; padding: 0 0.25rem 0 0; list-style: none; max-height: 26rem; overflow-y: auto; }
+.dai-impact-item { display: grid; gap: 0.25rem; padding: 0.7rem 0.8rem; border: 1px solid var(--dai-border); border-radius: 0.55rem; background: var(--dai-field); }
+.dai-impact-item.is-fresh { border-color: var(--dai-accent); box-shadow: 0 0 0 2px var(--dai-tint); transition: box-shadow 0.4s ease, border-color 0.4s ease; }
+.dai-impact-item-head { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+.dai-impact-item-head b { overflow-wrap: anywhere; }
+.dai-impact-mark { display: grid; min-width: 1.4rem; height: 1.4rem; place-items: center; border-radius: 0.35rem; color: var(--dai-accent); background: var(--dai-tint); font-size: 0.8rem; }
+.dai-impact-meta, .dai-impact-fate { color: var(--dai-muted); font-size: 0.78rem; overflow-wrap: anywhere; }
+.dai-impact-detail { margin: 0; font-size: 0.85rem; overflow-wrap: anywhere; }
+.dai-impact-empty { padding: 0.9rem 0.2rem; color: var(--dai-muted); font-size: 0.85rem; }
+.dai-impact-item-head b { flex: 1; }
+.dai-impact-edit { flex: none; padding: 0.1rem 0.5rem; border: 1px solid var(--dai-border); border-radius: 0.5rem; color: var(--dai-muted); background: transparent; font-size: 0.75rem; cursor: pointer; }
+.dai-impact-edit:hover { color: inherit; border-color: currentColor; }
+.dai-impact-form { display: grid; gap: 0.55rem; padding: 0.75rem; margin: 0.5rem 0 0.7rem; border: 1px dashed var(--dai-border); border-radius: 0.65rem; }
+.dai-impact-form[hidden] { display: none; }
+.dai-impact-form-head { display: grid; gap: 0.15rem; }
+.dai-impact-form-head small { color: var(--dai-muted); font-size: 0.8rem; }
+.dai-impact-form textarea { width: 100%; min-height: 4.5rem; resize: vertical; }
+.dai-impact-form .dai-setting-actions { align-items: center; }
+.dai-setting-actions { flex-wrap: wrap; }
+.dai-setting-actions input[type="search"] { flex: 1 1 12rem; min-width: 10rem; }
+.dai-impact-actions { display: flex; flex: none; flex-wrap: wrap; justify-content: flex-end; gap: 0.3rem; }
+.dai-impact-edit.is-danger:hover { border-color: #e06c6c; color: #e06c6c; }
+.dai-impact-item.is-edited { border-color: #d9b03c; }
+.dai-impact-item.is-edited .dai-impact-item-head b { color: #d9a72b; }
+.dai-impact-badges { color: #d9a72b; font-size: 0.76rem; overflow-wrap: anywhere; }
+.dai-impact-archive { margin: 0.7rem 0 0; padding: 0.5rem 0.7rem; border: 1px dashed var(--dai-border); border-radius: 0.55rem; }
+.dai-impact-archive > summary { display: flex; align-items: center; gap: 0.5rem; color: var(--dai-muted); font-size: 0.82rem; cursor: pointer; list-style: none; }
+.dai-impact-archive > summary::-webkit-details-marker { display: none; }
+.dai-impact-archive > summary::before { content: '▸'; font-size: 0.78rem; }
+.dai-impact-archive[open] > summary::before { content: '▾'; }
+.dai-prompt-fold { margin: 0.6rem 0 0; padding: 0.55rem 0.75rem; border: 1px solid var(--dai-border); border-radius: 0.55rem; background: var(--dai-field); }
+.dai-prompt-fold > summary { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; list-style: none; }
+.dai-prompt-fold > summary::-webkit-details-marker { display: none; }
+.dai-prompt-fold > summary::before { content: '▸'; flex: none; color: var(--dai-muted); font-size: 0.8rem; }
+.dai-prompt-fold[open] > summary::before { content: '▾'; }
+.dai-prompt-fold > summary span { display: grid; gap: 0.1rem; min-width: 0; }
+.dai-prompt-fold > summary small { color: var(--dai-muted); font-size: 0.78rem; }
+.dai-prompt-fold[open] > summary { margin-bottom: 0.55rem; }
+.dai-prompt-fold textarea { width: 100%; min-height: 8rem; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.78rem; line-height: 1.5; }
 .dai-settings-footer { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.8rem 1.65rem; border-top: 1px solid var(--dai-border); color: var(--dai-muted); font-size: 0.8rem; }
 .dai-secondary-button { min-height: 2.75rem; padding: 0.4rem 0.9rem; border: 1px solid var(--dai-border); border-radius: 0.4rem; color: var(--dai-text); background: var(--dai-field); cursor: pointer; }
 .dai-secondary-button:hover { background: var(--dai-tint); }
@@ -210,18 +250,12 @@
 /* 世界页：双栏事件列表与指令流水 */
 .dai-world-events { display: grid; gap: 0.4rem; }
 
-/* 世界状态浮层：顶栏「世界」按钮点开，复用设置面板的遮罩层 */
-.dai-world-overlay-card { position: relative; display: grid; gap: 0.55rem; width: min(24rem, calc(100vw - 2rem)); max-height: calc(100vh - 4rem); overflow-y: auto; padding: 0.9rem 1rem; border: 1px solid var(--dai-border); border-radius: 0.65rem; background: var(--dai-surface); box-shadow: 0 0.5rem 1.5rem #0005; }
-.dai-world-overlay-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.8rem; }
-.dai-world-overlay-head small { display: block; color: var(--dai-muted); font-size: 0.75rem; }
-.dai-world-overlay-head strong { font-size: 1.05rem; line-height: 1.4; }
-.dai-world-overlay-info { margin: 0; padding: 0.4rem 0.6rem; border: 1px solid var(--dai-border); border-radius: 0.45rem; background: var(--dai-field-hover, rgba(255,255,255,0.04)); color: var(--dai-muted); font-size: 0.82rem; }
-.dai-world-overlay-card h4 { margin: 0.2rem 0 0; color: var(--dai-muted); font-size: 0.85rem; font-weight: 600; }
-.dai-world-overlay-foot { display: flex; justify-content: space-between; align-items: flex-end; gap: 0.8rem; }
-.dai-world-overlay-foot small { color: var(--dai-muted); font-size: 0.75rem; line-height: 1.45; word-break: break-word; }
-.dai-world-overlay-foot .dai-secondary-button { flex-shrink: 0; min-height: 2rem; padding: 0.2rem 0.7rem; font-size: 0.8rem; }
 .dai-world-event { display: flex; flex-direction: column; gap: 0.3rem; padding: 0.45rem 0.6rem; border: 1px solid var(--dai-border); border-radius: 0.45rem; background: var(--dai-field-hover, rgba(255,255,255,0.04)); }
 .dai-world-event[data-weight="major"] { border-color: var(--dai-accent); }
+.dai-world-event[data-weight="rumor"] { border-style: dotted; border-color: var(--dai-warn); }
+.dai-world-event[data-weight="rumor"] .dai-world-event-head b::after { content: '（传闻）'; color: var(--dai-warn); font-size: 0.75rem; font-weight: 400; }
+.dai-world-decide-result { display: grid; gap: 0.25rem; margin-top: 0.4rem; }
+.dai-world-decide-result .dai-turn-result[data-ok="false"] { color: var(--dai-warn); }
 .dai-world-event[data-pinned="true"] { border-style: dashed; border-color: var(--dai-warn); }
 .dai-world-event-head { display: flex; justify-content: space-between; gap: 0.6rem; align-items: baseline; }
 .dai-world-event-head b { color: var(--dai-text); font-size: 0.85rem; line-height: 1.5; word-break: break-word; }
@@ -234,3 +268,113 @@
 .dai-status-list b { color: var(--dai-muted); font-weight: 600; }
 .dai-status-list span { color: var(--dai-text); word-break: break-word; }
 .dai-status-list li[data-tone="warn"] { border-color: var(--dai-accent); }
+
+/* ---- 表单控件兜底样式：不依赖宿主主题，三套配色下都保证可读 ---- */
+.dai-settings-panel input:not([type="checkbox"]):not([type="radio"]),
+.dai-settings-panel select,
+.dai-settings-panel textarea,
+.dai-root input:not([type="checkbox"]):not([type="radio"]),
+.dai-root select,
+.dai-root textarea {
+    background-color: var(--dai-field) !important;
+    background-image: none !important;
+    color: var(--dai-text) !important;
+    -webkit-text-fill-color: var(--dai-text) !important;
+    border-color: var(--dai-border) !important;
+    box-shadow: none !important;
+    caret-color: var(--dai-text);
+}
+
+.dai-settings-panel input::placeholder,
+.dai-settings-panel textarea::placeholder,
+.dai-root input::placeholder,
+.dai-root textarea::placeholder {
+    color: var(--dai-muted) !important;
+    -webkit-text-fill-color: var(--dai-muted) !important;
+    opacity: 1;
+}
+
+.dai-settings-panel select,
+.dai-root select {
+    appearance: none;
+    -webkit-appearance: none;
+    padding-right: 2.1rem;
+    background-image:
+        linear-gradient(45deg, transparent 50%, currentColor 50%),
+        linear-gradient(135deg, currentColor 50%, transparent 50%) !important;
+    background-position: calc(100% - 1.15rem) 58%, calc(100% - 0.8rem) 58% !important;
+    background-size: 0.36rem 0.36rem, 0.36rem 0.36rem !important;
+    background-repeat: no-repeat !important;
+    cursor: pointer;
+}
+
+.dai-settings-panel option,
+.dai-root option {
+    background: var(--dai-surface);
+    color: var(--dai-text);
+}
+
+.dai-settings-panel input:focus-visible,
+.dai-settings-panel select:focus-visible,
+.dai-settings-panel textarea:focus-visible,
+.dai-settings-panel button:focus-visible {
+    outline: 2px solid var(--dai-accent);
+    outline-offset: 1px;
+}
+
+.dai-settings-card .dai-secondary-button,
+.dai-settings-card .dai-button,
+.dai-settings-card .dai-button-ghost,
+.dai-settings-card .dai-icon-button {
+    min-height: 2.5rem;
+    min-width: 6rem;
+    padding: 0.5rem 1.05rem;
+    border-radius: 0.5rem;
+    font: inherit;
+    font-size: 0.9rem;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+.dai-settings-card .dai-icon-button {
+    min-width: 2.5rem;
+    padding: 0.4rem;
+}
+
+.dai-setting-actions { justify-content: flex-start !important; gap: 0.75rem; }.dai-settings-panel[data-theme="white"], .dai-root[data-theme="white"],
+.dai-settings-panel[data-theme="beige"], .dai-root[data-theme="beige"] { color-scheme: light; }
+.dai-llm-custom[hidden] { display: none; }
+.dai-llm-custom { display: grid; gap: 0; }.dai-settings-card .dai-setting-row textarea { width: 100%; min-height: 12rem; }
+/* 世界页与事件操作里的紧凑按钮 */
+.dai-world-event-actions .dai-secondary-button {
+    min-width: auto;
+    min-height: 1.9rem;
+    padding: 0.2rem 0.7rem;
+    font-size: 0.8rem;
+}
+
+/* 行动结算页：分类判定折叠区（默认收起，点开改提示词） */
+.dai-settle-category {
+    margin: 0.5rem 0;
+    border: 1px solid var(--dai-border);
+    border-radius: 0.65rem;
+    background: var(--dai-surface);
+}
+.dai-settle-category > summary {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    min-height: 3.6rem;
+    padding: 0.7rem 1rem;
+    list-style: none;
+    cursor: pointer;
+    border-radius: 0.65rem;
+}
+.dai-settle-category > summary::-webkit-details-marker { display: none; }
+.dai-settle-category > summary > span:nth-child(2) { display: grid; flex: 1; gap: 0.2rem; }
+.dai-settle-category > summary small { color: var(--dai-muted); font-size: 0.8rem; }
+.dai-settle-category > summary::after { content: '▸'; color: var(--dai-muted); transition: transform 0.15s ease; }
+.dai-settle-category[open] > summary::after { content: '▾'; }
+.dai-settle-category[open] > summary { border-bottom: 1px solid var(--dai-border); }
+.dai-settle-category-body { padding: 0.4rem 1rem 0.8rem; }
+.dai-settle-category-body .dai-setting-row textarea { width: 100%; min-height: 12rem; }

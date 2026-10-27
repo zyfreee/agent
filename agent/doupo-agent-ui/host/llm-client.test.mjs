@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import {
+    buildAdjudicatePrompt,
     buildInterpretPrompt,
     createLlmClient,
     extractJson,
+    listModels,
     normalizeInterpretation,
 } from './llm-client.js';
 
@@ -102,7 +104,256 @@ const failing = createLlmClient({
 });
 await assert.rejects(() => failing.compose({ input: '你好' }), /HTTP 401/);
 
+// —— Anthropic 兼容接口：/v1/messages、x-api-key 鉴权、system 独立字段、content 数组拼接 ——
+const anthropicCalls = [];
+const anthropic = createLlmClient({
+    getSettings: () => ({ llm: { mode: 'custom', provider: 'anthropic', baseUrl: 'https://api.anthropic.com/v1/', apiKey: 'ak-x', model: 'claude-demo', temperature: 0.3, maxTokens: 1024 } }),
+    getContext: () => null,
+    fetchImpl: async (url, options) => {
+        anthropicCalls.push({ url, options });
+        return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: '{"note":"n",' }, { type: 'text', text: '"ops":[]}' }] }) };
+    },
+});
+const anthropicReply = await anthropic.complete({ system: '只输出 JSON', user: '决定世界变化' });
+assert.equal(anthropicCalls[0].url, 'https://api.anthropic.com/v1/messages', 'baseUrl 已带 /v1 时不再重复追加');
+assert.equal(anthropicCalls[0].options.headers['x-api-key'], 'ak-x');
+assert.equal(anthropicCalls[0].options.headers['anthropic-version'], '2023-06-01');
+assert.equal(anthropicCalls[0].options.headers.authorization, undefined, 'Anthropic 不用 Bearer');
+const anthropicBody = JSON.parse(anthropicCalls[0].options.body);
+assert.equal(anthropicBody.model, 'claude-demo');
+assert.equal(anthropicBody.system, '只输出 JSON');
+assert.equal(anthropicBody.max_tokens, 1024);
+assert.equal(anthropicBody.messages.length, 1, 'system 不进 messages');
+assert.equal(anthropicReply, '{"note":"n","ops":[]}', 'content 文本块按序拼接');
+// baseUrl 不带 /v1 时自动补
+await anthropic.complete({ system: 's', user: 'u' });
+assert.equal(anthropicCalls[1].url, 'https://api.anthropic.com/v1/messages');
+
 const unconfigured = createLlmClient({ getSettings: () => ({ llm: {} }), getContext: () => null });
 assert.equal(unconfigured.configured(), false);
 await assert.rejects(() => unconfigured.interpret({ input: '你好' }), /模型连接未配置/);
+
+// —— 类别判定：category 透传、adjudicateAction 复用行动单校验、提示词带类别与初步提议 ——
+const categorized = normalizeInterpretation({ type: 'explicit_action', task: 'explicit_action', category: 'alchemy', effects: [] }, { allowedFields });
+assert.equal(categorized.category, 'alchemy');
+assert.equal(normalizeInterpretation({}, { allowedFields }).category, '');
+assert.ok(buildInterpretPrompt({ input: '测试', state: {}, allowedFields }).includes('"category":"alchemy=丹药相关'), 'interpret 提示词要交代 category 取值');
+const adjudicatePrompt = buildAdjudicatePrompt({
+    categoryLabel: '丹药判定',
+    input: '我服下回气丹',
+    state: { player: { douqi: 87 } },
+    allowedFields,
+    preliminary: [{ targetId: 'player', field: 'hp', type: 'add', value: -10, reason: '误判' }],
+});
+assert.ok(adjudicatePrompt.includes('判定类别：丹药判定'));
+assert.ok(adjudicatePrompt.includes('初步提议'));
+assert.ok(adjudicatePrompt.includes('player.hp（number，当前 未设定'), '字段表要带当前值');
+const adjudicateCalls = [];
+const adjudicateFields = [
+    { targetId: 'player', field: 'douqi', type: 'number' },
+    { targetId: 'player', field: 'realm', type: 'string' },
+];
+const adjudicating = createLlmClient({
+    getSettings: () => ({ llm: { mode: 'custom', baseUrl: 'https://api.example.com/v1', model: 'm1' } }),
+    getContext: () => null,
+    fetchImpl: async (url, options) => {
+        adjudicateCalls.push({ url, options, body: JSON.parse(options.body) });
+        return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '{"effects":[{"targetId":"player","field":"douqi","type":"add","value":30,"reason":"回气丹"}],"outcome":"斗气提升"}' } }] }) };
+    },
+});
+const decided = await adjudicating.adjudicateAction({
+    system: '你是丹药判定器。只输出 JSON。',
+    categoryLabel: '丹药判定',
+    input: '我服下回气丹',
+    state: { player: { douqi: 87 } },
+    allowedFields: adjudicateFields,
+    preliminary: [],
+    overrides: { temperature: 0.2, maxTokens: 512 },
+});
+assert.deepEqual(decided.effects, [{ targetId: 'player', field: 'douqi', type: 'add', value: 30, allowNegative: false, reason: '回气丹' }]);
+assert.equal(decided.outcome, '斗气提升');
+assert.equal(adjudicateCalls[0].body.temperature, 0.2, '结算覆盖温度生效');
+assert.equal(adjudicateCalls[0].body.max_tokens, 512);
+assert.equal(adjudicateCalls[0].body.messages[0].content, '你是丹药判定器。只输出 JSON。');
+await assert.rejects(() => adjudicating.adjudicateAction({ system: '', input: 'x' }), /缺少类别判定提示词/);
+
+// —— 单次调用的连接覆盖：记录员/场记可以一个跟随酒馆、一个走自定义接口 ——
+const forcedCalls = [];
+const forced = createLlmClient({
+    getSettings: () => ({ llm: { mode: 'tavern', baseUrl: 'https://api.example.com/v1', apiKey: 'k', model: 'global-model', temperature: 0.9 } }),
+    getContext: () => ({ generateQuietPrompt: async () => 'from-tavern' }),
+    fetchImpl: async (url, options) => {
+        forcedCalls.push({ url, body: JSON.parse(options.body) });
+        return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'from-custom' } }] }) };
+    },
+});
+assert.equal(await forced.complete({ system: 's', user: 'u', overrides: { connection: 'tavern' } }), 'from-tavern', '按酒馆走时不碰自定义接口');
+assert.equal(await forced.complete({ system: 's', user: 'u', overrides: { connection: 'custom', model: 'impact-model' } }), 'from-custom', '单次调用可强制走自定义接口');
+assert.equal(forcedCalls[0].body.model, 'impact-model');
+assert.equal(forcedCalls[0].body.temperature, 0.9, '自定义分支沿用全局温度');
+
+const noEndpoint = createLlmClient({
+    getSettings: () => ({ llm: { mode: 'tavern' } }),
+    getContext: () => ({ generateQuietPrompt: async () => 'x' }),
+});
+await assert.rejects(
+    () => noEndpoint.complete({ system: 's', user: 'u', overrides: { connection: 'custom', model: 'only-model' } }),
+    /自定义模型还没配好/,
+);
+await assert.rejects(
+    () => noEndpoint.complete({ system: 's', user: 'u', overrides: { connection: 'custom', model: 'only-model' } }),
+    error => error.code === 'llm_custom_not_configured',
+    '自定义连接没配好时要用专属错误码，页面才能给出准确提示',
+);
+
+// —— 每次调用自带接口参数：记录员/场记各填各的地址和模型，互不干扰 ——
+const ownCalls = [];
+const own = createLlmClient({
+    getSettings: () => ({ llm: { mode: 'tavern', baseUrl: 'https://global.example/v1', apiKey: 'global-key', model: 'global-model' } }),
+    getContext: () => ({ generateQuietPrompt: async () => 'from-tavern' }),
+    fetchImpl: async (url, options) => {
+        ownCalls.push({ url, headers: options.headers, body: JSON.parse(options.body) });
+        return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'from-own' } }] }) };
+    },
+});
+assert.equal(await own.complete({
+    system: 's', user: 'u',
+    overrides: { connection: 'custom', model: 'recorder-model', custom: { baseUrl: 'https://own.example/v1/', apiKey: 'own-key', provider: 'openai' } },
+}), 'from-own');
+assert.equal(ownCalls[0].url, 'https://own.example/v1/chat/completions');
+assert.equal(ownCalls[0].body.model, 'recorder-model');
+assert.equal(ownCalls[0].headers.authorization, 'Bearer own-key');
+
+// 只给了地址没给密钥：密钥沿用全局，地址用这一次的。
+await own.complete({
+    system: 's', user: 'u',
+    overrides: { connection: 'custom', model: 'picker-model', custom: { baseUrl: 'https://picker.example/v1' } },
+});
+assert.equal(ownCalls[1].url, 'https://picker.example/v1/chat/completions');
+assert.equal(ownCalls[1].headers.authorization, 'Bearer global-key');
+assert.equal(ownCalls[1].body.model, 'picker-model');
+
+// —— 拉取模型清单：填了地址就能列出来，省得手抄模型名 ——
+const modelCalls = [];
+const listed = await listModels({
+    baseUrl: 'https://api.example.com/v1/',
+    apiKey: 'sk-model',
+    fetchImpl: async (url, options) => {
+        modelCalls.push({ url, headers: options.headers });
+        return { ok: true, status: 200, json: async () => ({ data: [{ id: 'model-a' }, { id: 'model-b' }] }) };
+    },
+});
+assert.equal(listed.status, 'ok');
+assert.deepEqual(listed.models, ['model-a', 'model-b']);
+assert.equal(modelCalls[0].url, 'https://api.example.com/v1/models', '地址已经带 /v1 时不再重复拼');
+assert.equal(modelCalls[0].headers.authorization, 'Bearer sk-model');
+
+const anthropicList = await listModels({
+    baseUrl: 'https://api.anthropic.com',
+    apiKey: 'ak-model',
+    provider: 'anthropic',
+    fetchImpl: async (url, options) => {
+        modelCalls.push({ url, headers: options.headers });
+        return { ok: true, status: 200, json: async () => ({ models: [{ id: 'claude-a' }] }) };
+    },
+});
+assert.equal(anthropicList.models[0], 'claude-a');
+assert.equal(modelCalls[1].url, 'https://api.anthropic.com/v1/models');
+assert.equal(modelCalls[1].headers['x-api-key'], 'ak-model');
+assert.equal(modelCalls[1].headers['anthropic-version'], '2023-06-01');
+
+assert.equal((await listModels({ baseUrl: '' })).status, 'no_endpoint');
+const refused = await listModels({
+    baseUrl: 'https://api.example.com/v1',
+    fetchImpl: async () => ({ ok: false, status: 401, json: async () => ({}) }),
+});
+assert.equal(refused.status, 'failed');
+assert.match(refused.error, /401/);
+// —— 生成参数：跟随酒馆时临时改它的聊天补全采样设置、用完还原；自定义时写进请求体 ——
+const tavernSettings = { temp_openai: 0.8, top_p_openai: 0.95, pres_pen_openai: 0.1, freq_pen_openai: 0.2, openai_max_tokens: 1024 };
+let seenSampling = null;
+let seenResponseLength = null;
+const samplingContext = {
+    mainApi: 'openai',
+    chatCompletionSettings: tavernSettings,
+    async generateQuietPrompt(options) {
+        seenSampling = {
+            temperature: tavernSettings.temp_openai,
+            topP: tavernSettings.top_p_openai,
+            presence: tavernSettings.pres_pen_openai,
+            frequency: tavernSettings.freq_pen_openai,
+        };
+        seenResponseLength = options?.responseLength ?? null;
+        return 'ok';
+    },
+};
+const samplingClient = createLlmClient({
+    getSettings: () => ({ llm: { mode: 'tavern' } }),
+    getContext: () => samplingContext,
+});
+await samplingClient.complete({
+    system: 's', user: 'u',
+    overrides: { connection: 'tavern', temperature: 0.3, topP: 0.6, presencePenalty: 0.4, frequencyPenalty: 0.5, maxTokens: 256 },
+});
+assert.deepEqual(seenSampling, { temperature: 0.3, topP: 0.6, presence: 0.4, frequency: 0.5 }, '跟随酒馆时这一轮临时改采样参数');
+assert.equal(seenResponseLength, 256, '跟随酒馆时用 responseLength 临时覆盖输出长度');
+assert.deepEqual(tavernSettings, { temp_openai: 0.8, top_p_openai: 0.95, pres_pen_openai: 0.1, freq_pen_openai: 0.2, openai_max_tokens: 1024 }, '生成结束后把酒馆设置原样还原');
+
+// 0 / 留空 = 不指定：不碰酒馆设置
+await samplingClient.complete({ system: 's', user: 'u', overrides: { connection: 'tavern', temperature: 0, maxTokens: 0 } });
+assert.equal(seenSampling.temperature, 0.8);
+assert.equal(seenResponseLength, null, '没指定输出长度就不覆盖');
+
+// 文本补全没有单次采样入口：只传输出长度，不动设置对象
+const textgenSettings = { temp_openai: 0.8 };
+let textgenTouched = false;
+const textgenContext = {
+    mainApi: 'textgenerationwebui',
+    chatCompletionSettings: new Proxy(textgenSettings, { set() { textgenTouched = true; return true; } }),
+    async generateQuietPrompt() { return 'ok'; },
+};
+const textgenClient = createLlmClient({ getSettings: () => ({ llm: { mode: 'tavern' } }), getContext: () => textgenContext });
+await textgenClient.complete({ system: 's', user: 'u', overrides: { connection: 'tavern', temperature: 0.3, topP: 0.6 } });
+assert.equal(textgenTouched, false, '文本补全下不去改聊天补全设置');
+
+const paramCalls = [];
+const paramClient = createLlmClient({
+    getSettings: () => ({ llm: { mode: 'tavern' } }),
+    getContext: () => ({ generateQuietPrompt: async () => 'tavern' }),
+    fetchImpl: async (url, options) => {
+        paramCalls.push(JSON.parse(options.body));
+        return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'ok' } }] }) };
+    },
+});
+await paramClient.complete({
+    system: 's', user: 'u',
+    overrides: {
+        connection: 'custom', model: 'm',
+        custom: { baseUrl: 'https://p.example/v1' },
+        temperature: 0.25, topP: 0.7, presencePenalty: 0.3, frequencyPenalty: 0.15, maxTokens: 300,
+    },
+});
+assert.equal(paramCalls[0].temperature, 0.25);
+assert.equal(paramCalls[0].top_p, 0.7);
+assert.equal(paramCalls[0].presence_penalty, 0.3);
+assert.equal(paramCalls[0].frequency_penalty, 0.15);
+assert.equal(paramCalls[0].max_tokens, 300);
+
+// —— 全局采样兜底：自定义接口调用没指定 top_p/惩罚时用“模型与连接”页的值；0 ＝不指定 ——
+const globalSamplingCalls = [];
+const globalSamplingClient = createLlmClient({
+    getSettings: () => ({ llm: { mode: 'custom', baseUrl: 'https://api.example.com/v1', model: 'm1', topP: 0.9, presencePenalty: 0, frequencyPenalty: -0.5 } }),
+    getContext: () => null,
+    fetchImpl: async (url, options) => {
+        globalSamplingCalls.push(JSON.parse(options.body));
+        return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'ok' } }] }) };
+    },
+});
+await globalSamplingClient.complete({ system: 's', user: 'u' });
+assert.equal(globalSamplingCalls[0].top_p, 0.9, '全局 top_p 兜底生效');
+assert.equal(globalSamplingCalls[0].presence_penalty, undefined, '存在惩罚 0 ＝不指定');
+assert.equal(globalSamplingCalls[0].frequency_penalty, -0.5, '负数频率惩罚可用');
+await globalSamplingClient.complete({ system: 's', user: 'u', overrides: { topP: 0.5 } });
+assert.equal(globalSamplingCalls[1].top_p, 0.5, '单次覆盖优先于全局兜底');
+
 console.log('llm client tests passed');
