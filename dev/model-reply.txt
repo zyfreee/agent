@@ -7,7 +7,8 @@
 {"op":"advance","minutes":30},
 {"op":"addEvent","scope":"world","text":"云岚宗少宗主纳兰嫣然将亲临乌坦城，传言与三年退婚之约有关","basis":"本楼下人们议论，与云岚宗退婚行程相符","weight":"major","days":14},
 {"op":"addEvent","scope":"near","text":"府中下人对三年之约议论纷纷，萧战得知后欲言又止","basis":"本楼正文：萧炎亲耳听到议论","weight":"minor"},
-{"op":"addEvent","scope":"near","text":"有传闻称纳兰嫣然此行携云岚宗正式文书","basis":"下人闲语'听说是为退婚的事'的延伸，未经证实","weight":"rumor","days":5}
+{"op":"addEvent","scope":"near","text":"有传闻称纳兰嫣然此行携云岚宗正式文书","basis":"下人闲语'听说是为退婚的事'的延伸，未经证实","weight":"rumor","days":5},
+{"op":"addTask","title":"在纳兰嫣然抵达前做好应对","detail":"目标：搞清她此行的真实目的（退婚细节），想好对策。背景：三年之约将至，萧家无人看好萧炎。现状：行程已定，传闻随行携正式文书，具体日期未明。","basis":"萧炎听到消息后自己立下的应对目标","days":14}
 ]}
 ```
 

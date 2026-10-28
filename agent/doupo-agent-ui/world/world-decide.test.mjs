@@ -6,8 +6,12 @@ assert.ok(WORLD_DECIDE_PROMPT.includes('"note"') && WORLD_DECIDE_PROMPT.includes
 assert.ok(WORLD_DECIDE_PROMPT.includes('rumor'), '默认提示词必须教传闻用法');
 assert.ok(WORLD_DECIDE_PROMPT.includes('reputation') && WORLD_DECIDE_PROMPT.includes('wanted'), '默认提示词必须含名声/通缉');
 assert.ok(WORLD_DECIDE_PROMPT.includes('basis'), '默认提示词必须要求事件有依据');
+assert.ok(WORLD_DECIDE_PROMPT.includes('addTask') && WORLD_DECIDE_PROMPT.includes('completeTask'), '默认提示词必须含任务操作');
+assert.ok(WORLD_DECIDE_PROMPT.includes('不要替玩家立他没答应的事'), '任务规则要防越权立任务');
 assert.equal(DECIDE_JSON_SCHEMA.properties.ops.items.properties.op.enum.includes('addEvent'), true);
 assert.equal(DECIDE_JSON_SCHEMA.properties.ops.items.properties.weight.enum.includes('rumor'), true);
+assert.equal(DECIDE_JSON_SCHEMA.properties.ops.items.properties.op.enum.includes('addTask'), true, 'schema 认任务操作');
+assert.ok(DECIDE_JSON_SCHEMA.properties.ops.items.properties.title, 'schema 认任务字段');
 assert.deepEqual(DECIDE_JSON_SCHEMA.required, ['ops']);
 
 // —— 上下文组装：台账 + 世界书条目 + 聊天记录（旧→新），楼数与每楼长度受限 ——

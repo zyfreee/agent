@@ -68,6 +68,38 @@ assert.equal(normalizedEvent.weight, 'minor', '未知档位归一为普通');
 assert.equal(runtime.status().info.reputation, '乌坦城小有名气');
 assert.equal(runtime.status().info.wanted, '被米特尔家族记恨');
 
+// —— 任务：立/完成/删除/更新，全链路 ——
+result = runtime.apply([
+    { op: 'addTask', title: '查出城东窃贼的来历', detail: '连日失窃，掌柜悬赏；已知窃贼夜行、身法利落', basis: '药铺掌柜悬赏托付', days: 7 },
+], { source: 'decide', floor: 20 });
+assert.equal(result.applied.length, 1);
+assert.ok(result.applied[0].summary.includes('任务 +t1'), result.applied[0].summary);
+assert.ok(result.applied[0].summary.includes(`第 ${runtime.status().clock.day + 6} 天前需完成`), '时限按当前时钟算');
+assert.equal(runtime.apply([{ op: 'addTask', title: '查出城东窃贼的来历' }]).rejected[0].reason, 'duplicate_task', '同名进行中任务不重立');
+assert.equal(runtime.apply([{ op: 'updateTask', id: 't1', detail: '已锁定嫌疑人是米特尔家的护卫' }]).applied.length, 1);
+assert.equal(runtime.snapshot().tasks[0].detail, '已锁定嫌疑人是米特尔家的护卫');
+result = runtime.apply([{ op: 'completeTask', id: 't1' }]);
+assert.equal(result.applied.length, 1);
+const doneTask = runtime.snapshot().tasks.find(task => task.id === 't1');
+assert.equal(doneTask.status, 'done');
+assert.equal(runtime.apply([{ op: 'completeTask', id: 't1' }]).rejected[0].reason, 'task_already_done');
+runtime.apply([{ op: 'addTask', title: '临时任务', detail: '待删' }]);
+result = runtime.apply([{ op: 'deleteTask', id: 't2' }]);
+assert.equal(result.applied.length, 1);
+assert.equal(runtime.snapshot().tasks.some(task => task.id === 't2'), false, '删除即从列表移除');
+assert.equal(runtime.apply([{ op: 'completeTask', id: 't2' }]).rejected[0].reason, 'task_not_found');
+
+// —— 任务随存档恢复：详情/来源/状态一字不丢 ——
+const taskSaved = JSON.parse(JSON.stringify(runtime.snapshot()));
+const taskReloaded = createWorldRuntime({ now: () => 'rt' });
+taskReloaded.restore(taskSaved);
+const taskBack = taskReloaded.snapshot().tasks.find(task => task.id === 't1');
+assert.equal(taskBack.title, '查出城东窃贼的来历');
+assert.equal(taskBack.detail, '已锁定嫌疑人是米特尔家的护卫');
+assert.equal(taskBack.basis, '药铺掌柜悬赏托付');
+assert.equal(taskBack.status, 'done');
+assert.equal(taskReloaded.apply([{ op: 'addTask', title: '恢复后立新任务' }]).applied[0].summary.includes('t2'), true, '编号接现存最大值');
+
 // —— opId 幂等：重放同一批指令不再二次记账 ——
 const batch = [{ op: 'addEvent', scope: 'near', text: '重放测试', opId: 'tick-1' }];
 result = runtime.apply(batch, { source: 'llm' });

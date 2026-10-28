@@ -11,6 +11,10 @@ const snapshot = {
         { id: 'e5', day: 5, text: '今日到期悬赏', endDay: 4, done: false },
         { id: 'e6', day: 5, text: '有人在收异火消息', weight: 'rumor', done: false },
     ],
+    tasks: [
+        { id: 't1', title: '三年之约前变强', detail: '从三段斗之气到斗者', basis: '与纳兰嫣然的约定', day: 1, endDay: 12, status: 'active' },
+        { id: 't2', title: '已完成的旧任务', status: 'done' },
+    ],
     worldEvents: [
         { id: 'e9', day: 3, text: '云岚宗与纳兰家密谈退婚', weight: 'major', done: false, pinned: true },
     ],
@@ -27,6 +31,9 @@ assert.ok(injected.includes('(e4 第5天) 限期比武报名（剩 3 天）'), '
 assert.ok(injected.includes('(e5 第5天) 今日到期悬赏（今日到期）'));
 assert.ok(injected.includes('？(e6 第5天) 有人在收异火消息（传闻·未证实）'), '传闻事件要带未证实标记');
 assert.ok(injected.includes('世界大事'));
+assert.ok(injected.includes('当前任务（进行中，达成用 completeTask、作废用 deleteTask）'), '任务栏要进注入');
+assert.ok(injected.includes('◆(t1 第1天接) 三年之约前变强：从三段斗之气到斗者（剩 8 天）（来源：与纳兰嫣然的约定）'), '任务行带详情/时限/来源');
+assert.ok(!injected.includes('已完成的旧任务'), '已完成任务不进注入');
 assert.ok(injected.includes('(e9 第3天) 云岚宗与纳兰家密谈退婚 [置顶]'));
 assert.ok(!injected.includes('已了结的旧事'));
 

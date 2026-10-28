@@ -13,6 +13,9 @@ const INFO_FIELDS = Object.freeze(['weather', 'location', 'era', 'reputation', '
 const MAX_EVENT_TEXT = 300;
 const MAX_BASIS_TEXT = 80;
 const MAX_EVENT_DAYS = 90;
+const MAX_TASK_TITLE = 60;
+const MAX_TASK_DETAIL = 300;
+const MAX_TASKS = 30;
 const MAX_INFO_TEXT = 80;
 const MAX_LABEL_TEXT = 60;
 const MAX_ADVANCE_DAYS = 365;
@@ -53,15 +56,32 @@ function initialState(now) {
     return {
         schemaVersion: 1,
         clock: { day: 1, minute: 480, label: '' },
-        info: { weather: '', location: '', era: '' },
+        info: Object.fromEntries(INFO_FIELDS.map(field => [field, ''])),
         nearEvents: [],
         worldEvents: [],
+        tasks: [],
         log: [],
         updatedAt: now(),
     };
 }
 
 /** 只保留认识的字段并逐条清洗事件；坏数据丢弃而不是让整份存档作废。 */
+function normalizeOneTask(raw, index) {
+    if (!raw || typeof raw !== 'object') return null;
+    const title = text(raw.title);
+    if (!title) return null;
+    return {
+        id: text(raw.id) || `t${index}`,
+        title: title.slice(0, MAX_TASK_TITLE),
+        detail: text(raw.detail).slice(0, MAX_TASK_DETAIL),
+        basis: text(raw.basis).slice(0, MAX_BASIS_TEXT),
+        day: clampInt(raw.day, 1, 99999, 1),
+        endDay: clampInt(raw.endDay, 1, 99999, null),
+        status: raw.status === 'done' ? 'done' : 'active',
+        doneDay: clampInt(raw.doneDay, 1, 99999, null),
+    };
+}
+
 function normalizeState(raw, now) {
     const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
     const clockSource = source.clock && typeof source.clock === 'object' ? source.clock : {};
@@ -87,6 +107,15 @@ function normalizeState(raw, now) {
             };
         })
         .filter(Boolean);
+    let taskSeq = 0;
+    const tasks = (Array.isArray(source.tasks) ? source.tasks : [])
+        .map((item, i) => {
+            const clean = normalizeOneTask(item, i + 1);
+            if (clean) taskSeq = Math.max(taskSeq, Number(String(clean.id).replace(/\D/g, '')) || 0);
+            return clean;
+        })
+        .filter(Boolean)
+        .slice(-MAX_TASKS);
     return {
         schemaVersion: 1,
         clock: {
@@ -97,6 +126,7 @@ function normalizeState(raw, now) {
         info: Object.fromEntries(INFO_FIELDS.map(field => [field, text(infoSource[field]).slice(0, MAX_INFO_TEXT)])),
         nearEvents: cleanEvents(source.nearEvents, 'near'),
         worldEvents: cleanEvents(source.worldEvents, 'world'),
+        tasks,
         log: (Array.isArray(source.log) ? source.log : []).slice(-DEFAULT_MAX_LOG),
         updatedAt: text(source.updatedAt) || now(),
     };
@@ -113,6 +143,7 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
     maxOps = clampInt(maxOps, 1, 32, DEFAULT_MAX_OPS);
     let state = initialState(now);
     let seq = 0;
+    let taskSeq = 0;
     let opIdMemory = [];
     let lastFloor = null; // 最近一次由模型回复落账的楼层：{ floor, undo }，同楼重 roll 时用来回滚
 
@@ -131,6 +162,23 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
     function nextId() {
         seq += 1;
         return `e${seq}`;
+    }
+
+    function findTask(id) {
+        return state.tasks.find(task => task.id === id) ?? null;
+    }
+
+    function nextTaskId() {
+        taskSeq += 1;
+        return `t${taskSeq}`;
+    }
+
+    /** 任务超上限时先清已完成的，再清最老的进行中；避免玩家任务被无声挤掉。 */
+    function pruneTasks() {
+        if (state.tasks.length <= MAX_TASKS) return;
+        const ranked = [...state.tasks].sort((a, b) => (b.status === 'done') - (a.status === 'done') || a.day - b.day);
+        const doomed = new Set(ranked.slice(0, state.tasks.length - MAX_TASKS).map(task => task.id));
+        state.tasks = state.tasks.filter(task => !doomed.has(task.id));
     }
 
     function prune(scope) {
@@ -245,7 +293,77 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
             state.info[field] = body;
             return { ok: true, summary: `世界信息更新：${field}=${body || '（清空）'}`, undo: { op: 'setInfo', field, text: beforeValue } };
         }
+        // ── 任务：模型识别立任务，玩家/模型都能完成与删除 ──
+        if (kind === 'addTask') {
+            const title = text(op.title);
+            if (!title) return { ok: false, reason: 'title_missing' };
+            if (title.length > MAX_TASK_TITLE) return { ok: false, reason: 'title_too_long' };
+            const detail = text(op.detail).slice(0, MAX_TASK_DETAIL);
+            const basis = text(op.basis).slice(0, MAX_BASIS_TEXT);
+            if (state.tasks.some(task => task.status === 'active' && task.title === title)) return { ok: false, reason: 'duplicate_task' };
+            let endDay = null;
+            if (op.days !== undefined && op.days !== null) {
+                const span = intIn(op.days, 1, MAX_EVENT_DAYS);
+                if (span === null) return { ok: false, reason: 'bad_days' };
+                endDay = state.clock.day + span - 1;
+            }
+            const task = { id: nextTaskId(), title, detail, basis, day: state.clock.day, endDay, status: 'active', doneDay: null };
+            state.tasks.push(task);
+            pruneTasks();
+            return { ok: true, id: task.id, summary: `任务 +${task.id}「${title}」${basis ? `（来源：${basis}）` : ''}${endDay !== null ? `，第 ${endDay} 天前需完成` : ''}`, undo: { op: '_deleteTask', id: task.id } };
+        }
+        if (kind === 'completeTask') {
+            const task = findTask(text(op.id));
+            if (!task) return { ok: false, reason: 'task_not_found' };
+            if (task.status === 'done') return { ok: false, reason: 'task_already_done' };
+            task.status = 'done';
+            task.doneDay = state.clock.day;
+            return { ok: true, id: task.id, summary: `任务完成 ${task.id}「${task.title}」`, undo: { op: '_reopenTask', id: task.id, doneDay: null } };
+        }
+        if (kind === 'deleteTask') {
+            const id = text(op.id);
+            const task = findTask(id);
+            if (!task) return { ok: false, reason: 'task_not_found' };
+            state.tasks = state.tasks.filter(item => item.id !== id);
+            return { ok: true, id, summary: `任务删除 ${id}「${task.title}」`, undo: { op: '_restoreTask', task } };
+        }
+        if (kind === 'updateTask') {
+            const task = findTask(text(op.id));
+            if (!task) return { ok: false, reason: 'task_not_found' };
+            const beforeDetail = task.detail;
+            const beforeEndDay = task.endDay;
+            if (op.detail !== undefined) task.detail = text(op.detail).slice(0, MAX_TASK_DETAIL);
+            if (op.days !== undefined && op.days !== null) {
+                const span = intIn(op.days, 1, MAX_EVENT_DAYS);
+                if (span === null) return { ok: false, reason: 'bad_days' };
+                task.endDay = state.clock.day + span - 1;
+            }
+            const changed = task.detail !== beforeDetail || task.endDay !== beforeEndDay;
+            if (!changed) return { ok: false, reason: 'task_nothing_to_update' };
+            return { ok: true, id: task.id, summary: `任务更新 ${task.id}「${task.title}」`, undo: { op: 'updateTask', id: task.id, detail: beforeDetail } };
+        }
         // 内部撤销操作：只由同楼重 roll 的回滚调用，不写进模型指南。
+        if (kind === '_deleteTask') {
+            const id = text(op.id);
+            const before = state.tasks.length;
+            state.tasks = state.tasks.filter(item => item.id !== id);
+            return { ok: true, summary: `撤销任务 ${id}`, undo: null };
+        }
+        if (kind === '_reopenTask') {
+            const task = findTask(text(op.id));
+            if (!task) return { ok: false, reason: 'task_not_found' };
+            task.status = 'active';
+            task.doneDay = op.doneDay === null || op.doneDay === undefined ? null : intIn(op.doneDay, 1, 99999);
+            return { ok: true, summary: `恢复任务 ${task.id}` };
+        }
+        if (kind === '_restoreTask') {
+            const restoredTask = normalizeOneTask(op.task, state.tasks.length + 1);
+            if (!restoredTask) return { ok: false, reason: 'task_not_found' };
+            if (findTask(restoredTask.id)) restoredTask.id = nextTaskId(); // 删除后同号已被新任务占用，换号避免双份
+            state.tasks.push(restoredTask);
+            pruneTasks();
+            return { ok: true, summary: `恢复任务 ${restoredTask.id}` };
+        }
         if (kind === '_removeEvent') {
             const id = text(op.id);
             for (const scope of SCOPES) {
@@ -317,12 +435,14 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
             near: state.nearEvents.filter(event => !event.done).length,
             world: state.worldEvents.filter(event => !event.done).length,
             total: state.nearEvents.length + state.worldEvents.length,
+            tasks: { active: state.tasks.filter(task => task.status === 'active').length, done: state.tasks.filter(task => task.status === 'done').length, total: state.tasks.length },
         };
     }
 
     function restore(raw) {
         state = normalizeState(raw, now);
         seq = Math.max(0, ...[...state.nearEvents, ...state.worldEvents].map(event => Number(String(event.id).replace(/\D/g, '')) || 0));
+        taskSeq = Math.max(0, ...state.tasks.map(task => Number(String(task.id).replace(/\D/g, '')) || 0));
         opIdMemory = [];
         lastFloor = null;
         return { status: 'restored', ...status() };

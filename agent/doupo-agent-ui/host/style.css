@@ -257,6 +257,15 @@
 .dai-world-decide-result { display: grid; gap: 0.25rem; margin-top: 0.4rem; }
 .dai-world-decide-result .dai-turn-result[data-ok="false"] { color: var(--dai-warn); }
 .dai-world-event[data-pinned="true"] { border-style: dashed; border-color: var(--dai-warn); }
+/* 任务列表：进行中/已完成/已逾期 */
+.dai-world-tasks { display: grid; gap: 0.4rem; }
+.dai-world-task { display: flex; flex-direction: column; gap: 0.3rem; padding: 0.45rem 0.6rem; border: 1px solid var(--dai-border); border-radius: 0.45rem; background: var(--dai-field-hover, rgba(255,255,255,0.04)); }
+.dai-world-task[data-status="active"] { border-left: 3px solid var(--dai-accent); }
+.dai-world-task[data-status="overdue"] { border-left: 3px solid var(--dai-error); }
+.dai-world-task[data-status="overdue"] .dai-world-event-head b::after { content: '（已逾期）'; color: var(--dai-error); font-size: 0.75rem; font-weight: 400; }
+.dai-world-task[data-status="done"] { opacity: 0.62; border-left: 3px solid var(--dai-good); }
+.dai-world-task .dai-world-event-head b::before { content: none; }
+.dai-world-task-detail { margin: 0; color: var(--dai-text); font-size: 0.82rem; line-height: 1.55; word-break: break-word; }
 .dai-world-event-head { display: flex; justify-content: space-between; gap: 0.6rem; align-items: baseline; }
 .dai-world-event-head b { color: var(--dai-text); font-size: 0.85rem; line-height: 1.5; word-break: break-word; }
 .dai-world-event-head small { flex-shrink: 0; color: var(--dai-muted); font-size: 0.75rem; }
@@ -268,6 +277,24 @@
 .dai-status-list b { color: var(--dai-muted); font-weight: 600; }
 .dai-status-list span { color: var(--dai-text); word-break: break-word; }
 .dai-status-list li[data-tone="warn"] { border-color: var(--dai-accent); }
+
+/* 纳戒页：子页签、清单条目与称号标签 */
+.dai-self-tabs { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.5rem; }
+.dai-self-tab { border: 1px solid var(--dai-border); border-radius: 999px; background: transparent; color: var(--dai-muted); padding: 0.25rem 0.85rem; font-size: 0.8rem; cursor: pointer; }
+.dai-self-tab:hover { color: var(--dai-text); border-color: var(--dai-accent); }
+.dai-self-tab.is-active { background: var(--dai-accent); border-color: var(--dai-accent); color: #fff; }
+.dai-self-entries { display: grid; gap: 0.4rem; }
+.dai-self-entry { display: flex; flex-direction: column; gap: 0.3rem; padding: 0.45rem 0.6rem; border: 1px solid var(--dai-border); border-radius: 0.45rem; background: var(--dai-field-hover, rgba(255,255,255,0.04)); }
+.dai-self-entry-head { display: flex; justify-content: space-between; gap: 0.6rem; align-items: baseline; }
+.dai-self-entry-head b { color: var(--dai-text); font-size: 0.85rem; line-height: 1.5; word-break: break-word; }
+.dai-self-entry-head small { flex-shrink: 0; color: var(--dai-muted); font-size: 0.75rem; text-align: right; }
+.dai-self-entry-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+.dai-self-entry-actions .dai-secondary-button { min-height: 1.9rem; padding: 0.15rem 0.7rem; font-size: 0.78rem; }
+.dai-self-entry-actions input[type="number"] { width: 5rem; min-height: 1.9rem; padding: 0.15rem 0.4rem; font-size: 0.78rem; }
+.dai-self-titles { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.4rem; }
+.dai-self-title { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.2rem 0.6rem; border: 1px solid var(--dai-border); border-radius: 999px; background: var(--dai-field-hover, rgba(255,255,255,0.04)); font-size: 0.8rem; color: var(--dai-text); }
+.dai-self-title-remove { border: 0; background: transparent; color: var(--dai-muted); cursor: pointer; font-size: 0.9rem; line-height: 1; padding: 0; }
+.dai-self-title-remove:hover { color: var(--dai-error); }
 
 /* ---- 表单控件兜底样式：不依赖宿主主题，三套配色下都保证可读 ---- */
 .dai-settings-panel input:not([type="checkbox"]):not([type="radio"]),

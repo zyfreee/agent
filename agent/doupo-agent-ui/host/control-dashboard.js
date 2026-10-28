@@ -4,6 +4,7 @@ const MODULES = Object.freeze([
     { id: 'action', title: '行动结算', setting: 'enableActionResolution', stage: 'action-resolve' },
     { id: 'world', title: '世界运转', setting: 'enableWorldProgress', stage: 'world-advance' },
     { id: 'npc', title: 'NPC 决策', setting: 'enableNpcAutonomy' },
+    { id: 'self', title: '纳戒', setting: 'enableSelfLedger' },
     { id: 'impact', title: '世界影响', setting: 'enablePlayerImpact' },
     { id: 'sandbox', title: '沙盒模式', setting: 'enableSandboxMode', stage: 'sandbox-advance' },
     { id: 'llm', title: '模型与连接' },

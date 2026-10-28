@@ -26,10 +26,13 @@ export const WORLD_DECIDE_PROMPT = [
     '- {"op":"resolveEvent","id":"e5"}：了结事件，id 只能用台账里已有的编号。',
     '- {"op":"pinEvent","id":"e5","pinned":false}：置顶或取消置顶。',
     '- {"op":"setInfo","field":"weather或location或era或reputation或wanted","text":"不超过80字"}：天气/所在地/时期/名声/通缉度。',
+    '- {"op":"addTask","title":"不超过60字","detail":"不超过300字：目标/背景/现状","basis":"任务从哪来：谁托付/剧情要求","days":时限≤90}：立任务。',
+    '- {"op":"completeTask","id":"t2"}：任务达成；{"op":"deleteTask","id":"t2"}：任务作废；{"op":"updateTask","id":"t2","detail":"最新进展"}：更新详情。',
     '事件取材规则：事件从聊天记录里有依据地长出来——正在发生的事、玩家行动引出的动静、所在地点此时合理的动态；题材不拘（市井琐事、势力动作、传闻都行），basis 必须一句话写清从哪来。没有依据的事不记，也不要把世界书里的原著桥段照搬成事件——世界书只是资料，剧情真的触到它时才用。',
     'weight 用法：rumor=传闻（未证实的消息，正文不得当事实写；玩家查证后用 resolveEvent 了结它，再另记一条真相或戳穿）；major=大事（影响走向，打星注入）；minor=普通。机缘与危机（拍卖会开锣、药草成熟、仇家寻上门、势力清洗）属于世界主动投放的 major 事件：偶尔来一件、必须有依据，不要每轮都发。',
     '名声（reputation）与通缉度（wanted）：玩家行侠仗义、立功扬名则名声上涨；作恶、树敌、招惹官府势力则通缉上涨。只在剧情真有对应行为时更新，写法自由（如"乌坦城小有名气""被迦南学院记恨"）。',
     '- 一次最多 12 条操作，写不下就留到下一轮。',
+    '任务规则：玩家承诺或接下的事、人物托付、剧情给出的明确短期目标才立任务；任务列表会注入给正文模型，完成后及时 completeTask、作废用 deleteTask、进展用 updateTask 更新详情。不要把每件小事都立成任务，也不要替玩家立他没答应的事。',
     '没有需要记下的变化就输出 {"note":"本轮世界无变化","ops":[]}，绝不为凑数而编事件。',
 ].join('\n');
 
@@ -43,11 +46,11 @@ export const DECIDE_JSON_SCHEMA = Object.freeze({
             items: {
                 type: 'object',
                 properties: {
-                    op: { type: 'string', enum: ['advance', 'setClock', 'addEvent', 'resolveEvent', 'pinEvent', 'setInfo'] },
+                    op: { type: 'string', enum: ['advance', 'setClock', 'addEvent', 'resolveEvent', 'pinEvent', 'setInfo', 'addTask', 'completeTask', 'deleteTask', 'updateTask'] },
                     days: { type: 'number' }, minutes: { type: 'number' },
                     day: { type: 'number' }, minute: { type: 'number' }, label: { type: 'string' },
                     scope: { type: 'string', enum: ['near', 'world'] },
-                    text: { type: 'string' }, basis: { type: 'string' },
+                    text: { type: 'string' }, basis: { type: 'string' }, title: { type: 'string' }, detail: { type: 'string' },
                     weight: { type: 'string', enum: ['minor', 'major', 'rumor'] },
                     id: { type: 'string' }, pinned: { type: 'boolean' },
                     field: { type: 'string', enum: ['weather', 'location', 'era', 'reputation', 'wanted'] },

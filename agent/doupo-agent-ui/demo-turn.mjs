@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env node
+#!/usr/bin/env node
 /**
  * 一键演示：从一条玩家消息开始，跑完整条总控链。
  * 运行：node agent/doupo-agent-ui/demo-turn.mjs

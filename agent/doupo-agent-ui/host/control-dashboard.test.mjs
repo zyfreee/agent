@@ -11,9 +11,12 @@ const record = (event, extra = {}) => audit.record({ ...identity, event, ...extr
 const build = extra => buildControlDashboard({ scope, records: audit.list(), ...extra });
 const moduleOf = (view, id) => view.modules.find(module => module.id === id);
 const empty = build();
-assert.equal(empty.modules.length, 7);
+assert.equal(empty.modules.length, 8);
 assert.equal(moduleOf(empty, 'sandbox').title, '沙盒模式');
 assert.equal(moduleOf(empty, 'sandbox').id, 'sandbox');
+assert.equal(moduleOf(empty, 'self').title, '纳戒');
+assert.equal(moduleOf(empty, 'self').id, 'self');
+assert.equal(moduleOf(empty, 'self').state, 'idle');
 assert.equal(empty.taskLabel, '暂无任务');
 assert.ok(empty.modules.every(module => module.state === 'idle' && module.timestamp === null));
 record('stage_start', { stage: 'facts-query', timestamp: 123 });

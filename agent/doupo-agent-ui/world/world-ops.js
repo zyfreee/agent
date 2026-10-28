@@ -24,7 +24,8 @@ export const OPS_GUIDE = [
     '{"op":"addEvent","scope":"near","text":"城东连着三家铺子夜里失窃","basis":"最近几楼提到的失窃传闻，主角今早又看见巡卫盘查"}',
     '{"op":"addEvent","scope":"world","text":"皇室宣布炼药师大会提前","basis":"上楼贵族宾客的谈话里放出风声","day":6,"weight":"major","days":10}',
     '```',
-    '可用操作：advance(days≤365,minutes≤1439)；setClock(day,minute,label)；addEvent(scope:near|world,text≤120字,basis≤80字,day,weight:minor|major|rumor,days=有效天数≤90，到期自动了结)；resolveEvent(id)；pinEvent(id)；setInfo(field:weather|location|era|reputation|wanted,text≤80字)。id 用上面事件列表里的编号。',
+    '可用操作：advance(days≤365,minutes≤1439)；setClock(day,minute,label)；addTask(title≤60字,detail≤300字,basis,days=时限≤90)；completeTask(id)；deleteTask(id)；updateTask(id,detail)；addEvent(scope:near|world,text≤120字,basis≤80字,day,weight:minor|major|rumor,days=有效天数≤90，到期自动了结)；resolveEvent(id)；pinEvent(id)；setInfo(field:weather|location|era|reputation|wanted,text≤80字)。id 用上面事件列表里的编号。',
+    '任务规则：玩家承诺或接下的事、人物托付、剧情给出的明确目标才立任务（addTask），detail 写清目标、背景与现状；任务达成后及时 completeTask，作废用 deleteTask；进展变化用 updateTask 更新详情。不要把每件小事都立成任务。',
     '事件取材规则：事件从最近剧情里有依据地长出来——正在发生的事、玩家行动引出的动静、所在地点此时合理的动态，内容不拘一格（市井琐事、势力动作、传闻都行），但 basis 必须一句话写清它从哪来（哪楼/谁/什么事引出的）；没有依据的事不记，也不要把原著桥段照搬成事件，原著只在正文需要引用时用。rumor=传闻（未证实消息，正文不得当事实写，查证后 resolveEvent 了结并另记真相或戳穿）；有时限的事（限期比武、悬赏、药效、期限任务）务必带上 days，注入列表会显示剩余天数，正文里的时间压力要和它对得上。机遇与危机（拍卖会、药草成熟、仇家寻上门、势力清洗）属于世界主动投放的大事，偶尔来一件、必须有依据，不要每轮都发；名声（reputation）与通缉度（wanted）只在剧情真有对应行为时更新。',
     '没有需要记下的变化就完全不要输出这个区块；正文照常写给玩家看，指令只是记账。',
 ].join('\n');
@@ -80,12 +81,25 @@ export function buildWorldInjection(snapshot = {}, { maxChars = DEFAULT_MAX_CHAR
     const today = intIn(clock.day, 1, 99999);
     if (near.length) lines.push(`身边事件（未了结，可被剧情推进或 resolveEvent）：\n${near.map(event => eventLine(event, today)).join('\n')}`);
     if (world.length) lines.push(`世界大事（未了结）：\n${world.map(event => eventLine(event, today)).join('\n')}`);
+    const tasks = (Array.isArray(snapshot.tasks) ? snapshot.tasks : []).filter(task => task?.status === 'active').slice(0, TASK_LIMIT);
+    if (tasks.length) lines.push(`当前任务（进行中，达成用 completeTask、作废用 deleteTask）：\n${tasks.map(task => taskLine(task, today)).join('\n')}`);
     let textOut = lines.join('\n');
     while (textOut.length > cap && lines.length > 1) {
         lines.pop();
         textOut = lines.join('\n');
     }
     return textOut;
+}
+
+const TASK_LIMIT = 8;
+
+function taskLine(task, today) {
+    const due = task.endDay !== null && task.endDay !== undefined
+        ? (today >= 1 && task.endDay < today ? '（已逾期）' : `（剩 ${task.endDay - Math.max(1, today) + 1} 天）`)
+        : '';
+    const detail = text(task.detail) ? `：${text(task.detail)}` : '';
+    const basis = text(task.basis) ? `（来源：${text(task.basis)}）` : '';
+    return `◆(${task.id} 第${task.day}天接) ${task.title}${detail}${due}${basis}`;
 }
 
 function textOr(value, render) {

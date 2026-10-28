@@ -15,7 +15,7 @@ assert.match(entry, /renderExtensionTemplateAsync\('third-party\/agent', 'settin
 assert.match(entry, /new URL\('\.\/settings\.html', import\.meta\.url\)/);
 assert.match(entry, /#extensions_settings2/);
 assert.match(entry, /data-settings-page="overview"/);
-for (const page of ['llm', 'facts', 'action', 'world', 'npc', 'npcledger', 'impact', 'sandbox', 'runtime']) {
+for (const page of ['hub', 'llm', 'facts', 'action', 'world', 'npc', 'npcledger', 'self', 'impact', 'sandbox', 'runtime']) {
     assert.match(entry, new RegExp(`data-settings-page="${page}"`), `缺少独立页面：${page}`);
     assert.match(entry, new RegExp(`data-settings-section="${page}"`), `缺少页面内容：${page}`);
 }
@@ -44,6 +44,16 @@ for (const path of new Set(boundPaths)) {
     }
 }
 assert.ok(boundPaths.includes('sandbox.inertia'));
+// 「模型与提示词」集中页必须真的收齐每一路独立模型调用：页面文案承诺“每一次独立调用都在这一页”，
+// 所以这些功能模型的设置键至少要在功能页和集中页各出现一次。
+const hubStart = entry.indexOf('data-settings-section="hub"');
+const hubEnd = entry.indexOf('data-settings-section="facts"');
+assert.ok(hubStart >= 0 && hubEnd > hubStart, '找不到「模型与提示词」集中页');
+const hubMarkup = entry.slice(hubStart, hubEnd);
+for (const setting of ['settle.mode', 'world.decideMode', 'npc.ledgerMode', 'npc.coldMode', 'npc.coldPrompt', 'self.decideMode', 'impact.decideMode', 'prompt.select']) {
+    assert.match(hubMarkup, new RegExp(`data-setting="${setting.replace('.', '\\.')}"`), `集中页缺少设置：${setting}`);
+    assert.ok(boundPaths.filter(path => path === setting).length >= 2, `设置只在功能页出现、没进集中页：${setting}`);
+}
 // 沙盒开关必须真的写到正式模式记录，否则只是留在设置里的开关。
 assert.match(entry, /data-sandbox-status/);
 assert.match(entry, /function syncSandboxModeFromSettings/);

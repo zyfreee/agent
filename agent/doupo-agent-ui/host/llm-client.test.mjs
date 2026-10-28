@@ -138,6 +138,11 @@ const categorized = normalizeInterpretation({ type: 'explicit_action', task: 'ex
 assert.equal(categorized.category, 'alchemy');
 assert.equal(normalizeInterpretation({}, { allowedFields }).category, '');
 assert.ok(buildInterpretPrompt({ input: '测试', state: {}, allowedFields }).includes('"category":"alchemy=丹药相关'), 'interpret 提示词要交代 category 取值');
+const withCustom = buildInterpretPrompt({ input: '测试', state: {}, allowedFields, categories: [{ id: 'cabc1', name: '炼器判定' }, { id: '', name: '坏条目' }] });
+assert.ok(withCustom.includes('cabc1=炼器判定'), '自定义判定要进 interpret 提示词');
+assert.ok(withCustom.includes('搭不上才填 general'), '自定义类别要交代兜底规则');
+assert.ok(!withCustom.includes('坏条目'), '不完整的自定义条目不进提示词');
+assert.ok(!buildInterpretPrompt({ input: '测试', state: {}, allowedFields }).includes('自定义判定类别'), '没有自定义判定时不加那行');
 const adjudicatePrompt = buildAdjudicatePrompt({
     categoryLabel: '丹药判定',
     input: '我服下回气丹',

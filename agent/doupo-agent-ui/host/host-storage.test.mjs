@@ -33,12 +33,18 @@ assert.equal(storage.impactState().value, undefined);
 assert.equal((await storage.saveImpactState({ day: 3, records: [] })).status, 'saved');
 assert.deepEqual(storage.impactState().value, { day: 3, records: [] });
 assert.equal((await storage.saveImpactState('junk')).status, 'rejected');
-assert.equal(context.saveMetadataCalls, 3);
+// 纳戒：同样按聊天独立存一份，坏值拒绝写入。
+assert.equal(storage.selfState().value, undefined);
+assert.equal((await storage.saveSelfState({ day: 5, realm: { realm: '斗者' } })).status, 'saved');
+assert.deepEqual(storage.selfState().value, { day: 5, realm: { realm: '斗者' } });
+assert.equal((await storage.saveSelfState('junk')).status, 'rejected');
+assert.equal(context.saveMetadataCalls, 4);
 assert.equal((await storage.clean()).status, 'cleaned');
 assert.equal(context.extensionSettings.doupo_agent_ui, undefined);
 assert.equal(context.chatMetadata.doupo_agent_state, undefined);
 assert.equal(context.chatMetadata.doupo_agent_world, undefined);
 assert.equal(context.chatMetadata.doupo_agent_impact, undefined);
+assert.equal(context.chatMetadata.doupo_agent_self, undefined);
 // Migrate pre-theme settings without discarding the user's existing nested fields.
 context.extensionSettings.doupo_agent_ui = {
     schemaVersion: 3, ui: { compact: true }, llm: { model: 'existing-model', apiKey: 'fixture-key' },
@@ -85,4 +91,29 @@ assert.equal(settleStorage.settings().value.settle.prompt.cultivation, '修炼�
 settleStorage.updateSettings({ settle: { temperature: 0.5 } });
 assert.equal(settleStorage.settings().value.settle.temperature, 0.5);
 assert.equal(settleStorage.settings().value.settle.prompt.alchemy, '丹药规则A', '改温度不丢提示词');
+// 自定义判定：数组整存整取，和类别提示词互不干扰。
+assert.deepEqual(settleStorage.settings().value.settle.customCategories, []);
+settleStorage.updateSettings({ settle: { customCategories: [{ id: 'cabc1', name: '炼器判定', prompt: '规则' }] } });
+assert.deepEqual(settleStorage.settings().value.settle.customCategories, [{ id: 'cabc1', name: '炼器判定', prompt: '规则' }]);
+settleStorage.updateSettings({ settle: { temperature: 0.3 } });
+assert.equal(settleStorage.settings().value.settle.customCategories.length, 1, '改温度不丢自定义判定');
+settleStorage.updateSettings({ settle: { prompt: { alchemy: '改写' } } });
+assert.equal(settleStorage.settings().value.settle.customCategories[0].name, '炼器判定', '改提示词不丢自定义判定');
+// 纳戒设置：独立嵌套块合并，注入与决定参数默认齐备。
+const freshContext = { extensionSettings: {} };
+const freshStorage = createHostStorage({ getContext: () => freshContext });
+const selfSettings = freshStorage.settings().value.self;
+assert.equal(freshStorage.settings().value.enableSelfLedger, true);
+assert.equal(selfSettings.inject, true);
+assert.equal(selfSettings.injectBudget, 900);
+assert.equal(selfSettings.decideEnabled, true);
+assert.equal(selfSettings.decideAuto, true);
+assert.equal(selfSettings.decideMode, 'tavern');
+assert.equal(selfSettings.decideMaxFloors, 6);
+assert.equal(selfSettings.decideMaxEntries, 12);
+assert.equal(selfSettings.decidePrompt, '');
+assert.equal(selfSettings.guide, '');
+freshStorage.updateSettings({ self: { injectBudget: 1200, decidePrompt: '' } });
+assert.equal(freshStorage.settings().value.self.injectBudget, 1200);
+assert.equal(freshStorage.settings().value.self.decideEnabled, true, '改预算不丢决定开关');
 console.log('host storage tests passed');

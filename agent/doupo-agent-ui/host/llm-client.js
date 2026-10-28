@@ -148,8 +148,14 @@ function fieldTable(allowedFields, state) {
         .join('\n') || '- （没有可用字段）';
 }
 
-export function buildInterpretPrompt({ input, state, allowedFields }) {
+export function buildInterpretPrompt({ input, state, allowedFields, categories = [] }) {
     const fieldList = fieldTable(allowedFields, state);
+    const customCategories = (Array.isArray(categories) ? categories : [])
+        .filter(item => item && typeof item.id === 'string' && item.id.trim() && typeof item.name === 'string' && item.name.trim())
+        .slice(0, 12);
+    const customLine = customCategories.length
+        ? `另有自定义判定类别（行动明显属于它就填它的 id）：${customCategories.map(item => `${item.id}=${item.name.trim()}`).join('、')}；和这些都搭不上才填 general。`
+        : '';
     return [
         '请把玩家这一轮的消息解析成下面这个 JSON 结构：',
         '{"type":"query|conversation|explicit_action|time_advance|due_event|historical_operation|system_operation|unclear",',
@@ -165,6 +171,7 @@ export function buildInterpretPrompt({ input, state, allowedFields }) {
         '',
         '规则：effects 只写玩家这个动作直接造成的变化；数值增减用 add，换成新值用 set，删除用 remove。',
         '目标只能填上表里的对象，字段只能填上表里的字段；表里没有的一律不要写。',
+        ...(customLine ? [customLine] : []),
         `当前状态：${state && typeof state === 'object' ? JSON.stringify(state) : '{}'}`,
         '',
         `玩家消息：${input}`,
@@ -465,9 +472,9 @@ export function createLlmClient({ getSettings, getContext, fetchImpl } = {}) {
         return content;
     }
 
-    async function interpret({ input, state, allowedFields, signal }) {
+    async function interpret({ input, state, allowedFields, categories, signal }) {
         needText(input, 'input');
-        const raw = await complete({ system: INTERPRET_SYSTEM, user: buildInterpretPrompt({ input, state, allowedFields }), signal });
+        const raw = await complete({ system: INTERPRET_SYSTEM, user: buildInterpretPrompt({ input, state, allowedFields, categories }), signal });
         return normalizeInterpretation(extractJson(raw), { allowedFields });
     }
 

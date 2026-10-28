@@ -6,6 +6,8 @@ const CHAT_KEY = 'doupo_agent_state';
 const WORLD_KEY = 'doupo_agent_world';
 const IMPACT_KEY = 'doupo_agent_impact';
 const NPC_KEY = 'doupo_agent_npc';
+const NPC_COLD_KEY = 'doupo_agent_npc_cold';
+const SELF_KEY = 'doupo_agent_self';
 
 const DEFAULT_SETTINGS = Object.freeze({
     enabled: true,
@@ -15,6 +17,8 @@ const DEFAULT_SETTINGS = Object.freeze({
     enableNpcAutonomy: true,
     // 人物簿：NPC 全信息母库，按聊天存一份，生成后由记录员追加变化。
     enableNpcLedger: true,
+    // 纳戒：主角自身状态与随身之物的母库，按聊天存一份，生成后由决定调用追加变化。
+    enableSelfLedger: true,
     enablePlayerImpact: true,
     enableSandboxMode: false,
     showStatusPanel: true,
@@ -33,6 +37,8 @@ const DEFAULT_SETTINGS = Object.freeze({
         frequencyPenalty: 0, // 0 = 不指定
         // 各类别的提示词覆盖存 settle.prompt.<类别id>（嵌套对象），留空用内置默认。
         prompt: Object.freeze({}),
+        // 玩家自定义判定：[{ id, name, prompt }]，页面"＋"按钮添加；只走提示词判定，脚本不做类别内复核。
+        customCategories: Object.freeze([]),
     }),
     llm: Object.freeze({
         provider: 'openai-compatible',
@@ -142,6 +148,40 @@ const DEFAULT_SETTINGS = Object.freeze({
         ledgerPresencePenalty: 0, // 0 = 不指定
         ledgerFrequencyPenalty: 0, // 0 = 不指定
         ledgerPrompt: '', // 记录员提示词覆盖，留空用内置默认
+        // 冷藏推进台：用户点扫描后才运行；只跟随正文世界日，不自动推进。
+        coldMode: 'tavern',
+        coldBaseUrl: '',
+        coldApiKey: '',
+        coldProvider: '',
+        coldModel: '',
+        coldTemperature: 0.2,
+        coldMaxTokens: 1400,
+        coldTopP: 0,
+        coldPresencePenalty: 0,
+        coldFrequencyPenalty: 0,
+        coldPrompt: '',
+    }),
+    self: Object.freeze({
+        // 纳戒注入：生成前把主角自身状态写进提示词。
+        inject: true,
+        injectBudget: 900, // 注入字数预算，0 = 内置默认
+        // LLM 决定：独立决定调用，读聊天记录+世界书+纳戒，输出严格 JSON 由脚本执行。
+        decideEnabled: true,
+        decideAuto: true, // 每轮生成后自动决定；关闭则只认正文里的 self 指令块
+        decideMode: 'tavern', // 'tavern' = 跟随酒馆当前设置；'custom' = 用下面这套自定义连接
+        decideBaseUrl: '', // 自定义接口地址（选 custom 才用得上；留空沿用“模型与连接”页）
+        decideApiKey: '', // 自定义接口密钥（选 custom 才用得上；留空沿用“模型与连接”页）
+        decideProvider: '', // 'openai' / 'anthropic'（留空按接口地址判断）
+        decideModel: '', // 决定模型名，留空沿用“模型与连接”页
+        decideTemperature: 0, // 0 = 沿用 LLM 页温度
+        decideMaxTokens: 0, // 0 = 沿用 LLM 页输出上限
+        decideTopP: 0, // 0 = 不指定
+        decidePresencePenalty: 0, // 0 = 不指定
+        decideFrequencyPenalty: 0, // 0 = 不指定
+        decideMaxFloors: 6, // 喂给决定模型的最近楼层数
+        decideMaxEntries: 12, // 世界书相关条目上限
+        decidePrompt: '', // 决定提示词，留空用内置默认
+        guide: '', // 降级模式（关自动决定）随现状注入的指令指南，留空用内置默认
     }),
     impact: Object.freeze({
         trackResources: true,
@@ -206,7 +246,7 @@ function clone(value) {
 
 function mergeSettings(current = {}) {
     const source = current && typeof current === 'object' ? current : {};
-    const nested = ['llm', 'budget', 'ui', 'facts', 'setting', 'injection', 'prompt', 'action', 'world', 'npc', 'impact', 'sandbox', 'status', 'settle'];
+    const nested = ['llm', 'budget', 'ui', 'facts', 'setting', 'injection', 'prompt', 'action', 'world', 'npc', 'impact', 'sandbox', 'status', 'settle', 'self'];
     const merged = { ...clone(DEFAULT_SETTINGS), ...source };
     for (const key of nested) {
         const incoming = source[key] && typeof source[key] === 'object' && !Array.isArray(source[key]) ? source[key] : {};
@@ -244,7 +284,7 @@ export function createHostStorage({ getContext } = {}) {
         if (!all || typeof all !== 'object') return { status: 'unavailable', value: clone(DEFAULT_SETTINGS) };
         const current = all[SETTINGS_KEY] && typeof all[SETTINGS_KEY] === 'object' ? all[SETTINGS_KEY] : {};
         const incoming = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : {};
-        const nested = ['llm', 'budget', 'ui', 'facts', 'setting', 'injection', 'prompt', 'action', 'world', 'npc', 'impact', 'sandbox', 'status', 'settle'];
+        const nested = ['llm', 'budget', 'ui', 'facts', 'setting', 'injection', 'prompt', 'action', 'world', 'npc', 'impact', 'sandbox', 'status', 'settle', 'self'];
         const mergedPatch = { ...current, ...incoming };
         for (const key of nested) {
             if (incoming[key] && typeof incoming[key] === 'object' && !Array.isArray(incoming[key])) {
@@ -338,6 +378,42 @@ export function createHostStorage({ getContext } = {}) {
         return { status: 'saved' };
     }
 
+    /** 冷藏推进台：记录选中的人物和每人的上次同步位置，不和人物档案混在一起。 */
+    function npcColdState() {
+        const context = contextOf(getContext);
+        const metadata = context?.chatMetadata;
+        if (!metadata || typeof metadata !== 'object') return { status: 'unavailable', value: undefined };
+        return { status: 'ready', value: metadata[NPC_COLD_KEY] && typeof metadata[NPC_COLD_KEY] === 'object' ? clone(metadata[NPC_COLD_KEY]) : undefined };
+    }
+
+    async function saveNpcColdState(value) {
+        const context = contextOf(getContext);
+        if (!context?.chatMetadata || typeof context.chatMetadata !== 'object') return { status: 'unavailable' };
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return { status: 'rejected' };
+        context.chatMetadata[NPC_COLD_KEY] = clone(value);
+        if (typeof context.saveMetadata !== 'function') return { status: 'changed_not_saved' };
+        await context.saveMetadata();
+        return { status: 'saved' };
+    }
+
+    /** 纳戒：同样跟着聊天走；一局一份主角自身状态，换聊天各记各的。 */
+    function selfState() {
+        const context = contextOf(getContext);
+        const metadata = context?.chatMetadata;
+        if (!metadata || typeof metadata !== 'object') return { status: 'unavailable', value: undefined };
+        return { status: 'ready', value: metadata[SELF_KEY] && typeof metadata[SELF_KEY] === 'object' ? clone(metadata[SELF_KEY]) : undefined };
+    }
+
+    async function saveSelfState(value) {
+        const context = contextOf(getContext);
+        if (!context?.chatMetadata || typeof context.chatMetadata !== 'object') return { status: 'unavailable' };
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return { status: 'rejected' };
+        context.chatMetadata[SELF_KEY] = clone(value);
+        if (typeof context.saveMetadata !== 'function') return { status: 'changed_not_saved' };
+        await context.saveMetadata();
+        return { status: 'saved' };
+    }
+
     async function clean() {
         const context = contextOf(getContext);
         if (context?.extensionSettings && typeof context.extensionSettings === 'object') delete context.extensionSettings[SETTINGS_KEY];
@@ -346,13 +422,15 @@ export function createHostStorage({ getContext } = {}) {
             delete context.chatMetadata[WORLD_KEY];
             delete context.chatMetadata[IMPACT_KEY];
             delete context.chatMetadata[NPC_KEY];
+            delete context.chatMetadata[NPC_COLD_KEY];
+            delete context.chatMetadata[SELF_KEY];
         }
         if (typeof context?.saveSettingsDebounced === 'function') await context.saveSettingsDebounced();
         if (typeof context?.saveMetadata === 'function') await context.saveMetadata();
         return { status: 'cleaned' };
     }
 
-    return Object.freeze({ settings, updateSettings, saveSettings, chatState, saveChatState, worldState, saveWorldState, impactState, saveImpactState, npcLedgerState, saveNpcLedgerState, clean, keys: Object.freeze({ SETTINGS_KEY, CHAT_KEY, WORLD_KEY, IMPACT_KEY, NPC_KEY }) });
+    return Object.freeze({ settings, updateSettings, saveSettings, chatState, saveChatState, worldState, saveWorldState, impactState, saveImpactState, npcLedgerState, saveNpcLedgerState, npcColdState, saveNpcColdState, selfState, saveSelfState, clean, keys: Object.freeze({ SETTINGS_KEY, CHAT_KEY, WORLD_KEY, IMPACT_KEY, NPC_KEY, NPC_COLD_KEY, SELF_KEY }) });
 }
 
 export { DEFAULT_SETTINGS };

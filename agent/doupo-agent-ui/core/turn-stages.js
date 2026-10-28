@@ -42,6 +42,7 @@ export function createTurnStages({
     getRules,
     settleAdjudicator = null,
     getWritableFields = () => [],
+    getSettleCategories = () => [],
     settings = null,
     select = null,
     getSettingBudget = () => ({ maxCandidates: 40, maxItems: 8, injectionBudget: 0 }),
@@ -331,7 +332,11 @@ export function createTurnStages({
         const notes = [];
         // 分类判定：interpret 给出类别与初步效果，类别提示词再独立判一次；
         // 判定失败或未接入时退回初步效果，不阻断回合。自定义规则路径不经过类别判定。
-        const category = resolveCategory(interpretation.category);
+        // 类别先查内置四类，再查玩家自定义判定（只有名字和提示词，脚本不做类别内复核）。
+        const userCategories = Array.isArray(getSettleCategories?.()) ? getSettleCategories() : [];
+        const userCategory = userCategories.find(item => item && item.id === interpretation.category
+            && typeof item.prompt === 'string' && item.prompt.trim());
+        const category = resolveCategory(interpretation.category) ?? (userCategory ? { id: userCategory.id, label: userCategory.name } : null);
         if (!useCustomRules && category && typeof settleAdjudicator === 'function') {
             try {
                 const decided = await settleAdjudicator({
