@@ -13,7 +13,7 @@
       "insertNode": "禁止操作。",
       "updateNode": "禁止操作。",
       "deleteNode": "禁止操作。",
-      "ddl": "CREATE TABLE dp_profile ( -- 主角档案表\n  row_id INTEGER PRIMARY KEY, -- 行号\n  char_name TEXT, -- 姓名\n  gender TEXT, -- 性别\n  age TEXT, -- 年龄\n  race TEXT, -- 种族\n  origin TEXT, -- 出身\n  affiliation TEXT, -- 所属\n  talent TEXT, -- 天赋\n  appearance TEXT, -- 外貌\n  realm TEXT, -- 境界\n  stage TEXT, -- 段位\n  gold INTEGER, -- 金币\n  story_day INTEGER, -- 剧情日\n  updated_at TEXT -- 更新时间\n);"
+      "ddl": "CREATE TABLE dp_profile ( -- 主角档案表\n  row_id INTEGER PRIMARY KEY, -- 行号\n  char_name TEXT, -- 姓名\n  gender TEXT, -- 性别\n  age TEXT, -- 年龄\n  race TEXT, -- 种族\n  origin TEXT, -- 出身\n  affiliation TEXT, -- 所属\n  attribute TEXT, -- 斗气属性\n  talent TEXT, -- 天赋\n  appearance TEXT, -- 外貌\n  realm TEXT, -- 境界\n  stage TEXT, -- 段位\n  gold INTEGER, -- 金币\n  story_day INTEGER, -- 剧情日\n  updated_at TEXT -- 更新时间\n);"
     },
     "updateConfig": {
       "uiSentinel": -1,
@@ -31,6 +31,7 @@
         "种族",
         "出身",
         "所属",
+        "斗气属性",
         "天赋",
         "外貌",
         "境界",
