@@ -89,21 +89,27 @@ for (const mode of modeSelects) {
 // 曾把判据写成 name === 'Base'（永远判不中），接口地址取到密钥那一格，
 // 请求变成 “sk-xxx/v1/models” 相对路径打到酒馆自己，所有卡点拉取全是 404。
 assert.doesNotMatch(entry, /name === 'Base'\s*\?/, "拉取模型取值判据写错：'Base' 永远不等于传入的 'BaseUrl'，会把密钥当成接口地址发出去");
-for (const path of ['setting.baseUrl', 'settle.baseUrl', 'world.decideBaseUrl', 'self.decideBaseUrl', 'memory.decideBaseUrl', 'npc.coldBaseUrl']) {
+for (const path of ['llm.baseUrl', 'setting.baseUrl', 'settle.baseUrl', 'world.decideBaseUrl', 'self.decideBaseUrl', 'memory.decideBaseUrl', 'npc.ledgerBaseUrl', 'npc.coldBaseUrl']) {
     assert.match(entry, new RegExp(`name === 'BaseUrl' \\? readSettingInput\\(panel, '${path.replace('.', '\\.')}'\\)`), `拉取模型必须读 ${path}`);
 }
-// 六路“拉取模型”按钮都必须既有取值函数又有点击接线（记忆书记官、冷藏推进员曾经只有按钮没有接线）。
+// 每一张连接卡都必须有“拉取模型”按钮，且模板里的按钮、取值函数、点击接线三者一个不能少
+//（记忆书记官、冷藏推进员曾经只有接线没有按钮，全局连接和人物簿记录员干脆两边都没有，玩家对着模型名手抄）。
 for (const [button, fn] of [
+    ['data-llm-models', 'fetchLlmModels'],
     ['data-facts-models', 'fetchFactsModels'],
     ['data-settle-models', 'fetchSettleModels'],
     ['data-worlddecide-models', 'fetchWorldDecideModels'],
     ['data-selfdecide-models', 'fetchSelfDecideModels'],
     ['data-memorydecide-models', 'fetchMemoryDecideModels'],
+    ['data-npc-ledger-models', 'fetchNpcLedgerModels'],
     ['data-npc-cold-models', 'fetchNpcColdModels'],
 ]) {
+    assert.match(hubMarkup, new RegExp(button.replace(/-/g, '\\-')), `模型设置页缺少拉取按钮：${button}`);
     assert.match(entry, new RegExp(`function ${fn}\\(`), `缺少拉取函数：${fn}`);
     assert.match(entry, new RegExp(`closest\\?\\.\\('\\[${button.replace(/-/g, '\\-')}\\]'\\)`), `拉取按钮没有点击接线：${button}`);
 }
+assert.match(hubMarkup, /data-impact-models="decide"/, '模型设置页缺少记录员拉取按钮');
+assert.match(hubMarkup, /data-impact-models="inject"/, '模型设置页缺少场记拉取按钮');
 // 拉到的模型必须真的可点选：fetchModelList 要给模型输入框接上 datalist（模板没铺就现建），
 // 否则候选拉回来只能塞进空气，状态栏“点模型名那一格就能选”成了一句空话。
 assert.match(entry, /targetInput\.list/, '拉取模型要检查输入框已接的 datalist');
