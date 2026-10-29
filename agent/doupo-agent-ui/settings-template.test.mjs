@@ -104,4 +104,9 @@ for (const [button, fn] of [
     assert.match(entry, new RegExp(`function ${fn}\\(`), `缺少拉取函数：${fn}`);
     assert.match(entry, new RegExp(`closest\\?\\.\\('\\[${button.replace(/-/g, '\\-')}\\]'\\)`), `拉取按钮没有点击接线：${button}`);
 }
+// 拉到的模型必须真的可点选：fetchModelList 要给模型输入框接上 datalist（模板没铺就现建），
+// 否则候选拉回来只能塞进空气，状态栏“点模型名那一格就能选”成了一句空话。
+assert.match(entry, /targetInput\.list/, '拉取模型要检查输入框已接的 datalist');
+assert.match(entry, /createElement\('datalist'\)/, '拉取模型要能现建 datalist');
+assert.match(entry, /setAttribute\('list'/, '拉取模型要把 list 属性接到输入框上');
 console.log(`settings template smoke checks passed: ${directory}`);

@@ -3832,7 +3832,7 @@ function asElementList(value) {
 }
 
 /** 拉取自定义接口的模型清单，填进模型名那格的候选列表：填了地址就不用再手抄模型名。 */
-async function fetchModelList(panel, { read, status, list, target, button } = {}) {
+async function fetchModelList(panel, { read, status, target, button } = {}) {
     const baseUrl = read('BaseUrl');
     if (!baseUrl) {
         for (const item of asElementList(status)) item.textContent = '先填接口地址，再点拉取。';
@@ -3847,15 +3847,22 @@ async function fetchModelList(panel, { read, status, list, target, button } = {}
             for (const item of asElementList(status)) item.textContent = result.error || '接口没给出模型列表，可以直接手填模型名。';
             return;
         }
-        for (const listElement of asElementList(list)) {
-            listElement.textContent = '';
+        // 候选要填进模型输入框自己的 datalist：模板没铺的现建一个并把 list 属性接上，
+        // 这样“点模型名那一格就能选”是真的下拉可选，而不是把候选拉回来塞进空气里。
+        for (const targetInput of asElementList(target)) {
+            let datalist = targetInput.list;
+            if (!datalist || !datalist.isConnected) {
+                datalist = document.createElement('datalist');
+                datalist.id = `dai-model-options-${String(targetInput.dataset.setting ?? targetInput.id ?? 'model').replace(/[^a-zA-Z0-9-]/g, '-')}`;
+                targetInput.after(datalist);
+                targetInput.setAttribute('list', datalist.id);
+            }
+            datalist.textContent = '';
             for (const model of result.models) {
                 const option = document.createElement('option');
                 option.value = model;
-                listElement.appendChild(option);
+                datalist.appendChild(option);
             }
-        }
-        for (const targetInput of asElementList(target)) {
             if (!targetInput.value) {
                 targetInput.value = result.models[0];
                 targetInput.dispatchEvent(new Event('input', { bubbles: true }));
@@ -3877,7 +3884,6 @@ async function fetchImpactModels(panel, role, button) {
             return input ? input.value.trim() : '';
         },
         status: panel.querySelectorAll(`[data-impact-models-status="${prefix}"]`),
-        list: [panel.querySelector(`#dai-impact-models-${prefix}`), panel.querySelector(`#dai-hub-impact-models-${prefix}`)].filter(Boolean),
         target: panel.querySelectorAll(`[data-setting="impact.${prefix}Model"]`),
         button,
     });
@@ -3892,7 +3898,6 @@ async function fetchSettleModels(panel, button) {
     return fetchModelList(panel, {
         read: name => name === 'BaseUrl' ? readSettingInput(panel, 'settle.baseUrl') : readSettingInput(panel, 'settle.apiKey'),
         status: panel.querySelectorAll('[data-settle-models-status]'),
-        list: [panel.querySelector('#dai-settle-models'), panel.querySelector('#dai-hub-settle-models')].filter(Boolean),
         target: panel.querySelectorAll('[data-setting="settle.model"]'),
         button,
     });
@@ -3902,7 +3907,6 @@ async function fetchWorldDecideModels(panel, button) {
     return fetchModelList(panel, {
         read: name => name === 'BaseUrl' ? readSettingInput(panel, 'world.decideBaseUrl') : readSettingInput(panel, 'world.decideApiKey'),
         status: panel.querySelectorAll('[data-worlddecide-models-status]'),
-        list: [panel.querySelector('#dai-worlddecide-models'), panel.querySelector('#dai-hub-worlddecide-models')].filter(Boolean),
         target: panel.querySelectorAll('[data-setting="world.decideModel"]'),
         button,
     });
@@ -3912,7 +3916,6 @@ async function fetchSelfDecideModels(panel, button) {
     return fetchModelList(panel, {
         read: name => name === 'BaseUrl' ? readSettingInput(panel, 'self.decideBaseUrl') : readSettingInput(panel, 'self.decideApiKey'),
         status: panel.querySelectorAll('[data-selfdecide-models-status]'),
-        list: [panel.querySelector('#dai-selfdecide-models'), panel.querySelector('#dai-hub-selfdecide-models')].filter(Boolean),
         target: panel.querySelectorAll('[data-setting="self.decideModel"]'),
         button,
     });
@@ -3922,7 +3925,6 @@ async function fetchFactsModels(panel, button) {
     return fetchModelList(panel, {
         read: name => name === 'BaseUrl' ? readSettingInput(panel, 'setting.baseUrl') : readSettingInput(panel, 'setting.apiKey'),
         status: panel.querySelectorAll('[data-facts-models-status]'),
-        list: [panel.querySelector('#dai-facts-models')].filter(Boolean),
         target: panel.querySelectorAll('[data-setting="setting.model"]'),
         button,
     });
@@ -3932,7 +3934,6 @@ async function fetchMemoryDecideModels(panel, button) {
     return fetchModelList(panel, {
         read: name => name === 'BaseUrl' ? readSettingInput(panel, 'memory.decideBaseUrl') : readSettingInput(panel, 'memory.decideApiKey'),
         status: panel.querySelectorAll('[data-memorydecide-models-status]'),
-        list: [panel.querySelector('#dai-memorydecide-models'), panel.querySelector('#dai-hub-memorydecide-models')].filter(Boolean),
         target: panel.querySelectorAll('[data-setting="memory.decideModel"]'),
         button,
     });
@@ -3942,7 +3943,6 @@ async function fetchNpcColdModels(panel, button) {
     return fetchModelList(panel, {
         read: name => name === 'BaseUrl' ? readSettingInput(panel, 'npc.coldBaseUrl') : readSettingInput(panel, 'npc.coldApiKey'),
         status: panel.querySelectorAll('[data-npc-cold-models-status]'),
-        list: [panel.querySelector('#dai-npc-cold-models'), panel.querySelector('#dai-hub-npc-cold-models')].filter(Boolean),
         target: panel.querySelectorAll('[data-setting="npc.coldModel"]'),
         button,
     });
