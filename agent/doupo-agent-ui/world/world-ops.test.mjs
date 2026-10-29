@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { buildWorldInjection, extractOpsBlock, parseOps, stripOpsBlock, OPS_GUIDE, WORLD_HEADER } from '../world/world-ops.js';
+import { buildWorldInjection, extractOpsBlock, parseOps, stripOpsBlock, OPS_GUIDE, WORLD_HEADER, seasonOf } from '../world/world-ops.js';
 
 const snapshot = {
     clock: { day: 5, minute: 500, label: '三年之约倒计时' },
@@ -10,6 +10,15 @@ const snapshot = {
         { id: 'e4', day: 5, text: '限期比武报名', endDay: 7, done: false },
         { id: 'e5', day: 5, text: '今日到期悬赏', endDay: 4, done: false },
         { id: 'e6', day: 5, text: '有人在收异火消息', weight: 'rumor', done: false },
+        { id: 'e8', day: 9, text: '帝国炼药师大会开幕', weight: 'major', location: '帝都', done: false },
+    ],
+    tension: "storm",
+    factions: [
+        { name: '云岚宗', stance: 'hostile', dynamics: '因拒婚震怒', basis: '退婚现场', day: 1, updatedDay: 3 },
+        { name: '米特尔家族', stance: 'friendly', dynamics: '', day: 1, updatedDay: 2 },
+    ],
+    people: [
+        { name: '药老', attitude: '严厉但护短', basis: '出手相护', day: 1, updatedDay: 2 },
     ],
     tasks: [
         { id: 't1', title: '三年之约前变强', detail: '从三段斗之气到斗者', basis: '与纳兰嫣然的约定', day: 1, endDay: 12, status: 'active' },
@@ -23,6 +32,15 @@ const snapshot = {
 // —— 注入文本：时钟、现状、双域事件；已了结的不出现；依据跟在事件后 ——
 const injected = buildWorldInjection(snapshot);
 assert.ok(injected.includes('第 5 天 08:20'), injected);
+assert.ok(injected.includes('（春季）'), '时钟行带季节');
+assert.equal(seasonOf(1), '春');
+assert.equal(seasonOf(91), '夏');
+assert.equal(seasonOf(181), '秋');
+assert.equal(seasonOf(271), '冬');
+assert.equal(seasonOf(361), '春', '跨年轮转');
+assert.ok(OPS_GUIDE.includes('四季轮转'), '指南写明季节规则');
+assert.ok(OPS_GUIDE.includes('预定事件'), '指南写明预定事件');
+assert.ok(OPS_GUIDE.includes('setTension'), '指南写明氛围操作');
 assert.ok(injected.includes('三年之约倒计时'));
 assert.ok(injected.includes('时期：萧家废物时期；所在地：乌坦城；天气：晴；名声：乌坦城小有名气；通缉度：被米特尔家族记恨'));
 assert.ok(injected.includes('身边事件'));
@@ -30,10 +48,17 @@ assert.ok(injected.includes('(e3 第5天) 城东三家铺子夜里失窃（依�
 assert.ok(injected.includes('(e4 第5天) 限期比武报名（剩 3 天）'), '剩余天数按 clock.day 算');
 assert.ok(injected.includes('(e5 第5天) 今日到期悬赏（今日到期）'));
 assert.ok(injected.includes('？(e6 第5天) 有人在收异火消息（传闻·未证实）'), '传闻事件要带未证实标记');
+assert.ok(injected.includes('(e8 第9天) 帝国炼药师大会开幕（地点：帝都）（预定：第9天）'), '未来事件带地点与预定标');
 assert.ok(injected.includes('世界大事'));
 assert.ok(injected.includes('当前任务（进行中，达成用 completeTask、作废用 deleteTask）'), '任务栏要进注入');
 assert.ok(injected.includes('◆(t1 第1天接) 三年之约前变强：从三段斗之气到斗者（剩 8 天）（来源：与纳兰嫣然的约定）'), '任务行带详情/时限/来源');
 assert.ok(!injected.includes('已完成的旧任务'), '已完成任务不进注入');
+assert.ok(injected.includes('势力动向（改变态度或动向用 setFaction）'), '势力栏进注入');
+assert.ok(injected.includes('- 云岚宗：敌对（因拒婚震怒）（依据：退婚现场）'), '势力行带态度/动向/依据');
+assert.ok(injected.includes('- 米特尔家族：友好'), '友好势力也在');
+assert.ok(injected.includes('相关人物（改变态度用 setPerson）'), '人物栏进注入');
+assert.ok(injected.includes('- 药老：严厉但护短（依据：出手相护）'), '人物行带态度/依据');
+assert.ok(injected.includes('世界氛围：风波（危机频发）'), '氛围行进注入');
 assert.ok(injected.includes('(e9 第3天) 云岚宗与纳兰家密谈退婚 [置顶]'));
 assert.ok(!injected.includes('已了结的旧事'));
 

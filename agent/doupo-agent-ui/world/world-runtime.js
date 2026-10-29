@@ -10,13 +10,24 @@
 const SCOPES = Object.freeze(['near', 'world']);
 const WEIGHTS = Object.freeze(['minor', 'major', 'rumor']);
 const INFO_FIELDS = Object.freeze(['weather', 'location', 'era', 'reputation', 'wanted']);
+const STANCES = Object.freeze(['hostile', 'wary', 'neutral', 'friendly', 'allied']);
+export const STANCE_LABELS = Object.freeze({ hostile: '敌对', wary: '警惕', neutral: '中立', friendly: '友好', allied: '同盟' });
 const MAX_EVENT_TEXT = 300;
 const MAX_BASIS_TEXT = 80;
 const MAX_EVENT_DAYS = 90;
 const MAX_TASK_TITLE = 60;
 const MAX_TASK_DETAIL = 300;
 const MAX_TASKS = 30;
+const MAX_FACTIONS = 20;
+const MAX_PEOPLE = 30;
+const MAX_FACTION_NAME = 30;
+const MAX_PERSON_NAME = 20;
+const MAX_DYNAMICS_TEXT = 200;
+const MAX_ATTITUDE_TEXT = 80;
 const MAX_INFO_TEXT = 80;
+const MAX_EVENT_LOCATION = 40;
+const TENSIONS = Object.freeze(["calm", "rising", "storm"]);
+export const TENSION_LABELS = Object.freeze({ calm: "平静", rising: "升温", storm: "风波" });
 const MAX_LABEL_TEXT = 60;
 const MAX_ADVANCE_DAYS = 365;
 const MAX_ADVANCE_MINUTES = 1439;
@@ -60,8 +71,39 @@ function initialState(now) {
         nearEvents: [],
         worldEvents: [],
         tasks: [],
+        factions: [],
+        people: [],
+        tension: "calm",
         log: [],
         updatedAt: now(),
+    };
+}
+
+/** 势力/人物是"按名字 upsert"的实体：同名就更新，不给新号。 */
+function normalizeOneFaction(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const name = text(raw.name);
+    if (!name) return null;
+    return {
+        name: name.slice(0, MAX_FACTION_NAME),
+        stance: STANCES.includes(raw.stance) ? raw.stance : 'neutral',
+        dynamics: text(raw.dynamics).slice(0, MAX_DYNAMICS_TEXT),
+        basis: text(raw.basis).slice(0, MAX_BASIS_TEXT),
+        day: clampInt(raw.day, 1, 99999, 1),
+        updatedDay: clampInt(raw.updatedDay, 1, 99999, null),
+    };
+}
+
+function normalizeOnePerson(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const name = text(raw.name);
+    if (!name) return null;
+    return {
+        name: name.slice(0, MAX_PERSON_NAME),
+        attitude: text(raw.attitude).slice(0, MAX_ATTITUDE_TEXT),
+        basis: text(raw.basis).slice(0, MAX_BASIS_TEXT),
+        day: clampInt(raw.day, 1, 99999, 1),
+        updatedDay: clampInt(raw.updatedDay, 1, 99999, null),
     };
 }
 
@@ -98,6 +140,7 @@ function normalizeState(raw, now) {
                 scope,
                 day: clampInt(item.day, 1, 99999, 1),
                 text: body.slice(0, MAX_EVENT_TEXT),
+                location: text(item.location).slice(0, MAX_EVENT_LOCATION),
                 basis: text(item.basis).slice(0, MAX_BASIS_TEXT),
                 endDay: clampInt(item.endDay, 1, 99999, null),
                 weight: WEIGHTS.includes(item.weight) ? item.weight : 'minor',
@@ -127,6 +170,9 @@ function normalizeState(raw, now) {
         nearEvents: cleanEvents(source.nearEvents, 'near'),
         worldEvents: cleanEvents(source.worldEvents, 'world'),
         tasks,
+        factions: (Array.isArray(source.factions) ? source.factions : []).map(normalizeOneFaction).filter(Boolean).slice(-MAX_FACTIONS),
+        people: (Array.isArray(source.people) ? source.people : []).map(normalizeOnePerson).filter(Boolean).slice(-MAX_PEOPLE),
+        tension: TENSIONS.includes(source.tension) ? source.tension : "calm",
         log: (Array.isArray(source.log) ? source.log : []).slice(-DEFAULT_MAX_LOG),
         updatedAt: text(source.updatedAt) || now(),
     };
@@ -261,12 +307,14 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
             }
             // 同栏里已有同文进行中的事件就不重记，防止模型一轮里反复登记同一件事。
             if (eventsOf(scope).some(event => !event.done && event.text === body)) return { ok: false, reason: 'duplicate_text' };
+            const location = text(op.location).slice(0, MAX_EVENT_LOCATION);
             const basis = text(op.basis).slice(0, MAX_BASIS_TEXT);
-            const event = { id: nextId(), scope, day, text: body, basis, endDay, weight: WEIGHTS.includes(op.weight) ? op.weight : 'minor', pinned: false, done: false, resolvedDay: null };
+            const event = { id: nextId(), scope, day, text: body, location, basis, endDay, weight: WEIGHTS.includes(op.weight) ? op.weight : 'minor', pinned: false, done: false, resolvedDay: null };
             eventsOf(scope).push(event);
             prune(scope);
             const expiryNote = endDay !== null ? `，有效至第 ${endDay} 天` : '';
-            return { ok: true, id: event.id, summary: `${scope === 'world' ? '世界大事' : '身边事件'} +${event.id}（第 ${day} 天）：${body}${basis ? `（依据：${basis}）` : ''}${expiryNote}`, undo: { op: '_removeEvent', id: event.id } };
+            const locationNote = location ? `，地点：${location}` : '';
+            return { ok: true, id: event.id, summary: `${scope === 'world' ? '世界大事' : '身边事件'} +${event.id}（第 ${day} 天）：${body}${basis ? `（依据：${basis}）` : ''}${locationNote}${expiryNote}`, undo: { op: '_removeEvent', id: event.id } };
         }
         if (kind === 'resolveEvent') {
             const event = findEvent(text(op.id));
@@ -342,6 +390,73 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
             if (!changed) return { ok: false, reason: 'task_nothing_to_update' };
             return { ok: true, id: task.id, summary: `任务更新 ${task.id}「${task.title}」`, undo: { op: 'updateTask', id: task.id, detail: beforeDetail } };
         }
+        // ── 势力与人物：按名字 upsert，剧情改变关系时更新 ──
+        if (kind === 'setFaction') {
+            const name = text(op.name);
+            if (!name) return { ok: false, reason: 'name_missing' };
+            if (name.length > MAX_FACTION_NAME) return { ok: false, reason: 'name_too_long' };
+            const stance = STANCES.includes(op.stance) ? op.stance : 'neutral';
+            const dynamics = text(op.dynamics).slice(0, MAX_DYNAMICS_TEXT);
+            const basis = text(op.basis).slice(0, MAX_BASIS_TEXT);
+            const existing = state.factions.find(item => item.name === name);
+            if (existing) {
+                const before = { ...existing };
+                if (op.stance !== undefined) existing.stance = stance;
+                if (op.dynamics !== undefined) existing.dynamics = dynamics;
+                if (op.basis !== undefined && basis) existing.basis = basis;
+                existing.updatedDay = state.clock.day;
+                const changed = existing.stance !== before.stance || existing.dynamics !== before.dynamics;
+                if (!changed) return { ok: false, reason: 'faction_nothing_to_update' };
+                return { ok: true, summary: `势力更新 ${name}：${STANCE_LABELS[existing.stance]}${existing.dynamics ? `（${existing.dynamics}）` : ''}`, undo: { op: '_setFactionRaw', faction: before } };
+            }
+            if (state.factions.length >= MAX_FACTIONS) return { ok: false, reason: 'factions_full' };
+            const faction = normalizeOneFaction({ name, stance, dynamics, basis, day: state.clock.day, updatedDay: state.clock.day });
+            state.factions.push(faction);
+            return { ok: true, summary: `势力登记 ${name}：${STANCE_LABELS[faction.stance]}${dynamics ? `（${dynamics}）` : ''}`, undo: { op: '_removeFaction', name } };
+        }
+        if (kind === 'deleteFaction') {
+            const name = text(op.name);
+            const faction = state.factions.find(item => item.name === name);
+            if (!faction) return { ok: false, reason: 'faction_not_found' };
+            state.factions = state.factions.filter(item => item.name !== name);
+            return { ok: true, summary: `势力移除 ${name}`, undo: { op: '_setFactionRaw', faction } };
+        }
+        if (kind === 'setPerson') {
+            const name = text(op.name);
+            if (!name) return { ok: false, reason: 'name_missing' };
+            if (name.length > MAX_PERSON_NAME) return { ok: false, reason: 'name_too_long' };
+            const attitude = text(op.attitude).slice(0, MAX_ATTITUDE_TEXT);
+            if (!attitude) return { ok: false, reason: 'attitude_missing' };
+            const basis = text(op.basis).slice(0, MAX_BASIS_TEXT);
+            const existing = state.people.find(item => item.name === name);
+            if (existing) {
+                const before = { ...existing };
+                existing.attitude = attitude;
+                if (basis) existing.basis = basis;
+                existing.updatedDay = state.clock.day;
+                if (existing.attitude === before.attitude) return { ok: false, reason: 'person_nothing_to_update' };
+                return { ok: true, summary: `人物更新 ${name}：${attitude}`, undo: { op: '_setPersonRaw', person: before } };
+            }
+            if (state.people.length >= MAX_PEOPLE) return { ok: false, reason: 'people_full' };
+            const person = normalizeOnePerson({ name, attitude, basis, day: state.clock.day, updatedDay: state.clock.day });
+            state.people.push(person);
+            return { ok: true, summary: `人物登记 ${name}：${attitude}`, undo: { op: '_removePerson', name } };
+        }
+        if (kind === 'deletePerson') {
+            const name = text(op.name);
+            const person = state.people.find(item => item.name === name);
+            if (!person) return { ok: false, reason: 'person_not_found' };
+            state.people = state.people.filter(item => item.name !== name);
+            return { ok: true, summary: `人物移除 ${name}`, undo: { op: '_setPersonRaw', person } };
+        }
+        if (kind === 'setTension') {
+            const level = text(op.level);
+            if (!TENSIONS.includes(level)) return { ok: false, reason: 'bad_tension' };
+            const before = state.tension;
+            state.tension = level;
+            if (before === level) return { ok: false, reason: 'tension_nothing_to_update' };
+            return { ok: true, summary: `世界氛围：${TENSION_LABELS[before]} → ${TENSION_LABELS[level]}`, undo: { op: 'setTension', level: before } };
+        }
         // 内部撤销操作：只由同楼重 roll 的回滚调用，不写进模型指南。
         if (kind === '_deleteTask') {
             const id = text(op.id);
@@ -363,6 +478,30 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
             state.tasks.push(restoredTask);
             pruneTasks();
             return { ok: true, summary: `恢复任务 ${restoredTask.id}` };
+        }
+        if (kind === '_setFactionRaw') {
+            const faction = normalizeOneFaction(op.faction);
+            if (!faction) return { ok: false, reason: 'faction_not_found' };
+            const at = state.factions.findIndex(item => item.name === faction.name);
+            if (at >= 0) state.factions[at] = faction;
+            else state.factions.push(faction);
+            return { ok: true, summary: `恢复势力 ${faction.name}` };
+        }
+        if (kind === '_removeFaction') {
+            state.factions = state.factions.filter(item => item.name !== text(op.name));
+            return { ok: true, summary: `撤销势力 ${text(op.name)}` };
+        }
+        if (kind === '_setPersonRaw') {
+            const person = normalizeOnePerson(op.person);
+            if (!person) return { ok: false, reason: 'person_not_found' };
+            const at = state.people.findIndex(item => item.name === person.name);
+            if (at >= 0) state.people[at] = person;
+            else state.people.push(person);
+            return { ok: true, summary: `恢复人物 ${person.name}` };
+        }
+        if (kind === '_removePerson') {
+            state.people = state.people.filter(item => item.name !== text(op.name));
+            return { ok: true, summary: `撤销人物 ${text(op.name)}` };
         }
         if (kind === '_removeEvent') {
             const id = text(op.id);
@@ -436,6 +575,8 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
             world: state.worldEvents.filter(event => !event.done).length,
             total: state.nearEvents.length + state.worldEvents.length,
             tasks: { active: state.tasks.filter(task => task.status === 'active').length, done: state.tasks.filter(task => task.status === 'done').length, total: state.tasks.length },
+            factions: state.factions.length,
+            people: state.people.length,
         };
     }
 

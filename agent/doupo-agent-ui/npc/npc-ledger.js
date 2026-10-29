@@ -28,6 +28,9 @@ const MAX_THINGS = 16;
 const MAX_LOG = 80;
 const MAX_FAVOR_LOG = 60;
 const MAX_NAME = 40;
+/** 经历只收“重大转变”，一条人物一生级别的转折不会太多；满了丢最旧的。 */
+const MAX_EXP = 120;
+const MAX_EXP_PER_PATCH = 4;
 
 export const PRESENCE_OPTIONS = Object.freeze(['在场', '不在场']);
 export const IMPORTANCE_OPTIONS = Object.freeze(['重要', '不重要']);
@@ -145,7 +148,8 @@ const KEY_ALIASES = new Map([
     ['重要', 'importance'], ['重要度', 'importance'], ['重要性', 'importance'], ['importance', 'importance'],
     ['好感', 'favor'], ['好感度', 'favor'], ['favor', 'favor'],
     ['好感理由', 'favorReason'], ['理由', 'favorReason'], ['favorReason', 'favorReason'],
-    ['流水', 'log'], ['经历', 'log'], ['经过', 'log'], ['事件', 'log'], ['log', 'log'],
+    ['流水', 'log'], ['经过', 'log'], ['事件', 'log'], ['log', 'log'],
+    ['经历', 'exp'], ['重要经历', 'exp'], ['转变', 'exp'], ['心路', 'exp'], ['exp', 'exp'],
     ['设定', 'fields'], ['字段', 'fields'], ['档案', 'fields'], ['fields', 'fields'],
 ]);
 
@@ -272,6 +276,17 @@ function clampNumber(value, min, max, fallback) {
     return Math.max(min, Math.min(max, Math.round(number)));
 }
 
+/** 一条经历：一句“他从此不一样了”的转变 + 世界天数/楼层。 */
+function normalizeExpEntry(item) {
+    if (item && typeof item === 'object' && !Array.isArray(item)) {
+        const body = text(item.转变 ?? item.text ?? item.内容 ?? item.事情, 200);
+        const day = Number.isFinite(Number(item.day)) ? Number(item.day) : (Number.isFinite(Number(item.天数)) ? Number(item.天数) : null);
+        const floor = Number.isInteger(item.floor) ? item.floor : (Number.isInteger(item.楼层) ? item.楼层 : null);
+        return { text: body, day, floor };
+    }
+    return { text: text(item, 200), day: null, floor: null };
+}
+
 function normalizeName(value) {
     return text(value, MAX_NAME).replace(/^[\s【\[「『(（]+|[\s】\]」』)）]+$/g, '');
 }
@@ -290,7 +305,7 @@ export function createEmptyRecord(name, options = {}) {
         others: [], items: [], storage: '', money: '', property: '', debt: '',
         location: '', presence: options.presence === '在场' ? '在场' : '不在场', doing: '', reachable: '',
         secret: { hideFrom: '', what: '' },
-        log: [], favorLog: [],
+        log: [], favorLog: [], exp: [],
         importance: options.importance === '重要' ? '重要' : '不重要',
         source,
         firstFloor: floor,
@@ -340,6 +355,9 @@ export function normalizeRecord(raw) {
             reason: text(item?.reason, FAVOR_REASON_MAX),
         })).slice(-MAX_FAVOR_LOG);
     }
+    if (Array.isArray(input.exp)) {
+        record.exp = input.exp.map(item => normalizeExpEntry(item)).filter(item => item.text).slice(-MAX_EXP);
+    }
     if (Number.isInteger(input.lastFloor)) record.lastFloor = input.lastFloor;
     record.version = Math.max(1, clampNumber(input.version, 1, 1e9, 1));
     if (typeof input.createdAt === 'string') record.createdAt = input.createdAt;
@@ -362,7 +380,7 @@ function patchList(payload) {
 export function normalizePatch(raw, context = {}) {
     const input = raw && typeof raw === 'object' ? raw : (typeof raw === 'string' ? { name: raw } : {});
     const result = {
-        name: '', fields: {}, favor: null, favorReason: '', log: [], presence: null,
+        name: '', fields: {}, favor: null, favorReason: '', log: [], exp: [], presence: null,
         importance: null, source: SOURCE_OPTIONS.includes(context.source) ? context.source : null, ignored: [],
     };
     const absorb = (key, value) => {
@@ -381,6 +399,15 @@ export function normalizePatch(raw, context = {}) {
                 const chunk = text(entry, 200);
                 if (chunk) result.log.push(chunk);
                 if (result.log.length >= 6) break;
+            }
+            return;
+        }
+        if (target === 'exp') {
+            const entries = Array.isArray(value) ? value : [value];
+            for (const entry of entries) {
+                const clean = normalizeExpEntry(entry);
+                if (clean.text) result.exp.push(clean);
+                if (result.exp.length >= MAX_EXP_PER_PATCH) break;
             }
             return;
         }
@@ -520,6 +547,9 @@ export function createNpcLedger({ maxRecords = 200, now = () => new Date() } = {
             if (!fillOnly) for (const line of patch.log) target.log.push({ floor, day, text: line });
             if (target.log.length > MAX_LOG) target.log.splice(0, target.log.length - MAX_LOG);
             if (!fillOnly && patch.log.length) touched.push('流水');
+            if (!fillOnly) for (const entry of patch.exp) target.exp.push({ ...entry, day: entry.day ?? day, floor: entry.floor ?? floor });
+            if (target.exp.length > MAX_EXP) target.exp.splice(0, target.exp.length - MAX_EXP);
+            if (!fillOnly && patch.exp.length) touched.push('经历');
             target.lastFloor = floor ?? target.lastFloor;
             if (touched.length) {
                 target.version += 1;
@@ -543,6 +573,30 @@ export function createNpcLedger({ maxRecords = 200, now = () => new Date() } = {
         changes += 1;
         lastChange = { name: record.name, fields: ['删除'], at: stamp() };
         return { status: 'removed', record };
+    }
+
+    /** 全簿经历汇总：[{ name, entries }]，经历页与精简功能从这里读。 */
+    function exps() {
+        return [...records.values()]
+            .filter(record => record.exp.length)
+            .map(record => ({ name: record.name, entries: structuredClone(record.exp) }));
+    }
+
+    /** 精简写回：用压缩后的经历整体替换这个人的经历清单。 */
+    function replaceExp(name, entries) {
+        const key = findKey(name);
+        if (!key) return { status: 'not_found' };
+        const record = records.get(key);
+        const clean = (Array.isArray(entries) ? entries : []).map(item => normalizeExpEntry(item)).filter(item => item.text).slice(-MAX_EXP);
+        const before = record.exp.length;
+        record.exp = clean;
+        if (before !== clean.length) {
+            record.version += 1;
+            record.updatedAt = stamp();
+            changes += 1;
+            lastChange = { name: record.name, fields: ['经历精简'], at: record.updatedAt };
+        }
+        return { status: 'replaced', name: record.name, before, after: clean.length };
     }
 
     function clear() {
@@ -635,7 +689,7 @@ export function createNpcLedger({ maxRecords = 200, now = () => new Date() } = {
     }
 
     return Object.freeze({
-        apply, get, list, remove, clear, status, exportAll, load, describe, injection,
+        apply, get, list, remove, clear, status, exportAll, load, describe, injection, exps, replaceExp,
         find: name => (findKey(name) ? true : false),
         names: () => [...records.values()].map(record => record.name),
         missing: nameOrRecord => {
@@ -697,6 +751,7 @@ function describeFull(record) {    const lines = [];
     if (record.secret.what || record.secret.hideFrom) lines.push(`秘密：${record.secret.hideFrom ? `瞒着${record.secret.hideFrom}` : ''}${record.secret.hideFrom && record.secret.what ? '，' : ''}${record.secret.what}`);
     const recent = record.log.slice(-1)[0];
     if (recent) lines.push(`近事：${recent.text}`);
+    if (record.exp.length) lines.push(`经历：${record.exp.slice(-3).map(item => `${item.day !== null ? `第${item.day}天` : ''}${item.text}`).join('；')}`);
     return lines.join('\n');
 }
 

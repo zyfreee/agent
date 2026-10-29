@@ -6,9 +6,18 @@
  * 脚本逐行解析，坏行跳过并记录，好行交给 world-runtime 校验执行。
  */
 
-import { formatClock } from './world-runtime.js';
+import { formatClock, STANCE_LABELS, TENSION_LABELS } from './world-runtime.js';
 
 const NEAR_LIMIT = 8;
+
+/** 斗气大陆历：360 天一年，90 天一季。纯推导值，不占状态。 */
+export function seasonOf(day) {
+    const dayInYear = ((Math.max(1, Math.floor(day)) - 1) % 360) + 1;
+    if (dayInYear <= 90) return '春';
+    if (dayInYear <= 180) return '夏';
+    if (dayInYear <= 270) return '秋';
+    return '冬';
+}
 const WORLD_LIMIT = 6;
 const DEFAULT_MAX_CHARS = 900;
 const DEFAULT_MAX_OPS = 8;
@@ -24,9 +33,11 @@ export const OPS_GUIDE = [
     '{"op":"addEvent","scope":"near","text":"城东连着三家铺子夜里失窃","basis":"最近几楼提到的失窃传闻，主角今早又看见巡卫盘查"}',
     '{"op":"addEvent","scope":"world","text":"皇室宣布炼药师大会提前","basis":"上楼贵族宾客的谈话里放出风声","day":6,"weight":"major","days":10}',
     '```',
-    '可用操作：advance(days≤365,minutes≤1439)；setClock(day,minute,label)；addTask(title≤60字,detail≤300字,basis,days=时限≤90)；completeTask(id)；deleteTask(id)；updateTask(id,detail)；addEvent(scope:near|world,text≤120字,basis≤80字,day,weight:minor|major|rumor,days=有效天数≤90，到期自动了结)；resolveEvent(id)；pinEvent(id)；setInfo(field:weather|location|era|reputation|wanted,text≤80字)。id 用上面事件列表里的编号。',
+    '可用操作：advance(days≤365,minutes≤1439)；setClock(day,minute,label)；addTask(title≤60字,detail≤300字,basis,days=时限≤90)；completeTask(id)；deleteTask(id)；updateTask(id,detail)；setFaction(name,stance:敌对hostile|警惕wary|中立neutral|友好friendly|同盟allied,dynamics动向,basis)；deleteFaction(name)；setPerson(name,attitude态度,basis)；deletePerson(name)；addEvent(scope:near|world,text≤120字,basis≤80字,day,location=事发地点≤40字,weight:minor|major|rumor,days=有效天数≤90，到期自动了结)；setTension(level:calm平静|rising升温|storm风波)；resolveEvent(id)；pinEvent(id)；setInfo(field:weather|location|era|reputation|wanted,text≤80字)。id 用上面事件列表里的编号。',
     '任务规则：玩家承诺或接下的事、人物托付、剧情给出的明确目标才立任务（addTask），detail 写清目标、背景与现状；任务达成后及时 completeTask，作废用 deleteTask；进展变化用 updateTask 更新详情。不要把每件小事都立成任务。',
-    '事件取材规则：事件从最近剧情里有依据地长出来——正在发生的事、玩家行动引出的动静、所在地点此时合理的动态，内容不拘一格（市井琐事、势力动作、传闻都行），但 basis 必须一句话写清它从哪来（哪楼/谁/什么事引出的）；没有依据的事不记，也不要把原著桥段照搬成事件，原著只在正文需要引用时用。rumor=传闻（未证实消息，正文不得当事实写，查证后 resolveEvent 了结并另记真相或戳穿）；有时限的事（限期比武、悬赏、药效、期限任务）务必带上 days，注入列表会显示剩余天数，正文里的时间压力要和它对得上。机遇与危机（拍卖会、药草成熟、仇家寻上门、势力清洗）属于世界主动投放的大事，偶尔来一件、必须有依据，不要每轮都发；名声（reputation）与通缉度（wanted）只在剧情真有对应行为时更新。',
+    '地点与氛围：事件必须符合所在地特征（魔兽山脉是兽袭与药草，帝都是权贵与阴谋），跨地发生的大事写明 location；setTension 管「世界氛围」——大事临近升 rising、风波不断升 storm、风波平息回落 calm，氛围决定这轮投放事件的频率和烈度。',
+        '季节与日程：一年 360 天四季轮转（春/夏/秋/冬），环境描写、药草收成、衣着起居要跟季节对上；固定的大会、仪式、约期用 addEvent 带未来的 day 登记成预定事件，到日子再 resolveEvent。',
+        '事件取材规则：事件从最近剧情里有依据地长出来——正在发生的事、玩家行动引出的动静、所在地点此时合理的动态，内容不拘一格（市井琐事、势力动作、传闻都行），但 basis 必须一句话写清它从哪来（哪楼/谁/什么事引出的）；没有依据的事不记，也不要把原著桥段照搬成事件，原著只在正文需要引用时用。rumor=传闻（未证实消息，正文不得当事实写，查证后 resolveEvent 了结并另记真相或戳穿）；有时限的事（限期比武、悬赏、药效、期限任务）务必带上 days，注入列表会显示剩余天数，正文里的时间压力要和它对得上。机遇与危机（拍卖会、药草成熟、仇家寻上门、势力清洗）属于世界主动投放的大事，偶尔来一件、必须有依据，不要每轮都发；名声（reputation）与通缉度（wanted）只在剧情真有对应行为时更新。',
     '没有需要记下的变化就完全不要输出这个区块；正文照常写给玩家看，指令只是记账。',
 ].join('\n');
 
@@ -49,6 +60,8 @@ function eventLine(event, today) {
     const mark = event.weight === 'major' ? '★' : event.weight === 'rumor' ? '？' : '·';
     const pinned = event.pinned ? ' [置顶]' : '';
     const basis = text(event.basis) ? `（依据：${text(event.basis)}）` : '';
+    const scheduled = Number.isInteger(today) && event.day > today ? `（预定：第${event.day}天）` : '';
+    const where = text(event.location) ? `（地点：${text(event.location)}）` : '';
     const rumor = event.weight === 'rumor' ? '（传闻·未证实）' : '';
     let due = '';
     if (event.endDay !== null && event.endDay !== undefined && event.done !== true) {
@@ -56,7 +69,7 @@ function eventLine(event, today) {
         const left = event.endDay - todayNum + 1;
         due = left > 0 ? `（剩 ${left} 天）` : '（今日到期）';
     }
-    return `${mark}(${event.id} 第${event.day}天) ${event.text}${due}${rumor}${basis}${pinned}`;
+    return `${mark}(${event.id} 第${event.day}天) ${event.text}${where}${scheduled}${due}${rumor}${basis}${pinned}`;
 }
 
 /** 世界快照 → 注入文本；超预算时优先保住时钟，事件从末尾往上丢。 */
@@ -65,12 +78,14 @@ export function buildWorldInjection(snapshot = {}, { maxChars = DEFAULT_MAX_CHAR
     const clock = snapshot.clock ?? {};
     const info = snapshot.info ?? {};
     const lines = [];
-    lines.push(`时钟：${formatClock(clock)}${textOr(clock.label, c => `（${c}）`)}`);
+    const today2 = intIn(clock.day, 1, 99999) ?? 1;
+lines.push(`时钟：${formatClock(clock)}（${seasonOf(today2)}季）${textOr(clock.label, c => `（${c}）`)}`);
     const infoParts = [];
     for (const [field, label] of [['era', '时期'], ['location', '所在地'], ['weather', '天气'], ['reputation', '名声'], ['wanted', '通缉度']]) {
         if (text(info[field])) infoParts.push(`${label}：${info[field]}`);
     }
     if (infoParts.length) lines.push(`现状：${infoParts.join('；')}`);
+    if (snapshot.tension && snapshot.tension !== 'calm') lines.push(`世界氛围：${TENSION_LABELS[snapshot.tension] ?? '平静'}${snapshot.tension === 'storm' ? '（危机频发）' : snapshot.tension === 'rising' ? '（大事酝酿）' : ''}`);
     // 注入排序：置顶 → 重大 → 传闻 → 其余按最新；重要事件不被新登记的小事挤出列表。
     const byImportance = (a, b) => (b.pinned === true) - (a.pinned === true)
         || (b.weight === 'major') - (a.weight === 'major')
@@ -81,6 +96,14 @@ export function buildWorldInjection(snapshot = {}, { maxChars = DEFAULT_MAX_CHAR
     const today = intIn(clock.day, 1, 99999);
     if (near.length) lines.push(`身边事件（未了结，可被剧情推进或 resolveEvent）：\n${near.map(event => eventLine(event, today)).join('\n')}`);
     if (world.length) lines.push(`世界大事（未了结）：\n${world.map(event => eventLine(event, today)).join('\n')}`);
+    // 势力与人物：敌对优先，最近更新的在前；只列剧情真正接触过的。
+    const stanceRank = { hostile: 0, wary: 1, allied: 2, friendly: 3, neutral: 4 };
+    const factions = (Array.isArray(snapshot.factions) ? snapshot.factions : [])
+        .slice().sort((a, b) => (stanceRank[a.stance] ?? 2) - (stanceRank[b.stance] ?? 2) || (b.updatedDay ?? 0) - (a.updatedDay ?? 0)).slice(0, FACTION_LIMIT);
+    if (factions.length) lines.push(`势力动向（改变态度或动向用 setFaction）：\n${factions.map(f => factionLine(f)).join('\n')}`);
+    const people = (Array.isArray(snapshot.people) ? snapshot.people : [])
+        .slice().sort((a, b) => (b.updatedDay ?? 0) - (a.updatedDay ?? 0)).slice(0, PEOPLE_LIMIT);
+    if (people.length) lines.push(`相关人物（改变态度用 setPerson）：\n${people.map(p => personLine(p)).join('\n')}`);
     const tasks = (Array.isArray(snapshot.tasks) ? snapshot.tasks : []).filter(task => task?.status === 'active').slice(0, TASK_LIMIT);
     if (tasks.length) lines.push(`当前任务（进行中，达成用 completeTask、作废用 deleteTask）：\n${tasks.map(task => taskLine(task, today)).join('\n')}`);
     let textOut = lines.join('\n');
@@ -92,6 +115,19 @@ export function buildWorldInjection(snapshot = {}, { maxChars = DEFAULT_MAX_CHAR
 }
 
 const TASK_LIMIT = 8;
+const FACTION_LIMIT = 8;
+const PEOPLE_LIMIT = 10;
+
+function factionLine(faction) {
+    const dynamics = text(faction.dynamics) ? `（${text(faction.dynamics)}）` : '';
+    const basis = text(faction.basis) ? `（依据：${text(faction.basis)}）` : '';
+    return `- ${faction.name}：${STANCE_LABELS[faction.stance] ?? '中立'}${dynamics}${basis}`;
+}
+
+function personLine(person) {
+    const basis = text(person.basis) ? `（依据：${text(person.basis)}）` : '';
+    return `- ${person.name}：${text(person.attitude) || '态度未明'}${basis}`;
+}
 
 function taskLine(task, today) {
     const due = task.endDay !== null && task.endDay !== undefined

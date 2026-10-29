@@ -18,7 +18,7 @@ import { createNpcConflictCoordinator } from './npc/npc-conflict.js';
 import { createNpcOutcomeBridge } from './npc/npc-outcome-bridge.js';
 import { createNpcCommitGate } from './npc/npc-commit-gate.js';
 import { createNpcLedger, NPC_FIELDS, FAVOR_SCALE, FAVOR_STEP_MAX, favorLabel } from './npc/npc-ledger.js';
-import { NPC_RECORD_PROMPT, NPC_RECORD_JSON_SCHEMA, NPC_EXTRACT_PROMPT, buildNpcRecordUser, buildNpcExtractUser, playerContextLine, parseNpcRecordReply } from './npc/npc-recorder.js';
+import { NPC_RECORD_PROMPT, NPC_RECORD_JSON_SCHEMA, NPC_EXTRACT_PROMPT, buildNpcRecordUser, buildNpcExtractUser, playerContextLine, parseNpcRecordReply, EXP_CONDENSE_PROMPT, buildExpCondenseUser, parseExpCondenseReply } from './npc/npc-recorder.js';
 import { createNpcColdRuntime } from './npc/npc-cold-runtime.js';
 import { NPC_COLD_PROMPT, buildNpcColdUser } from './npc/npc-cold-recorder.js';
 import { createWorldSimulator } from './request/world-simulator.js';
@@ -41,6 +41,7 @@ import { createRequestRouter } from './request/request-router.js';
 import { probeHostCapabilities } from './host/capability-preflight.js';
 import { createHostStorage } from './host/host-storage.js';
 import { buildControlDashboard, normalizeTheme } from './host/control-dashboard.js';
+import { ORB_ITEMS, buildOrbPanels, createOrbState } from './host/orb-hud.js';
 import { createTurnStages } from './core/turn-stages.js';
 import { createOrchestrator } from './core/orchestrator.js';
 import { registerDefaultContracts, listWritableFields } from './core/turn-state.js';
@@ -53,11 +54,16 @@ import { loadWorldbookEntries, summarizeWorldbookEntries } from './narrative/wor
 import { createFactsIndex } from './narrative/facts-index.js';
 import { createFactsSelector, LOOKUP_RULES, SELECT_RULES } from './narrative/facts-select.js';
 import { createWorldRuntime } from './world/world-runtime.js';
-import { buildWorldInjection, extractOpsBlock, parseOps, stripOpsBlock, OPS_GUIDE, WORLD_HEADER } from './world/world-ops.js';
+import { buildWorldInjection, extractOpsBlock, parseOps, stripOpsBlock, OPS_GUIDE, WORLD_HEADER, seasonOf } from './world/world-ops.js';
 import { buildDecideUser, parseDecision, WORLD_DECIDE_PROMPT, DECIDE_JSON_SCHEMA } from './world/world-decide.js';
 import { createSelfRuntime } from './self/self-runtime.js';
 import { buildSelfInjection, extractOpsBlock as extractSelfOpsBlock, parseOps as parseSelfOps, stripOpsBlock as stripSelfOpsBlock, SELF_GUIDE, SELF_HEADER } from './self/self-ops.js';
 import { buildSelfDecideUser, parseSelfDecision, SELF_DECIDE_PROMPT, SELF_JSON_SCHEMA } from './self/self-decide.js';
+import { createMemoryRuntime } from './memory/memory-runtime.js';
+import { buildMemoryInjection, recallHits, recallKeys, findMemoryConflicts, extractOpsBlock as extractMemoryOpsBlock, parseOps as parseMemoryOps, stripOpsBlock as stripMemoryOpsBlock, MEMORY_GUIDE, MEMORY_HEADER } from './memory/memory-ops.js';
+import { buildDecideUser as buildMemoryDecideUser, parseDecision as parseMemoryDecision, MEMORY_DECIDE_PROMPT, MEMORY_JSON_SCHEMA } from './memory/memory-decide.js';
+import { createDbBridge } from './host/db-bridge.js';
+import { sameSelfState, sameWorldState, sameMemoryState, selfStateFromTables, worldStateFromTables, memoryStateFromTables } from './host/db-tables.js';
 
 const EXTENSION_ID = 'doupo-agent-ui';
 const ROOT_ID = `${EXTENSION_ID}-root`;
@@ -67,6 +73,7 @@ const SETTINGS_BUTTON_ID = `${EXTENSION_ID}-settings-button`;
 const SETTINGS_PANEL_ID = `${EXTENSION_ID}-settings-panel`;
 const SETTINGS_STATUS_ID = `${EXTENSION_ID}-settings-status`;
 const INLINE_SETTINGS_ID = `${EXTENSION_ID}-inline-settings`;
+const ORB_ID = `${EXTENSION_ID}-orb`;
 const VALID_STATUSES = new Set([
     'processing',
     'waiting_input',
@@ -97,6 +104,10 @@ let inlineSettingsAttempts = 0;
 let inlineSettingsObserver;
 let inlineSettingsLoading = false;
 let inlineSettingsGeneration = 0;
+let orbElement;
+let orbState = createOrbState();
+let orbDocumentClick;
+let orbDocumentKey;
 
 function getHostContext() {
     try { return globalThis.SillyTavern?.getContext?.(); } catch { return undefined; }
@@ -117,6 +128,11 @@ function bindHostLifecycle() {
         restoreNpcLedgerFromChat();
         restoreNpcColdFromChat();
         restoreSelfFromChat();
+        restoreMemoryFromChat();
+        try {
+            agentDbBridge.onChatChanged();
+            agentDbBridge.onExternalChange(handleExternalTableChange);
+        } catch { /* 数据库桥不可用时静默跳过，照旧走本地存档 */ }
         void syncWorldbookIndex();
     };
     for (const name of ['APP_INITIALIZED', 'APP_READY']) {
@@ -130,6 +146,7 @@ function bindHostLifecycle() {
     if (typeof chatChanged === 'string' && chatChanged) {
         const handler = () => {
             dashboardScope = undefined;
+            try { agentDbBridge.onChatChanged(); } catch { /* 数据库桥不可用时静默跳过 */ }
             try { agentPromptInjection.clear(); } catch { /* 切聊天时清空注入 */ }
             try { agentWorldPromptInjection.clear(); } catch { /* 同上 */ }
             try { agentImpactPromptInjection.clear(); } catch { /* 同上 */ }
@@ -140,12 +157,14 @@ function bindHostLifecycle() {
             try { restoreNpcLedgerFromChat(); } catch { /* 换聊天读不到人物簿时按空簿开局 */ }
             try { restoreNpcColdFromChat(); } catch { /* 换聊天读不到冷藏台时按空台开局 */ }
             try { restoreSelfFromChat(); } catch { /* 换聊天读不到纳戒时按空戒开局 */ }
+            try { restoreMemoryFromChat(); } catch { /* 换聊天读不到记忆时按空账开局 */ }
             try { agentOrchestrator.restore(currentAgentScope()); } catch { /* 未连接酒馆时跳过恢复 */ }
             refreshControlDashboard();
             refreshWorldPage();
             try { renderImpactLibrary(); } catch { /* 面板未挂载时忽略 */ }
             try { refreshNpcLedgerPage(); } catch { /* 同上 */ }
             try { refreshSelfPage(); } catch { /* 同上 */ }
+            try { refreshMemoryPage(); } catch { /* 同上 */ }
             void syncWorldbookIndex();
         };
         context.eventSource.on(chatChanged, handler);
@@ -174,10 +193,15 @@ function bindHostLifecycle() {
                             if (isImpactDecideDue(chat, { every: impact.decideEvery, lastFloor })) void runImpactDecision({ source: 'auto' });
                         }
                     } catch { /* 记录失败不影响生成 */ }
-                    // 纳戒记账也要用“这一轮之后”的世界天数（炼制时限、超期显示），同样排在世界之后，与影响库互不阻塞。
+                    // 纳戒记账也要用”这一轮之后”的世界天数（炼制时限、超期显示），同样排在世界之后，与影响库互不阻塞。
                     try {
                         const self = selfLedgerSettings();
                         if (self.enabled && self.decideEnabled && self.decideAuto) void runSelfDecision({ source: 'auto' });
+                    } catch { /* 记账失败不影响生成 */ }
+                    // 记忆决定排最后：它要同时看”这一轮之后”的世界天数和前面账本刚落的新账，四条链互不阻塞。
+                    try {
+                        const memory = memorySettings();
+                        if (memory.enabled && memory.decideEnabled && memory.decideAuto) void runMemoryDecision({ source: 'auto' });
                     } catch { /* 记账失败不影响生成 */ }
                 };
                 if (decide.enabled && decide.auto) {
@@ -185,6 +209,7 @@ function bindHostLifecycle() {
                 } else {
                     try { applyWorldOpsFromLatestReply(); } catch { /* 指令执行失败不影响生成 */ }
                     try { applySelfOpsFromLatestReply(); } catch { /* 指令执行失败不影响生成 */ }
+                    try { applyMemoryOpsFromLatestReply(); } catch { /* 指令执行失败不影响生成 */ }
                     afterWorld();
                 }
                 // 人物簿独立记账：正文已经落地，记录员读这一轮把人物变化补进档案。
@@ -199,9 +224,10 @@ function bindHostLifecycle() {
             try { agentImpactPromptInjection.clear(); } catch { /* 同上 */ }
             try { agentNpcLedgerInjection.clear(); } catch { /* 同上 */ }
             try { agentSelfPromptInjection.clear(); } catch { /* 同上 */ }
+            try { agentMemoryPromptInjection.clear(); } catch { /* 同上 */ }
             try {
                 const panel = typeof document !== 'undefined' ? document.getElementById(SETTINGS_PANEL_ID) : null;
-                if (panel && !panel.hidden) { renderFactsStatus(panel); refreshWorldbookStats(panel); refreshWorldPage(panel); refreshControlDashboard(); try { renderImpactLibrary(panel); } catch { /* 同上 */ } try { refreshNpcLedgerPage(panel); } catch { /* 同上 */ } try { refreshSelfPage(panel); } catch { /* 同上 */ } }
+                if (panel && !panel.hidden) { renderFactsStatus(panel); refreshWorldbookStats(panel); refreshWorldPage(panel); refreshControlDashboard(); try { renderImpactLibrary(panel); } catch { /* 同上 */ } try { refreshNpcLedgerPage(panel); } catch { /* 同上 */ } try { refreshSelfPage(panel); } catch { /* 同上 */ } try { refreshMemoryPage(panel); } catch { /* 同上 */ } }
             } catch { /* 面板未挂载时忽略 */ }
         };
         context.eventSource.on(event, handler);
@@ -314,11 +340,37 @@ export const agentNpcLedgerInjection = createPromptInjection({ getContext: getHo
 /** 纳戒（主角自身与随身之物）：跟着聊天存档走；决定、注入和面板都从这里读。 */
 export const agentSelfRuntime = createSelfRuntime({ maxOps: 12 });
 export const agentSelfPromptInjection = createPromptInjection({ getContext: getHostContext, key: 'doupo_self' });
+/** 记忆（主角的四类叙事记忆：恩怨/情报/伏笔/大事记）：跟着聊天存档走；与纳戒（状态）、
+ *  人物簿（别人）、世界（外界动态）互不重叠，只收"值得长期记住的叙事事实"。 */
+export const agentMemoryRuntime = createMemoryRuntime({ maxOps: 12 });
+export const agentMemoryPromptInjection = createPromptInjection({ getContext: getHostContext, key: 'doupo_memory' });
+/** 数据库桥：纳戒/世界台账镜像到「龙血玄黄·数据库」的表格里（表=账本，扩展面板=前端）。
+ *  数据库脚本没装或被关时全部调用静默跳过，照旧走 chatMetadata，零回归。 */
+export const agentDbBridge = createDbBridge({
+    getSettings: () => {
+        try { return currentSettings(); } catch { return undefined; }
+    },
+});
 /** World-book index (uid -> category/name/volumes/content) and the model-side selector that names uids. */
 export const agentFactsIndex = createFactsIndex();
+/** 原著选条用哪套连接：设置里选“自定义”才带上这套覆盖；留空参数沿用全局。 */
+function factsOverrides() {
+    const facts = currentSettings().setting ?? {};
+    if (facts.mode !== 'custom') return undefined;
+    return {
+        connection: 'custom',
+        custom: {
+            baseUrl: typeof facts.baseUrl === 'string' ? facts.baseUrl.trim() : '',
+            apiKey: typeof facts.apiKey === 'string' ? facts.apiKey.trim() : '',
+            provider: facts.provider === 'anthropic' ? 'anthropic' : facts.provider === 'openai' ? 'openai' : '',
+            model: typeof facts.model === 'string' ? facts.model.trim() : '',
+        },
+        model: typeof facts.model === 'string' && facts.model.trim() ? facts.model.trim() : undefined,
+    };
+}
 export const agentFactsSelector = createFactsSelector({
     index: agentFactsIndex,
-    complete: args => agentLlmClient.complete(args),
+    complete: args => agentLlmClient.complete({ ...args, overrides: factsOverrides() }),
     // 设置页里改的选条规则即时生效；留空则用内置默认。
     getRules: () => currentSettings().prompt?.select || SELECT_RULES,
     getLookupRules: () => currentSettings().prompt?.lookup || LOOKUP_RULES,
@@ -439,16 +491,33 @@ function worldEventSettings() {
     };
 }
 
-/** 世界状态跟着聊天走：换聊天读那一份，读不到就按开局初始化。 */
+/** 世界状态跟着聊天走：换聊天读那一份，读不到就按开局初始化；随后数据库表里有账就收养（表优先）。 */
 function restoreWorldFromChat() {
     const record = hostStorage?.worldState?.();
-    if (record?.status === 'ready' && record.value) return agentWorldRuntime.restore(record.value);
-    return agentWorldRuntime.reset();
+    const result = record?.status === 'ready' && record.value ? agentWorldRuntime.restore(record.value) : agentWorldRuntime.reset();
+    void adoptWorldFromDb();
+    return result;
+}
+
+/** 数据库表里已有世界台账就收养（表=账本）；保留本地操作流水，表空则不动。 */
+async function adoptWorldFromDb() {
+    try {
+        const state = await agentDbBridge.adoptWorld();
+        if (!state || sameWorldState(state, agentWorldRuntime.snapshot())) return;
+        const previous = agentWorldRuntime.snapshot();
+        agentWorldRuntime.restore({ ...state, log: Array.isArray(previous?.log) ? previous.log : [] });
+        persistWorld();
+        refreshWorldPage();
+    } catch (error) {
+        console.warn('[斗破Agent] 数据库世界台账收养失败', error);
+    }
 }
 
 function persistWorld() {
-    const result = hostStorage?.saveWorldState?.(agentWorldRuntime.snapshot());
+    const snapshot = agentWorldRuntime.snapshot();
+    const result = hostStorage?.saveWorldState?.(snapshot);
     if (result && typeof result.catch === 'function') result.catch(() => { /* 保存失败由下次操作重试 */ });
+    void agentDbBridge.mirrorWorld(snapshot).catch(() => { /* 镜像失败记在桥状态里，不阻断记账 */ });
     return result;
 }
 
@@ -498,17 +567,160 @@ function selfLedgerSettings() {
     };
 }
 
-/** 纳戒跟着聊天走：换聊天读那一份，读不到就按空戒开局。 */
+/** 纳戒跟着聊天走：换聊天读那一份，读不到就按空戒开局；随后数据库表里有账就收养（表优先）。 */
 function restoreSelfFromChat() {
     const record = hostStorage?.selfState?.();
-    if (record?.status === 'ready' && record.value) return agentSelfRuntime.restore(record.value);
-    return agentSelfRuntime.reset();
+    const result = record?.status === 'ready' && record.value ? agentSelfRuntime.restore(record.value) : agentSelfRuntime.reset();
+    void adoptSelfFromDb();
+    return result;
+}
+
+/** 数据库表里已有纳戒就收养（表=账本）；保留本地操作流水，表空则不动。 */
+async function adoptSelfFromDb() {
+    try {
+        const state = await agentDbBridge.adoptSelf();
+        if (!state || sameSelfState(state, agentSelfRuntime.snapshot())) return;
+        const previous = agentSelfRuntime.snapshot();
+        agentSelfRuntime.restore({ ...state, log: Array.isArray(previous?.log) ? previous.log : [] });
+        persistSelf();
+        refreshSelfPage();
+    } catch (error) {
+        console.warn('[斗破Agent] 数据库纳戒收养失败', error);
+    }
+}
+
+/** 数据库可视化器里的手改回拉：表一变就核对，账不一致就按表收养。 */
+function handleExternalTableChange(view) {
+    if (!view || typeof view !== 'object') return;
+    try {
+        const derived = selfStateFromTables(view);
+        if (derived && !derived.empty && !sameSelfState(derived.state, agentSelfRuntime.snapshot())) {
+            const previous = agentSelfRuntime.snapshot();
+            agentSelfRuntime.restore({ ...derived.state, log: Array.isArray(previous?.log) ? previous.log : [] });
+            persistSelf();
+            refreshSelfPage();
+        }
+    } catch (error) {
+        console.warn('[斗破Agent] 纳戒表格回拉失败', error);
+    }
+    try {
+        const derivedWorld = worldStateFromTables(view);
+        if (derivedWorld && !derivedWorld.empty && !sameWorldState(derivedWorld.state, agentWorldRuntime.snapshot())) {
+            const previousWorld = agentWorldRuntime.snapshot();
+            agentWorldRuntime.restore({ ...derivedWorld.state, log: Array.isArray(previousWorld?.log) ? previousWorld.log : [] });
+            persistWorld();
+            refreshWorldPage();
+        }
+    } catch (error) {
+        console.warn('[斗破Agent] 世界表格回拉失败', error);
+    }
+    try {
+        const derivedMemory = memoryStateFromTables(view);
+        if (derivedMemory && !derivedMemory.empty && !sameMemoryState(derivedMemory.state, agentMemoryRuntime.snapshot())) {
+            const previousMemory = agentMemoryRuntime.snapshot();
+            agentMemoryRuntime.restore({ ...derivedMemory.state, log: Array.isArray(previousMemory?.log) ? previousMemory.log : [] });
+            persistMemory();
+            refreshMemoryPage();
+        }
+    } catch (error) {
+        console.warn('[斗破Agent] 记忆表格回拉失败', error);
+    }
 }
 
 function persistSelf() {
-    const result = hostStorage?.saveSelfState?.(agentSelfRuntime.snapshot());
+    const snapshot = agentSelfRuntime.snapshot();
+    const result = hostStorage?.saveSelfState?.(snapshot);
     if (result && typeof result.catch === 'function') result.catch(() => { /* 保存失败由下次操作重试 */ });
+    void agentDbBridge.mirrorSelf(snapshot).catch(() => { /* 镜像失败记在桥状态里，不阻断记账 */ });
     return result;
+}
+
+/** 记忆页设置：注入开关/预算 + 决定调用的连接与参数。 */
+function memorySettings() {
+    const settings = currentSettings();
+    const memory = settings.memory ?? {};
+    return {
+        enabled: settings.enableMemoryLedger !== false,
+        inject: memory.inject !== false,
+        injectBudget: Number.isInteger(memory.injectBudget) && memory.injectBudget > 0 ? Math.min(memory.injectBudget, 4000) : 800,
+        decideEnabled: memory.decideEnabled !== false,
+        decideAuto: memory.decideAuto !== false,
+        maxFloors: Number.isInteger(memory.decideMaxFloors) && memory.decideMaxFloors > 0 ? Math.min(12, memory.decideMaxFloors) : 6,
+        maxEntries: Number.isInteger(memory.decideMaxEntries) && memory.decideMaxEntries >= 0 ? Math.min(40, memory.decideMaxEntries) : 12,
+        prompt: typeof memory.decidePrompt === 'string' && memory.decidePrompt.trim() ? memory.decidePrompt.trim() : MEMORY_DECIDE_PROMPT,
+        overrides: {
+            connection: memory.decideMode === 'custom' ? 'custom' : 'tavern',
+            model: typeof memory.decideModel === 'string' && memory.decideModel.trim() ? memory.decideModel.trim() : undefined,
+            custom: {
+                baseUrl: typeof memory.decideBaseUrl === 'string' ? memory.decideBaseUrl.trim() : '',
+                apiKey: typeof memory.decideApiKey === 'string' ? memory.decideApiKey.trim() : '',
+                provider: memory.decideProvider === 'anthropic' ? 'anthropic' : memory.decideProvider === 'openai' ? 'openai' : '',
+                model: typeof memory.decideModel === 'string' ? memory.decideModel.trim() : '',
+            },
+            temperature: impactParam(memory.decideTemperature, 2),
+            maxTokens: impactParam(memory.decideMaxTokens, 32768),
+            topP: impactParam(memory.decideTopP, 1),
+            presencePenalty: impactParam(memory.decidePresencePenalty, 2),
+            frequencyPenalty: impactParam(memory.decideFrequencyPenalty, 2),
+        },
+    };
+}
+
+/** 记忆跟着聊天走：换聊天读那一份，读不到就按空账开局；随后数据库表里有账就收养（表优先）。 */
+function restoreMemoryFromChat() {
+    const record = hostStorage?.memoryState?.();
+    const result = record?.status === 'ready' && record.value ? agentMemoryRuntime.restore(record.value) : agentMemoryRuntime.reset();
+    void adoptMemoryFromDb();
+    return result;
+}
+
+/** 数据库表里已有记忆就收养（表=账本）；保留本地操作流水，表空则不动。 */
+async function adoptMemoryFromDb() {
+    try {
+        const state = await agentDbBridge.adoptMemory();
+        if (!state || sameMemoryState(state, agentMemoryRuntime.snapshot())) return;
+        const previous = agentMemoryRuntime.snapshot();
+        agentMemoryRuntime.restore({ ...state, log: Array.isArray(previous?.log) ? previous.log : [] });
+        persistMemory();
+        refreshMemoryPage();
+    } catch (error) {
+        console.warn('[斗破Agent] 数据库记忆收养失败', error);
+    }
+}
+
+function persistMemory() {
+    const snapshot = agentMemoryRuntime.snapshot();
+    const result = hostStorage?.saveMemoryState?.(snapshot);
+    if (result && typeof result.catch === 'function') result.catch(() => { /* 保存失败由下次操作重试 */ });
+    void agentDbBridge.mirrorMemory(snapshot).catch(() => { /* 镜像失败记在桥状态里，不阻断记账 */ });
+    return result;
+}
+
+/** 生成前按需召回主角记忆：只有"关联/别名"命中最近剧情的才进提示词，一场戏没勾到就不注。
+ *  被召回的记忆由 runtime 记一笔强度（排练效应，越常想起越靠前）；统计只进聊天存档，不镜像数据库。 */
+function writeMemoryInjectionForPrompt() {
+    const settings = memorySettings();
+    if (!settings.enabled || !settings.inject) { agentMemoryPromptInjection.clear(); return { status: 'disabled' }; }
+    const probe = agentMemoryPromptInjection.inspect();
+    if (probe.status !== 'ready') return probe;
+    // 召回钥匙的比对面：最近四楼正文（玩家+AI 都算），命中 related/别名 才召回。
+    let sceneText = '';
+    try {
+        const chat = Array.isArray(getHostContext()?.chat) ? getHostContext().chat : [];
+        sceneText = chat.slice(-4).map(message => (typeof message?.mes === 'string' ? message.mes : '')).join('\n');
+    } catch { sceneText = ''; }
+    const hits = recallHits(agentMemoryRuntime.snapshot(), { sceneText });
+    if (!hits.length) { agentMemoryPromptInjection.clear(); return { status: 'empty' }; }
+    agentMemoryRuntime.markRecalled(hits.map(entry => entry.id), { day: worldDay() });
+    persistMemory();
+    const body = buildMemoryInjection(agentMemoryRuntime.snapshot(), { maxChars: settings.injectBudget, sceneText });
+    if (!body) { agentMemoryPromptInjection.clear(); return { status: 'empty' }; }
+    // 决定式自动开启时指令指南不进正文提示词（决定模型另行调用），只注入召回结果保住正文一致性。
+    const withGuide = !(settings.decideEnabled && settings.decideAuto);
+    const guide = typeof currentSettings().memory?.guide === 'string' && currentSettings().memory.guide.trim()
+        ? currentSettings().memory.guide.trim()
+        : MEMORY_GUIDE;
+    return agentMemoryPromptInjection.write({ text: withGuide ? `${MEMORY_HEADER}\n${body}\n\n${guide}` : `${MEMORY_HEADER}\n${body}` }, { depth: injectionSettings().depth, maxChars: settings.injectBudget + (withGuide ? 1200 : 0) });
 }
 
 /** 手动操作与面板操作共用：落账、存档、刷新页面；天数取世界时钟。 */
@@ -564,13 +776,49 @@ function applySelfOpsFromLatestReply() {
     return { status: result.status, applied: result.applied.length, rejected: result.rejected.length, floor: index + 1 };
 }
 
+/**
+ * 生成结束：从最新一条 AI 楼层里取 memory 指令块，交给记忆核验执行（降级模式）。
+ * 同一楼重 roll 时先撤销上一版指令再落新账；指令块从正文剥掉，玩家只看剧情。
+ */
+function applyMemoryOpsFromLatestReply() {
+    const context = getHostContext();
+    const chat = Array.isArray(context?.chat) ? context.chat : [];
+    const index = lastReplyIndex(chat);
+    if (index < 0) return { status: 'no_reply' };
+    if (memorySettings().enabled === false) return { status: 'disabled' };
+    const found = extractMemoryOpsBlock(chat[index].mes);
+    if (!found) return { status: 'no_ops' };
+    const parsed = parseMemoryOps(found.raw);
+    const result = agentMemoryRuntime.apply(parsed.ops, { source: 'llm', floor: index, day: worldDay() });
+    persistMemory();
+    const cleaned = stripMemoryOpsBlock(chat[index].mes);
+    if (cleaned !== chat[index].mes) {
+        chat[index].mes = cleaned;
+        try {
+            if (typeof context.updateMessageBlock === 'function') context.updateMessageBlock(index, chat[index]);
+            else if (typeof context.renderMessage === 'function') context.renderMessage(index);
+        } catch { /* 渲染失败时文本已更新，下次刷新生效 */ }
+        try { context.saveChat?.(); } catch { /* 保存失败由宿主自动保存兜底 */ }
+    }
+    refreshMemoryPage();
+    return { status: result.status, applied: result.applied.length, rejected: result.rejected.length, floor: index + 1 };
+}
+
+/** 手动操作与面板操作共用：落账、存档、刷新页面；天数取世界时钟。 */
+function applyMemoryOps(operations) {
+    const result = agentMemoryRuntime.apply(operations, { source: 'panel', day: worldDay() });
+    persistMemory();
+    refreshMemoryPage();
+    return result;
+}
+
 function setSelfStatus(message) {
     const panel = typeof document !== 'undefined' ? document.getElementById(SETTINGS_PANEL_ID) : null;
     const target = panel?.querySelector('[data-self-status]');
     if (target) target.textContent = message;
 }
 
-const SELF_PROFILE_LABELS = Object.freeze({ name: '姓名', gender: '性别', age: '年龄', race: '种族', origin: '出身', affiliation: '所属', talent: '天赋', appearance: '外貌' });
+const SELF_PROFILE_LABELS = Object.freeze({ name: '姓名', gender: '性别', age: '年龄', race: '种族', origin: '出身', affiliation: '所属', attribute: '斗气属性', talent: '天赋', appearance: '外貌' });
 
 function setSelfDecideStatus(message) {
     const panel = typeof document !== 'undefined' ? document.getElementById(SETTINGS_PANEL_ID) : null;
@@ -611,7 +859,7 @@ async function runSelfDecision({ source = 'auto' } = {}) {
     if (selfDecideRunning) return { status: 'busy' };
     // 自定义连接有自己的地址和密钥，不依赖全局配置；跟随酒馆才需要先检查全局连接。
     if (settings.overrides.connection !== 'custom' && agentLlmClient.configured() !== true) {
-        setSelfDecideStatus('模型连接未配置：先在“模型与连接”页选好连接。');
+        setSelfDecideStatus('模型连接未配置：先在“模型设置”页选好连接。');
         return { status: 'not_configured' };
     }
     selfDecideRunning = true;
@@ -689,6 +937,7 @@ function selfCreateFromPanel(panel, list) {
     if (result.applied.length) {
         for (const input of panel.querySelectorAll(`[data-self-new^="${list}."]`)) input.value = '';
         setSelfStatus(result.applied[0].summary + '。');
+        closeAgentModal(panel);
     } else {
         setSelfStatus(`未生效：${result.rejected[0]?.reason ?? '无变化'}`);
     }
@@ -714,18 +963,23 @@ function selfStartCraftFromPanel(panel) {
     if (result.applied.length) {
         for (const input of panel.querySelectorAll('[data-self-new^="crafts."]')) input.value = '';
         setSelfStatus(result.applied[0].summary + '。');
+        closeAgentModal(panel);
     } else {
         setSelfStatus(`未生效：${result.rejected[0]?.reason ?? '无变化'}`);
     }
 }
 
-/** 清单条目的一行：主信息 + 备注小字 + 操作按钮。 */
-function selfEntryRow({ label, detail, actions = [] }) {
+/** 清单条目的一行：游戏背包式——名字一眼可见，点“详情”弹窗看全部资料。 */
+function selfEntryRow({ list, id, label, detail, badges = [], actions = [] }) {
     const row = makeElement('div', 'dai-self-entry');
-    const head = makeElement('div', 'dai-self-entry-head');
-    head.append(makeElement('b', '', label));
-    if (detail) head.append(makeElement('small', '', detail));
-    row.append(head);
+    const open = makeElement('button', 'dai-self-entry-open');
+    open.type = 'button';
+    open.dataset.selfDetail = `${list}:${id}`;
+    open.title = '查看这条的完整资料';
+    open.append(makeElement('b', '', label));
+    if (badges.length) open.append(makeElement('span', 'dai-self-entry-badges', badges.join(' · ')));
+    if (detail) open.append(makeElement('small', '', detail));
+    row.append(open);
     if (actions.length) {
         const wrap = makeElement('div', 'dai-self-entry-actions');
         for (const action of actions) wrap.append(action);
@@ -741,85 +995,185 @@ function selfActionButton(text, dataset) {
     return button;
 }
 
+/** 纳戒条目详情弹窗：全部字段固定标签展示 + 这条该有的操作。 */
+function openSelfDetailModal(panel, list, id) {
+    const snapshot = agentSelfRuntime.snapshot();
+    const key = { techniques: 'techniques', skills: 'skills', items: 'items', recipes: 'recipes', crafts: 'crafts', goals: 'goals' }[list];
+    const entry = snapshot[key]?.find(item => item.id === id);
+    if (!entry) { setSelfStatus('这条已经不在纳戒里了，刷新一下。'); return; }
+    const labels = {
+        name: '名称', grade: '品级', type: '类型', progress: '进度', source: '来源', note: '备注',
+        category: '类别', count: '数量', equipped: '装备中', materials: '材料', craft: '工艺',
+        status: '状态', startDay: '开工天', endDay: '预计完工', done: '已达成', priority: '优先级', due: '期限', text: '目标',
+    };
+    const page = makeElement('div', 'dai-profile');
+    const head = makeElement('div', 'dai-profile-head');
+    const kindLabel = { techniques: '功法', skills: '斗技', items: '行囊', recipes: '配方', crafts: '炼制', goals: '目标' }[list] ?? list;
+    head.append(makeElement('b', 'dai-profile-name', `${kindLabel} · ${entry.name}`));
+    page.append(head);
+    const rowsOf = {
+        techniques: [['name'], ['grade'], ['type'], ['progress'], ['source'], ['note'], ['id', '编号']],
+        skills: [['name'], ['grade'], ['type'], ['progress'], ['source'], ['note'], ['id', '编号']],
+        items: [['name'], ['category'], ['grade'], ['count'], ['equipped'], ['source'], ['note'], ['id', '编号']],
+        recipes: [['name'], ['craft'], ['grade'], ['materials'], ['note'], ['id', '编号']],
+        crafts: [['name'], ['craft'], ['count'], ['status'], ['startDay'], ['endDay'], ['note'], ['id', '编号']],
+        goals: [['text'], ['priority'], ['due'], ['done'], ['source'], ['note'], ['id', '编号']],
+    }[list] ?? [];
+    const group = makeElement('section', 'dai-profile-group');
+    for (const [field, label] of rowsOf) {
+        let shown = entry[field];
+        if (field === 'equipped') shown = entry.equipped ? '装备中' : '未装备';
+        else if (field === 'done') shown = entry.done ? '已达成' : '进行中';
+        else if (field === 'status') shown = entry.status === 'open' ? '炼制中' : entry.status === 'success' ? '炼成' : '炸炉';
+        else if (field === 'startDay') shown = entry.startDay !== null && entry.startDay !== undefined ? `第 ${entry.startDay} 天开工` : '';
+        else if (field === 'endDay') shown = entry.endDay !== null && entry.endDay !== undefined ? `第 ${entry.endDay} 天` : '';
+        const row = makeElement('div', 'dai-profile-row');
+        row.append(makeElement('span', 'dai-profile-label', label ?? labels[field] ?? field));
+        row.append(makeElement('span', 'dai-profile-value', String(shown ?? '') || '—'));
+        group.append(row);
+    }
+    page.append(group);
+    const actions = makeElement('div', 'dai-turn-actions');
+    if (list === 'items') {
+        const equip = selfActionButton(entry.equipped ? '卸下' : '装备', { selfEquip: entry.id });
+        equip.dataset.modalAfter = 'close';
+        const remove = selfActionButton('移除', { selfRemove: `items:${entry.id}` });
+        remove.dataset.modalAfter = 'close';
+        actions.append(equip);
+        const countBox = makeElement('span', 'dai-setting-inline');
+        const countInput = makeElement('input');
+        countInput.type = 'number';
+        countInput.min = '0';
+        countInput.step = '1';
+        countInput.value = String(entry.count ?? 1);
+        countInput.dataset.selfCountInput = entry.id;
+        countInput.setAttribute('aria-label', `${entry.name} 数量`);
+        countBox.append(countInput, selfActionButton('改数量', { selfCountSet: entry.id }));
+        actions.append(countBox, remove);
+    } else if (list === 'crafts') {
+        if (entry.status === 'open') {
+            const success = selfActionButton('成丹', { selfFinish: `${entry.id}:success` });
+            success.dataset.modalAfter = 'close';
+            const fail = selfActionButton('炸炉', { selfFinish: `${entry.id}:fail` });
+            fail.dataset.modalAfter = 'close';
+            actions.append(success, fail);
+        }
+    } else if (list === 'goals') {
+        if (!entry.done) {
+            const finish = selfActionButton('达成', { selfGoalFinish: entry.id });
+            finish.dataset.modalAfter = 'close';
+            actions.append(finish);
+        }
+        const remove = selfActionButton('移除', { selfRemove: `goals:${entry.id}` });
+        remove.dataset.modalAfter = 'close';
+        actions.append(remove);
+    } else {
+        const remove = selfActionButton('移除', { selfRemove: `${list}:${entry.id}` });
+        remove.dataset.modalAfter = 'close';
+        actions.append(remove);
+    }
+    if (actions.childElementCount) page.append(actions);
+    openAgentModal(panel, `${kindLabel} · ${entry.name}`, page);
+}
+
 function renderSelfEntryList(container, list) {
     if (!container) return;
     const snapshot = agentSelfRuntime.snapshot();
-    const countInput = id => {
-        const input = makeElement('input');
-        input.type = 'number';
-        input.min = '0';
-        input.step = '1';
-        input.dataset.selfCountInput = id;
-        input.setAttribute('aria-label', `${id} 数量`);
-        return input;
-    };
     if (list === 'techniques') {
         const entries = snapshot.techniques;
         container.replaceChildren(...(entries.length ? entries.map(entry => selfEntryRow({
-            label: `${entry.name}${entry.grade ? `（${entry.grade}）` : ''}${entry.progress ? ` · ${entry.progress}` : ''}`,
-            detail: [entry.type, entry.source, entry.note].filter(Boolean).join(' · ') || entry.id,
-            actions: [selfActionButton('移除', { selfRemove: `techniques:${entry.id}` })],
-        })) : [makeElement('p', 'dai-turn-result', '还没有登记功法。')]));
+            list,
+            id: entry.id,
+            label: entry.name,
+            badges: [entry.grade, entry.progress].filter(Boolean),
+            detail: [entry.type, entry.source, entry.note].filter(Boolean).join(' · '),
+        })) : [makeElement('p', 'dai-turn-result', '还没有功法。学会了功法、模型替你记账后都会出现在这里。')]));
         return;
     }
     if (list === 'skills') {
         const entries = snapshot.skills;
         container.replaceChildren(...(entries.length ? entries.map(entry => selfEntryRow({
-            label: `${entry.name}${entry.grade ? `（${entry.grade}）` : ''}${entry.progress ? ` · ${entry.progress}` : ''}`,
-            detail: [entry.type, entry.source, entry.note].filter(Boolean).join(' · ') || entry.id,
-            actions: [selfActionButton('移除', { selfRemove: `skills:${entry.id}` })],
-        })) : [makeElement('p', 'dai-turn-result', '还没有登记斗技。')]));
+            list,
+            id: entry.id,
+            label: entry.name,
+            badges: [entry.grade, entry.progress].filter(Boolean),
+            detail: [entry.type, entry.source, entry.note].filter(Boolean).join(' · '),
+        })) : [makeElement('p', 'dai-turn-result', '还没有斗技。')]));
         return;
     }
     if (list === 'items') {
         const entries = [...snapshot.items].sort((a, b) => (b.equipped === true) - (a.equipped === true) || b.count - a.count);
-        container.replaceChildren(...(entries.length ? entries.map(entry => selfEntryRow({
-            label: `${entry.equipped ? '[装备中] ' : ''}${entry.name}${entry.grade ? `（${entry.grade}）` : ''} ×${entry.count}`,
-            detail: [entry.category, entry.note].filter(Boolean).join(' · ') || entry.id,
-            actions: [
-                selfActionButton(entry.equipped ? '卸下' : '装备', { selfEquip: entry.id }),
-                countInput(entry.id),
-                selfActionButton('改数量', { selfCountSet: entry.id }),
-                selfActionButton('移除', { selfRemove: `items:${entry.id}` }),
-            ],
-        })) : [makeElement('p', 'dai-turn-result', '行囊空空如也。')]));
+        container.replaceChildren(...(entries.length ? entries.map(entry => {
+            const actions = [];
+            const equip = selfActionButton(entry.equipped ? '卸下' : '装备', { selfEquip: entry.id });
+            equip.dataset.modalAfter = 'close';
+            actions.push(equip);
+            return selfEntryRow({
+                list,
+                id: entry.id,
+                label: entry.name,
+                badges: [`×${entry.count}`, entry.grade, entry.equipped ? '装备中' : ''].filter(Boolean),
+                detail: [entry.category, entry.note].filter(Boolean).join(' · '),
+                actions,
+            });
+        }) : [makeElement('p', 'dai-turn-result', '行囊空空如也。')]));
         return;
     }
     if (list === 'recipes') {
         const entries = snapshot.recipes;
         container.replaceChildren(...(entries.length ? entries.map(entry => selfEntryRow({
-            label: `${entry.name}${entry.grade ? `（${entry.grade}）` : ''}`,
-            detail: [entry.craft, entry.materials, entry.note].filter(Boolean).join(' · ') || entry.id,
-            actions: [selfActionButton('移除', { selfRemove: `recipes:${entry.id}` })],
+            list,
+            id: entry.id,
+            label: entry.name,
+            badges: [entry.grade].filter(Boolean),
+            detail: [entry.craft, entry.materials, entry.note].filter(Boolean).join(' · '),
         })) : [makeElement('p', 'dai-turn-result', '还没有掌握配方。')]));
         return;
     }
     if (list === 'crafts') {
         const entries = [...snapshot.crafts].sort((a, b) => (a.status === 'open' ? 0 : 1) - (b.status === 'open' ? 0 : 1) || (b.startDay ?? 0) - (a.startDay ?? 0));
-        container.replaceChildren(...(entries.length ? entries.map(entry => selfEntryRow({
-            label: agentSelfRuntime.craftLine(entry),
-            detail: `${entry.id} · 第 ${entry.startDay ?? '?'} 天开工`,
-            actions: entry.status === 'open' ? [
-                selfActionButton('成丹', { selfFinish: `${entry.id}:success` }),
-                selfActionButton('炸炉', { selfFinish: `${entry.id}:fail` }),
-            ] : [],
-        })) : [makeElement('p', 'dai-turn-result', '没有炼制记录。')]));
+        container.replaceChildren(...(entries.length ? entries.map(entry => {
+            const actions = [];
+            if (entry.status === 'open') {
+                const success = selfActionButton('成丹', { selfFinish: `${entry.id}:success` });
+                success.dataset.modalAfter = 'close';
+                const fail = selfActionButton('炸炉', { selfFinish: `${entry.id}:fail` });
+                fail.dataset.modalAfter = 'close';
+                actions.push(success, fail);
+            }
+            return selfEntryRow({
+                list,
+                id: entry.id,
+                label: entry.name,
+                badges: [entry.craft || '炼制', agentSelfRuntime.craftLine(entry).split('，').slice(1).join('，')].filter(Boolean),
+                detail: `第 ${entry.startDay ?? '?'} 天开工`,
+                actions,
+            });
+        }) : [makeElement('p', 'dai-turn-result', '没有炼制记录。')]));
         return;
     }
     if (list === 'goals') {
         const entries = [...snapshot.goals].sort((a, b) => (a.done === true) - (b.done === true) || (a.priority === '主线' ? 0 : 1) - (b.priority === '主线' ? 0 : 1));
-        container.replaceChildren(...(entries.length ? entries.map(entry => selfEntryRow({
-            label: `${entry.done ? '[已达成] ' : entry.priority === '主线' ? '★ ' : '· '}${entry.text}`,
-            detail: [entry.due, entry.source, entry.note].filter(Boolean).join(' · ') || entry.id,
-            actions: entry.done ? [] : [
-                selfActionButton('达成', { selfGoalFinish: entry.id }),
-                selfActionButton('移除', { selfRemove: `goals:${entry.id}` }),
-            ],
-        })) : [makeElement('p', 'dai-turn-result', '还没有立下目标。')]));
+        container.replaceChildren(...(entries.length ? entries.map(entry => {
+            const actions = [];
+            if (!entry.done) {
+                const finish = selfActionButton('达成', { selfGoalFinish: entry.id });
+                finish.dataset.modalAfter = 'close';
+                actions.push(finish);
+            }
+            return selfEntryRow({
+                list,
+                id: entry.id,
+                label: `${entry.done ? '[已达成] ' : entry.priority === '主线' ? '★ ' : '· '}${entry.text}`,
+                badges: [entry.due].filter(Boolean),
+                detail: [entry.source, entry.note].filter(Boolean).join(' · '),
+                actions,
+            });
+        }) : [makeElement('p', 'dai-turn-result', '还没有立下目标。')]));
     }
 }
 
-/** 纳戒页整页刷新：概要、称号、各清单、流水与身份输入框。 */
+/** 纳戒页整页刷新：主角面板（固定标签）、各清单、流水与编辑表单。 */
 function refreshSelfPage(panel) {
     const target = panel ?? (typeof document !== 'undefined' ? document.getElementById(SETTINGS_PANEL_ID) : null);
     if (!target || target.hidden) return;
@@ -827,6 +1181,17 @@ function refreshSelfPage(panel) {
     if (!section || section.hidden) return;
     const status = agentSelfRuntime.status();
     const snapshot = agentSelfRuntime.snapshot();
+    // —— 主角面板：标签固定，读到了就填，没读到就空着 ——
+    for (const row of section.querySelectorAll('[data-self-panel]')) {
+        const field = row.dataset.selfPanel;
+        let shown = '';
+        if (field === 'realm') shown = [snapshot.realm.realm, snapshot.realm.stage].filter(Boolean).join('·');
+        else if (field === 'gold') shown = `${snapshot.gold ?? 0} 金币`;
+        else if (field === 'titles') shown = snapshot.titles.join('、');
+        else shown = typeof snapshot.profile[field] === 'string' ? snapshot.profile[field] : '';
+        row.textContent = shown || '—';
+        row.classList.toggle('is-empty', !shown);
+    }
     const summary = section.querySelector('[data-self-summary]');
     if (summary) {
         const realm = `${status.realm.realm}${status.realm.stage || ''}`;
@@ -850,6 +1215,12 @@ function refreshSelfPage(panel) {
     if (stageInput) stageInput.value = snapshot.realm.stage ?? '';
     const goldInput = section.querySelector('[data-self-gold]');
     if (goldInput) goldInput.value = String(snapshot.gold ?? 0);
+    const dbBridgeLine = section.querySelector('[data-self-dbbridge]');
+    if (dbBridgeLine) {
+        const bridge = agentDbBridge.status();
+        const labels = { off: '已关闭', missing: '未检测到龙血玄黄·数据库脚本', ready: '已连接', error: '异常' };
+        dbBridgeLine.textContent = `数据库桥接：${labels[bridge.status] || bridge.status}${bridge.status === 'error' && bridge.message ? `（${bridge.message}）` : ''}`;
+    }
     const titles = section.querySelector('[data-self-titles]');
     if (titles) {
         titles.replaceChildren(...(snapshot.titles.length ? snapshot.titles.map(title => {
@@ -1097,7 +1468,7 @@ async function runNpcLedgerExtract({ names = null, overwrite = false } = {}) {
     const settings = npcLedgerSettings();
     if (!settings.enabled) { setNpcLedgerStatus('人物簿已关闭，没有重抽。'); return { status: 'disabled' }; }
     if (agentLlmClient.configured() !== true) {
-        setNpcLedgerStatus('还没配好模型连接：先在“模型与连接”页选好连接，才能按世界书重抽。');
+        setNpcLedgerStatus('还没配好模型连接：先在“模型设置”页选好连接，才能按世界书重抽。');
         return { status: 'not_configured' };
     }
     if (npcRecordRunning) return { status: 'busy' };
@@ -1373,7 +1744,7 @@ async function runNpcLedgerRecord({ source = 'auto' } = {}) {
     const lastRecorded = Number.isInteger(lastNpcLedgerFloor) ? Math.min(lastNpcLedgerFloor, chat.length - 1) : -1;
     if (source === 'auto' && lastRecorded >= 0 && index - lastRecorded < settings.every) return { status: 'not_due' };
     if (agentLlmClient.configured() !== true) {
-        setNpcLedgerStatus('还没配好模型连接：先在“模型与连接”页选好连接，人物记录员才能跑。');
+        setNpcLedgerStatus('还没配好模型连接：先在“模型设置”页选好连接，人物记录员才能跑。');
         return { status: 'not_configured' };
     }
     npcRecordRunning = true;
@@ -1465,48 +1836,37 @@ function renderNpcLedgerList(panel) {
         return;
     }
     const injected = new Set(lastNpcLedgerInjection?.used ?? []);
+    // 默认一人一行：点人名弹出完整档案；行尾只留“在场/重要”两个轻开关，重活都进档案弹窗。
     list.replaceChildren(...records.slice(0, npcLedgerShown).map(record => {
-        const item = makeElement('li', 'dai-impact-item');
+        const item = makeElement('li', 'dai-impact-item dai-npc-row');
         if (injected.has(record.name)) item.classList.add('is-edited');
-        const head = makeElement('div', 'dai-impact-item-head');
-        const coldCheck = makeElement('input', 'dai-npc-cold-check');
-        coldCheck.type = 'checkbox';
-        coldCheck.checked = agentNpcColdRuntime.status().selected.includes(record.name);
-        coldCheck.dataset.npcColdSelect = record.name;
-        coldCheck.title = '勾选后，世界时间往前走时可在冷藏推进台里补这人的经历';
-        head.append(coldCheck, makeElement('span', 'dai-impact-mark', record.presence === '在场' ? '●' : '○'), makeElement('b', '', record.name));
+        const open = makeElement('button', 'dai-npc-open');
+        open.type = 'button';
+        open.dataset.npcLedgerOpen = record.name;
+        open.title = '打开这个人的完整档案';
+        const mark = makeElement('span', 'dai-impact-mark', record.presence === '在场' ? '●' : '○');
+        mark.title = record.presence === '在场' ? '在场' : '不在场';
+        open.append(mark, makeElement('b', '', record.name));
+        const bits = [record.gender, record.age, record.identity].filter(Boolean).join('·');
+        if (bits) open.append(makeElement('small', '', bits));
+        if (record.location) open.append(makeElement('small', '', `@${record.location}`));
+        item.append(open);
+        const favor = makeElement('span', 'dai-npc-favor', `好感 ${record.favor > 0 ? '+' : ''}${record.favor}（${favorLabel(record.favor) || '未定'}）`);
+        item.append(favor);
         const actions = makeElement('span', 'dai-impact-actions');
-        const presence = makeElement('button', 'dai-impact-edit', record.presence === '在场' ? '改不在场' : '改在场');
+        const presence = makeElement('button', 'dai-impact-edit', record.presence === '在场' ? '离场' : '到场');
         presence.type = 'button';
         presence.dataset.npcLedgerPresence = record.name;
         const importance = makeElement('button', 'dai-impact-edit', record.importance === '重要' ? '降普通' : '标重要');
         importance.type = 'button';
         importance.dataset.npcLedgerImportance = record.name;
-        const view = makeElement('button', 'dai-impact-edit', '看全文');
-        view.type = 'button';
-        view.dataset.npcLedgerView = record.name;
-        const edit = makeElement('button', 'dai-impact-edit', '补一笔');
-        edit.type = 'button';
-        edit.dataset.npcLedgerEdit = record.name;
-        const forget = makeElement('button', 'dai-impact-edit is-danger', '删除');
-        forget.type = 'button';
-        forget.dataset.npcLedgerForget = record.name;
-        const reextract = makeElement('button', 'dai-impact-edit', '重抽');
-        reextract.type = 'button';
-        reextract.dataset.npcLedgerExtract = record.name;
-        reextract.title = '按世界书重写这个人的身份/外貌/身体/性格/资产；好感、流水、态度、处境不动。';
-        actions.append(presence, importance, reextract, view, edit, forget);
-        head.append(actions);
-        item.append(head);
-        const meta = [record.presence === '在场' ? '在场' : '不在场', record.importance === '重要' ? '重要' : '普通', `好感 ${record.favor}（${favorLabel(record.favor) || '未定'}）`];
-        if (record.location) meta.push(record.location);
-        if (record.identity) meta.push(record.identity);
-        item.append(makeElement('small', 'dai-impact-meta', meta.join(' · ')));
-        const detail = makeElement('pre', 'dai-impact-detail', agentNpcLedger.describe(record.name, 'full'));
-        detail.hidden = true;
-        detail.style.whiteSpace = 'pre-wrap';
-        detail.dataset.npcLedgerDetail = record.name;
-        item.append(detail);
+        const coldSelected = agentNpcColdRuntime.status().selected.includes(record.name);
+        const cold = makeElement('button', `dai-impact-edit${coldSelected ? ' is-active' : ''}`, coldSelected ? '已选冷藏' : '冷藏');
+        cold.type = 'button';
+        cold.dataset.npcColdToggle = record.name;
+        cold.title = '勾进冷藏推进台：世界时间往前走时给它补这一段的经历。';
+        actions.append(presence, importance, cold);
+        item.append(actions);
         return item;
     }));
     if (records.length > npcLedgerShown) {
@@ -1593,8 +1953,242 @@ function applyNpcLedgerPatchFromPanel(panel) {
     if (result.ignored.length) words.push(`忽略 ${result.ignored.length} 个字段`);
     setNpcLedgerStatus(`手动记账完成：${words.join('，')}。`);
     if (area) area.value = '';
+    closeAgentModal(panel);
     refreshNpcLedgerPage(panel);
     return result;
+}
+
+/* ── 人物档案弹窗与经历页 ────────────────────────────────
+ * 人物簿列表默认只给一行摘要；点人名弹出完整档案页（全部字段按组展示）。
+ * 经历单独一页逐条列出；精简调用让模型把雷同转变合并成少数几条。
+ */
+
+/** 弹出某个人的完整档案：全部字段固定标签展示，空着就写“—”。 */
+function openNpcProfileModal(panel, name) {
+    const record = agentNpcLedger.get(name);
+    if (!record) return;
+    const page = makeElement('div', 'dai-profile');
+    const head = makeElement('div', 'dai-profile-head');
+    const titleBox = makeElement('div');
+    titleBox.append(makeElement('b', 'dai-profile-name', record.name));
+    if (record.aliases.length) titleBox.append(makeElement('small', 'dai-profile-sub', `别名：${record.aliases.join('、')}`));
+    if (record.titles.length) titleBox.append(makeElement('small', 'dai-profile-sub', `称号：${record.titles.join('、')}`));
+    head.append(titleBox);
+    const favor = makeElement('div', 'dai-profile-favor');
+    favor.append(makeElement('b', '', `${record.favor > 0 ? '+' : ''}${record.favor}`), makeElement('small', '', favorLabel(record.favor) || '未定'));
+    head.append(favor);
+    page.append(head);
+    const groups = new Map();
+    for (const field of NPC_FIELDS) {
+        if (field.key === 'aliases' || field.key === 'titles') continue;
+        if (!groups.has(field.group)) groups.set(field.group, []);
+        groups.get(field.group).push(field);
+    }
+    const fieldLine = field => {
+        const row = makeElement('div', 'dai-profile-row');
+        row.append(makeElement('span', 'dai-profile-label', field.label));
+        const value = record[field.key];
+        let shown = '';
+        if (field.type === 'secret') shown = [value.hideFrom && `瞒着${value.hideFrom}`, value.what].filter(Boolean).join('，');
+        else if (field.type === 'things' || field.type === 'triples' || Array.isArray(value)) {
+            shown = (Array.isArray(value) ? value : []).map(item => {
+                if (typeof item === 'string') return item;
+                if (item?.who) return [item.who, item.relation, item.attitude].filter(Boolean).join('：');
+                return thingTextForProfile(item);
+            }).filter(Boolean).join('、');
+        } else if (value === true) shown = '是';
+        else if (value === false) shown = '否';
+        else shown = String(value ?? '');
+        row.append(makeElement('span', 'dai-profile-value', shown || '—'));
+        return row;
+    };
+    for (const [group, fields] of groups) {
+        const block = makeElement('section', 'dai-profile-group');
+        block.append(makeElement('b', 'dai-profile-group-title', group));
+        block.append(...fields.map(fieldLine));
+        page.append(block);
+    }
+    // 经历与流水：弹窗里也看得到，经历页专门逐条管理。
+    const expBlock = makeElement('section', 'dai-profile-group');
+    expBlock.append(makeElement('b', 'dai-profile-group-title', '经历（重大转变）'));
+    if (!record.exp.length) expBlock.append(makeElement('p', 'dai-impact-empty', '还没有记下重大转变。正文里出现态度反转、立场变更时，记录员会写进这里。'));
+    else expBlock.append(...[...record.exp].reverse().map(entry => {
+        const row = makeElement('p', 'dai-exp-entry');
+        if (entry.day !== null && entry.day !== undefined) row.append(makeElement('span', 'dai-exp-day', `第 ${entry.day} 天`));
+        row.append(document.createTextNode(entry.text));
+        return row;
+    }));
+    page.append(expBlock);
+    const logBlock = makeElement('section', 'dai-profile-group');
+    logBlock.append(makeElement('b', 'dai-profile-group-title', '流水（最近）'));
+    if (!record.log.length) logBlock.append(makeElement('p', 'dai-impact-empty', '还没有流水。'));
+    else logBlock.append(...[...record.log].reverse().slice(0, 12).map(entry => {
+        const row = makeElement('p', 'dai-exp-entry');
+        if (entry.day !== null && entry.day !== undefined) row.append(makeElement('span', 'dai-exp-day', `第 ${entry.day} 天`));
+        row.append(document.createTextNode(entry.text));
+        return row;
+    }));
+    page.append(logBlock);
+    const actions = makeElement('div', 'dai-turn-actions');
+    const presence = makeElement('button', 'dai-secondary-button', record.presence === '在场' ? '改不在场' : '改在场');
+    presence.type = 'button';
+    presence.dataset.npcLedgerPresence = record.name;
+    const importance = makeElement('button', 'dai-secondary-button', record.importance === '重要' ? '降普通' : '标重要');
+    importance.type = 'button';
+    importance.dataset.npcLedgerImportance = record.name;
+    const reextract = makeElement('button', 'dai-secondary-button', '按世界书重抽');
+    reextract.type = 'button';
+    reextract.dataset.npcLedgerExtract = record.name;
+    reextract.title = '身份、外貌、身体、性格、资产按世界书重写；好感、流水、态度、处境不动。';
+    const edit = makeElement('button', 'dai-secondary-button', '补一笔');
+    edit.type = 'button';
+    edit.dataset.npcLedgerEdit = record.name;
+    edit.dataset.modalAfter = 'close';
+    const forget = makeElement('button', 'dai-secondary-button', '删除档案');
+    forget.type = 'button';
+    forget.classList.add('is-danger');
+    forget.dataset.npcLedgerForget = record.name;
+    const condense = makeElement('button', 'dai-secondary-button', '精简经历');
+    condense.type = 'button';
+    condense.dataset.expCondense = record.name;
+    if (!record.exp.length) condense.disabled = true;
+    actions.append(presence, importance, reextract, edit, condense, forget);
+    page.append(actions);
+    openAgentModal(panel, `${record.name} · 人物档案`, page, { wide: true });
+}
+
+/** 档案弹窗里东西条目的可读文本。 */
+function thingTextForProfile(item) {
+    if (typeof item === 'string') return item;
+    if (!item || typeof item !== 'object') return '';
+    const bits = [item.name];
+    if (item.count !== undefined && item.count !== '' && item.count !== 1) bits.push(`×${item.count}`);
+    for (const part of [item.part, item.grade, item.state, item.source, item.detail]) if (part) bits.push(part);
+    if (item.hidden) bits.push('藏着');
+    return bits.filter(Boolean).join('·');
+}
+
+/** 经历页：全簿经历逐条列出（新→旧），可按人物过滤；每人一个精简按钮。 */
+function renderExpPage(panel) {
+    const target = panel ?? (typeof document !== 'undefined' ? document.getElementById(SETTINGS_PANEL_ID) : null);
+    if (!target || target.hidden) return;
+    const section = target.querySelector('[data-settings-section="exp"]');
+    if (!section || section.hidden) return;
+    const list = section.querySelector('[data-exp-list]');
+    const picker = section.querySelector('[data-exp-person]');
+    if (picker) {
+        const names = agentNpcLedger.names();
+        const current = picker.value;
+        const allOption = document.createElement('option');
+        allOption.value = '';
+        allOption.textContent = '全部人物';
+        picker.replaceChildren(allOption, ...names.map(name => {
+            const option = document.createElement('option');
+            option.value = name;
+            option.textContent = name;
+            return option;
+        }));
+        if (names.includes(current)) picker.value = current;
+    }
+    if (!list) return;
+    const wanted = picker?.value ?? '';
+    const groups = agentNpcLedger.exps().filter(group => !wanted || group.name === wanted);
+    const total = groups.reduce((sum, group) => sum + group.entries.length, 0);
+    const count = section.querySelector('[data-exp-count]');
+    if (count) count.textContent = total ? `共 ${total} 条重大转变` : '还没有经历。正文里的心智转变、态度反转、立场变更，记录员觉得够分量就会写进这里。';
+    if (!total) {
+        list.replaceChildren(makeElement('p', 'dai-impact-empty', '还没有经历可看。'));
+        return;
+    }
+    const rows = [];
+    for (const group of groups) {
+        const head = makeElement('li', 'dai-exp-person');
+        head.append(makeElement('b', '', group.name));
+        const actions = makeElement('span', 'dai-impact-actions');
+        const condense = makeElement('button', 'dai-impact-edit', '精简');
+        condense.type = 'button';
+        condense.dataset.expCondense = group.name;
+        condense.title = '让模型把雷同的转变合并成少数几条，先出草稿再写回。';
+        actions.append(condense);
+        head.append(actions);
+        rows.push(head);
+        for (const entry of [...group.entries].reverse()) {
+            const row = makeElement('li', 'dai-exp-entry');
+            row.append(makeElement('span', 'dai-exp-day', entry.day !== null && entry.day !== undefined ? `第 ${entry.day} 天` : '第 ? 天'));
+            row.append(makeElement('span', 'dai-exp-text', entry.text));
+            rows.push(row);
+        }
+    }
+    list.replaceChildren(...rows);
+}
+
+let pendingExpCondense = null;
+
+/** 经历精简：按人物调模型压缩，先出草稿；确认后才整清单替换写回。 */
+async function runExpCondense(panel, name) {
+    const who = String(name || '').trim();
+    const group = agentNpcLedger.exps().find(item => item.name === who);
+    if (!group || !group.entries.length) { setNpcLedgerStatus('这个人还没有经历可精简。'); return; }
+    const settings = npcLedgerSettings();
+    if (settings.connection !== 'custom' && agentLlmClient.configured() !== true) {
+        setNpcLedgerStatus('还没配好模型连接：先在“模型设置”页选好连接，精简才能跑。');
+        return;
+    }
+    setNpcLedgerStatus(`正在请模型精简 ${who} 的经历……`);
+    try {
+        const raw = await agentLlmClient.complete({
+            system: typeof currentSettings().npc?.expCondensePrompt === 'string' && currentSettings().npc.expCondensePrompt.trim()
+                ? currentSettings().npc.expCondensePrompt.trim() : EXP_CONDENSE_PROMPT,
+            user: buildExpCondenseUser({ name: group.name, summary: agentNpcLedger.get(who)?.identity ?? '', entries: group.entries }),
+            jsonSchema: { type: 'object', properties: { 经历: { type: 'array' } }, required: ['经历'] },
+            overrides: npcLedgerOverrides(settings, { temperature: 0.2, maxTokens: 1600 }),
+        });
+        const parsed = parseExpCondenseReply(raw);
+        if (parsed.status !== 'ok') {
+            setNpcLedgerStatus(`精简输出读不懂，经历没动：${parsed.reason}`);
+            return;
+        }
+        pendingExpCondense = { name: group.name, entries: parsed.entries };
+        const preview = makeElement('div', 'dai-exp-preview');
+        preview.append(makeElement('p', 'dai-turn-result', `原来 ${group.entries.length} 条 → 精简后 ${parsed.entries.length} 条。确认后整份替换 ${who} 的经历清单。`));
+        const before = makeElement('details', 'dai-exp-side');
+        before.append(makeElement('summary', '', '精简前'));
+        before.append(...group.entries.map(entry => makeElement('p', 'dai-exp-entry', `${entry.day !== null ? `第${entry.day}天·` : ''}${entry.text}`)));
+        const after = makeElement('details', 'dai-exp-side');
+        after.append(makeElement('summary', '', '精简后'));
+        after.open = true;
+        after.append(...parsed.entries.map(entry => makeElement('p', 'dai-exp-entry', `${Number.isFinite(Number(entry?.day)) && entry?.day !== null ? `第${Number(entry.day)}天·` : ''}${entry?.text ?? ''}`)));
+        preview.append(before, after);
+        const actions = makeElement('div', 'dai-turn-actions');
+        const confirm = makeElement('button', 'dai-run-button', '确认写回');
+        confirm.type = 'button';
+        confirm.dataset.expCondenseConfirm = group.name;
+        const cancel = makeElement('button', 'dai-secondary-button', '放弃');
+        cancel.type = 'button';
+        cancel.dataset.agentModalClose = '';
+        actions.append(confirm, cancel);
+        preview.append(actions);
+        openAgentModal(panel, `精简经历 · ${group.name}`, preview, { wide: true });
+        setNpcLedgerStatus('精简草稿已出，请确认后写回。');
+    } catch (error) {
+        setNpcLedgerStatus(`精简失败：${error?.message ?? error}`);
+    }
+}
+
+function confirmExpCondense(panel, name) {
+    const pending = pendingExpCondense;
+    if (!pending || pending.name !== name) { setNpcLedgerStatus('没有待写回的精简草稿，先重新精简一次。'); return; }
+    const result = agentNpcLedger.replaceExp(pending.name, pending.entries);
+    if (result.status === 'replaced') {
+        persistNpcLedger();
+        setNpcLedgerStatus(`${pending.name} 的经历已精简：${result.before} 条 → ${result.after} 条。`);
+    } else {
+        setNpcLedgerStatus('写回失败：这个人已经不在人物簿里了。');
+    }
+    pendingExpCondense = null;
+    closeAgentModal(panel);
+    refreshNpcLedgerPage(panel);
+    renderExpPage(panel);
 }
 
 
@@ -1734,6 +2328,8 @@ async function prepareInjectionForPrompt({ chat } = {}) {
     try { writeNpcLedgerInjectionForPrompt(); } catch { /* 人物簿注入失败不影响正文生成 */ }
     // 纳戒：主角自身状态，与上面四路互不清空、预算各算各的。
     try { writeSelfInjectionForPrompt(); } catch { /* 纳戒注入失败不影响正文生成 */ }
+    // 记忆：主角未了结的四类记忆，排在纳戒之后；与其它通道互不清空、预算各算各的。
+    try { writeMemoryInjectionForPrompt(); } catch { /* 记忆注入失败不影响正文生成 */ }
     const settings = injectionSettings();
     if (!settings.enabled) { agentPromptInjection.clear(); return { status: 'disabled' }; }
     const probe = agentPromptInjection.inspect();
@@ -1998,7 +2594,7 @@ async function runWorldDecision({ source = 'auto' } = {}) {
     if (worldDecideRunning) return { status: 'busy' };
     // 自定义连接有自己的地址和密钥，不依赖全局配置；跟随酒馆才需要先检查全局连接。
     if (settings.overrides.connection !== 'custom' && agentLlmClient.configured() !== true) {
-        setWorldDecideStatus('模型连接未配置：先在“模型与连接”页选好连接。');
+        setWorldDecideStatus('模型连接未配置：先在“模型设置”页选好连接。');
         return { status: 'not_configured' };
     }
     worldDecideRunning = true;
@@ -2053,6 +2649,101 @@ async function runWorldDecision({ source = 'auto' } = {}) {
     }
 }
 
+let memoryDecideRunning = false;
+
+function setMemoryDecideStatus(message) {
+    const panel = typeof document !== 'undefined' ? document.getElementById(SETTINGS_PANEL_ID) : null;
+    const target = panel?.querySelector('[data-memory-decide-status]');
+    if (target) target.textContent = message;
+}
+
+function renderMemoryDecisionResult(decision, result) {
+    const panel = typeof document !== 'undefined' ? document.getElementById(SETTINGS_PANEL_ID) : null;
+    const target = panel?.querySelector('[data-memory-decide-result]');
+    if (!target) return;
+    const rows = [];
+    for (const item of result?.applied ?? []) rows.push({ ok: true, text: item.summary });
+    for (const item of result?.rejected ?? []) rows.push({ ok: false, text: `${item.op}：${item.reason}` });
+    if (result?.duplicate?.length) rows.push({ ok: false, text: `重复跳过：${result.duplicate.join('、')}` });
+    const note = document.createElement('p');
+    note.className = 'dai-turn-result';
+    note.textContent = decision?.note || '（模型没有说明）';
+    const list = document.createElement('div');
+    for (const row of rows) {
+        const line = document.createElement('p');
+        line.className = 'dai-turn-result';
+        line.textContent = `${row.ok ? '✓' : '✗'} ${row.text}`;
+        list.append(line);
+    }
+    target.replaceChildren(note, list);
+}
+
+/**
+ * 记忆决定：读"最近聊天 + 相关世界书条目 + 记忆总账"，决定主角新记住了什么、了结了什么；
+ * 输出严格 JSON 由脚本逐条校验落账（memory-runtime）。生成结束后自动跑；面板按钮或命名空间也能手动触发。
+ */
+async function runMemoryDecision({ source = 'auto' } = {}) {
+    const settings = memorySettings();
+    if (!settings.enabled) return { status: 'disabled' };
+    if (!settings.decideEnabled) return { status: 'disabled' };
+    if (memoryDecideRunning) return { status: 'busy' };
+    // 自定义连接有自己的地址和密钥，不依赖全局配置；跟随酒馆才需要先检查全局连接。
+    if (settings.overrides.connection !== 'custom' && agentLlmClient.configured() !== true) {
+        setMemoryDecideStatus('模型连接未配置：先在"模型设置"页选好连接。');
+        return { status: 'not_configured' };
+    }
+    memoryDecideRunning = true;
+    setMemoryDecideStatus('模型正在决定……');
+    try {
+        const context = getHostContext();
+        const chat = Array.isArray(context?.chat) ? context.chat : [];
+        const floors = [];
+        for (let cursor = chat.length - 1; cursor >= 0 && floors.length < settings.maxFloors; cursor -= 1) {
+            const message = chat[cursor];
+            if (!message || typeof message.mes !== 'string' || !message.mes.trim()) continue;
+            if (message.is_system === true) continue;
+            floors.unshift({ role: message.is_user === true ? '玩家' : '角色', text: message.mes });
+        }
+        if (!floors.length) {
+            setMemoryDecideStatus('聊天里还没有内容，书记官无从下手。');
+            return { status: 'no_input' };
+        }
+        // 世界书侧输入：拿最近聊天去索引里匹配相关条目（只给编号|类别|标题|摘要，不铺全文）。
+        const recentText = floors.map(floor => floor.text).join('\n');
+        const hits = settings.maxEntries > 0 && agentFactsIndex.stats().total > 0
+            ? agentFactsIndex.matchTokens(recentText, { limit: settings.maxEntries, volume: currentVolumeForWorld() })
+            : [];
+        const bookLines = hits.map(hit => {
+            const entry = agentFactsIndex.get(hit.uid);
+            return entry ? `${entry.uid}|${entry.category}|${entry.name}|${entry.summary}` : null;
+        }).filter(Boolean);
+        const user = buildMemoryDecideUser({ snapshot: agentMemoryRuntime.snapshot(), floors, worldbookLines: bookLines });
+        const raw = await agentLlmClient.complete({
+            system: settings.prompt,
+            user,
+            jsonSchema: MEMORY_JSON_SCHEMA,
+            overrides: settings.overrides,
+        });
+        const decision = parseMemoryDecision(raw);
+        if (decision.status === 'invalid') {
+            setMemoryDecideStatus(`模型输出无法解析：${decision.error}`);
+            return { status: 'invalid', error: decision.error };
+        }
+        const result = agentMemoryRuntime.apply(decision.ops, { source: 'decide', floor: lastReplyIndex(chat), day: worldDay() });
+        persistMemory();
+        if (!result.applied.length) agentMemoryRuntime.note(decision.note || '模型判断本轮无新记忆。', { source: 'decide' });
+        renderMemoryDecisionResult(decision, result);
+        setMemoryDecideStatus(source === 'auto' ? '生成后自动决定完成。' : '决定完成。');
+        refreshMemoryPage();
+        return { status: 'ok', decision, result };
+    } catch (error) {
+        setMemoryDecideStatus(`决定失败：${error?.message ?? error}`);
+        return { status: 'failed', reason: String(error?.message ?? error) };
+    } finally {
+        memoryDecideRunning = false;
+    }
+}
+
 let impactDecideRunning = false;
 let lastImpactResult = null;
 
@@ -2073,7 +2764,7 @@ async function runImpactDecision({ source = 'auto' } = {}) {
     if (impactDecideRunning) return { status: 'busy' };
     const plan = impactModelPlan(settings);
     if (agentLlmClient.configured() !== true && plan.decide.connection !== 'custom') {
-        setImpactStatus('模型连接未配置：先在“模型与连接”页选好连接。');
+        setImpactStatus('模型连接未配置：先在“模型设置”页选好连接。');
         return { status: 'not_configured' };
     }
     impactDecideRunning = true;
@@ -2239,6 +2930,8 @@ export const doupoAgent = Object.freeze({
     npcLedgerFavorStep: FAVOR_STEP_MAX,
     npcFavorScale: () => FAVOR_SCALE.map(item => ({ ...item })),
     npcColdRuntime: agentNpcColdRuntime,
+    npcLedgerExps: () => agentNpcLedger.exps(),
+    npcLedgerReplaceExp: (name, entries) => agentNpcLedger.replaceExp(name, entries),
     npcColdSelect: name => { const result = agentNpcColdRuntime.select(name); persistNpcCold(); return result; },
     npcColdDeselect: name => { const result = agentNpcColdRuntime.deselect(name); persistNpcCold(); return result; },
     npcColdPreview: () => runNpcColdPreview(),
@@ -2256,6 +2949,16 @@ export const doupoAgent = Object.freeze({
     selfStatus: () => agentSelfRuntime.status(),
     selfSnapshot: () => agentSelfRuntime.snapshot(),
     selfJournal: () => agentSelfRuntime.journal(),
+    dbBridgeStatus: () => agentDbBridge.status(),
+    dbBridgeAdopt: () => Promise.all([adoptWorldFromDb(), adoptSelfFromDb(), adoptMemoryFromDb()]),
+    memoryRuntime: agentMemoryRuntime,
+    memoryInjection: writeMemoryInjectionForPrompt,
+    memoryDecide: options => runMemoryDecision(options),
+    memoryApplyPersisted: operations => applyMemoryOps(operations),
+    memoryApplyFromLatestReply: () => applyMemoryOpsFromLatestReply(),
+    memoryRestoreFromChat: () => restoreMemoryFromChat(),
+    memoryStatus: () => agentMemoryRuntime.status(),
+    memorySnapshot: () => agentMemoryRuntime.snapshot(),
     world: agentWorldSimulator,
     worldRuntime: agentWorldRuntime,
     worldInjection: writeWorldInjectionForPrompt,
@@ -2317,6 +3020,80 @@ function makeElement(tag, className, value) {
     if (className) element.className = className;
     if (value) element.textContent = value;
     return element;
+}
+
+/* ── 弹窗：所有“添加 / 编辑 / 看详情”的表单都收进一个居中弹层，页面只留按钮。 ──
+ * 停靠（dock）机制：表单平时藏在各页面底部的 data-modal-dock 容器里（display:none），
+ * 打开时整块挪进弹窗体，关闭时送回原位。事件委托挂在面板上，挪来挪去不影响绑定。 */
+function ensureAgentModal(panel) {
+    if (!panel) return null;
+    let modal = panel.querySelector(':scope > [data-agent-modal]');
+    if (modal) return modal;
+    modal = makeElement('div', 'dai-agent-modal');
+    modal.hidden = true;
+    modal.dataset.agentModal = '';
+    const backdrop = makeElement('div', 'dai-agent-modal-backdrop');
+    backdrop.dataset.agentModalClose = '';
+    const dialog = makeElement('div', 'dai-agent-modal-dialog');
+    const head = makeElement('header', 'dai-agent-modal-head');
+    const title = makeElement('b', 'dai-agent-modal-title');
+    const close = makeElement('button', 'dai-icon-button', '×');
+    close.type = 'button';
+    close.dataset.agentModalClose = '';
+    close.setAttribute('aria-label', '关闭弹窗');
+    head.append(title, close);
+    const body = makeElement('div', 'dai-agent-modal-body');
+    dialog.append(head, body);
+    modal.append(backdrop, dialog);
+    panel.append(modal);
+    return modal;
+}
+
+/** 打开弹窗：dock 是要搬进来的那块表单容器；标题显示在弹窗头上。 */
+function openAgentModal(panel, title, dock, { wide = false } = {}) {
+    const modal = ensureAgentModal(panel);
+    if (!modal || !dock) return;
+    const body = modal.querySelector('.dai-agent-modal-body');
+    // 已有别的弹层开着：先把旧内容送回停靠位，避免表单越搬越远。
+    for (const previous of [...body.children]) {
+        if (previous.__dockHome) previous.__dockHome.append(previous);
+        else previous.remove();
+    }
+    if (!dock.__dockHome) dock.__dockHome = dock.parentNode;
+    if (dock.parentNode !== body) body.append(dock);
+    dock.hidden = false;
+    modal.querySelector('.dai-agent-modal-title').textContent = title;
+    if (wide) modal.dataset.wide = 'true';
+    else delete modal.dataset.wide;
+    modal.hidden = false;
+    dock.querySelector?.('input, textarea, select')?.focus?.();
+}
+
+function closeAgentModal(panel) {
+    if (!panel) return;
+    const modal = panel.querySelector(':scope > [data-agent-modal]');
+    if (!modal || modal.hidden) return false;
+    const body = modal.querySelector('.dai-agent-modal-body');
+    for (const previous of [...body.children]) {
+        if (previous.__dockHome) previous.__dockHome.append(previous);
+        else previous.remove();
+    }
+    modal.hidden = true;
+    return true;
+}
+
+/** 面板级委托：点 data-modal-open 把对应 dock 搬进弹窗，点关闭/背板送回去。 */
+function bindModalActions(panel) {
+    panel.addEventListener('click', event => {
+        if (event.target.closest?.('[data-agent-modal-close]')) {
+            if (closeAgentModal(panel)) event.stopPropagation();
+            return;
+        }
+        const opener = event.target.closest?.('[data-modal-open]');
+        if (!opener) return;
+        const dock = panel.querySelector(`[data-modal-dock="${CSS.escape(opener.dataset.modalOpen)}"]`);
+        if (dock) openAgentModal(panel, opener.dataset.modalTitle || '填写', dock, { wide: opener.dataset.modalWide === 'true' });
+    });
 }
 
 function renderCapabilities(capabilities) {
@@ -2392,6 +3169,166 @@ function renderStatus(payload) {
 function handleStatusEvent(event) {
     renderStatus(event?.detail);
     refreshControlDashboard();
+    refreshOpenOrbPanel();
+}
+
+// —— 悬浮球：屏幕边上一颗小球，点开竖直拉成长条，点图标弹出只读信息窗。
+// 纯逻辑（图标清单/状态机/信息窗投影）在 host/orb-hud.js，这里只管 DOM 与挂载。——
+
+function mountOrbHud() {
+    if (typeof document === 'undefined' || !document.body) return;
+    orbElement = document.getElementById(ORB_ID);
+    if (!orbElement) {
+        orbElement = makeElement('aside', 'dai-orb');
+        orbElement.id = ORB_ID;
+        const capsule = makeElement('div', 'dai-orb-capsule');
+        const ball = makeElement('button', 'dai-orb-ball', '✦');
+        ball.type = 'button';
+        ball.title = '展开 / 收起 Agent 悬浮球';
+        ball.setAttribute('aria-expanded', 'false');
+        ball.addEventListener('click', () => { orbState.toggle(); syncOrbHud(); });
+        capsule.append(ball);
+        for (const item of ORB_ITEMS) {
+            const icon = makeElement('button', 'dai-orb-icon', item.icon);
+            icon.type = 'button';
+            icon.dataset.orbItem = item.id;
+            icon.title = `${item.title} · ${item.hint}`;
+            icon.setAttribute('aria-label', `查看${item.title}信息`);
+            icon.addEventListener('click', () => { orbState.select(item.id); syncOrbHud(); });
+            capsule.append(icon);
+        }
+        const panel = makeElement('section', 'dai-orb-panel');
+        panel.hidden = true;
+        panel.setAttribute('role', 'region');
+        panel.setAttribute('aria-label', 'Agent 功能信息');
+        orbElement.append(panel, capsule);
+        document.body.append(orbElement);
+    }
+    if (!orbDocumentClick) {
+        orbDocumentClick = event => {
+            if (!orbElement || orbState.collapsed || orbElement.contains(event.target)) return;
+            orbState.collapse();
+            syncOrbHud();
+        };
+        document.addEventListener('pointerdown', orbDocumentClick, true);
+    }
+    if (!orbDocumentKey) {
+        orbDocumentKey = event => {
+            if (event.key !== 'Escape' || !orbElement || orbState.collapsed) return;
+            orbState.collapse();
+            syncOrbHud();
+        };
+        document.addEventListener('keydown', orbDocumentKey);
+    }
+    syncOrbHud();
+}
+
+function syncOrbHud() {
+    if (!orbElement) return;
+    const icons = [...orbElement.querySelectorAll('.dai-orb-icon')];
+    icons.forEach((icon, index) => {
+        icon.style.transitionDelay = orbState.collapsed ? '0ms' : `${90 + index * 26}ms`;
+        icon.classList.toggle('is-active', orbState.panelId === icon.dataset.orbItem);
+    });
+    orbElement.dataset.state = orbState.collapsed ? 'collapsed' : 'expanded';
+    const capsule = orbElement.querySelector('.dai-orb-capsule');
+    // 收起＝只剩顶上的球；展开＝球帽 + 图标 + 底帽，两态都给显式高度，过渡才连得上。
+    if (capsule) capsule.style.height = orbState.collapsed ? '3rem' : `${icons.length * 2.9 + 3.7}rem`;
+    orbElement.querySelector('.dai-orb-ball')?.setAttribute('aria-expanded', orbState.collapsed ? 'false' : 'true');
+    const panel = orbElement.querySelector('.dai-orb-panel');
+    if (!panel) return;
+    if (orbState.collapsed || !orbState.panelId) {
+        panel.hidden = true;
+        panel.replaceChildren();
+        return;
+    }
+    panel.hidden = false;
+    renderOrbPanel(panel, orbState.panelId);
+}
+
+function refreshOpenOrbPanel() {
+    if (!orbElement || orbState.collapsed || !orbState.panelId) return;
+    const panel = orbElement.querySelector('.dai-orb-panel');
+    if (panel && !panel.hidden) renderOrbPanel(panel, orbState.panelId);
+}
+
+/** 收集八个信息窗的只读数据；哪路运行时没就绪就缺哪块，窗里显示“暂无”。 */
+function collectOrbData() {
+    const settings = currentSettings();
+    const safe = getter => { try { return getter(); } catch { return undefined; } };
+    const manualVolume = Number.isInteger(settings.setting?.progress) && settings.setting.progress > 0 ? settings.setting.progress : null;
+    const autoVolume = Number.isInteger(settings.facts?.currentVolume) && settings.facts.currentVolume > 0 ? settings.facts.currentVolume : null;
+    const volume = manualVolume ?? autoVolume;
+    return {
+        dashboard: buildControlDashboard({
+            settings,
+            records: safe(() => agentAuditLog.list({ limit: 2000 })) ?? [],
+            tasks: safe(() => agentCoordinator.list()) ?? [],
+            scope: dashboardScope,
+            injectionNote: safe(() => agentPromptInjection.inspect().note),
+        }),
+        world: {
+            status: safe(() => agentWorldRuntime.status()),
+            snapshot: safe(() => agentWorldRuntime.snapshot()),
+            clockText: safe(() => agentWorldRuntime.formatClock()),
+        },
+        self: { status: safe(() => agentSelfRuntime.status()), snapshot: safe(() => agentSelfRuntime.snapshot()) },
+        npcledger: { status: safe(() => agentNpcLedger.status()), records: safe(() => agentNpcLedger.list()) },
+        cold: { status: safe(() => agentNpcColdRuntime.status()) },
+        impact: { status: safe(() => agentImpactRuntime.status()), records: safe(() => agentImpactRuntime.list({ state: 'active' })) },
+        facts: {
+            stats: safe(() => agentFactsIndex.stats()),
+            worldbook: typeof settings.setting?.worldbook === 'string' ? settings.setting.worldbook.trim() : '',
+            volume: { label: volume ? `第 ${volume} 卷（${manualVolume !== null ? '手动' : '自动'}）` : '' },
+        },
+        sandbox: { read: safe(() => agentSandboxMode.read({ sessionId: agentActiveScope?.sessionId, branchId: agentActiveScope?.branchId })) },
+    };
+}
+
+function renderOrbPanel(panel, id) {
+    const view = buildOrbPanels(collectOrbData())[id];
+    if (!view) { panel.hidden = true; return; }
+    const heading = makeElement('header', 'dai-orb-panel-head');
+    const titleBox = makeElement('div');
+    titleBox.append(makeElement('b', '', `${view.icon} ${view.title}`), makeElement('small', '', view.summary));
+    heading.append(titleBox);
+    const close = makeElement('button', 'dai-orb-panel-close', '×');
+    close.type = 'button';
+    close.title = '关闭信息窗';
+    close.setAttribute('aria-label', `关闭${view.title}信息窗`);
+    close.addEventListener('click', () => { orbState.select(id); syncOrbHud(); });
+    heading.append(close);
+    const body = makeElement('div', 'dai-orb-panel-body');
+    for (const row of view.rows) {
+        const line = makeElement('p', 'dai-orb-row');
+        if (row.tone) line.dataset.tone = row.tone;
+        line.append(makeElement('span', 'dai-orb-row-label', row.label), makeElement('span', 'dai-orb-row-value', row.value));
+        body.append(line);
+    }
+    for (const group of view.lists) {
+        const block = makeElement('div', 'dai-orb-group');
+        block.append(makeElement('b', 'dai-orb-group-title', group.heading));
+        if (!group.items.length) {
+            block.append(makeElement('p', 'dai-orb-empty', group.empty));
+        } else {
+            for (const item of group.items) {
+                const card = makeElement('div', 'dai-orb-entry');
+                card.append(makeElement('b', '', item.head));
+                if (item.meta) card.append(makeElement('small', '', item.meta));
+                if (item.detail) card.append(makeElement('p', '', item.detail));
+                block.append(card);
+            }
+        }
+        body.append(block);
+    }
+    panel.replaceChildren(heading, body);
+}
+
+function disposeOrbHud() {
+    if (orbDocumentClick) { document.removeEventListener('pointerdown', orbDocumentClick, true); orbDocumentClick = undefined; }
+    if (orbDocumentKey) { document.removeEventListener('keydown', orbDocumentKey); orbDocumentKey = undefined; }
+    orbElement = undefined;
+    orbState = createOrbState();
 }
 
 function applyAppearance(settings = currentSettings()) {
@@ -2400,6 +3337,10 @@ function applyAppearance(settings = currentSettings()) {
         if (!element) continue;
         element.dataset.theme = normalizeTheme(settings.ui?.theme);
         element.classList.toggle('dai-compact', settings.ui?.compact === true);
+    }
+    if (orbElement) {
+        orbElement.dataset.theme = normalizeTheme(settings.ui?.theme);
+        orbElement.hidden = settings.showOrb === false;
     }
 }
 
@@ -2524,6 +3465,7 @@ function updateSetting(path, value) {
         if (root && (path === 'enabled' || path === 'showStatusPanel')) {
             root.hidden = !(result.value.enabled && result.value.showStatusPanel);
         }
+        if (orbElement && path === 'showOrb') orbElement.hidden = result.value.showOrb === false;
         applyAppearance(result.value);
         refreshControlDashboard();
     }
@@ -2550,7 +3492,7 @@ function fieldValue(settings, path) {
 }
 
 function applyLlmModeVisibility(panel, mode) {
-    // 同一套设置在「模型与连接」「模型与提示词」「原著资料」页都有实例，全部一起切换。
+    // 同一套设置在「模型设置」「模型与提示词」「原著资料」页都有实例，全部一起切换。
     for (const block of panel?.querySelectorAll('[data-llm-custom]') ?? []) block.hidden = mode !== 'custom';
 }
 
@@ -2709,6 +3651,32 @@ async function fetchSelfDecideModels(panel, button) {
     });
 }
 
+async function fetchFactsModels(panel, button) {
+    return fetchModelList(panel, {
+        read: name => name === 'Base' ? readSettingInput(panel, 'setting.baseUrl') : readSettingInput(panel, 'setting.apiKey'),
+        status: panel.querySelectorAll('[data-facts-models-status]'),
+        list: [panel.querySelector('#dai-facts-models')].filter(Boolean),
+        target: panel.querySelectorAll('[data-setting="setting.model"]'),
+        button,
+    });
+}
+
+function applyFactsModelVisibility(panel) {
+    return applyFeatureModelVisibility(panel, {
+        modeSetting: 'setting.mode',
+        fieldNames: ['setting.baseUrl', 'setting.apiKey', 'setting.model'],
+        buttonAttr: 'data-facts-models',
+    });
+}
+
+function applyMemoryDecideModelVisibility(panel) {
+    return applyFeatureModelVisibility(panel, {
+        modeSetting: 'memory.decideMode',
+        fieldNames: ['memory.decideBaseUrl', 'memory.decideApiKey', 'memory.decideModel'],
+        buttonAttr: 'data-memorydecide-models',
+    });
+}
+
 function syncSettingsForm() {
     const panel = document.getElementById(SETTINGS_PANEL_ID);
     if (!panel) return;
@@ -2746,6 +3714,8 @@ function syncSettingsForm() {
     applyWorldDecideModelVisibility(panel);
     applySelfDecideModelVisibility(panel);
     applyNpcColdModelVisibility(panel);
+    applyFactsModelVisibility(panel);
+    applyMemoryDecideModelVisibility(panel);
     renderSettleCustomCategories(panel);
     applyAppearance(settings);
     refreshControlDashboard();
@@ -2772,14 +3742,15 @@ function createSettingsPanel() {
                 <nav class="dai-settings-nav" aria-label="Agent 功能页面">
                     <button type="button" class="dai-nav-item is-active" data-settings-page="overview"><span class="dai-nav-icon">⌂</span><span><b>总控</b><small>模块简况与外观</small></span></button>
                     <p class="dai-nav-label">核心能力</p>
-                    <button type="button" class="dai-nav-item" data-settings-page="llm"><span class="dai-nav-icon">✦</span><span><b>模型与连接</b><small>LLM 请求配置</small></span></button>
-                    <button type="button" class="dai-nav-item" data-settings-page="hub"><span class="dai-nav-icon">✧</span><span><b>模型与提示词</b><small>全部模型调用与提示词集中设置</small></span></button>
+                    <button type="button" class="dai-nav-item" data-settings-page="hub"><span class="dai-nav-icon">✧</span><span><b>模型设置</b><small>每一路模型调用的接口与参数</small></span></button>
                     <button type="button" class="dai-nav-item" data-settings-page="facts"><span class="dai-nav-icon">▤</span><span><b>原著资料</b><small>事实与资料查询</small></span></button>
                     <button type="button" class="dai-nav-item" data-settings-page="action"><span class="dai-nav-icon">➜</span><span><b>行动结算</b><small>结果与资源变化</small></span></button>
                     <button type="button" class="dai-nav-item" data-settings-page="world"><span class="dai-nav-icon">◌</span><span><b>世界运转</b><small>时间、事件与世界现状</small></span></button>
                     <button type="button" class="dai-nav-item" data-settings-page="npc"><span class="dai-nav-icon">♙</span><span><b>NPC 决策</b><small>人物自主行动</small></span></button>
                     <button type="button" class="dai-nav-item" data-settings-page="npcledger"><span class="dai-nav-icon">☰</span><span><b>人物簿</b><small>每个人的档案与好感</small></span></button>
+                    <button type="button" class="dai-nav-item" data-settings-page="exp"><span class="dai-nav-icon">✦</span><span><b>人物经历</b><small>重大转变，逐条可精简</small></span></button>
                     <button type="button" class="dai-nav-item" data-settings-page="self"><span class="dai-nav-icon">◉</span><span><b>纳戒</b><small>主角自身与随身之物</small></span></button>
+                    <button type="button" class="dai-nav-item" data-settings-page="memory"><span class="dai-nav-icon">✎</span><span><b>主角记忆</b><small>小记忆/大记忆，按需召回</small></span></button>
                     <button type="button" class="dai-nav-item" data-settings-page="impact"><span class="dai-nav-icon">⌁</span><span><b>世界影响</b><small>记录世界被改成了什么样</small></span></button>
                     <button type="button" class="dai-nav-item" data-settings-page="sandbox"><span class="dai-nav-icon">◈</span><span><b>沙盒模式</b><small>自由探索与主线口径</small></span></button>
                     <p class="dai-nav-label">系统</p>
@@ -2800,54 +3771,59 @@ function createSettingsPanel() {
                         <div class="dai-settings-card dai-turn-card"><div class="dai-card-heading"><b>结算这一轮</b><small>默认正文由酒馆主生成，原著设定在生成前自动注入；这里的手动结算只在打开 ui.legacyTurn 后可用。</small></div><p class="dai-state-strip" data-agent-state>还没有载入状态。</p><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-agent-run>结算这一轮</button><button type="button" class="dai-run-button is-secondary" data-agent-retry hidden>重试上一轮</button></div><p class="dai-turn-result" data-agent-run-result role="status">还没有运行。</p><div class="dai-version-list" data-agent-versions></div></div>
                         <p class="dai-dashboard-note">显示当前会话与分支的任务记录。每次运行都会把结果写进会话状态，刷新页面后仍在。</p>
                         <div class="dai-section-heading"><h3>简单设置</h3></div>
-                        <div class="dai-overview-grid"><label class="dai-overview-switch"><span><b>启用 Agent 总控</b><small>关闭后不会运行回合，也不会写入状态。</small></span><input type="checkbox" data-setting="enabled"></label><label class="dai-overview-switch"><span><b>显示运行反馈</b><small>在右下角显示任务状态与失败原因。</small></span><input type="checkbox" data-setting="showStatusPanel"></label></div>
+                        <div class="dai-overview-grid"><label class="dai-overview-switch"><span><b>启用 Agent 总控</b><small>关闭后不会运行回合，也不会写入状态。</small></span><input type="checkbox" data-setting="enabled"></label><label class="dai-overview-switch"><span><b>显示运行反馈</b><small>在右下角显示任务状态与失败原因。</small></span><input type="checkbox" data-setting="showStatusPanel"></label><label class="dai-overview-switch"><span><b>显示悬浮球</b><small>屏幕边上的小球，点开拉成长条，可查看各功能的只读信息。</small></span><input type="checkbox" data-setting="showOrb"></label></div>
                         <fieldset class="dai-theme-picker"><legend>界面颜色</legend><label class="dai-theme-option"><input type="radio" name="dai-theme" value="white" data-setting="ui.theme"><span class="dai-theme-swatch" data-swatch="white" aria-hidden="true"></span><b>白色</b></label><label class="dai-theme-option"><input type="radio" name="dai-theme" value="black" data-setting="ui.theme"><span class="dai-theme-swatch" data-swatch="black" aria-hidden="true"></span><b>黑色</b></label><label class="dai-theme-option"><input type="radio" name="dai-theme" value="beige" data-setting="ui.theme"><span class="dai-theme-swatch" data-swatch="beige" aria-hidden="true"></span><b>米色</b></label></fieldset>
                         <p class="dai-dashboard-note">只改变 Agent 界面，不改变酒馆整体配色。</p>
                     </section>
-                    <section class="dai-settings-page" data-settings-section="llm" role="tabpanel" hidden>
-                        <div class="dai-page-heading"><span class="dai-page-eyebrow">核心能力 / 01</span><h3>模型与连接</h3><p>决定 Agent 从哪里发起模型请求，以及使用什么输出参数。</p></div>
-                        <div class="dai-settings-card"><div class="dai-card-heading"><b>请求来源</b><small>选“跟随酒馆”就不用再填密钥；选“自定义”才读下面的接口。</small></div><label class="dai-setting-row"><span><b>用哪个接口</b><small>跟随酒馆＝与正文同一套模型和密钥；自定义＝读下面的地址与密钥。</small></span><select data-setting="llm.mode"><option value="tavern">跟随酒馆当前 API</option><option value="custom">自定义接口</option></select></label><div class="dai-llm-custom" data-llm-custom hidden><label class="dai-setting-row"><span><b>连接方式</b></span><select data-setting="llm.provider"><option value="openai-compatible">OpenAI 兼容接口</option><option value="anthropic">Anthropic 兼容接口</option><option value="custom">自定义</option></select></label><label class="dai-setting-row"><span><b>接口地址</b><small>独立接口的 Base URL；使用酒馆连接时可留空。</small></span><input type="url" data-setting="llm.baseUrl" placeholder="https://api.example.com/v1"></label><label class="dai-setting-row"><span><b>API Key</b><small>只保存到扩展设置，不写入聊天消息。</small></span><input type="password" data-setting="llm.apiKey" autocomplete="off" placeholder="留空表示不使用独立密钥"></label></div></div>
-                        <div class="dai-settings-card"><div class="dai-card-heading"><b>生成参数</b><small>留空模型名称时沿用酒馆当前模型。</small></div><label class="dai-setting-row"><span><b>模型名称</b></span><input type="text" data-setting="llm.model" placeholder="沿用酒馆当前模型"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>Temperature</b><small>0 更稳定，2 更发散。</small></span><input type="number" min="0" max="2" step="0.1" data-setting="llm.temperature"></label><label class="dai-setting-row"><span><b>最大输出 Token</b></span><input type="number" min="128" max="32768" step="128" data-setting="llm.maxTokens"></label></div><label class="dai-setting-row"><span><b>请求等待上限（毫秒）</b></span><input type="number" min="1000" max="600000" step="1000" data-setting="llm.timeoutMs"></label></div>
-                    </section>
+                    
                     <section class="dai-settings-page" data-settings-section="hub" role="tabpanel" hidden>
-                        <div class="dai-page-heading"><span class="dai-page-eyebrow">核心能力 / 02</span><h3>模型与提示词</h3><p>扩展会发的每一次独立模型调用、每一段可改写的提示词，都收在这一页：每路都能选“跟随酒馆”或“自定义”，自定义带全套连接与采样参数；提示词打开就显示当前生效的全文，清空恢复内置默认，改完下一轮生效。NPC 决策、沙盒推进与原著选条没有独立参数，跟随全局连接。</p></div>
-                        <div class="dai-settings-card"><div class="dai-card-heading"><b>全局连接（正文与默认调用）</b><small>“跟随酒馆”＝直接用酒馆当前 API 与模型；“自定义”＝下面这套地址、密钥与参数。这里是所有“跟随酒馆”功能共用的事实来源。</small></div><label class="dai-setting-row"><span><b>用哪个接口</b></span><select data-setting="llm.mode"><option value="tavern">跟随酒馆当前 API</option><option value="custom">自定义接口</option></select></label><div class="dai-llm-custom" data-llm-custom hidden><label class="dai-setting-row"><span><b>连接方式</b></span><select data-setting="llm.provider"><option value="openai-compatible">OpenAI 兼容接口</option><option value="anthropic">Anthropic 兼容接口</option><option value="custom">自定义</option></select></label><label class="dai-setting-row"><span><b>接口地址</b><small>OpenAI 兼容的 Base URL，填到 /v1 为止。</small></span><input type="url" data-setting="llm.baseUrl" placeholder="https://api.example.com/v1"></label><label class="dai-setting-row"><span><b>API Key</b><small>只保存到扩展设置，不写入聊天消息。</small></span><input type="password" data-setting="llm.apiKey" autocomplete="off" placeholder="留空表示不使用独立密钥"></label><label class="dai-setting-row"><span><b>模型名称</b><small>自定义接口必填；跟随酒馆时可留空。</small></span><input type="text" data-setting="llm.model" placeholder="例如 deepseek-chat"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>Temperature</b><small>0 更稳，2 更发散。</small></span><input type="number" min="0" max="2" step="0.1" data-setting="llm.temperature"></label><label class="dai-setting-row"><span><b>最大输出 Token</b></span><input type="number" min="128" max="32768" step="128" data-setting="llm.maxTokens"></label><label class="dai-setting-row"><span><b>单次等待上限（毫秒）</b></span><input type="number" min="1000" max="600000" step="1000" data-setting="llm.timeoutMs"></label><label class="dai-setting-row"><span><b>top_p</b><small>0–1；0 ＝不指定。</small></span><input type="number" min="0" max="1" step="0.05" data-setting="llm.topP" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>存在惩罚</b><small>0–2；0 ＝不指定。</small></span><input type="number" min="0" max="2" step="0.1" data-setting="llm.presencePenalty" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>频率惩罚</b><small>0–2；0 ＝不指定。</small></span><input type="number" min="0" max="2" step="0.1" data-setting="llm.frequencyPenalty" placeholder="0 = 不指定"></label></div></div></div>
-                        <details class="dai-settle-category"><summary><span class="dai-feature-icon">➜</span><span><b>行动结算 · 分类判定</b><small>丹药/修炼/伤害/通用各类别独立判定的连接、参数与提示词</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>用哪套连接</b><small>跟随酒馆＝与正文同一套；自定义＝下面这几项。</small></span><select data-setting="settle.mode"><option value="tavern">跟随酒馆当前设置</option><option value="custom">自定义模型</option></select></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>接口地址</b><small>选“自定义”才用得上。</small></span><input type="text" data-setting="settle.baseUrl" placeholder="https://api.example.com/v1"></label><label class="dai-setting-row"><span><b>接口密钥</b></span><input type="password" data-setting="settle.apiKey" placeholder="留空沿用“模型与连接”页"></label><label class="dai-setting-row"><span><b>模型名</b></span><input type="text" data-setting="settle.model" list="dai-hub-settle-models" placeholder="例如 deepseek-chat"><datalist id="dai-hub-settle-models"></datalist></label></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>温度</b><small>判定求稳可以填 0.2。</small></span><input type="number" min="0" max="2" step="0.05" data-setting="settle.temperature" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>最大输出</b></span><input type="number" min="0" max="32768" step="64" data-setting="settle.maxTokens" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>top_p</b></span><input type="number" min="0" max="1" step="0.05" data-setting="settle.topP" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>存在惩罚</b></span><input type="number" min="0" max="2" step="0.1" data-setting="settle.presencePenalty" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>频率惩罚</b></span><input type="number" min="0" max="2" step="0.1" data-setting="settle.frequencyPenalty" placeholder="0 = 不指定"></label></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-settle-models>拉取模型</button><small role="status" data-settle-models-status></small></div>${SETTLE_CATEGORY_HTML}<p class="dai-dashboard-note">自定义判定的增删在「行动结算」页管理。</p></div></details>
-                        <details class="dai-settle-category"><summary><span class="dai-feature-icon">◌</span><span><b>世界运转 · 模型决定</b><small>世界事件决定调用的连接、参数、决定提示词与降级指令指南</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>用哪套连接</b></span><select data-setting="world.decideMode"><option value="tavern">跟随酒馆当前设置</option><option value="custom">自定义模型</option></select></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>接口地址</b><small>选“自定义”才用得上。</small></span><input type="text" data-setting="world.decideBaseUrl" placeholder="https://api.example.com/v1"></label><label class="dai-setting-row"><span><b>接口密钥</b></span><input type="password" data-setting="world.decideApiKey" placeholder="留空沿用“模型与连接”页"></label><label class="dai-setting-row"><span><b>决定用模型</b></span><input type="text" data-setting="world.decideModel" list="dai-hub-worlddecide-models" placeholder="留空沿用当前模型"><datalist id="dai-hub-worlddecide-models"></datalist></label></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>决定温度</b></span><input type="number" min="0" max="2" step="0.05" data-setting="world.decideTemperature" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>决定最大输出</b></span><input type="number" min="0" max="32768" step="64" data-setting="world.decideMaxTokens" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>决定 top_p</b></span><input type="number" min="0" max="1" step="0.05" data-setting="world.decideTopP" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>决定存在惩罚</b></span><input type="number" min="0" max="2" step="0.1" data-setting="world.decidePresencePenalty" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>决定频率惩罚</b></span><input type="number" min="0" max="2" step="0.1" data-setting="world.decideFrequencyPenalty" placeholder="0 = 不指定"></label></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-worlddecide-models>拉取模型</button><small role="status" data-worlddecide-models-status></small></div><label class="dai-setting-row"><span><b>决定提示词</b><small>世界决定收到的 system 规则；保持“只输出 JSON”与操作字段名不变。</small></span><textarea data-setting="world.decidePrompt" rows="9" spellcheck="false" placeholder="打开会自动铺入当前生效的规则"></textarea></label><label class="dai-setting-row"><span><b>指令指南（降级模式）</b><small>关闭自动决定时随世界现状注入的规则正文。</small></span><textarea data-setting="world.eventGuide" rows="8" spellcheck="false" placeholder="打开会自动铺入当前生效的规则"></textarea></label></div></details>
-                        <details class="dai-settle-category"><summary><span class="dai-feature-icon">☰</span><span><b>人物簿 · 记录员</b><small>生成后补人物档案的小调用：连接、参数与记录员提示词</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>用哪套连接</b></span><select data-setting="npc.ledgerMode"><option value="tavern">跟随酒馆当前设置</option><option value="custom">自定义模型</option></select></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>接口地址</b><small>选“自定义”才用得上。</small></span><input type="text" data-setting="npc.ledgerBaseUrl" placeholder="https://api.example.com/v1"></label><label class="dai-setting-row"><span><b>接口密钥</b></span><input type="password" data-setting="npc.ledgerApiKey" placeholder="留空沿用“模型与连接”页"></label><label class="dai-setting-row"><span><b>接口协议</b><small>留空按接口地址自动判断。</small></span><select data-setting="npc.ledgerProvider"><option value="">自动判断</option><option value="openai">OpenAI 兼容</option><option value="anthropic">Anthropic</option></select></label><label class="dai-setting-row"><span><b>记录员模型</b></span><input type="text" data-setting="npc.ledgerModel" placeholder="留空沿用当前模型"></label><label class="dai-setting-row"><span><b>最大输出 Token</b></span><input type="number" min="0" max="32768" step="64" data-setting="npc.ledgerMaxTokens" placeholder="0 = 不指定"></label></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>top_p</b></span><input type="number" min="0" max="1" step="0.05" data-setting="npc.ledgerTopP" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>存在惩罚</b></span><input type="number" min="0" max="2" step="0.1" data-setting="npc.ledgerPresencePenalty" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>频率惩罚</b></span><input type="number" min="0" max="2" step="0.1" data-setting="npc.ledgerFrequencyPenalty" placeholder="0 = 不指定"></label></div><label class="dai-setting-row"><span><b>记录员提示词</b><small>好感只记增减、流水只追加；保持“只输出 JSON”不变。</small></span><textarea data-setting="npc.ledgerPrompt" rows="9" spellcheck="false" placeholder="打开会自动铺入当前生效的规则"></textarea></label></div></details>
-                        <details class="dai-settle-category"><summary><span class="dai-feature-icon">❄</span><span><b>人物簿 · 冷藏推进员</b><small>给勾选的冷藏人物补世界时间走过那一段的小调用：连接、参数与推进员提示词</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>用哪套连接</b><small>跟随酒馆＝与正文同一套；自定义＝下面这几项。</small></span><select data-setting="npc.coldMode"><option value="tavern">跟随酒馆当前设置</option><option value="custom">自定义模型</option></select></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>接口地址</b><small>选“自定义”才用得上。</small></span><input type="text" data-setting="npc.coldBaseUrl" placeholder="https://api.example.com/v1"></label><label class="dai-setting-row"><span><b>接口密钥</b></span><input type="password" data-setting="npc.coldApiKey" placeholder="留空沿用“模型与连接”页"></label><label class="dai-setting-row"><span><b>接口协议</b><small>留空按接口地址自动判断。</small></span><select data-setting="npc.coldProvider"><option value="">自动判断</option><option value="openai">OpenAI 兼容</option><option value="anthropic">Anthropic</option></select></label><label class="dai-setting-row"><span><b>推进员模型</b></span><input type="text" data-setting="npc.coldModel" placeholder="留空沿用当前模型"></label><label class="dai-setting-row"><span><b>最大输出 Token</b></span><input type="number" min="0" max="32768" step="64" data-setting="npc.coldMaxTokens" placeholder="0 = 不指定"></label></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>推进温度</b></span><input type="number" min="0" max="2" step="0.05" data-setting="npc.coldTemperature"></label><label class="dai-setting-row"><span><b>top_p</b></span><input type="number" min="0" max="1" step="0.05" data-setting="npc.coldTopP" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>存在惩罚</b></span><input type="number" min="0" max="2" step="0.1" data-setting="npc.coldPresencePenalty" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>频率惩罚</b></span><input type="number" min="0" max="2" step="0.1" data-setting="npc.coldFrequencyPenalty" placeholder="0 = 不指定"></label></div><label class="dai-setting-row"><span><b>推进员提示词</b><small>只按正文明写的依据补，先出草稿；保持“只输出 JSON”不变。</small></span><textarea data-setting="npc.coldPrompt" rows="9" spellcheck="false" placeholder="打开会自动铺入当前生效的规则"></textarea></label></div></details>
-                        <details class="dai-settle-category"><summary><span class="dai-feature-icon">◉</span><span><b>纳戒 · 模型决定</b><small>主角自身记账调用的连接、参数与决定提示词</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>用哪套连接</b></span><select data-setting="self.decideMode"><option value="tavern">跟随酒馆当前设置</option><option value="custom">自定义模型</option></select></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>接口地址</b><small>选“自定义”才用得上。</small></span><input type="text" data-setting="self.decideBaseUrl" placeholder="https://api.example.com/v1"></label><label class="dai-setting-row"><span><b>接口密钥</b></span><input type="password" data-setting="self.decideApiKey" placeholder="留空沿用“模型与连接”页"></label><label class="dai-setting-row"><span><b>决定用模型</b></span><input type="text" data-setting="self.decideModel" list="dai-hub-selfdecide-models" placeholder="留空沿用当前模型"><datalist id="dai-hub-selfdecide-models"></datalist></label></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>决定温度</b></span><input type="number" min="0" max="2" step="0.05" data-setting="self.decideTemperature" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>决定最大输出</b></span><input type="number" min="0" max="32768" step="64" data-setting="self.decideMaxTokens" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>决定 top_p</b></span><input type="number" min="0" max="1" step="0.05" data-setting="self.decideTopP" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>决定存在惩罚</b></span><input type="number" min="0" max="2" step="0.1" data-setting="self.decidePresencePenalty" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>决定频率惩罚</b></span><input type="number" min="0" max="2" step="0.1" data-setting="self.decideFrequencyPenalty" placeholder="0 = 不指定"></label></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-selfdecide-models>拉取模型</button><small role="status" data-selfdecide-models-status></small></div><label class="dai-setting-row"><span><b>决定提示词</b><small>境界阶梯、炼成补账、有据可依的规则都在这里。</small></span><textarea data-setting="self.decidePrompt" rows="9" spellcheck="false" placeholder="打开会自动铺入当前生效的规则"></textarea></label><label class="dai-setting-row"><span><b>指令指南（降级模式）</b><small>关闭自动决定时随纳戒现状注入的规则正文。</small></span><textarea data-setting="self.guide" rows="8" spellcheck="false" placeholder="打开会自动铺入当前生效的规则"></textarea></label></div></details>
-                        <details class="dai-settle-category"><summary><span class="dai-feature-icon">⌁</span><span><b>世界影响 · 记录员与场记</b><small>生成后记账与生成前挑选的两个模型、参数与两段提示词</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>用几个模型</b><small>一个模型＝记账和挑选都用同一套；两个模型＝各配各的。</small></span><select data-setting="impact.modelMode"><option value="shared">一个模型干两件事</option><option value="split">两个模型分开</option></select></label><div class="dai-setting-grid" data-impact-decide-model><label class="dai-setting-row"><span><b>记录员用哪套</b></span><select data-setting="impact.decideMode"><option value="tavern">跟随酒馆当前设置</option><option value="custom">自定义模型</option></select></label><label class="dai-setting-row"><span><b>记录员接口地址</b></span><input type="text" data-setting="impact.decideBaseUrl" placeholder="https://api.example.com/v1"></label><label class="dai-setting-row"><span><b>记录员接口密钥</b></span><input type="password" data-setting="impact.decideApiKey" placeholder="留空沿用“模型与连接”页"></label><label class="dai-setting-row"><span><b>记录员模型名</b></span><input type="text" data-setting="impact.decideModel" list="dai-hub-impact-models-decide" placeholder="例如 deepseek-chat"><datalist id="dai-hub-impact-models-decide"></datalist></label><label class="dai-setting-row"><span><b>记录员温度</b></span><input type="number" min="0" max="2" step="0.05" data-setting="impact.decideTemperature" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>记录员最大输出</b></span><input type="number" min="0" max="32768" step="64" data-setting="impact.decideMaxTokens" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>记录员 top_p</b></span><input type="number" min="0" max="1" step="0.05" data-setting="impact.decideTopP" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>记录员存在惩罚</b></span><input type="number" min="0" max="2" step="0.1" data-setting="impact.decidePresencePenalty" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>记录员频率惩罚</b></span><input type="number" min="0" max="2" step="0.1" data-setting="impact.decideFrequencyPenalty" placeholder="0 = 不指定"></label></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-impact-models="decide">拉取模型（记录员）</button><small role="status" data-impact-models-status="decide"></small></div><div class="dai-setting-grid" data-impact-inject-model><label class="dai-setting-row"><span><b>场记用哪套</b></span><select data-setting="impact.injectMode"><option value="tavern">跟随酒馆当前设置</option><option value="custom">自定义模型</option></select></label><label class="dai-setting-row"><span><b>场记接口地址</b></span><input type="text" data-setting="impact.injectBaseUrl" placeholder="https://api.example.com/v1"></label><label class="dai-setting-row"><span><b>场记接口密钥</b></span><input type="password" data-setting="impact.injectApiKey" placeholder="留空沿用“模型与连接”页"></label><label class="dai-setting-row"><span><b>场记模型名</b></span><input type="text" data-setting="impact.injectModel" list="dai-hub-impact-models-inject" placeholder="例如 deepseek-chat"><datalist id="dai-hub-impact-models-inject"></datalist></label><label class="dai-setting-row"><span><b>场记温度</b></span><input type="number" min="0" max="2" step="0.05" data-setting="impact.injectTemperature" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>场记最大输出</b></span><input type="number" min="0" max="32768" step="64" data-setting="impact.injectMaxTokens" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>场记 top_p</b></span><input type="number" min="0" max="1" step="0.05" data-setting="impact.injectTopP" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>场记存在惩罚</b></span><input type="number" min="0" max="2" step="0.1" data-setting="impact.injectPresencePenalty" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>场记频率惩罚</b></span><input type="number" min="0" max="2" step="0.1" data-setting="impact.injectFrequencyPenalty" placeholder="0 = 不指定"></label></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-impact-models="inject">拉取模型（场记）</button><small role="status" data-impact-models-status="inject"></small></div><label class="dai-setting-row"><span><b>记录员提示词</b><small>生成结束后记账用的规则。</small></span><textarea data-setting="impact.prompt" rows="9" spellcheck="false" placeholder="打开会自动铺入当前生效的规则"></textarea></label><label class="dai-setting-row"><span><b>场记提示词</b><small>生成前挑选并改写影响用的规则。</small></span><textarea data-setting="impact.injectPrompt" rows="8" spellcheck="false" placeholder="打开会自动铺入当前生效的规则"></textarea></label></div></details>
-                        <details class="dai-settle-category"><summary><span class="dai-feature-icon">▤</span><span><b>原著设定 · 选条与卷外点选</b><small>跟随全局连接，只有两段提示词可改</small></span></summary><div class="dai-settle-category-body"><p class="dai-dashboard-note">这两段跟随上面的全局连接，没有独立参数。</p><label class="dai-setting-row"><span><b>选条提示词</b><small>模型判断“本轮要用哪些原著条目”时收到；保持“只输出 JSON”不变。</small></span><textarea data-setting="prompt.select" rows="8" spellcheck="false" placeholder="打开会自动铺入当前生效的规则"></textarea></label><label class="dai-setting-row"><span><b>卷外点选提示词</b><small>目录里没有、脚本全库搜到候选后再问它一次时收到。</small></span><textarea data-setting="prompt.lookup" rows="7" spellcheck="false" placeholder="打开会自动铺入当前生效的规则"></textarea></label></div></details>
+                        <div class="dai-page-heading"><span class="dai-page-eyebrow">核心能力 / 模型</span><h3>模型设置</h3><p>扩展会发起的每一次独立模型调用，接口与参数都集中在这里：全局连接是所有“跟随酒馆”功能的共用来源；某一路想用单独的模型，就在它的卡片里选“自定义”。各功能的提示词不在这一页——到对应功能页里改。</p></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>全局连接（正文与默认调用）</b><small>“跟随酒馆”＝直接用酒馆当前 API 与模型；“自定义”＝下面这套地址、密钥与参数。这里是所有“跟随酒馆”功能共用的事实来源。</small></div><label class="dai-setting-row"><span><b>用哪个接口</b></span><select data-setting="llm.mode"><option value="tavern">跟随酒馆当前 API</option><option value="custom">自定义接口</option></select></label><div class="dai-llm-custom" data-llm-custom hidden><label class="dai-setting-row"><span><b>连接方式</b></span><select data-setting="llm.provider"><option value="openai-compatible">OpenAI 兼容接口</option><option value="anthropic">Anthropic 兼容接口</option><option value="custom">自定义</option></select></label><label class="dai-setting-row"><span><b>接口地址</b><small>OpenAI 兼容的 Base URL，填到 /v1 为止。</small></span><input type="url" data-setting="llm.baseUrl" placeholder="https://api.example.com/v1"></label><label class="dai-setting-row"><span><b>API Key</b><small>只保存到扩展设置，不写入聊天消息。</small></span><input type="password" data-setting="llm.apiKey" autocomplete="off" placeholder="留空表示不使用独立密钥"></label><label class="dai-setting-row"><span><b>模型名称</b><small>自定义接口必填；跟随酒馆时可留空。</small></span><input type="text" data-setting="llm.model" placeholder="例如 deepseek-chat"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>Temperature</b><small>0 更稳，2 更发散。</small></span><input type="number" min="0" max="2" step="0.1" data-setting="llm.temperature" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>最大输出 Token</b></span><input type="number" min="128" max="32768" step="128" data-setting="llm.maxTokens" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>单次等待上限（毫秒）</b></span><input type="number" min="1000" max="600000" step="1000" data-setting="llm.timeoutMs" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>top_p</b><small>0–1；0 ＝不指定。</small></span><input type="number" min="0" max="1" step="0.05" data-setting="llm.topP" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>存在惩罚</b><small>0–2；0 ＝不指定。</small></span><input type="number" min="0" max="2" step="0.1" data-setting="llm.presencePenalty" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>频率惩罚</b><small>0–2；0 ＝不指定。</small></span><input type="number" min="0" max="2" step="0.1" data-setting="llm.frequencyPenalty" placeholder="0 = 不指定"></label></div></div></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>原著设定 · 选条与卷外点选</b><small>每轮生成前“挑哪些原著条目进正文”的独立调用。“跟随酒馆”＝直接用酒馆当前连接与模型；选“自定义”才读下面几项。选条与卷外点选的提示词在「原著资料」页修改。</small></div><label class="dai-setting-row"><span><b>用哪套连接</b></span><select data-setting="setting.mode"><option value="tavern">跟随酒馆当前设置</option><option value="custom">自定义模型</option></select></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>接口地址</b><small>选“自定义”才用得上；留空沿用“全局连接”。</small></span><input type="text" data-setting="setting.baseUrl" placeholder="https://api.example.com/v1"></label><label class="dai-setting-row"><span><b>接口密钥</b><small>选“自定义”才用得上。</small></span><input type="password" data-setting="setting.apiKey" autocomplete="off" placeholder="留空沿用“全局连接”"></label><label class="dai-setting-row"><span><b>接口协议</b><small>留空按接口地址自动判断。</small></span><select data-setting="setting.provider"><option value="">自动判断</option><option value="openai">OpenAI 兼容</option><option value="anthropic">Anthropic</option></select></label><label class="dai-setting-row"><span><b>模型名</b><small>选“自定义”才用得上；填好地址点“拉取模型”挑一个。</small></span><input type="text" data-setting="setting.model" placeholder="例如 deepseek-chat"></label></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-facts-models>拉取模型</button><small role="status" data-facts-models-status></small></div></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>行动结算 · 分类判定</b><small>丹药/修炼/伤害/通用各类别独立判定的连接与参数；各类别的判定规则在「行动结算」页改。</small></div><label class="dai-setting-row"><span><b>用哪套连接</b><small>跟随酒馆＝与正文同一套；自定义＝下面这几项。</small></span><select data-setting="settle.mode"><option value="tavern">跟随酒馆当前设置</option><option value="custom">自定义模型</option></select></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>接口地址</b><small>选“自定义”才用得上；留空沿用“全局连接”。</small></span><input type="text" data-setting="settle.baseUrl" placeholder="https://api.example.com/v1"></label><label class="dai-setting-row"><span><b>接口密钥</b><small>选“自定义”才用得上。</small></span><input type="password" data-setting="settle.apiKey" autocomplete="off" placeholder="留空沿用“全局连接”"></label><label class="dai-setting-row"><span><b>模型名</b><small>填好地址后点“拉取模型”挑一个，也可以手填。</small></span><input type="text" data-setting="settle.model" placeholder="例如 deepseek-chat"></label></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>温度</b><small>判定求稳可以填 0.2。</small></span><input type="number" min="0" max="2" step="0.05" data-setting="settle.temperature" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>最大输出</b><small>tokens；0 ＝不指定。</small></span><input type="number" min="0" max="32768" step="64" data-setting="settle.maxTokens" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>top_p</b><small>0–1；0 ＝不指定。</small></span><input type="number" min="0" max="1" step="0.05" data-setting="settle.topP" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>存在惩罚</b><small>0–2；0 ＝不指定。</small></span><input type="number" min="0" max="2" step="0.1" data-setting="settle.presencePenalty" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>频率惩罚</b><small>0–2；0 ＝不指定。</small></span><input type="number" min="0" max="2" step="0.1" data-setting="settle.frequencyPenalty" placeholder="0 = 不指定"></label></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-settle-models>拉取模型</button><small role="status" data-settle-models-status></small></div></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>世界运转 · 模型决定</b><small>世界事件决定调用的连接与参数；决定提示词与降级指令指南在「世界运转」页改。</small></div><label class="dai-setting-row"><span><b>用哪套连接</b><small>跟随酒馆＝与正文同一套；自定义＝下面这几项。</small></span><select data-setting="world.decideMode"><option value="tavern">跟随酒馆当前设置</option><option value="custom">自定义模型</option></select></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>接口地址</b><small>选“自定义”才用得上；留空沿用“全局连接”。</small></span><input type="text" data-setting="world.decideBaseUrl" placeholder="https://api.example.com/v1"></label><label class="dai-setting-row"><span><b>接口密钥</b><small>选“自定义”才用得上。</small></span><input type="password" data-setting="world.decideApiKey" autocomplete="off" placeholder="留空沿用“全局连接”"></label><label class="dai-setting-row"><span><b>接口协议</b><small>留空按接口地址自动判断。</small></span><select data-setting="world.decideProvider"><option value="">自动判断</option><option value="openai">OpenAI 兼容</option><option value="anthropic">Anthropic</option></select></label><label class="dai-setting-row"><span><b>模型名</b><small>填好地址后点“拉取模型”挑一个，也可以手填。</small></span><input type="text" data-setting="world.decideModel" placeholder="留空沿用当前模型"></label></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>温度</b><small>0–2；0 ＝不指定，沿用酒馆/全局。</small></span><input type="number" min="0" max="2" step="0.05" data-setting="world.decideTemperature" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>最大输出</b><small>tokens；0 ＝不指定。</small></span><input type="number" min="0" max="32768" step="64" data-setting="world.decideMaxTokens" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>top_p</b><small>0–1；0 ＝不指定。</small></span><input type="number" min="0" max="1" step="0.05" data-setting="world.decideTopP" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>存在惩罚</b><small>0–2；0 ＝不指定。</small></span><input type="number" min="0" max="2" step="0.1" data-setting="world.decidePresencePenalty" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>频率惩罚</b><small>0–2；0 ＝不指定。</small></span><input type="number" min="0" max="2" step="0.1" data-setting="world.decideFrequencyPenalty" placeholder="0 = 不指定"></label></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-worlddecide-models>拉取模型</button><small role="status" data-worlddecide-models-status></small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>喂最近几楼聊天</b></span><input type="number" min="1" max="12" step="1" data-setting="world.decideMaxFloors" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>世界书条目上限</b><small>按本轮聊天匹配相关条目，0 = 不带世界书。</small></span><input type="number" min="0" max="40" step="1" data-setting="world.decideMaxEntries" placeholder="0 = 不指定"></label></div></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>人物簿 · 记录员</b><small>生成后补人物档案的小调用的连接与参数；记录员提示词在「人物簿」页改，经历精简也走这一套连接。</small></div><label class="dai-setting-row"><span><b>用哪套连接</b><small>跟随酒馆＝与正文同一套；自定义＝下面这几项。</small></span><select data-setting="npc.ledgerMode"><option value="tavern">跟随酒馆当前设置</option><option value="custom">自定义模型</option></select></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>接口地址</b><small>选“自定义”才用得上；留空沿用“全局连接”。</small></span><input type="text" data-setting="npc.ledgerBaseUrl" placeholder="https://api.example.com/v1"></label><label class="dai-setting-row"><span><b>接口密钥</b><small>选“自定义”才用得上。</small></span><input type="password" data-setting="npc.ledgerApiKey" autocomplete="off" placeholder="留空沿用“全局连接”"></label><label class="dai-setting-row"><span><b>接口协议</b><small>留空按接口地址自动判断。</small></span><select data-setting="npc.ledgerProvider"><option value="">自动判断</option><option value="openai">OpenAI 兼容</option><option value="anthropic">Anthropic</option></select></label><label class="dai-setting-row"><span><b>记录员模型</b><small>留空沿用“全局连接”的模型。</small></span><input type="text" data-setting="npc.ledgerModel" placeholder="留空沿用当前模型"></label></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>记账温度</b><small>要稳，0.2~0.4 比较合适；0 表示不指定。</small></span><input type="number" min="0" max="2" step="0.05" data-setting="npc.ledgerTemperature" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>最大输出 Token</b><small>0 = 沿用全局上限。</small></span><input type="number" min="0" max="32768" step="64" data-setting="npc.ledgerMaxTokens" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>top_p</b><small>0 = 不指定。</small></span><input type="number" min="0" max="1" step="0.05" data-setting="npc.ledgerTopP" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>存在惩罚</b><small>0 = 不指定。</small></span><input type="number" min="0" max="2" step="0.1" data-setting="npc.ledgerPresencePenalty" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>频率惩罚</b><small>0 = 不指定。</small></span><input type="number" min="0" max="2" step="0.1" data-setting="npc.ledgerFrequencyPenalty" placeholder="0 = 不指定"></label></div></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>人物簿 · 冷藏推进员</b><small>给勾选的冷藏人物补世界时间走过那一段的小调用的连接与参数；推进员提示词在「人物簿」页改。</small></div><label class="dai-setting-row"><span><b>用哪套连接</b><small>跟随酒馆＝与正文同一套；自定义＝下面这几项。</small></span><select data-setting="npc.coldMode"><option value="tavern">跟随酒馆当前设置</option><option value="custom">自定义模型</option></select></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>接口地址</b><small>选“自定义”才用得上；留空沿用“全局连接”。</small></span><input type="text" data-setting="npc.coldBaseUrl" placeholder="https://api.example.com/v1"></label><label class="dai-setting-row"><span><b>接口密钥</b><small>选“自定义”才用得上。</small></span><input type="password" data-setting="npc.coldApiKey" autocomplete="off" placeholder="留空沿用“全局连接”"></label><label class="dai-setting-row"><span><b>接口协议</b><small>留空按接口地址自动判断。</small></span><select data-setting="npc.coldProvider"><option value="">自动判断</option><option value="openai">OpenAI 兼容</option><option value="anthropic">Anthropic</option></select></label><label class="dai-setting-row"><span><b>推进员模型</b><small>留空沿用“全局连接”的模型。</small></span><input type="text" data-setting="npc.coldModel" placeholder="留空沿用当前模型"></label></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>推进温度</b><small>0–2；0 ＝不指定。</small></span><input type="number" min="0" max="2" step="0.05" data-setting="npc.coldTemperature" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>最大输出</b><small>0 ＝不指定。</small></span><input type="number" min="0" max="32768" step="64" data-setting="npc.coldMaxTokens" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>top_p</b><small>0–1；0 ＝不指定。</small></span><input type="number" min="0" max="1" step="0.05" data-setting="npc.coldTopP" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>存在惩罚</b><small>0–2；0 ＝不指定。</small></span><input type="number" min="0" max="2" step="0.1" data-setting="npc.coldPresencePenalty" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>频率惩罚</b><small>0–2；0 ＝不指定。</small></span><input type="number" min="0" max="2" step="0.1" data-setting="npc.coldFrequencyPenalty" placeholder="0 = 不指定"></label></div></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>纳戒 · 模型决定</b><small>主角自身记账调用的连接与参数；决定提示词与降级指令指南在「纳戒」页改。</small></div><label class="dai-setting-row"><span><b>决定用哪套连接</b><small>跟随酒馆＝与正文同一套；“自定义”＝下面这几项。</small></span><select data-setting="self.decideMode"><option value="tavern">跟随酒馆当前设置</option><option value="custom">自定义模型</option></select></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>决定接口地址</b><small>选“自定义”才用得上；留空沿用“全局连接”。</small></span><input type="text" data-setting="self.decideBaseUrl" placeholder="https://api.example.com/v1"></label><label class="dai-setting-row"><span><b>决定接口密钥</b><small>选“自定义”才用得上。</small></span><input type="password" data-setting="self.decideApiKey" autocomplete="off" placeholder="留空沿用“全局连接”"></label><label class="dai-setting-row"><span><b>接口协议</b><small>留空按接口地址自动判断。</small></span><select data-setting="self.decideProvider"><option value="">自动判断</option><option value="openai">OpenAI 兼容</option><option value="anthropic">Anthropic</option></select></label><label class="dai-setting-row"><span><b>决定用模型</b><small>填好地址后点“拉取模型”挑一个，也可以手填。</small></span><input type="text" data-setting="self.decideModel" placeholder="留空沿用当前模型"></label></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>决定温度</b><small>0–2；0 ＝不指定。</small></span><input type="number" min="0" max="2" step="0.05" data-setting="self.decideTemperature" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>决定最大输出</b><small>tokens；0 ＝不指定。</small></span><input type="number" min="0" max="32768" step="64" data-setting="self.decideMaxTokens" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>决定 top_p</b><small>0–1；0 ＝不指定。</small></span><input type="number" min="0" max="1" step="0.05" data-setting="self.decideTopP" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>决定存在惩罚</b><small>0–2；0 ＝不指定。</small></span><input type="number" min="0" max="2" step="0.1" data-setting="self.decidePresencePenalty" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>决定频率惩罚</b><small>0–2；0 ＝不指定。</small></span><input type="number" min="0" max="2" step="0.1" data-setting="self.decideFrequencyPenalty" placeholder="0 = 不指定"></label></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-selfdecide-models>拉取模型</button><small role="status" data-selfdecide-models-status></small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>喂最近几楼聊天</b></span><input type="number" min="1" max="12" step="1" data-setting="self.decideMaxFloors" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>世界书条目上限</b><small>按本轮聊天匹配相关条目，0 = 不带世界书。</small></span><input type="number" min="0" max="40" step="1" data-setting="self.decideMaxEntries" placeholder="0 = 不指定"></label></div></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>记忆决定 · 书记官</b><small>生成后决定“主角新记住了什么、了结了什么”的独立调用的连接与参数；书记官提示词在「主角记忆」页改。</small></div><label class="dai-setting-row"><span><b>用哪套连接</b><small>跟随酒馆＝与正文同一套；自定义＝下面这几项。</small></span><select data-setting="memory.decideMode"><option value="tavern">跟随酒馆当前设置</option><option value="custom">自定义模型</option></select></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>接口地址</b><small>选“自定义”才用得上；留空沿用“全局连接”。</small></span><input type="text" data-setting="memory.decideBaseUrl" placeholder="https://api.example.com/v1"></label><label class="dai-setting-row"><span><b>接口密钥</b><small>选“自定义”才用得上。</small></span><input type="password" data-setting="memory.decideApiKey" autocomplete="off" placeholder="留空沿用“全局连接”"></label><label class="dai-setting-row"><span><b>接口协议</b><small>留空按接口地址自动判断。</small></span><select data-setting="memory.decideProvider"><option value="">自动判断</option><option value="openai">OpenAI 兼容</option><option value="anthropic">Anthropic</option></select></label><label class="dai-setting-row"><span><b>模型名</b><small>选“自定义”才用得上。</small></span><input type="text" data-setting="memory.decideModel" placeholder="例如 deepseek-chat"></label></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>温度</b><small>0–2；0 ＝不指定。</small></span><input type="number" min="0" max="2" step="0.05" data-setting="memory.decideTemperature" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>最大输出</b><small>tokens；0 ＝不指定。</small></span><input type="number" min="0" max="32768" step="64" data-setting="memory.decideMaxTokens" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>top_p</b><small>0–1；0 ＝不指定。</small></span><input type="number" min="0" max="1" step="0.05" data-setting="memory.decideTopP" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>存在惩罚</b><small>0–2；0 ＝不指定。</small></span><input type="number" min="0" max="2" step="0.1" data-setting="memory.decidePresencePenalty" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>频率惩罚</b><small>0–2；0 ＝不指定。</small></span><input type="number" min="0" max="2" step="0.1" data-setting="memory.decideFrequencyPenalty" placeholder="0 = 不指定"></label></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>喂最近几楼聊天</b></span><input type="number" min="1" max="12" step="1" data-setting="memory.decideMaxFloors" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>世界书条目上限</b><small>按本轮聊天匹配相关条目，0 = 不带世界书。</small></span><input type="number" min="0" max="40" step="1" data-setting="memory.decideMaxEntries" placeholder="0 = 不指定"></label></div></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>世界影响 · 记录员与场记</b><small>生成后记账与生成前挑选的两个模型、连接与参数；记录员与场记的提示词在「世界影响」页改。</small></div><label class="dai-setting-row"><span><b>用几个模型</b><small>一个模型＝记账和挑选都用同一套；两个模型＝各配各的。</small></span><select data-setting="impact.modelMode"><option value="shared">一个模型干两件事</option><option value="split">两个模型分开</option></select></label><label class="dai-setting-row"><span><b>记录员用哪套</b><small>生成结束后记账的那个。</small></span><select data-setting="impact.decideMode"><option value="tavern">跟随酒馆当前设置</option><option value="custom">自定义模型</option></select></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>记录员接口地址</b><small>选“自定义”才用得上；留空沿用“全局连接”。</small></span><input type="text" data-setting="impact.decideBaseUrl" placeholder="https://api.example.com/v1"></label><label class="dai-setting-row"><span><b>记录员接口密钥</b><small>选“自定义”才用得上。</small></span><input type="password" data-setting="impact.decideApiKey" autocomplete="off" placeholder="留空沿用“全局连接”"></label><label class="dai-setting-row"><span><b>接口协议</b><small>留空按接口地址自动判断。</small></span><select data-setting="impact.decideProvider"><option value="">自动判断</option><option value="openai">OpenAI 兼容</option><option value="anthropic">Anthropic</option></select></label><label class="dai-setting-row"><span><b>记录员模型名</b><small>填好地址后点“拉取模型”挑一个。</small></span><input type="text" data-setting="impact.decideModel" placeholder="例如 deepseek-chat"></label></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>记录员温度</b><small>0–2；填 0 ＝不指定。</small></span><input type="number" min="0" max="2" step="0.05" data-setting="impact.decideTemperature" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>记录员最大输出</b><small>tokens；0 ＝不指定。</small></span><input type="number" min="0" max="32768" step="64" data-setting="impact.decideMaxTokens" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>记录员 top_p</b><small>0–1；0 ＝不指定。</small></span><input type="number" min="0" max="1" step="0.05" data-setting="impact.decideTopP" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>记录员存在惩罚</b><small>0–2；0 ＝不指定。</small></span><input type="number" min="0" max="2" step="0.1" data-setting="impact.decidePresencePenalty" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>记录员频率惩罚</b><small>0–2；0 ＝不指定。</small></span><input type="number" min="0" max="2" step="0.1" data-setting="impact.decideFrequencyPenalty" placeholder="0 = 不指定"></label></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-impact-models="decide">拉取模型</button><small role="status" data-impact-models-status="decide"></small></div><div class="dai-setting-grid" data-impact-inject-model><label class="dai-setting-row"><span><b>场记用哪套</b><small>生成前挑影响的那个。</small></span><select data-setting="impact.injectMode"><option value="tavern">跟随酒馆当前设置</option><option value="custom">自定义模型</option></select></label><label class="dai-setting-row"><span><b>场记接口地址</b><small>选“自定义”才用得上。</small></span><input type="text" data-setting="impact.injectBaseUrl" placeholder="https://api.example.com/v1"></label><label class="dai-setting-row"><span><b>场记接口密钥</b><small>选“自定义”才用得上。</small></span><input type="password" data-setting="impact.injectApiKey" autocomplete="off" placeholder="留空沿用“全局连接”"></label><label class="dai-setting-row"><span><b>接口协议</b><small>留空按接口地址自动判断。</small></span><select data-setting="impact.injectProvider"><option value="">自动判断</option><option value="openai">OpenAI 兼容</option><option value="anthropic">Anthropic</option></select></label><label class="dai-setting-row"><span><b>场记模型名</b><small>填好地址后点“拉取模型”挑一个。</small></span><input type="text" data-setting="impact.injectModel" placeholder="例如 deepseek-chat"></label></div><div class="dai-setting-grid" data-impact-inject-model><label class="dai-setting-row"><span><b>场记温度</b><small>0–2；填 0 ＝不指定。</small></span><input type="number" min="0" max="2" step="0.05" data-setting="impact.injectTemperature" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>场记最大输出</b><small>tokens；0 ＝不指定。</small></span><input type="number" min="0" max="32768" step="64" data-setting="impact.injectMaxTokens" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>场记 top_p</b><small>0–1；0 ＝不指定。</small></span><input type="number" min="0" max="1" step="0.05" data-setting="impact.injectTopP" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>场记存在惩罚</b><small>0–2；0 ＝不指定。</small></span><input type="number" min="0" max="2" step="0.1" data-setting="impact.injectPresencePenalty" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>场记频率惩罚</b><small>0–2；0 ＝不指定。</small></span><input type="number" min="0" max="2" step="0.1" data-setting="impact.injectFrequencyPenalty" placeholder="0 = 不指定"></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-impact-models="inject">拉取模型</button><small role="status" data-impact-models-status="inject"></small></div></div></div>
                     </section>
                     <section class="dai-settings-page" data-settings-section="facts" role="tabpanel" hidden>
-                        <div class="dai-page-heading"><span class="dai-page-eyebrow">核心能力 / 03</span><h3>原著设定</h3><p>把世界书条目变成“按需注入”的设定库：建索引、按卷出目录、模型点名、按预算注入正文提示词。</p></div><div class="dai-settings-card"><div class="dai-card-heading"><b>运行状态</b><small>打开这一页时读取，生成结束后也会刷新。</small></div><ul class="dai-status-list" data-facts-status><li><b>状态</b><span>正在读取……</span></li></ul></div><div class="dai-settings-card"><div class="dai-card-heading"><b>模型</b><small>“跟随酒馆”就用酒馆当前 API 和模型；选“自定义”才会读下面几项。</small></div><label class="dai-setting-row"><span><b>用哪个接口</b><small>跟随酒馆＝与正文同一套模型和密钥；自定义＝单独填接口。</small></span><select data-setting="llm.mode"><option value="tavern">跟随酒馆当前 API</option><option value="custom">自定义接口</option></select></label><div class="dai-llm-custom" data-llm-custom hidden><label class="dai-setting-row"><span><b>接口地址</b><small>OpenAI 兼容的 Base URL，填到 /v1 为止。</small></span><input type="url" data-setting="llm.baseUrl" placeholder="https://api.example.com/v1"></label><label class="dai-setting-row"><span><b>API Key</b><small>只保存到扩展设置，不写进聊天记录。</small></span><input type="password" data-setting="llm.apiKey" autocomplete="off" placeholder="留空表示该接口不需要密钥"></label><label class="dai-setting-row"><span><b>模型名称</b><small>自定义接口必填；跟随酒馆时可留空。</small></span><input type="text" data-setting="llm.model" placeholder="例如 deepseek-chat"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>Temperature</b><small>0 更稳，2 更发散。</small></span><input type="number" min="0" max="2" step="0.1" data-setting="llm.temperature"></label><label class="dai-setting-row"><span><b>最大输出 Token</b></span><input type="number" min="128" max="32768" step="128" data-setting="llm.maxTokens"></label><label class="dai-setting-row"><span><b>单次等待上限（毫秒）</b><small>超时就算这一轮选条失败。</small></span><input type="number" min="1000" max="600000" step="1000" data-setting="llm.timeoutMs"></label><label class="dai-setting-row"><span><b>top_p</b><small>0–1；0 ＝不指定，用接口自己的设置。</small></span><input type="number" min="0" max="1" step="0.05" data-setting="llm.topP" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>存在惩罚</b><small>0–2；0 ＝不指定。</small></span><input type="number" min="0" max="2" step="0.1" data-setting="llm.presencePenalty" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>频率惩罚</b><small>0–2；0 ＝不指定。</small></span><input type="number" min="0" max="2" step="0.1" data-setting="llm.frequencyPenalty" placeholder="0 = 不指定"></label></div></div></div><div class="dai-settings-card"><div class="dai-card-heading"><b>检索库状态</b><small>只读世界书，不改原文件；改完世界书后重新导入一次即可。</small></div><p class="dai-turn-result" data-worldbook-stats role="status">还没有导入。</p><label class="dai-setting-row"><span><b>世界书名称</b><small>填世界书面板里的名字；点“扫描”可以自动列出可选名称。</small></span><input type="text" list="dai-worldbook-options" data-setting="setting.worldbook" placeholder="例如 斗破世界书"></label><datalist id="dai-worldbook-options"></datalist><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-agent-worldbook-scan>扫描可选世界书</button><button type="button" class="dai-secondary-button" data-agent-worldbook-import>从世界书导入</button></div><p class="dai-turn-result" data-agent-worldbook-status role="status">还没有导入。</p></div><div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon">◈</span><span><b>启用原著设定注入</b><small>每轮先按本轮输入召回候选，再由模型挑出真正要用的设定，按预算注入正文提示词。</small></span><input type="checkbox" data-setting="setting.enabled"></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>当前剧情卷</b><small>自动＝按本轮输入和模型估计；手动选＝锁定这一卷，识别到更后面的卷也会被压回。</small></span><select data-setting="setting.progress"><option value="0">自动判定</option><option value="1">第 1 卷</option><option value="2">第 2 卷</option><option value="3">第 3 卷</option><option value="4">第 4 卷</option><option value="5">第 5 卷</option><option value="6">第 6 卷</option><option value="7">第 7 卷</option><option value="8">第 8 卷</option><option value="9">第 9 卷</option><option value="10">第 10 卷</option><option value="11">第 11 卷</option><option value="12">第 12 卷</option><option value="13">第 13 卷</option><option value="14">第 14 卷</option><option value="15">第 15 卷</option><option value="16">第 16 卷</option><option value="17">第 17 卷</option><option value="18">第 18 卷</option><option value="19">第 19 卷</option><option value="20">第 20 卷</option><option value="21">第 21 卷</option></select></label><label class="dai-setting-row"><span><b>单次注入字数</b><small>0 = 不限制，选中几条就注入几条全文。</small></span><input type="number" min="0" max="4000" step="100" data-setting="setting.injectionBudget"></label><label class="dai-setting-row"><span><b>单次最多条目</b></span><input type="number" min="1" max="24" step="1" data-setting="setting.maxItems"></label></div></div><div class="dai-settings-card"><div class="dai-card-heading"><b>注入通道</b><small data-injection-status role="status">打开这一页时检测。</small></div><div class="dai-setting-grid"><label class="dai-setting-row dai-setting-toggle"><span><b>启用注入</b><small>关闭后不往提示词里写任何原著内容，正文照常生成。</small></span><input type="checkbox" data-setting="injection.enabled"></label><label class="dai-setting-row"><span><b>插入深度</b><small>从最新一楼往回数；0 表示紧贴末尾、离生成最近。</small></span><input type="number" min="0" max="99" step="1" data-setting="injection.depth"></label><label class="dai-setting-row"><span><b>最大字数</b><small>0 = 不截断；填了才在写入时截断。</small></span><input type="number" min="0" max="8000" step="100" data-setting="injection.maxChars"></label></div></div><div class="dai-settings-card"><div class="dai-card-heading"><b>旧版资料查询（已退役）</b><small>新链路不再调用它；保留这几个开关只为对照旧行为，正常使用保持关闭。</small></div><div class="dai-feature-toggle"><span class="dai-feature-icon">▤</span><span><b>启用旧资料查询</b><small>关闭后不会调用 facts-query 模块。</small></span><input type="checkbox" data-setting="enableFactsLibrary"></div><label class="dai-setting-row"><span><b>资料来源</b><small>旧链路只会读取已经登记的项目资料。</small></span><select data-setting="facts.sourceMode"><option value="registered">已登记资料</option><option value="chat">当前聊天上下文</option><option value="both">资料 + 当前聊天</option></select></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>单次最多条目</b></span><input type="number" min="1" max="100" step="1" data-setting="facts.maxEntries"></label><label class="dai-setting-row dai-setting-toggle"><span><b>允许未核验资料</b><small>关闭时只使用已确认事实。</small></span><input type="checkbox" data-setting="facts.includeUnverified"></label></div></div><details class="dai-settle-category"><summary><span class="dai-feature-icon">▤</span><span><b>选条提示词</b><small>模型判断“本轮要用哪些原著条目”时收到的 system 指令；点开修改，清空恢复内置默认；MAX_PICKS 会换成每条上限。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>规则正文</b><small>改完下一轮生效，不用重启。</small></span><textarea data-setting="prompt.select" rows="9" spellcheck="false" placeholder="打开页面会自动铺入当前生效的规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-prompt-default>填入默认规则</button><small>默认规则含“只选必须用到、不许编 uid、只输出 JSON”。</small></div></div></details><details class="dai-settle-category"><summary><span class="dai-feature-icon">▤</span><span><b>卷外点选提示词</b><small>模型在目录里找不到、报出名字后，脚本搜到候选再问它一次时用的 system 指令；点开修改，清空恢复内置默认。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>规则正文</b><small>只影响“卷外二次点选”，改完下一轮生效。</small></span><textarea data-setting="prompt.lookup" rows="7" spellcheck="false" placeholder="打开页面会自动铺入当前生效的规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-prompt-default="lookup">填入默认规则</button><small>默认规则含“只从候选里挑、后续卷默认不选”。</small></div></div></details></section>
+                        <div class="dai-page-heading"><span class="dai-page-eyebrow">核心能力 / 03</span><h3>原著设定</h3><p>把世界书条目变成“按需注入”的设定库：建索引、按卷出目录、模型点名、按预算注入正文提示词。</p></div><div class="dai-settings-card"><div class="dai-card-heading"><b>运行状态</b><small>打开这一页时读取，生成结束后也会刷新。</small></div><ul class="dai-status-list" data-facts-status><li><b>状态</b><span>正在读取……</span></li></ul></div><div class="dai-settings-card"><div class="dai-card-heading"><b>检索库状态</b><small>只读世界书，不改原文件；改完世界书后重新导入一次即可。</small></div><p class="dai-turn-result" data-worldbook-stats role="status">还没有导入。</p><label class="dai-setting-row"><span><b>世界书名称</b><small>填世界书面板里的名字；点“扫描”可以自动列出可选名称。</small></span><input type="text" list="dai-worldbook-options" data-setting="setting.worldbook" placeholder="例如 斗破世界书"></label><datalist id="dai-worldbook-options"></datalist><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-agent-worldbook-scan>扫描可选世界书</button><button type="button" class="dai-secondary-button" data-agent-worldbook-import>从世界书导入</button></div><p class="dai-turn-result" data-agent-worldbook-status role="status">还没有导入。</p></div><div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon">◈</span><span><b>启用原著设定注入</b><small>每轮先按本轮输入召回候选，再由模型挑出真正要用的设定，按预算注入正文提示词。</small></span><input type="checkbox" data-setting="setting.enabled"></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>当前剧情卷</b><small>自动＝按本轮输入和模型估计；手动选＝锁定这一卷，识别到更后面的卷也会被压回。</small></span><select data-setting="setting.progress"><option value="0">自动判定</option><option value="1">第 1 卷</option><option value="2">第 2 卷</option><option value="3">第 3 卷</option><option value="4">第 4 卷</option><option value="5">第 5 卷</option><option value="6">第 6 卷</option><option value="7">第 7 卷</option><option value="8">第 8 卷</option><option value="9">第 9 卷</option><option value="10">第 10 卷</option><option value="11">第 11 卷</option><option value="12">第 12 卷</option><option value="13">第 13 卷</option><option value="14">第 14 卷</option><option value="15">第 15 卷</option><option value="16">第 16 卷</option><option value="17">第 17 卷</option><option value="18">第 18 卷</option><option value="19">第 19 卷</option><option value="20">第 20 卷</option><option value="21">第 21 卷</option></select></label><label class="dai-setting-row"><span><b>单次注入字数</b><small>0 = 不限制，选中几条就注入几条全文。</small></span><input type="number" min="0" max="4000" step="100" data-setting="setting.injectionBudget"></label><label class="dai-setting-row"><span><b>单次最多条目</b></span><input type="number" min="1" max="24" step="1" data-setting="setting.maxItems"></label></div></div><div class="dai-settings-card"><div class="dai-card-heading"><b>注入通道</b><small data-injection-status role="status">打开这一页时检测。</small></div><div class="dai-setting-grid"><label class="dai-setting-row dai-setting-toggle"><span><b>启用注入</b><small>关闭后不往提示词里写任何原著内容，正文照常生成。</small></span><input type="checkbox" data-setting="injection.enabled"></label><label class="dai-setting-row"><span><b>插入深度</b><small>从最新一楼往回数；0 表示紧贴末尾、离生成最近。</small></span><input type="number" min="0" max="99" step="1" data-setting="injection.depth"></label><label class="dai-setting-row"><span><b>最大字数</b><small>0 = 不截断；填了才在写入时截断。</small></span><input type="number" min="0" max="8000" step="100" data-setting="injection.maxChars"></label></div></div><div class="dai-settings-card"><div class="dai-card-heading"><b>旧版资料查询（已退役）</b><small>新链路不再调用它；保留这几个开关只为对照旧行为，正常使用保持关闭。</small></div><div class="dai-feature-toggle"><span class="dai-feature-icon">▤</span><span><b>启用旧资料查询</b><small>关闭后不会调用 facts-query 模块。</small></span><input type="checkbox" data-setting="enableFactsLibrary"></div><label class="dai-setting-row"><span><b>资料来源</b><small>旧链路只会读取已经登记的项目资料。</small></span><select data-setting="facts.sourceMode"><option value="registered">已登记资料</option><option value="chat">当前聊天上下文</option><option value="both">资料 + 当前聊天</option></select></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>单次最多条目</b></span><input type="number" min="1" max="100" step="1" data-setting="facts.maxEntries"></label><label class="dai-setting-row dai-setting-toggle"><span><b>允许未核验资料</b><small>关闭时只使用已确认事实。</small></span><input type="checkbox" data-setting="facts.includeUnverified"></label></div></div><details class="dai-settle-category"><summary><span class="dai-feature-icon">▤</span><span><b>选条提示词</b><small>模型判断“本轮要用哪些原著条目”时收到的 system 指令；点开修改，清空恢复内置默认；MAX_PICKS 会换成每条上限。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>规则正文</b><small>改完下一轮生效，不用重启。</small></span><textarea data-setting="prompt.select" rows="9" spellcheck="false" placeholder="打开页面会自动铺入当前生效的规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-prompt-default>填入默认规则</button><small>默认规则含“只选必须用到、不许编 uid、只输出 JSON”。</small></div></div></details><details class="dai-settle-category"><summary><span class="dai-feature-icon">▤</span><span><b>卷外点选提示词</b><small>模型在目录里找不到、报出名字后，脚本搜到候选再问它一次时用的 system 指令；点开修改，清空恢复内置默认。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>规则正文</b><small>只影响“卷外二次点选”，改完下一轮生效。</small></span><textarea data-setting="prompt.lookup" rows="7" spellcheck="false" placeholder="打开页面会自动铺入当前生效的规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-prompt-default="lookup">填入默认规则</button><small>默认规则含“只从候选里挑、后续卷默认不选”。</small></div></div></details></section>
                     <section class="dai-settings-page" data-settings-section="action" role="tabpanel" hidden>
-                        <div class="dai-page-heading"><span class="dai-page-eyebrow">核心能力 / 04</span><h3>行动结算</h3><p>把玩家行动拆成条件、结果和资源变化候选，再决定是否提交。</p></div><div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon">➜</span><span><b>启用行动结算（总开关）</b><small>关闭后行动不再结算：不拆条件、不算数值变化，也不再要求确认行动细节；正文照常生成，状态保持原样。</small></span><input type="checkbox" data-setting="enableActionResolution"></div><label class="dai-setting-row dai-setting-toggle"><span><b>提交前要求确认</b><small>只生成候选，不自动写入状态。</small></span><input type="checkbox" data-setting="action.requireConfirmation"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>最多候选结果</b></span><input type="number" min="1" max="20" step="1" data-setting="action.maxCandidates"></label><label class="dai-setting-row dai-setting-toggle"><span><b>显示资源变化预览</b><small>在确认前展示影响范围。</small></span><input type="checkbox" data-setting="action.showCostPreview"></label></div></div><div class="dai-settings-card"><div class="dai-card-heading"><b>结算判定的模型</b><small>分类判定（丹药/修炼/伤害/通用）独立调用用的连接与参数。“跟随酒馆”＝直接用酒馆当前连接与模型；“自定义”＝自己填接口地址、密钥、模型名，填好地址点“拉取模型”从列表里选。温度、输出上限、top_p 和两个惩罚项填 0 表示不指定，沿用酒馆或“模型与连接”页；跟随酒馆时这些值只在这一次判定期间临时生效，结束立刻还原。</small></div><label class="dai-setting-row"><span><b>用哪套连接</b><small>跟随酒馆＝与正文同一套；自定义＝下面这几项。</small></span><select data-setting="settle.mode"><option value="tavern">跟随酒馆当前设置</option><option value="custom">自定义模型</option></select></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>接口地址</b><small>选“自定义”才用得上；留空沿用“模型与连接”页。</small></span><input type="text" data-setting="settle.baseUrl" placeholder="https://api.example.com/v1"></label><label class="dai-setting-row"><span><b>接口密钥</b><small>选“自定义”才用得上；留空沿用“模型与连接”页。</small></span><input type="password" data-setting="settle.apiKey" placeholder="留空沿用“模型与连接”页"></label><label class="dai-setting-row"><span><b>模型名</b><small>填好地址后点“拉取模型”挑一个，也可以手填。</small></span><input type="text" data-setting="settle.model" list="dai-settle-models" placeholder="例如 deepseek-chat"><datalist id="dai-settle-models"></datalist></label></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>温度</b><small>0–2；0 ＝不指定。判定求稳可以填 0.2。</small></span><input type="number" min="0" max="2" step="0.05" data-setting="settle.temperature" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>最大输出</b><small>tokens；0 ＝不指定。</small></span><input type="number" min="0" max="32768" step="64" data-setting="settle.maxTokens" placeholder="0 = 不指定"></label></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>top_p</b><small>0–1；0 ＝不指定。</small></span><input type="number" min="0" max="1" step="0.05" data-setting="settle.topP" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>存在惩罚</b><small>0–2；0 ＝不指定。</small></span><input type="number" min="0" max="2" step="0.1" data-setting="settle.presencePenalty" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>频率惩罚</b><small>0–2；0 ＝不指定。</small></span><input type="number" min="0" max="2" step="0.1" data-setting="settle.frequencyPenalty" placeholder="0 = 不指定"></label></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-settle-models>拉取模型</button><small role="status" data-settle-models-status></small></div></div><div class="dai-settings-card"><div class="dai-card-heading"><b>分类判定与提示词</b><small>行动解析先定类别（丹药/修炼/伤害/通用），再由对应类别的提示词独立判一次，脚本按类别规则逐条复核。点开一类修改它的规则；改完下一轮生效，不用重启。</small></div>${SETTLE_CATEGORY_HTML}<div data-settle-custom-list></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-settle-add-category>＋ 添加自定义判定</button><small role="status" data-settle-custom-status>自定义判定只有名字和提示词：判定走你写的规则，脚本仍做字段白名单把关；最多 8 个。</small></div></div></section>
+                        <div class="dai-page-heading"><span class="dai-page-eyebrow">核心能力 / 04</span><h3>行动结算</h3><p>把玩家行动拆成条件、结果和资源变化候选，再决定是否提交。</p></div><div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon">➜</span><span><b>启用行动结算（总开关）</b><small>关闭后行动不再结算：不拆条件、不算数值变化，也不再要求确认行动细节；正文照常生成，状态保持原样。</small></span><input type="checkbox" data-setting="enableActionResolution"></div><label class="dai-setting-row dai-setting-toggle"><span><b>提交前要求确认</b><small>只生成候选，不自动写入状态。</small></span><input type="checkbox" data-setting="action.requireConfirmation"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>最多候选结果</b></span><input type="number" min="1" max="20" step="1" data-setting="action.maxCandidates"></label><label class="dai-setting-row dai-setting-toggle"><span><b>显示资源变化预览</b><small>在确认前展示影响范围。</small></span><input type="checkbox" data-setting="action.showCostPreview"></label></div></div><div class="dai-settings-card"><div class="dai-card-heading"><b>分类判定与提示词</b><small>行动解析先定类别（丹药/修炼/伤害/通用），再由对应类别的提示词独立判一次，脚本按类别规则逐条复核。点开一类修改它的规则；改完下一轮生效，不用重启。</small></div>${SETTLE_CATEGORY_HTML}<div data-settle-custom-list></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-settle-add-category>＋ 添加自定义判定</button><small role="status" data-settle-custom-status>自定义判定只有名字和提示词：判定走你写的规则，脚本仍做字段白名单把关；最多 8 个。</small></div></div></section>
                     <section class="dai-settings-page" data-settings-section="world" role="tabpanel" hidden>
-                        <div class="dai-page-heading"><span class="dai-page-eyebrow">核心能力 / 05</span><h3>世界运转</h3><p>世界时间和事件由模型在正文末尾下指令、脚本核验后记账；这一页是台账展示和手动控制。</p></div>
-                        <div class="dai-settings-card"><div class="dai-card-heading"><b>世界时间与现状</b><small>随每轮生成自动更新；也可在这里手动调整。</small></div><p class="dai-state-strip" data-world-time>还没有载入世界。</p><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-world-advance="1">推进 1 天</button><button type="button" class="dai-secondary-button" data-world-advance="7">推进 7 天</button><input type="number" min="1" max="365" step="1" data-world-days placeholder="天数" aria-label="自定义推进天数"><button type="button" class="dai-secondary-button" data-world-advance-custom>推进</button></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>改为第几天</b><small>直接设定时钟，用于修正跳变。</small></span><input type="number" min="1" max="99999" step="1" data-world-setday placeholder="如 30"></label><button type="button" class="dai-secondary-button" data-world-setday-apply>设定</button></div></div><div class="dai-card-heading" style="margin-top:0.5rem;"><b>世界信息</b><small>时期、所在地、天气由剧情更新；名声/通缉度随玩家行为变化，都可手动修正。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>时期</b></span><input type="text" data-world-info="era" placeholder="如 萧家废物时期"></label><button type="button" class="dai-secondary-button" data-world-info-set="era">设定</button><label class="dai-setting-row"><span><b>所在地</b></span><input type="text" data-world-info="location" placeholder="如 乌坦城"></label><button type="button" class="dai-secondary-button" data-world-info-set="location">设定</button><label class="dai-setting-row"><span><b>天气</b></span><input type="text" data-world-info="weather" placeholder="如 晴"></label><button type="button" class="dai-secondary-button" data-world-info-set="weather">设定</button><label class="dai-setting-row"><span><b>名声</b><small>行侠立功上涨；留空为清空。</small></span><input type="text" data-world-info="reputation" placeholder="如 乌坦城小有名气"></label><button type="button" class="dai-secondary-button" data-world-info-set="reputation">设定</button><label class="dai-setting-row"><span><b>通缉度</b><small>作恶树敌上涨；留空为清空。</small></span><input type="text" data-world-info="wanted" placeholder="如 被米特尔家族记恨"></label><button type="button" class="dai-secondary-button" data-world-info-set="wanted">设定</button></div>
-                        <div class="dai-settings-card"><div class="dai-card-heading"><b>主角身边的事件</b><small>模型会看到这些并把它们织进剧情；了结后从注入里退场。</small></div><div class="dai-world-events" data-world-events-near></div></div>
+                        <div class="dai-page-heading"><h3>世界运转</h3><p>世界时间和事件由模型在正文末尾下指令、脚本核验后记账；这一页是台账展示和手动控制。添加表单都收进了弹窗，页面只看现状。</p></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>世界时间与现状</b><small>随每轮生成自动更新；点数值旁的 ✎ 就地修正。</small></div><div class="dai-world-tiles"><div class="dai-world-tile"><span class="dai-world-tile-label">天数</span><b class="dai-world-tile-value" data-world-tile="day">—</b><small class="dai-world-tile-sub" data-world-tile-sub="clock"></small></div><div class="dai-world-tile"><span class="dai-world-tile-label">时期</span><b class="dai-world-tile-value" data-world-tile="era">—</b><button type="button" class="dai-world-tile-edit" data-world-tile-edit="era" title="修改时期">✎</button><span class="dai-world-tile-editor" data-world-tile-editor="era" hidden><input type="text" data-world-info="era" placeholder="如 萧家废物时期"><button type="button" class="dai-secondary-button" data-world-info-set="era">确定</button></span></div><div class="dai-world-tile"><span class="dai-world-tile-label">所在地</span><b class="dai-world-tile-value" data-world-tile="location">—</b><button type="button" class="dai-world-tile-edit" data-world-tile-edit="location" title="修改所在地">✎</button><span class="dai-world-tile-editor" data-world-tile-editor="location" hidden><input type="text" data-world-info="location" placeholder="如 乌坦城"><button type="button" class="dai-secondary-button" data-world-info-set="location">确定</button></span></div><div class="dai-world-tile"><span class="dai-world-tile-label">天气</span><b class="dai-world-tile-value" data-world-tile="weather">—</b><button type="button" class="dai-world-tile-edit" data-world-tile-edit="weather" title="修改天气">✎</button><span class="dai-world-tile-editor" data-world-tile-editor="weather" hidden><input type="text" data-world-info="weather" placeholder="如 晴"><button type="button" class="dai-secondary-button" data-world-info-set="weather">确定</button></span></div><div class="dai-world-tile"><span class="dai-world-tile-label">名声</span><b class="dai-world-tile-value" data-world-tile="reputation">—</b><button type="button" class="dai-world-tile-edit" data-world-tile-edit="reputation" title="修改名声">✎</button><span class="dai-world-tile-editor" data-world-tile-editor="reputation" hidden><input type="text" data-world-info="reputation" placeholder="如 乌坦城小有名气"><button type="button" class="dai-secondary-button" data-world-info-set="reputation">确定</button></span></div><div class="dai-world-tile"><span class="dai-world-tile-label">通缉度</span><b class="dai-world-tile-value" data-world-tile="wanted">—</b><button type="button" class="dai-world-tile-edit" data-world-tile-edit="wanted" title="修改通缉度">✎</button><span class="dai-world-tile-editor" data-world-tile-editor="wanted" hidden><input type="text" data-world-info="wanted" placeholder="如 被米特尔家族记恨"><button type="button" class="dai-secondary-button" data-world-info-set="wanted">确定</button></span></div></div><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-world-advance="1">推进 1 天</button><button type="button" class="dai-secondary-button" data-world-advance="7">推进 7 天</button><input type="number" min="1" max="365" step="1" data-world-days placeholder="天数" aria-label="自定义推进天数"><button type="button" class="dai-secondary-button" data-world-advance-custom>推进</button></div><label class="dai-setting-row"><span><b>改为第几天</b><small>直接设定时钟，用于修正跳变。</small></span><span class="dai-setting-inline"><input type="number" min="1" max="99999" step="1" data-world-setday placeholder="如 30"><button type="button" class="dai-secondary-button" data-world-setday-apply>设定</button></span></label><label class="dai-setting-row"><span><b>世界氛围</b><small>决定模型投放事件的频率和烈度。</small></span><span class="dai-setting-inline"><span class="dai-world-tension" data-world-tension-display role="status"></span><button type="button" class="dai-secondary-button" data-world-tension="calm">平静</button><button type="button" class="dai-secondary-button" data-world-tension="rising">升温</button><button type="button" class="dai-secondary-button" data-world-tension="storm">风波</button></span></label></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>主角身边的事件</b><small>模型会看到这些并把它们织进剧情；了结后从注入里退场。</small><button type="button" class="dai-impact-edit" data-modal-open="world-event" data-modal-title="登记事件">＋ 登记</button></div><div class="dai-world-events" data-world-events-near></div></div>
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>世界大事</b><small>大陆层面的事件；重大的会标星，置顶的不参与上限清理。</small></div><div class="dai-world-events" data-world-events-world></div></div>
-                        <div class="dai-settings-card"><div class="dai-card-heading"><b>任务</b><small>模型识别剧情里的目标就立任务；全部任务都在这里，可手动完成或删除。</small></div><div class="dai-world-tasks" data-world-tasks></div><div class="dai-card-heading" style="margin-top:0.5rem;"><b>手动接任务</b><small>模型没立但你想要的，自己记一笔。</small></div><label class="dai-setting-row"><span><b>任务名</b><small>一句话说清要做什么。</small></span><input type="text" data-world-task-title placeholder="例：查出城东窃贼的来历"></label><label class="dai-setting-row"><span><b>详细资料</b><small>目标、背景、现状，写多少都行。</small></span><input type="text" data-world-task-detail placeholder="例：连日失窃，掌柜悬赏；已知窃贼夜行、身法利落"></label><label class="dai-setting-row"><span><b>来源</b><small>这任务从哪来：谁托付、什么契机。</small></span><input type="text" data-world-task-basis placeholder="例：药铺掌柜悬赏托付"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>时限（天）</b><small>留空不限期。</small></span><input type="number" min="1" max="90" step="1" data-world-task-days placeholder="如 7"></label></div><button type="button" class="dai-secondary-button" data-world-addtask>接下任务</button></div>
-                        <div class="dai-settings-card"><div class="dai-card-heading"><b>手动登记事件</b><small>模型漏记时在这里补一笔，格式与模型指令一致。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>范围</b></span><select data-world-add-scope><option value="near">主角身边</option><option value="world">世界大事</option></select></label><label class="dai-setting-row"><span><b>分量</b></span><select data-world-add-weight><option value="minor">普通</option><option value="major">重大</option><option value="rumor">传闻（未证实）</option></select></label></div><label class="dai-setting-row"><span><b>事件内容</b><small>一句话说清发生了什么，不拘题材。</small></span><input type="text" data-world-add-text placeholder="例：城东连着三家铺子夜里失窃"></label><label class="dai-setting-row"><span><b>依据</b><small>它从哪来：哪楼、谁、什么事引出的。</small></span><input type="text" data-world-add-basis placeholder="例：上一楼酒馆闲谈提到的失窃传闻"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>有效期（天）</b><small>留空长期有效；到期自动了结。</small></span><input type="number" min="1" max="90" step="1" data-world-add-days placeholder="如 5"></label></div><button type="button" class="dai-secondary-button" data-world-add>登记事件</button></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>任务</b><small>模型识别剧情里的目标就立任务；全部任务都在这里。</small><button type="button" class="dai-impact-edit" data-modal-open="world-task" data-modal-title="接下任务">＋ 接任务</button></div><div class="dai-world-tasks" data-world-tasks></div></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>势力</b><small>与主角有过恩怨往来的势力：态度与动向随剧情更新，敌对的最先注入。</small><button type="button" class="dai-impact-edit" data-modal-open="world-faction" data-modal-title="登记势力">＋ 登记</button></div><div class="dai-world-factions" data-world-factions></div></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>人物</b><small>与主角有交情或恩怨的人物及态度，正文按这里写人物反应。</small><button type="button" class="dai-impact-edit" data-modal-open="world-person" data-modal-title="登记人物">＋ 登记</button></div><div class="dai-world-people" data-world-people></div></div>
+                        <div class="dai-modal-dock" data-modal-dock="world-task" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>接一个任务</b><small>模型没立但你想要的，自己记一笔。</small></div><label class="dai-setting-row"><span><b>任务名</b><small>一句话说清要做什么。</small></span><input type="text" data-world-task-title placeholder="例：查出城东窃贼的来历"></label><label class="dai-setting-row"><span><b>详细资料</b><small>目标、背景、现状，写多少都行。</small></span><input type="text" data-world-task-detail placeholder="例：连日失窃，掌柜悬赏；已知窃贼夜行、身法利落"></label><label class="dai-setting-row"><span><b>来源</b><small>这任务从哪来：谁托付、什么契机。</small></span><input type="text" data-world-task-basis placeholder="例：药铺掌柜悬赏托付"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>时限（天）</b><small>留空不限期。</small></span><input type="number" min="1" max="90" step="1" data-world-task-days placeholder="如 7"></label></div><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-world-addtask>接下任务</button><button type="button" class="dai-secondary-button" data-agent-modal-close>取消</button></div></div></div><div class="dai-modal-dock" data-modal-dock="world-faction" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>登记势力</b><small>与主角有恩怨往来的势力；同名直接更新。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>势力名</b></span><input type="text" data-world-faction-name placeholder="例：云岚宗"></label><label class="dai-setting-row"><span><b>态度</b></span><select data-world-faction-stance><option value="hostile">敌对</option><option value="wary">警惕</option><option value="neutral">中立</option><option value="friendly">友好</option><option value="allied">同盟</option></select></label></div><label class="dai-setting-row"><span><b>动向</b><small>势力现在在干什么。</small></span><input type="text" data-world-faction-dynamics placeholder="例：为退婚一事派使者常驻乌坦城"></label><label class="dai-setting-row"><span><b>依据</b></span><input type="text" data-world-faction-basis placeholder="例：本楼使者登门"></label><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-world-setfaction>登记 / 更新</button><button type="button" class="dai-secondary-button" data-agent-modal-close>取消</button></div></div></div><div class="dai-modal-dock" data-modal-dock="world-person" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>登记人物</b><small>与主角有交情或恩怨的人及态度；同名直接更新。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>人物名</b></span><input type="text" data-world-person-name placeholder="例：药老"></label><label class="dai-setting-row"><span><b>对主角的态度</b></span><input type="text" data-world-person-attitude placeholder="例：严厉但护短，亦师亦父"></label></div><label class="dai-setting-row"><span><b>依据</b></span><input type="text" data-world-person-basis placeholder="例：第二楼药老出手相护"></label><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-world-setperson>登记 / 更新</button><button type="button" class="dai-secondary-button" data-agent-modal-close>取消</button></div></div></div><div class="dai-modal-dock" data-modal-dock="world-event" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>登记事件</b><small>模型漏记时在这里补一笔，格式与模型指令一致。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>范围</b></span><select data-world-add-scope><option value="near">主角身边</option><option value="world">世界大事</option></select></label><label class="dai-setting-row"><span><b>分量</b></span><select data-world-add-weight><option value="minor">普通</option><option value="major">重大</option><option value="rumor">传闻（未证实）</option></select></label></div><label class="dai-setting-row"><span><b>事件内容</b><small>一句话说清发生了什么，不拘题材。</small></span><input type="text" data-world-add-text placeholder="例：城东连着三家铺子夜里失窃"></label><label class="dai-setting-row"><span><b>依据</b><small>它从哪来：哪楼、谁、什么事引出的。</small></span><input type="text" data-world-add-basis placeholder="例：上一楼酒馆闲谈提到的失窃传闻"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>有效期（天）</b><small>留空长期有效；到期自动了结。</small></span><input type="number" min="1" max="90" step="1" data-world-add-days placeholder="如 5"></label></div><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-world-add>登记事件</button><button type="button" class="dai-secondary-button" data-agent-modal-close>取消</button></div></div></div>
                         <div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon">◌</span><span><b>启用世界事件系统</b><small>关闭后不再读模型指令、不再注入世界现状。</small></span><input type="checkbox" data-setting="world.eventEnabled"></div><label class="dai-setting-row dai-setting-toggle"><span><b>注入世界现状</b><small>生成前把时钟、现状和进行中的事件写进提示词。</small></span><input type="checkbox" data-setting="world.eventInject"></label><label class="dai-setting-row"><span><b>现状注入字数上限</b><small>超预算先丢事件，保住时钟；0 为默认 900。</small></span><input type="number" min="0" max="4000" step="100" data-setting="world.eventBudget"></label></div>
                         <details class="dai-settle-category"><summary><span class="dai-feature-icon">◌</span><span><b>指令指南（降级模式）</b><small>关闭自动决定时随世界现状注入的规则正文；点开修改，清空恢复内置默认。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>规则正文</b><small>事件取材规则、时限要求都写在这里，可按你的玩法改写。</small></span><textarea data-setting="world.eventGuide" rows="9" spellcheck="false" placeholder="打开页面会自动铺入当前生效的规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-secondary-button" data-world-guide-default>填入默认规则</button><small>默认规则含“事件要有依据、不照搬原著、时限必带 days”。</small></div></div></details>
-                        <div class="dai-settings-card"><div class="dai-card-heading"><b>模型决定（LLM 决定脚本执行）</b><small>生成结束后，模型读最近聊天 + 相关世界书条目 + 世界台账做一次独立决定，输出严格 JSON，脚本逐条校验执行并显示在这里。</small></div><div class="dai-feature-toggle"><span class="dai-feature-icon">◉</span><span><b>启用模型决定</b><small>关闭后退回“只认正文指令块”的降级模式。</small></span><input type="checkbox" data-setting="world.decideEnabled"></div><label class="dai-setting-row dai-setting-toggle"><span><b>每轮生成后自动决定</b><small>关闭后只能点“让模型决定一次”手动跑。</small></span><input type="checkbox" data-setting="world.decideAuto"></label><label class="dai-setting-row"><span><b>决定用哪套连接</b><small>跟随酒馆＝与正文同一套；“自定义”＝下面这几项，填好地址点“拉取模型”挑模型。</small></span><select data-setting="world.decideMode"><option value="tavern">跟随酒馆当前设置</option><option value="custom">自定义模型</option></select></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>决定接口地址</b><small>选“自定义”才用得上；留空沿用“模型与连接”页。</small></span><input type="text" data-setting="world.decideBaseUrl" placeholder="https://api.example.com/v1"></label><label class="dai-setting-row"><span><b>决定接口密钥</b><small>选“自定义”才用得上；留空沿用“模型与连接”页。</small></span><input type="password" data-setting="world.decideApiKey" placeholder="留空沿用“模型与连接”页"></label><label class="dai-setting-row"><span><b>决定用模型</b><small>填好地址后点“拉取模型”挑一个，也可以手填；跟随酒馆时酒馆静默接口不收模型名。</small></span><input type="text" data-setting="world.decideModel" list="dai-worlddecide-models" placeholder="留空沿用当前模型"><datalist id="dai-worlddecide-models"></datalist></label></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>决定温度</b><small>0–2；0 ＝不指定，沿用酒馆/全局。</small></span><input type="number" min="0" max="2" step="0.05" data-setting="world.decideTemperature" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>决定最大输出</b><small>tokens；0 ＝不指定。</small></span><input type="number" min="0" max="32768" step="64" data-setting="world.decideMaxTokens" placeholder="0 = 不指定"></label></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>决定 top_p</b><small>0–1；0 ＝不指定。</small></span><input type="number" min="0" max="1" step="0.05" data-setting="world.decideTopP" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>决定存在惩罚</b><small>0–2；0 ＝不指定。</small></span><input type="number" min="0" max="2" step="0.1" data-setting="world.decidePresencePenalty" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>决定频率惩罚</b><small>0–2；0 ＝不指定。</small></span><input type="number" min="0" max="2" step="0.1" data-setting="world.decideFrequencyPenalty" placeholder="0 = 不指定"></label></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-worlddecide-models>拉取模型</button><small role="status" data-worlddecide-models-status></small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>喂最近几楼聊天</b></span><input type="number" min="1" max="12" step="1" data-setting="world.decideMaxFloors"></label><label class="dai-setting-row"><span><b>世界书条目上限</b><small>按本轮聊天匹配相关条目，0 = 不带世界书。</small></span><input type="number" min="0" max="40" step="1" data-setting="world.decideMaxEntries"></label></div><p class="dai-turn-result" data-world-decide-status role="status">还没有运行。生成结束后会自动决定。</p><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-world-decide-run>让模型决定一次</button></div><div class="dai-world-decide-result" data-world-decide-result></div><details class="dai-prompt-fold"><summary><span><b>决定提示词</b><small>模型做决定时收到的 system 规则；点开修改，清空恢复内置默认。改写时保持“只输出 JSON”和操作字段名不变。</small></span></summary><label class="dai-setting-row"><span><b>规则正文</b><small>事件取材、传闻、机遇危机、名声通缉的规则都在这里，可按玩法改写。</small></span><textarea data-setting="world.decidePrompt" rows="10" spellcheck="false" placeholder="打开页面会自动铺入当前生效的规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-secondary-button" data-world-decide-default>填入默认规则</button><small>默认规则含“事件要有依据、传闻不当事实、机遇危机偶尔投放”。</small></div></details></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>模型决定（LLM 决定脚本执行）</b><small>生成结束后，模型读最近聊天 + 相关世界书条目 + 世界台账做一次独立决定，输出严格 JSON，脚本逐条校验执行并显示在这里。决定用的接口与参数在「模型设置」页。</small></div><div class="dai-feature-toggle"><span class="dai-feature-icon">◌</span><span><b>启用模型决定</b><small>关闭后退回“只认正文指令块”的降级模式。</small></span><input type="checkbox" data-setting="world.decideEnabled"></div><label class="dai-setting-row dai-setting-toggle"><span><b>每轮生成后自动决定</b><small>关闭后只能点“让模型决定一次”手动跑。</small></span><input type="checkbox" data-setting="world.decideAuto"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>喂最近几楼聊天</b></span><input type="number" min="1" max="12" step="1" data-setting="world.decideMaxFloors"></label><label class="dai-setting-row"><span><b>世界书条目上限</b><small>按本轮聊天匹配相关条目，0 = 不带世界书。</small></span><input type="number" min="0" max="40" step="1" data-setting="world.decideMaxEntries"></label></div><p class="dai-turn-result" data-world-decide-status role="status">还没有运行。生成结束后会自动决定。</p><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-world-decide-run>让模型决定一次</button></div><div class="dai-world-decide-result" data-world-decide-result></div><details class="dai-prompt-fold"><summary><span><b>决定提示词</b><small>模型做决定时收到的 system 规则；点开修改，清空恢复内置默认。改写时保持“只输出 JSON”和操作字段名不变。</small></span></summary><label class="dai-setting-row"><span><b>规则正文</b><small>事件取材、传闻、机遇危机、名声通缉的规则都在这里，可按玩法改写。</small></span><textarea data-setting="world.decidePrompt" rows="10" spellcheck="false" placeholder="打开页面会自动铺入当前生效的规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-secondary-button" data-world-decide-default>填入默认规则</button><small>默认规则含“事件要有依据、传闻不当事实、机遇危机偶尔投放”。</small></div></details></div>
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>世界指令流水</b><small>最近几批指令的执行结果；重 roll 一楼会先撤销它上一版指令。</small></div><div class="dai-world-journal" data-world-journal></div></div>
-                        <div class="dai-settings-card"><div class="dai-card-heading"><b>旧链路（手动结算）</b><small>旧版"面板里点结算"链路的设置，与新事件系统互不干扰。</small></div><div class="dai-feature-toggle"><span class="dai-feature-icon">◌</span><span><b>启用旧链路世界推进</b><small>关闭后不会调用 world-advance 模块。</small></span><input type="checkbox" data-setting="enableWorldProgress"></div><label class="dai-setting-row dai-setting-toggle"><span><b>允许自动推进</b><small>收到时间推进请求时才会生效。</small></span><input type="checkbox" data-setting="world.autoAdvance"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>默认推进分钟数</b></span><input type="number" min="1" max="1440" step="1" data-setting="world.tickMinutes"></label><label class="dai-setting-row dai-setting-toggle"><span><b>保留未确认候选</b><small>不把推测直接当成世界事实。</small></span><input type="checkbox" data-setting="world.preserveUnconfirmed"></label></div></div></section>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>旧链路（手动结算）</b><small>旧版"面板里点结算"链路的设置，与新事件系统互不干扰。</small></div><div class="dai-feature-toggle"><span class="dai-feature-icon">◌</span><span><b>启用旧链路世界推进</b><small>关闭后不会调用 world-advance 模块。</small></span><input type="checkbox" data-setting="enableWorldProgress"></div><label class="dai-setting-row dai-setting-toggle"><span><b>允许自动推进</b><small>收到时间推进请求时才会生效。</small></span><input type="checkbox" data-setting="world.autoAdvance"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>默认推进分钟数</b></span><input type="number" min="1" max="1440" step="1" data-setting="world.tickMinutes"></label><label class="dai-setting-row dai-setting-toggle"><span><b>保留未确认候选</b><small>不把推测直接当成世界事实。</small></span><input type="checkbox" data-setting="world.preserveUnconfirmed"></label></div></div>
+                    </section>
                     <section class="dai-settings-page" data-settings-section="npc" role="tabpanel" hidden>
                         <div class="dai-page-heading"><span class="dai-page-eyebrow">核心能力 / 06</span><h3>NPC 决策</h3><p>控制相关人物的有限决策候选，不替 NPC 直接越过确认边界。</p></div><div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon">♙</span><span><b>启用 NPC 自主决策</b><small>控制人物候选计划是否参与调度。</small></span><input type="checkbox" data-setting="enableNpcAutonomy"></div><label class="dai-setting-row dai-setting-toggle"><span><b>提交前要求确认</b><small>候选计划必须经过确认才可继续。</small></span><input type="checkbox" data-setting="npc.requireConfirmation"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>最多候选计划</b></span><input type="number" min="1" max="20" step="1" data-setting="npc.maxCandidates"></label><label class="dai-setting-row dai-setting-toggle"><span><b>允许人物冲突候选</b><small>保留冲突供上层处理。</small></span><input type="checkbox" data-setting="npc.allowConflicts"></label></div></div></section>
                     <section class="dai-settings-page" data-settings-section="npcledger" role="tabpanel" hidden>
-                        <div class="dai-page-heading"><span class="dai-page-eyebrow">核心能力 / 07</span><h3>人物簿</h3><p>每个人一格，按同一套格式记：身份、外貌、修为、性格、对你的好感、称呼、资产、处境、秘密和经历流水。正文写完后由“人物记录员”补一笔，下一楼再按“在场 × 重要”决定给正文模型看多少人、看多少细节。</p></div>
-                        <div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon">☰</span><span><b>启用人物簿</b><small>关掉后不记账、不注入；已经记下的档案仍留在聊天存档里，不会被删。</small></span><input type="checkbox" data-setting="enableNpcLedger"></div><label class="dai-setting-row dai-setting-toggle"><span><b>生成后自动记账</b><small>每轮正文结束后让“人物记录员”读最近两楼，把这一轮的变化记进档案；关掉后只能手动记一次。</small></span><input type="checkbox" data-setting="npc.ledgerAuto"></label><label class="dai-setting-row"><span><b>记账节奏</b><small>每轮都记更像实时，但每轮多一次小调用；每三轮更省，代价是中间两轮的变化要等下次记账才进档。</small></span><select data-setting="npc.ledgerEvery"><option value="1">每轮生成后</option><option value="2">每两轮生成后</option><option value="3">每三轮生成后</option></select></label><label class="dai-setting-row dai-setting-toggle"><span><b>把人物档案写进正文提示词</b><small>关掉后只记账、不告诉正文模型——人物就会“忘了自己身上发生过什么”。</small></span><input type="checkbox" data-setting="npc.ledgerInject"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>注入字数预算</b><small>每轮最多花多少字写人物档案；超了就把最不重要的人先降成一行。</small></span><input type="number" min="0" max="4000" step="100" data-setting="npc.ledgerBudget"></label><label class="dai-setting-row"><span><b>全字段最多几个人</b><small>“在场且重要”的人按完整档案写，超出这个数就只写一行。</small></span><input type="number" min="1" max="20" step="1" data-setting="npc.ledgerMaxFull"></label><label class="dai-setting-row"><span><b>记录员看最近几楼</b><small>看太少会漏，看太多会慢；两楼通常够判断这一轮谁动了。</small></span><input type="number" min="1" max="12" step="1" data-setting="npc.ledgerFloors"></label><label class="dai-setting-row"><span><b>记账温度</b><small>要稳，0.2~0.4 比较合适；填 0 表示不指定，沿用全局。</small></span><input type="number" min="0" max="2" step="0.05" data-setting="npc.ledgerTemperature"></label></div></div>
-                        <div class="dai-settings-card"><div class="dai-card-heading"><b>记录员参数</b><small>这一路小调用单独用哪套连接、哪些生成参数，都可以自己填；“跟随酒馆”就用“模型与连接”页的设置，填 0 或留空表示不指定。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>用哪套连接</b><small>跟随酒馆＝用当前聊天模型；自定义＝填下面的地址、密钥和模型名。</small></span><select data-setting="npc.ledgerMode"><option value="tavern">跟随酒馆当前设置</option><option value="custom">自定义模型</option></select></label><label class="dai-setting-row"><span><b>接口地址</b><small>选“自定义”才用得上；留空沿用“模型与连接”页。</small></span><input type="text" data-setting="npc.ledgerBaseUrl" placeholder="https://api.example.com/v1"></label><label class="dai-setting-row"><span><b>接口密钥</b><small>选“自定义”才用得上；留空沿用“模型与连接”页。</small></span><input type="password" data-setting="npc.ledgerApiKey" placeholder="留空沿用“模型与连接”页"></label><label class="dai-setting-row"><span><b>接口协议</b><small>留空按接口地址自动判断。</small></span><select data-setting="npc.ledgerProvider"><option value="">自动判断</option><option value="openai">OpenAI 兼容</option><option value="anthropic">Anthropic</option></select></label><label class="dai-setting-row"><span><b>记录员模型</b><small>留空沿用“模型与连接”页的模型。</small></span><input type="text" data-setting="npc.ledgerModel" placeholder="留空沿用当前模型"></label><label class="dai-setting-row"><span><b>最大输出 Token</b><small>0 = 沿用全局上限。</small></span><input type="number" min="0" max="32768" step="64" data-setting="npc.ledgerMaxTokens" placeholder="0 = 不指定"></label></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>top_p</b><small>0 = 不指定。</small></span><input type="number" min="0" max="1" step="0.05" data-setting="npc.ledgerTopP" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>存在惩罚</b><small>0 = 不指定。</small></span><input type="number" min="0" max="2" step="0.1" data-setting="npc.ledgerPresencePenalty" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>频率惩罚</b><small>0 = 不指定。</small></span><input type="number" min="0" max="2" step="0.1" data-setting="npc.ledgerFrequencyPenalty" placeholder="0 = 不指定"></label></div></div>
-                        <div class="dai-settings-card"><div class="dai-card-heading"><b>本局人物</b><small>点“看全文”展开整份档案；点“补一笔”把名字填进下面的手动栏。</small></div><p class="dai-state-strip" data-npc-ledger-summary>还没有载入人物簿。</p><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>只看</b></span><select data-npc-ledger-filter><option value="">全部</option><option value="present">在场的</option><option value="absent">不在场的</option><option value="important">重要的</option></select></label><label class="dai-setting-row"><span><b>搜名字</b><small>姓名、别名、称号都能搜。</small></span><input type="search" data-npc-ledger-search placeholder="如 萧战"></label></div><p class="dai-turn-result" data-npc-ledger-status role="status">还没有记账。生成结束后，人物记录员会把这一轮的人物变化写进档案。</p><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-npc-ledger-run>让记录员记一次</button><button type="button" class="dai-secondary-button" data-npc-ledger-refresh>刷新名单</button><button type="button" class="dai-secondary-button" data-npc-ledger-extract>按世界书重抽</button></div><ul class="dai-status-list" data-npc-ledger-list></ul></div><div class="dai-settings-card"><div class="dai-card-heading"><b>冷藏推进台</b><small>只给你勾选的人补世界时间已经走过的那一段；不会自行推进时间，先出草稿，确认后才写回人物簿。</small></div><p class="dai-state-strip" data-npc-cold-summary>当前世界日：第 1 天 · 未选择冷藏人物</p><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-npc-cold-scan>扫描需要推进的人物</button><button type="button" class="dai-secondary-button" data-npc-cold-clear>清空冷藏选择</button></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>推进员连接</b><small>可以跟随酒馆，也可以单独配模型。</small></span><select data-setting="npc.coldMode"><option value="tavern">跟随酒馆当前设置</option><option value="custom">自定义模型</option></select></label><label class="dai-setting-row"><span><b>推进员模型</b></span><input type="text" data-setting="npc.coldModel" placeholder="留空沿用当前模型"></label><label class="dai-setting-row"><span><b>接口地址</b><small>选自定义时填写。</small></span><input type="text" data-setting="npc.coldBaseUrl" placeholder="https://api.example.com/v1"></label><label class="dai-setting-row"><span><b>接口密钥</b><small>选自定义时填写。</small></span><input type="password" data-setting="npc.coldApiKey" placeholder="留空沿用模型页"></label><label class="dai-setting-row"><span><b>接口协议</b></span><select data-setting="npc.coldProvider"><option value="">自动判断</option><option value="openai">OpenAI 兼容</option><option value="anthropic">Anthropic</option></select></label><label class="dai-setting-row"><span><b>最大输出</b></span><input type="number" min="0" max="32768" step="64" data-setting="npc.coldMaxTokens" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>推进温度</b></span><input type="number" min="0" max="2" step="0.05" data-setting="npc.coldTemperature"></label><label class="dai-setting-row"><span><b>top_p</b></span><input type="number" min="0" max="1" step="0.05" data-setting="npc.coldTopP" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>存在惩罚</b></span><input type="number" min="0" max="2" step="0.1" data-setting="npc.coldPresencePenalty" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>频率惩罚</b></span><input type="number" min="0" max="2" step="0.1" data-setting="npc.coldFrequencyPenalty" placeholder="0 = 不指定"></label></div><details class="dai-prompt-fold"><summary><span><b>推进员提示词</b><small>留空使用内置规则；必须保留“先出草稿、只输出 JSON”等边界；点开修改。</small></span></summary><label class="dai-setting-row"><span><b>规则正文</b><small>改完下一轮生效；清空恢复内置默认。</small></span><textarea data-setting="npc.coldPrompt" rows="8" spellcheck="false" placeholder="打开页面会自动铺入当前生效规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-secondary-button" data-npc-cold-default>填入默认推进规则</button></div></details><div data-npc-cold-previews></div></div>
-                        <div class="dai-settings-card"><div class="dai-card-heading"><b>手动记账</b><small>一条补丁 = 一个人这一轮的变化；认不出的字段会被跳过，不会打断整条补丁。</small></div><label class="dai-setting-row"><span><b>补丁</b><small>例：{"人物":[{"姓名":"萧战","好感":3,"好感理由":"护住族人","态度":"对这个后辈多了几分认可","位置":"萧家议事厅","在场":"在场","流水":["主持族会，压下二长老的质疑"]}]}</small></span><textarea data-npc-ledger-patch rows="7" spellcheck="false" placeholder="粘贴或手写一条补丁"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-secondary-button" data-npc-ledger-apply>记进人物簿</button><button type="button" class="dai-secondary-button" data-npc-ledger-export>导出全簿</button><button type="button" class="dai-secondary-button" data-npc-ledger-import>导入全簿</button><button type="button" class="dai-secondary-button" data-npc-ledger-clear>清空本局人物簿</button><button type="button" class="dai-secondary-button" data-npc-ledger-extract-all>按世界书重抽：只填空着的字段</button></div></div>
+                        <div class="dai-page-heading"><h3>人物簿</h3><p>每个人按同一套格式记账：身份、外貌、修为、性格、对你的好感、资产、处境、秘密和经历流水。正文写完后由“人物记录员”补一笔，下一楼再按“在场 × 重要”决定给正文模型看多少人、看多少细节。点人名看完整档案；重大转变单独记在「人物经历」页。</p></div>
+                        <div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon">☰</span><span><b>启用人物簿</b><small>关闭后不记账、不注入；已经记下的档案仍留在聊天存档里，不会被删。</small></span><input type="checkbox" data-setting="enableNpcLedger"></div><label class="dai-setting-row dai-setting-toggle"><span><b>生成后自动记账</b><small>每轮正文结束后让“人物记录员”读最近两楼，把这一轮的变化记进档案；关掉后只能手动记一次。</small></span><input type="checkbox" data-setting="npc.ledgerAuto"></label><label class="dai-setting-row"><span><b>记账节奏</b><small>每轮都记更像实时，但每轮多一次小调用；每三轮更省，代价是中间两轮的变化要等下次记账才进档。</small></span><select data-setting="npc.ledgerEvery"><option value="1">每轮生成后</option><option value="2">每两轮生成后</option><option value="3">每三轮生成后</option></select></label><label class="dai-setting-row dai-setting-toggle"><span><b>把人物档案写进正文提示词</b><small>关掉后只记账、不告诉正文模型——人物就会“忘了自己身上发生过什么”。</small></span><input type="checkbox" data-setting="npc.ledgerInject"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>注入字数预算</b><small>每轮最多花多少字写人物档案；超了就把最不重要的人先降成一行。</small></span><input type="number" min="0" max="4000" step="100" data-setting="npc.ledgerBudget"></label><label class="dai-setting-row"><span><b>全字段最多几个人</b><small>“在场且重要”的人按完整档案写，超出这个数就只写一行。</small></span><input type="number" min="1" max="20" step="1" data-setting="npc.ledgerMaxFull"></label><label class="dai-setting-row"><span><b>记录员看最近几楼</b><small>看太少会漏，看太多会慢；两楼通常足够判断这一轮谁动了。</small></span><input type="number" min="1" max="12" step="1" data-setting="npc.ledgerFloors"></label></div></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>本局人物</b><small>一人一行，点人名弹出完整档案；在场 ●、不在场 ○。</small></div><p class="dai-state-strip" data-npc-ledger-summary>还没有载入人物簿。</p><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>只看</b></span><select data-npc-ledger-filter><option value="">全部</option><option value="present">在场的</option><option value="absent">不在场的</option><option value="important">重要的</option></select></label><label class="dai-setting-row"><span><b>搜名字</b><small>姓名、别名、称号都能搜。</small></span><input type="search" data-npc-ledger-search placeholder="如 萧战"></label></div><p class="dai-turn-result" data-npc-ledger-status role="status">还没有记账。生成结束后，人物记录员会把这一轮的人物变化写进档案。</p><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-npc-ledger-run>让记录员记一次</button><button type="button" class="dai-secondary-button" data-npc-ledger-refresh>刷新名单</button><button type="button" class="dai-secondary-button" data-npc-ledger-extract>按世界书补空字段</button><button type="button" class="dai-secondary-button" data-modal-open="npc-patch" data-modal-title="记进人物簿">＋ 补一笔</button></div><ul class="dai-status-list" data-npc-ledger-list></ul></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>冷藏推进台</b><small>只给你勾选的人补世界时间已经走过的那一段；不会自行推进时间，先出草稿，确认后才写回人物簿。人物列表里的“冷藏”按钮就是勾选。</small></div><p class="dai-state-strip" data-npc-cold-summary>当前世界日：第 1 天 · 未选择冷藏人物</p><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-npc-cold-scan>扫描需要推进的人物</button><button type="button" class="dai-secondary-button" data-npc-cold-clear>清空冷藏选择</button></div><div data-npc-cold-previews></div><details class="dai-prompt-fold"><summary><span><b>推进员提示词</b><small>留空使用内置规则；必须保留“先出草稿、只输出 JSON”等边界；点开修改。</small></span></summary><label class="dai-setting-row"><span><b>规则正文</b><small>改完下一轮生效；清空恢复内置默认。</small></span><textarea data-setting="npc.coldPrompt" rows="8" spellcheck="false" placeholder="打开页面会自动铺入当前生效规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-secondary-button" data-npc-cold-default>填入默认推进规则</button></div></details></div>
                         <details class="dai-settle-category"><summary><span class="dai-feature-icon">☰</span><span><b>记录员提示词</b><small>人物记录员收到的 system 规则；点开修改，清空恢复内置默认。改写时保持“只输出 JSON”不变。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>规则正文</b><small>好感只记增减、流水只追加、没变化就不写。</small></span><textarea data-setting="npc.ledgerPrompt" rows="9" spellcheck="false" placeholder="打开页面会自动铺入当前生效的规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-secondary-button" data-npc-ledger-default>填入默认规则</button><small>默认规则含“好感只记增减、流水只追加、没变化就不写”。</small></div></div></details>
+                        <div class="dai-modal-dock" data-modal-dock="npc-patch" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>手动记账</b><small>一条补丁 = 一个人这一轮的变化；认不出的字段会被跳过，不会打断整条补丁。</small></div><label class="dai-setting-row"><span><b>补丁</b><small>例：{"人物":[{"姓名":"萧战","好感":3,"好感理由":"护住族人","态度":"对这个后辈多了几分认可","位置":"萧家议事厅","在场":"在场","流水":["主持族会，压下二长老的质疑"]}]}</small></span><textarea data-npc-ledger-patch rows="7" spellcheck="false" placeholder="粘贴或手写一条补丁"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-secondary-button" data-npc-ledger-apply>记进人物簿</button><button type="button" class="dai-secondary-button" data-npc-ledger-export>导出全簿</button><button type="button" class="dai-secondary-button" data-npc-ledger-import>导入全簿</button><button type="button" class="dai-secondary-button" data-npc-ledger-clear>清空本局人物簿</button><button type="button" class="dai-secondary-button" data-npc-ledger-extract-all>按世界书重抽：只填空着的字段</button></div></div><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-agent-modal-close>取消</button></div></div>
+                    </section>
+                        <section class="dai-settings-page" data-settings-section="exp" role="tabpanel" hidden>
+                        <div class="dai-page-heading"><h3>人物经历</h3><p>只收“这个人从此不一样了”的重大转变：心智改变、态度反转、立场易帜、身份更替、结下死契或深仇。记录员觉得够分量就会写一条；普通小事在人物档案的流水里。条目多了点「精简」，模型会把雷同的转变合并成少数几条，先出草稿、确认后才写回。</p></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>经历总览</b><small>按人物过滤；新转变排前面。</small></div><p class="dai-state-strip" data-exp-count>还没有经历。</p><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>只看人物</b></span><select data-exp-person><option value="">全部人物</option></select></label></div></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>经历清单</b><small>一条一行；想精简谁的，就点谁旁边的「精简」。</small></div><ul class="dai-exp-list" data-exp-list></ul></div>
                     </section>
                     <section class="dai-settings-page" data-settings-section="self" role="tabpanel" hidden>
-                        <div class="dai-page-heading"><span class="dai-page-eyebrow">核心能力 / 08</span><h3>纳戒</h3><p>主角自身与随身之物的总账：身份、境界、功法斗技、行囊、炼药炼器的制作台、目标约定。生成结束后由决定模型读剧情记账，脚本逐条校验执行；这里也能手动改，与模型走同一套规则。世界时钟、NPC 档案不归纳戒管。</p></div>
+                        <div class="dai-page-heading"><h3>纳戒</h3><p>主角自身与随身之物的总账：身份、境界、功法斗技、行囊、制作台、目标约定。生成结束后由决定模型读剧情记账，脚本逐条校验执行；这里也能手动改，与模型走同一套规则。条目点开看完整资料，添加表单收进了弹窗。</p></div>
                         <div class="dai-settings-card">
                             <div class="dai-self-tabs" role="tablist">
                                 <button type="button" class="dai-self-tab is-active" data-self-tab="profile">基本信息</button>
@@ -2861,31 +3837,55 @@ function createSettingsPanel() {
                             <p class="dai-turn-result" data-self-status role="status">手动改动与模型决定走同一套校验，改完立刻生效并记进流水。</p>
                         </div>
                         <div data-self-pane="profile">
-                            <div class="dai-settings-card"><div class="dai-card-heading"><b>身份档案</b><small>正文模型每轮都会看到这些；年龄由剧情推进更新，不要手填了又让模型改回去。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>姓名</b></span><input type="text" data-self-profile-input="name" placeholder="如 萧炎"></label><button type="button" class="dai-secondary-button" data-self-profile-set="name">设定</button><label class="dai-setting-row"><span><b>性别</b></span><input type="text" data-self-profile-input="gender" placeholder="如 男"></label><button type="button" class="dai-secondary-button" data-self-profile-set="gender">设定</button><label class="dai-setting-row"><span><b>年龄</b></span><input type="text" data-self-profile-input="age" placeholder="如 15岁"></label><button type="button" class="dai-secondary-button" data-self-profile-set="age">设定</button><label class="dai-setting-row"><span><b>种族</b></span><input type="text" data-self-profile-input="race" placeholder="如 人族"></label><button type="button" class="dai-secondary-button" data-self-profile-set="race">设定</button><label class="dai-setting-row"><span><b>出身</b></span><input type="text" data-self-profile-input="origin" placeholder="如 乌坦城萧家"></label><button type="button" class="dai-secondary-button" data-self-profile-set="origin">设定</button><label class="dai-setting-row"><span><b>所属</b></span><input type="text" data-self-profile-input="affiliation" placeholder="如 萧家 / 迦南学院"></label><button type="button" class="dai-secondary-button" data-self-profile-set="affiliation">设定</button><label class="dai-setting-row"><span><b>天赋</b></span><input type="text" data-self-profile-input="talent" placeholder="如 曾经的斗气天才"></label><button type="button" class="dai-secondary-button" data-self-profile-set="talent">设定</button><label class="dai-setting-row"><span><b>外貌</b><small>最多 160 字。</small></span><input type="text" data-self-profile-input="appearance" placeholder="黑色衣袍的清瘦少年"></label><button type="button" class="dai-secondary-button" data-self-profile-set="appearance">设定</button></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>境界</b><small>斗之气→斗者→…→斗帝。</small></span><input type="text" data-self-realm placeholder="如 斗者"></label><label class="dai-setting-row"><span><b>段位</b><small>段/星/层。</small></span><input type="text" data-self-stage placeholder="如 三段"></label><button type="button" class="dai-secondary-button" data-self-realm-set>突破</button><label class="dai-setting-row"><span><b>金币</b></span><input type="number" min="0" max="999999999" step="1" data-self-gold placeholder="3200"></label><button type="button" class="dai-secondary-button" data-self-gold-set>设定</button></div><label class="dai-setting-row"><span><b>称号</b><small>写一个加一个；下面的称号点 × 移除。</small></span><input type="text" data-self-title placeholder="如 乌坦城新星"></label><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-self-title-add>加称号</button></div><div class="dai-self-titles" data-self-titles></div></div>
+                            <div class="dai-settings-card"><div class="dai-card-heading"><b>主角面板</b><small>标签固定，读到了就填，没读到就空着；正文模型每轮都看得到这些。</small></div><div class="dai-self-panel"><div class="dai-self-panel-row"><span>姓名</span><b data-self-panel="name">—</b></div><div class="dai-self-panel-row"><span>性别</span><b data-self-panel="gender">—</b></div><div class="dai-self-panel-row"><span>年龄</span><b data-self-panel="age">—</b></div><div class="dai-self-panel-row"><span>种族</span><b data-self-panel="race">—</b></div><div class="dai-self-panel-row"><span>出身</span><b data-self-panel="origin">—</b></div><div class="dai-self-panel-row"><span>所属</span><b data-self-panel="affiliation">—</b></div><div class="dai-self-panel-row"><span>斗气属性</span><b data-self-panel="attribute">—</b></div><div class="dai-self-panel-row"><span>天赋</span><b data-self-panel="talent">—</b></div><div class="dai-self-panel-row dai-self-panel-wide"><span>外貌</span><b data-self-panel="appearance">—</b></div><div class="dai-self-panel-row"><span>境界</span><b data-self-panel="realm">—</b></div><div class="dai-self-panel-row"><span>金币</span><b data-self-panel="gold">—</b></div><div class="dai-self-panel-row dai-self-panel-wide"><span>称号</span><b data-self-panel="titles">—</b></div></div><p class="dai-turn-result" data-self-dbbridge></p><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-modal-open="self-profile" data-modal-title="编辑主角档案">编辑档案</button></div></div>
+                            <div class="dai-modal-dock" data-modal-dock="self-profile" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>身份档案</b><small>正文模型每轮都会看到这些；年龄由剧情推进更新，不要手填了又让模型改回去。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>姓名</b></span><input type="text" data-self-profile-input="name" placeholder="如 萧炎"></label><button type="button" class="dai-secondary-button" data-self-profile-set="name">设定</button><label class="dai-setting-row"><span><b>性别</b></span><input type="text" data-self-profile-input="gender" placeholder="如 男"></label><button type="button" class="dai-secondary-button" data-self-profile-set="gender">设定</button><label class="dai-setting-row"><span><b>年龄</b></span><input type="text" data-self-profile-input="age" placeholder="如 15岁"></label><button type="button" class="dai-secondary-button" data-self-profile-set="age">设定</button><label class="dai-setting-row"><span><b>种族</b></span><input type="text" data-self-profile-input="race" placeholder="如 人族"></label><button type="button" class="dai-secondary-button" data-self-profile-set="race">设定</button><label class="dai-setting-row"><span><b>出身</b></span><input type="text" data-self-profile-input="origin" placeholder="如 乌坦城萧家"></label><button type="button" class="dai-secondary-button" data-self-profile-set="origin">设定</button><label class="dai-setting-row"><span><b>所属</b></span><input type="text" data-self-profile-input="affiliation" placeholder="如 萧家 / 迦南学院"></label><button type="button" class="dai-secondary-button" data-self-profile-set="affiliation">设定</button><label class="dai-setting-row"><span><b>斗气属性</b><small>火/风/雷/冰/水/土/木/暗/毒/无属性，最多 12 字。</small></span><input type="text" data-self-profile-input="attribute" placeholder="如 火 / 无属性"></label><button type="button" class="dai-secondary-button" data-self-profile-set="attribute">设定</button><label class="dai-setting-row"><span><b>天赋</b></span><input type="text" data-self-profile-input="talent" placeholder="如 曾经的斗气天才"></label><button type="button" class="dai-secondary-button" data-self-profile-set="talent">设定</button><label class="dai-setting-row"><span><b>外貌</b><small>最多 160 字。</small></span><input type="text" data-self-profile-input="appearance" placeholder="黑色衣袍的清瘦少年"></label><button type="button" class="dai-secondary-button" data-self-profile-set="appearance">设定</button></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>境界</b><small>斗之气→斗者→…→斗帝。</small></span><input type="text" data-self-realm placeholder="如 斗者"></label><label class="dai-setting-row"><span><b>段位</b><small>段/星/层。</small></span><input type="text" data-self-stage placeholder="如 三段"></label><button type="button" class="dai-secondary-button" data-self-realm-set>突破</button><label class="dai-setting-row"><span><b>金币</b></span><input type="number" min="0" max="999999999" step="1" data-self-gold placeholder="3200"></label><button type="button" class="dai-secondary-button" data-self-gold-set>设定</button></div><label class="dai-setting-row"><span><b>称号</b><small>写一个加一个；下面的称号点 × 移除。</small></span><input type="text" data-self-title placeholder="如 乌坦城新星"></label><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-self-title-add>加称号</button></div><div class="dai-self-titles" data-self-titles></div></div><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-agent-modal-close>完成</button></div></div>
                             <div class="dai-settings-card"><div class="dai-card-heading"><b>纳戒流水</b><small>最近几批指令的执行结果；重 roll 一楼会先撤销它上一版指令。</small></div><div class="dai-world-journal" data-self-journal></div></div>
                         </div>
                         <div data-self-pane="techniques" hidden>
-                            <div class="dai-settings-card"><div class="dai-card-heading"><b>功法</b><small>修炼功法、身法、炼药术都记在这里；同名不重录。</small></div><div class="dai-self-entries" data-self-list="techniques"></div><div class="dai-card-heading" style="margin-top:0.5rem;"><b>登记功法</b><small>模型漏记时在这里补一笔。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>名称</b></span><input type="text" data-self-new="techniques.name" placeholder="如 焚决"></label><label class="dai-setting-row"><span><b>品级</b></span><input type="text" data-self-new="techniques.grade" placeholder="黄阶低级 ~ 天阶高级"></label><label class="dai-setting-row"><span><b>类型</b></span><input type="text" data-self-new="techniques.type" placeholder="修炼功法 / 身法 / 炼药术"></label><label class="dai-setting-row"><span><b>进度</b></span><input type="text" data-self-new="techniques.progress" placeholder="如 第三层"></label><label class="dai-setting-row"><span><b>来源</b></span><input type="text" data-self-new="techniques.source" placeholder="如 药老所赠"></label></div><button type="button" class="dai-secondary-button" data-self-create="techniques">登记功法</button></div>
+                            <div class="dai-settings-card"><div class="dai-card-heading"><b>功法</b><small>修炼功法、身法、炼药术都记在这里；点条目看完整资料。</small><button type="button" class="dai-impact-edit" data-modal-open="self-techniques" data-modal-title="登记功法">＋ 添加</button></div><div class="dai-self-entries" data-self-list="techniques"></div></div>
                         </div>
                         <div data-self-pane="skills" hidden>
-                            <div class="dai-settings-card"><div class="dai-card-heading"><b>斗技</b><small>攻击、防御、身法、辅助各类战技；同名不重录。</small></div><div class="dai-self-entries" data-self-list="skills"></div><div class="dai-card-heading" style="margin-top:0.5rem;"><b>登记斗技</b></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>名称</b></span><input type="text" data-self-new="skills.name" placeholder="如 八极崩"></label><label class="dai-setting-row"><span><b>品级</b></span><input type="text" data-self-new="skills.grade" placeholder="黄阶低级 ~ 天阶高级"></label><label class="dai-setting-row"><span><b>类型</b></span><input type="text" data-self-new="skills.type" placeholder="攻击 / 防御 / 身法 / 辅助"></label><label class="dai-setting-row"><span><b>熟练度</b></span><input type="text" data-self-new="skills.progress" placeholder="如 小成"></label><label class="dai-setting-row"><span><b>来源</b></span><input type="text" data-self-new="skills.source" placeholder="从哪学来的"></label></div><button type="button" class="dai-secondary-button" data-self-create="skills">登记斗技</button></div>
+                            <div class="dai-settings-card"><div class="dai-card-heading"><b>斗技</b><small>攻击、防御、身法、辅助各类战技；点条目看完整资料。</small><button type="button" class="dai-impact-edit" data-modal-open="self-skills" data-modal-title="登记斗技">＋ 添加</button></div><div class="dai-self-entries" data-self-list="skills"></div></div>
                         </div>
                         <div data-self-pane="bag" hidden>
-                            <div class="dai-settings-card"><div class="dai-card-heading"><b>行囊</b><small>丹药、材料、武器防具、杂物都在这里；同名同类别自动并账。武器防具点“装备”标记为装备中。</small></div><div class="dai-self-entries" data-self-list="items"></div><div class="dai-card-heading" style="margin-top:0.5rem;"><b>放入物品</b></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>名称</b></span><input type="text" data-self-new="items.name" placeholder="如 回气丹"></label><label class="dai-setting-row"><span><b>类别</b></span><select data-self-new="items.category"><option value="丹药">丹药</option><option value="材料">材料</option><option value="武器">武器</option><option value="防具">防具</option><option value="杂物">杂物</option><option value="关键物">关键物</option></select></label><label class="dai-setting-row"><span><b>品级</b></span><input type="text" data-self-new="items.grade" placeholder="如 一品"></label><label class="dai-setting-row"><span><b>数量</b></span><input type="number" min="1" max="999999" step="1" data-self-new="items.count" placeholder="1"></label></div><button type="button" class="dai-secondary-button" data-self-create="items">放入行囊</button></div>
+                            <div class="dai-settings-card"><div class="dai-card-heading"><b>行囊</b><small>丹药、材料、武器防具、杂物都在这里；同名同类别自动并账。</small><button type="button" class="dai-impact-edit" data-modal-open="self-items" data-modal-title="放入物品">＋ 添加</button></div><div class="dai-self-entries" data-self-list="items"></div></div>
                         </div>
                         <div data-self-pane="craft" hidden>
-                            <div class="dai-settings-card"><div class="dai-card-heading"><b>已掌握配方</b><small>学会的丹方、器谱记在这里；材料清单写关键几味就够。</small></div><div class="dai-self-entries" data-self-list="recipes"></div><div class="dai-card-heading" style="margin-top:0.5rem;"><b>记配方</b></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>名称</b></span><input type="text" data-self-new="recipes.name" placeholder="如 回气丹"></label><label class="dai-setting-row"><span><b>门类</b></span><select data-self-new="recipes.craft"><option value="炼药">炼药</option><option value="炼器">炼器</option><option value="其他">其他</option></select></label><label class="dai-setting-row"><span><b>品级</b></span><input type="text" data-self-new="recipes.grade" placeholder="如 一品"></label><label class="dai-setting-row"><span><b>材料清单</b></span><input type="text" data-self-new="recipes.materials" placeholder="如 回春草两株、凝气花一株"></label></div><button type="button" class="dai-secondary-button" data-self-create="recipes">记配方</button></div>
-                            <div class="dai-settings-card"><div class="dai-card-heading"><b>炼制进度</b><small>开工后按世界时钟倒数；出炉点“成丹”或“炸炉”，炼成后记得把成品放进行囊。</small></div><div class="dai-self-entries" data-self-list="crafts"></div><div class="dai-card-heading" style="margin-top:0.5rem;"><b>开工炼制</b></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>名称</b></span><input type="text" data-self-new="crafts.name" placeholder="如 聚气散"></label><label class="dai-setting-row"><span><b>门类</b></span><select data-self-new="crafts.craft"><option value="炼药">炼药</option><option value="炼器">炼器</option><option value="其他">其他</option></select></label><label class="dai-setting-row"><span><b>数量</b></span><input type="number" min="1" max="999999" step="1" data-self-new="crafts.count" placeholder="1"></label><label class="dai-setting-row"><span><b>预计天数</b><small>从今天起算；留空不设期限。</small></span><input type="number" min="1" max="365" step="1" data-self-new="crafts.days" placeholder="如 3"></label><label class="dai-setting-row"><span><b>备注</b></span><input type="text" data-self-new="crafts.note" placeholder="如 缺一味凝骨草"></label></div><button type="button" class="dai-secondary-button" data-self-craft-start>开工</button></div>
+                            <div class="dai-settings-card"><div class="dai-card-heading"><b>已掌握配方</b><small>学会的丹方、器谱记在这里；材料清单写关键几味就够。</small><button type="button" class="dai-impact-edit" data-modal-open="self-recipes" data-modal-title="记配方">＋ 添加</button></div><div class="dai-self-entries" data-self-list="recipes"></div></div>
+                            <div class="dai-settings-card"><div class="dai-card-heading"><b>炼制进度</b><small>开工后按世界时钟倒数；出炉点“成丹”或“炸炉”。</small><button type="button" class="dai-impact-edit" data-modal-open="self-crafts" data-modal-title="开工炼制">＋ 添加</button></div><div class="dai-self-entries" data-self-list="crafts"></div></div>
                         </div>
                         <div data-self-pane="goals" hidden>
-                            <div class="dai-settings-card"><div class="dai-card-heading"><b>目标与约定</b><small>主线排最前并标星；达成后退场，正文模型每轮都看得到没完成的目标。</small></div><div class="dai-self-entries" data-self-list="goals"></div><div class="dai-card-heading" style="margin-top:0.5rem;"><b>立目标</b></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>目标</b><small>一句话说清要做什么。</small></span><input type="text" data-self-new="goals.text" placeholder="如 三年之约，云岚宗一雪前耻"></label><label class="dai-setting-row"><span><b>优先级</b></span><select data-self-new="goals.priority"><option value="主线">主线</option><option value="支线">支线</option></select></label><label class="dai-setting-row"><span><b>期限</b><small>自由文本。</small></span><input type="text" data-self-new="goals.due" placeholder="如 三年后"></label></div><button type="button" class="dai-secondary-button" data-self-create="goals">立目标</button></div>
+                            <div class="dai-settings-card"><div class="dai-card-heading"><b>目标与约定</b><small>主线排最前并标星；达成后退场，正文模型每轮都看得到没完成的目标。</small><button type="button" class="dai-impact-edit" data-modal-open="self-goals" data-modal-title="立目标">＋ 添加</button></div><div class="dai-self-entries" data-self-list="goals"></div></div>
                         </div>
-                        <div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon">◉</span><span><b>启用纳戒</b><small>关闭后不记账、不注入；已记下的内容仍留在聊天存档里。</small></span><input type="checkbox" data-setting="enableSelfLedger"></div><label class="dai-setting-row dai-setting-toggle"><span><b>把纳戒写进正文提示词</b><small>生成前把主角自身状态写进提示词，正文必须与之保持一致。</small></span><input type="checkbox" data-setting="self.inject"></label><label class="dai-setting-row"><span><b>注入字数上限</b><small>超预算从目标、进行中炼制、行囊往上丢，身份境界永远保留；0 为默认 900。</small></span><input type="number" min="0" max="4000" step="100" data-setting="self.injectBudget"></label></div>
+                        <div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon">◉</span><span><b>启用纳戒</b><small>关闭后不记账、不注入；已记下的内容仍留在聊天存档里。</small></span><input type="checkbox" data-setting="enableSelfLedger"></div><label class="dai-setting-row dai-setting-toggle"><span><b>把纳戒写进正文提示词</b><small>生成前把主角自身状态写进提示词，正文必须与之保持一致。</small></span><input type="checkbox" data-setting="self.inject"></label><label class="dai-setting-row"><span><b>注入字数上限</b><small>超预算从目标、进行中炼制、行囊往上丢，身份境界永远保留；0 为默认 900。</small></span><input type="number" min="0" max="4000" step="100" data-setting="self.injectBudget"></label><label class="dai-setting-row dai-setting-toggle"><span><b>镜像到龙血玄黄数据库</b><small>把纳戒与世界台账同步写进「龙血玄黄·数据库」的表格（表=账本，面板=前端）；没装该脚本时自动停用，照旧存聊天档案。</small></span><input type="checkbox" data-setting="enableDbBridge"></label><p class="dai-turn-result" data-self-dbbridge></p></div>
                         <details class="dai-settle-category"><summary><span class="dai-feature-icon">◉</span><span><b>指令指南（降级模式）</b><small>关闭自动决定时随纳戒现状注入的规则正文；点开修改，清空恢复内置默认。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>规则正文</b><small>操作清单、记账规则（有据可依、不照搬原著、炼成补账）都写在这里，可按你的玩法改写。</small></span><textarea data-setting="self.guide" rows="9" spellcheck="false" placeholder="打开页面会自动铺入当前生效的规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-secondary-button" data-self-guide-default>填入默认规则</button><small>默认规则含“只记主角自身、变化要有依据、炼成后补记行囊”。</small></div></div></details>
-                        <div class="dai-settings-card"><div class="dai-card-heading"><b>模型决定（LLM 决定脚本执行）</b><small>生成结束后，模型读最近聊天 + 相关世界书条目 + 纳戒现状做一次独立决定，输出严格 JSON，脚本逐条校验执行并显示在这里。世界的事件与名声、NPC 的档案不归纳戒决定管。</small></div><div class="dai-feature-toggle"><span class="dai-feature-icon">◉</span><span><b>启用模型决定</b><small>关闭后退回“只认正文 self 指令块”的降级模式。</small></span><input type="checkbox" data-setting="self.decideEnabled"></div><label class="dai-setting-row dai-setting-toggle"><span><b>每轮生成后自动决定</b><small>关闭后只能点“让模型决定一次”手动跑。</small></span><input type="checkbox" data-setting="self.decideAuto"></label><label class="dai-setting-row"><span><b>决定用哪套连接</b><small>跟随酒馆＝与正文同一套；“自定义”＝下面这几项，填好地址点“拉取模型”挑模型。</small></span><select data-setting="self.decideMode"><option value="tavern">跟随酒馆当前设置</option><option value="custom">自定义模型</option></select></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>决定接口地址</b><small>选“自定义”才用得上；留空沿用“模型与连接”页。</small></span><input type="text" data-setting="self.decideBaseUrl" placeholder="https://api.example.com/v1"></label><label class="dai-setting-row"><span><b>决定接口密钥</b><small>选“自定义”才用得上；留空沿用“模型与连接”页。</small></span><input type="password" data-setting="self.decideApiKey" placeholder="留空沿用“模型与连接”页"></label><label class="dai-setting-row"><span><b>决定用模型</b><small>填好地址后点“拉取模型”挑一个，也可以手填。</small></span><input type="text" data-setting="self.decideModel" list="dai-selfdecide-models" placeholder="留空沿用当前模型"><datalist id="dai-selfdecide-models"></datalist></label></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>决定温度</b><small>0–2；0 ＝不指定，沿用酒馆/全局。</small></span><input type="number" min="0" max="2" step="0.05" data-setting="self.decideTemperature" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>决定最大输出</b><small>tokens；0 ＝不指定。</small></span><input type="number" min="0" max="32768" step="64" data-setting="self.decideMaxTokens" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>决定 top_p</b><small>0–1；0 ＝不指定。</small></span><input type="number" min="0" max="1" step="0.05" data-setting="self.decideTopP" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>决定存在惩罚</b><small>0–2；0 ＝不指定。</small></span><input type="number" min="0" max="2" step="0.1" data-setting="self.decidePresencePenalty" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>决定频率惩罚</b><small>0–2；0 ＝不指定。</small></span><input type="number" min="0" max="2" step="0.1" data-setting="self.decideFrequencyPenalty" placeholder="0 = 不指定"></label></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-selfdecide-models>拉取模型</button><small role="status" data-selfdecide-models-status></small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>喂最近几楼聊天</b></span><input type="number" min="1" max="12" step="1" data-setting="self.decideMaxFloors"></label><label class="dai-setting-row"><span><b>世界书条目上限</b><small>按本轮聊天匹配相关条目，0 = 不带世界书。</small></span><input type="number" min="0" max="40" step="1" data-setting="self.decideMaxEntries"></label></div><p class="dai-turn-result" data-self-decide-status role="status">还没有运行。生成结束后会自动决定。</p><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-self-decide-run>让模型决定一次</button><button type="button" class="dai-secondary-button" data-self-reset>清空本局纳戒</button></div><div class="dai-world-decide-result" data-self-decide-result></div><details class="dai-prompt-fold"><summary><span><b>决定提示词</b><small>模型做决定时收到的 system 规则；点开修改，清空恢复内置默认。改写时保持“只输出 JSON”和操作字段名不变。</small></span></summary><label class="dai-setting-row"><span><b>规则正文</b><small>境界阶梯、炼成补账、有据可依的规则都在这里，可按玩法改写。</small></span><textarea data-setting="self.decidePrompt" rows="10" spellcheck="false" placeholder="打开页面会自动铺入当前生效的规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-secondary-button" data-self-decide-default>填入默认规则</button><small>默认规则含“境界必须剧情真到位、炼成后补记行囊、无变化不记账”。</small></div></details></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>模型决定（LLM 决定脚本执行）</b><small>生成结束后，模型读最近聊天 + 相关世界书条目 + 纳戒现状做一次独立决定，输出严格 JSON，脚本逐条校验执行并显示在这里。决定用的接口与参数在「模型设置」页。</small></div><div class="dai-feature-toggle"><span class="dai-feature-icon">◉</span><span><b>启用模型决定</b><small>关闭后退回“只认正文 self 指令块”的降级模式。</small></span><input type="checkbox" data-setting="self.decideEnabled"></div><label class="dai-setting-row dai-setting-toggle"><span><b>每轮生成后自动决定</b><small>关闭后只能点“让模型决定一次”手动跑。</small></span><input type="checkbox" data-setting="self.decideAuto"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>喂最近几楼聊天</b></span><input type="number" min="1" max="12" step="1" data-setting="self.decideMaxFloors"></label><label class="dai-setting-row"><span><b>世界书条目上限</b><small>按本轮聊天匹配相关条目，0 = 不带世界书。</small></span><input type="number" min="0" max="40" step="1" data-setting="self.decideMaxEntries"></label></div><p class="dai-turn-result" data-self-decide-status role="status">还没有运行。生成结束后会自动决定。</p><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-self-decide-run>让模型决定一次</button><button type="button" class="dai-secondary-button" data-self-reset>清空本局纳戒</button></div><div class="dai-world-decide-result" data-self-decide-result></div><details class="dai-prompt-fold"><summary><span><b>决定提示词</b><small>模型做决定时收到的 system 规则；点开修改，清空恢复内置默认。改写时保持“只输出 JSON”和操作字段名不变。</small></span></summary><label class="dai-setting-row"><span><b>规则正文</b><small>境界阶梯、炼成补账、有据可依的规则都在这里，可按玩法改写。</small></span><textarea data-setting="self.decidePrompt" rows="10" spellcheck="false" placeholder="打开页面会自动铺入当前生效的规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-secondary-button" data-self-decide-default>填入默认规则</button><small>默认规则含“境界必须剧情真到位、炼成后补记行囊、无变化不记账”。</small></div></details></div>
+                        <div class="dai-modal-dock" data-modal-dock="self-techniques" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>登记功法</b><small>模型漏记时在这里补一笔。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>名称</b></span><input type="text" data-self-new="techniques.name" placeholder="如 焚决"></label><label class="dai-setting-row"><span><b>品级</b></span><input type="text" data-self-new="techniques.grade" placeholder="黄阶低级 ~ 天阶高级"></label><label class="dai-setting-row"><span><b>类型</b></span><input type="text" data-self-new="techniques.type" placeholder="修炼功法 / 身法 / 炼药术"></label><label class="dai-setting-row"><span><b>进度</b></span><input type="text" data-self-new="techniques.progress" placeholder="如 第三层"></label><label class="dai-setting-row"><span><b>来源</b></span><input type="text" data-self-new="techniques.source" placeholder="如 药老所赠"></label></div><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-self-create="techniques">登记功法</button><button type="button" class="dai-secondary-button" data-agent-modal-close>取消</button></div></div></div>
+                        <div class="dai-modal-dock" data-modal-dock="self-skills" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>登记斗技</b></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>名称</b></span><input type="text" data-self-new="skills.name" placeholder="如 八极崩"></label><label class="dai-setting-row"><span><b>品级</b></span><input type="text" data-self-new="skills.grade" placeholder="黄阶低级 ~ 天阶高级"></label><label class="dai-setting-row"><span><b>类型</b></span><input type="text" data-self-new="skills.type" placeholder="攻击 / 防御 / 身法 / 辅助"></label><label class="dai-setting-row"><span><b>熟练度</b></span><input type="text" data-self-new="skills.progress" placeholder="如 小成"></label><label class="dai-setting-row"><span><b>来源</b></span><input type="text" data-self-new="skills.source" placeholder="从哪学来的"></label></div><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-self-create="skills">登记斗技</button><button type="button" class="dai-secondary-button" data-agent-modal-close>取消</button></div></div></div>
+                        <div class="dai-modal-dock" data-modal-dock="self-items" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>放入物品</b></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>名称</b></span><input type="text" data-self-new="items.name" placeholder="如 回气丹"></label><label class="dai-setting-row"><span><b>类别</b></span><select data-self-new="items.category"><option value="丹药">丹药</option><option value="材料">材料</option><option value="武器">武器</option><option value="防具">防具</option><option value="杂物">杂物</option><option value="关键物">关键物</option></select></label><label class="dai-setting-row"><span><b>品级</b></span><input type="text" data-self-new="items.grade" placeholder="如 一品"></label><label class="dai-setting-row"><span><b>数量</b></span><input type="number" min="1" max="999999" step="1" data-self-new="items.count" placeholder="1"></label></div><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-self-create="items">放入行囊</button><button type="button" class="dai-secondary-button" data-agent-modal-close>取消</button></div></div></div>
+                        <div class="dai-modal-dock" data-modal-dock="self-recipes" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>记配方</b></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>名称</b></span><input type="text" data-self-new="recipes.name" placeholder="如 回气丹"></label><label class="dai-setting-row"><span><b>门类</b></span><select data-self-new="recipes.craft"><option value="炼药">炼药</option><option value="炼器">炼器</option><option value="其他">其他</option></select></label><label class="dai-setting-row"><span><b>品级</b></span><input type="text" data-self-new="recipes.grade" placeholder="如 一品"></label><label class="dai-setting-row"><span><b>材料清单</b></span><input type="text" data-self-new="recipes.materials" placeholder="如 回春草两株、凝气花一株"></label></div><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-self-create="recipes">记配方</button><button type="button" class="dai-secondary-button" data-agent-modal-close>取消</button></div></div></div>
+                        <div class="dai-modal-dock" data-modal-dock="self-crafts" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>开工炼制</b></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>名称</b></span><input type="text" data-self-new="crafts.name" placeholder="如 聚气散"></label><label class="dai-setting-row"><span><b>门类</b></span><select data-self-new="crafts.craft"><option value="炼药">炼药</option><option value="炼器">炼器</option><option value="其他">其他</option></select></label><label class="dai-setting-row"><span><b>数量</b></span><input type="number" min="1" max="999999" step="1" data-self-new="crafts.count" placeholder="1"></label><label class="dai-setting-row"><span><b>预计天数</b><small>从今天起算；留空不设期限。</small></span><input type="number" min="1" max="365" step="1" data-self-new="crafts.days" placeholder="如 3"></label><label class="dai-setting-row"><span><b>备注</b></span><input type="text" data-self-new="crafts.note" placeholder="如 缺一味凝骨草"></label></div><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-self-craft-start>开工</button><button type="button" class="dai-secondary-button" data-agent-modal-close>取消</button></div></div></div>
+                        <div class="dai-modal-dock" data-modal-dock="self-goals" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>立目标</b></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>目标</b><small>一句话说清要做什么。</small></span><input type="text" data-self-new="goals.text" placeholder="如 三年之约，云岚宗一雪前耻"></label><label class="dai-setting-row"><span><b>优先级</b></span><select data-self-new="goals.priority"><option value="主线">主线</option><option value="支线">支线</option></select></label><label class="dai-setting-row"><span><b>期限</b><small>自由文本。</small></span><input type="text" data-self-new="goals.due" placeholder="如 三年后"></label></div><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-self-create="goals">立目标</button><button type="button" class="dai-secondary-button" data-agent-modal-close>取消</button></div></div></div>
                     </section>
+                    <section class="dai-settings-page" data-settings-section="memory" role="tabpanel" hidden>
+                        <div class="dai-page-heading"><span class="dai-page-eyebrow">核心能力 / 12</span><h3>主角记忆</h3><p>记忆分小记忆（轻量近事）与大记忆（值得一直记的事），都永久保存、按需召回——"关联"里的人名/地名出现在最近剧情里才会注入提示词；了结与删除只由书记官或你手动做，脚本从不过期任何记忆。</p></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>记忆总览</b><small>按层统计（未了结/总数）；只有被本场剧情勾到的记忆才注入；⚠=与其他记忆疑似重复/矛盾，点开流水处理。</small></div><p class="dai-state-strip" data-memory-overview>还没有载入记忆。</p><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>排序</b></span><select data-memory-sort><option value="time">按生成时间</option><option value="weight">按重要性</option></select></label><label class="dai-setting-row"><span><b>只看关联</b><small>下场对手戏前按人扫一遍旧账。</small></span><select data-memory-person><option value="">全部</option></select></label></div><p class="dai-turn-result" data-memory-conflicts hidden></p><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-modal-open="memory-add" data-modal-title="手动登记一条记忆">＋ 手动登记</button></div></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>大记忆</b><small>值得一直记住的事；★=关键；召回优先于小记忆；「删除」=记错清账（流水留痕）。</small></div><div class="dai-world-events" data-memory-list-big></div></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>小记忆</b><small>轻量近事；分量够了点「转大」，召回优先级随之提高。</small></div><div class="dai-world-events" data-memory-list-small></div></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>已了结</b><small>不再参与召回；点「重开」可以重新挂起。</small></div><div class="dai-world-events" data-memory-done></div></div>
+                        
+                        <div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon">✎</span><span><b>启用主角记忆</b><small>关闭后不记账、不召回；已记下的内容仍留在聊天存档里。</small></span><input type="checkbox" data-setting="enableMemoryLedger"></div><label class="dai-setting-row dai-setting-toggle"><span><b>按需召回进正文提示词</b><small>生成前用最近四楼正文比对"关联"，命中的才注入，一场戏没勾到就不注。</small></span><input type="checkbox" data-setting="memory.inject"></label><label class="dai-setting-row"><span><b>召回字数上限</b><small>本场召回的记忆总字数上限；超了从优先级最低的往上丢；0 为默认 900。</small></span><input type="number" min="0" max="4000" step="100" data-setting="memory.injectBudget"></label><label class="dai-setting-row dai-setting-toggle"><span><b>自动决定（书记官）</b><small>每轮生成后由模型决定新记忆与了结；关掉后只认正文里的 memory 指令块。</small></span><input type="checkbox" data-setting="memory.decideAuto"></label><label class="dai-setting-row dai-setting-toggle"><span><b>启用记忆决定调用</b><small>关闭后不再发起书记官调用，只走降级指令。</small></span><input type="checkbox" data-setting="memory.decideEnabled"></label><details class="dai-settle-category"><summary><span class="dai-feature-icon">✎</span><span><b>指令指南（降级模式）</b><small>关闭自动决定时随召回结果注入的规则正文；保持"只输出 JSON"与操作字段名不变，清空恢复内置默认。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>指南正文</b></span><textarea data-setting="memory.guide" rows="9" spellcheck="false"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-memory-guide-default>填入默认指南</button></div></div></details></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>模型决定（LLM 决定脚本执行）</b><small>生成结束后，书记官读最近聊天 + 相关世界书条目 + 本场召回的记忆做一次独立决定，输出严格 JSON，脚本逐条校验执行。</small></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button" data-memory-decide-run>手动决定一次</button><span data-memory-decide-status></span></div><div data-memory-decide-result></div><details class="dai-settle-category"><summary><span class="dai-feature-icon">✦</span><span><b>决定提示词</b><small>书记官的 system 指令；保持"只输出 JSON"与操作字段名不变，清空恢复内置默认。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>提示词正文</b></span><textarea data-setting="memory.decidePrompt" rows="9" spellcheck="false"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-memory-decide-default>填入默认提示词</button></div></div></details></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>记忆指令流水</b><small>最近几批指令的执行结果；重 roll 一楼会先撤销它上一版指令。</small></div><div class="dai-world-journal" data-memory-journal></div></div>
+                    <div class="dai-modal-dock" data-modal-dock="memory-add" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>手动登记</b><small>书记官漏记时在这里补一笔，校验与模型指令完全一致。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>层级</b></span><select data-memory-new-tier><option value="small">小记忆</option><option value="big">大记忆</option></select></label><label class="dai-setting-row"><span><b>标签（大记忆可选）</b></span><select data-memory-new-tag><option value="">不标</option><option value="grudge">恩怨</option><option value="intel">情报</option><option value="thread">伏笔</option><option value="milestone">大事记</option></select></label><label class="dai-setting-row"><span><b>分量</b></span><select data-memory-new-weight><option value="minor">一般</option><option value="major">关键</option></select></label></div><label class="dai-setting-row"><span><b>内容</b><small>一句话说清记住了什么、为什么值得记。</small></span><input type="text" data-memory-new-text maxlength="300"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>依据</b><small>从哪来：哪楼/谁/什么事。</small></span><input type="text" data-memory-new-basis maxlength="80"></label><label class="dai-setting-row"><span><b>关联（必填）</b><small>人名/地名/物名，顿号分隔最多 4 个——这是日后按需召回的钥匙。</small></span><input type="text" data-memory-new-related maxlength="140"></label></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>别名（可选）</b><small>同一记忆的其余叫法（药老/药尘），也算召回钥匙。</small></span><input type="text" data-memory-new-aliases maxlength="140"></label><label class="dai-setting-row"><span><b>引文（可选）</b><small>当时的一句原话，召回时以「」带回正文。</small></span><input type="text" data-memory-new-quote maxlength="60"></label></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button" data-memory-add>登记这条记忆</button></div></div><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-agent-modal-close>取消</button></div></div></section>
                     <section class="dai-settings-page" data-settings-section="impact" role="tabpanel" hidden>
-                        <div class="dai-page-heading"><span class="dai-page-eyebrow">核心能力 / 09</span><h3>世界影响</h3><p>记录你把这局世界改成了什么样：烧掉的据点、得罪的势力、提前发生或没能发生的原著事件。库跟着这份聊天存档，会写进后续每一轮的正文提示词，而不是只影响一次回复。</p></div><div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon">⌁</span><span><b>启用世界影响库</b><small>关掉后不记录、不注入，但已记下的内容仍留在聊天存档里。</small></span><input type="checkbox" data-setting="enablePlayerImpact"></div><label class="dai-setting-row dai-setting-toggle"><span><b>生成后自动记录</b><small>让“记录模型”在正文生成结束后把这一轮的世界变化写进库；关掉后只剩手动记录。</small></span><input type="checkbox" data-setting="impact.decideAuto"></label><label class="dai-setting-row"><span><b>记录节奏</b><small>每轮都记更细，但每轮多一次模型调用；每三轮记一次更省，代价是中间两轮的改动要等到下次记账才进库。</small></span><select data-setting="impact.decideEvery"><option value="1">每轮生成后</option><option value="3">每三轮生成后</option></select></label><label class="dai-setting-row dai-setting-toggle"><span><b>把世界线写进正文提示词</b><small>已发生、还没收场的影响会作为“本局世界线”随生成发给正文模型，让角色和旁白记得世界已经变了。</small></span><input type="checkbox" data-setting="impact.inject"></label><label class="dai-setting-row dai-setting-toggle"><span><b>注入前让模型挑选</b><small>每轮生成前，让“挑选模型”从账本里挑出这一幕真正用得上的影响，并改写成旁白；关掉则按分量和日期直接取，省一次调用。</small></span><input type="checkbox" data-setting="impact.injectSmart"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>注入字数预算</b><small>每轮最多花多少字描述已改的世界线；超出预算的影响只留在库里。</small></span><input type="number" min="0" max="2000" step="50" data-setting="impact.injectBudget"></label><label class="dai-setting-row"><span><b>注入前看最近几楼</b><small>挑选模型据此判断这一幕的场面：玩家在哪、身边有谁、要做什么。看太多会拖慢，6 楼通常够。</small></span><input type="number" min="1" max="12" step="1" data-setting="impact.injectFloors"></label></div><label class="dai-setting-row"><span><b>影响链最多接几层</b><small>一条影响还能接出几条后续；超过这个层数就只记录，不再自动接链。</small></span><input type="number" min="0" max="8" step="1" data-setting="impact.maxChainDepth"></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-impact-record>现在记录一次</button><small role="status" data-impact-decide-status>默认按上面的节奏自动记录；这里不用等下一轮。</small></div></div><div class="dai-settings-card"><div class="dai-card-heading"><b>记录员与场记的模型</b><small>默认一个模型干两件事，也可以各用各的。“跟随酒馆”＝直接用酒馆当前连接与模型（酒馆的静默生成接口不收模型名，所以这里点名没用）；“自定义”＝自己填接口地址、密钥、模型名，填好地址点“拉取模型”从列表里选。每套连接下面可以填温度、输出上限、top_p 和两个惩罚项：填 0 表示不指定；跟随酒馆时这些值只在这一次生成期间临时生效，结束立刻还原。</small></div><label class="dai-setting-row"><span><b>用几个模型</b><small>一个模型＝记账和挑选都用同一套；两个模型＝各配各的，互不影响。</small></span><select data-setting="impact.modelMode"><option value="shared">一个模型干两件事</option><option value="split">两个模型分开</option></select></label><div class="dai-setting-grid" data-impact-decide-model><label class="dai-setting-row"><span><b>记录员用哪套</b><small>生成结束后记账的那个。</small></span><select data-setting="impact.decideMode"><option value="tavern">跟随酒馆当前设置</option><option value="custom">自定义模型</option></select></label><label class="dai-setting-row"><span><b>记录员接口地址</b><small>选“自定义”才用得上；留空沿用“模型与连接”页。</small></span><input type="text" data-setting="impact.decideBaseUrl" placeholder="https://api.example.com/v1"></label><label class="dai-setting-row"><span><b>记录员接口密钥</b><small>选“自定义”才用得上；留空沿用“模型与连接”页。</small></span><input type="password" data-setting="impact.decideApiKey" placeholder="留空沿用“模型与连接”页"></label><label class="dai-setting-row"><span><b>记录员模型名</b><small>填好地址后点“拉取模型”挑一个，也可以手填。</small></span><input type="text" data-setting="impact.decideModel" list="dai-impact-models-decide" placeholder="例如 deepseek-chat"><datalist id="dai-impact-models-decide"></datalist></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>记录员温度</b><small>0–2；填 0 ＝不指定，沿用酒馆/全局。跟随酒馆时只在这次生成临时生效，结束还原。</small></span><input type="number" min="0" max="2" step="0.05" data-setting="impact.decideTemperature" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>记录员最大输出</b><small>tokens；0 ＝不指定。跟随酒馆时临时覆盖这一轮的输出长度（文本补全只支持这一项）。</small></span><input type="number" min="0" max="32768" step="64" data-setting="impact.decideMaxTokens" placeholder="0 = 不指定"></label></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>记录员 top_p</b><small>0–1；0 ＝不指定。</small></span><input type="number" min="0" max="1" step="0.05" data-setting="impact.decideTopP" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>记录员存在惩罚</b><small>0–2；0 ＝不指定。</small></span><input type="number" min="0" max="2" step="0.1" data-setting="impact.decidePresencePenalty" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>记录员频率惩罚</b><small>0–2；0 ＝不指定。</small></span><input type="number" min="0" max="2" step="0.1" data-setting="impact.decideFrequencyPenalty" placeholder="0 = 不指定"></label></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-impact-models="decide">拉取模型</button><small role="status" data-impact-models-status="decide"></small></div></div><div class="dai-setting-grid" data-impact-inject-model><label class="dai-setting-row"><span><b>场记用哪套</b><small>生成前挑影响的那个。</small></span><select data-setting="impact.injectMode"><option value="tavern">跟随酒馆当前设置</option><option value="custom">自定义模型</option></select></label><label class="dai-setting-row"><span><b>场记接口地址</b><small>选“自定义”才用得上；留空沿用“模型与连接”页。</small></span><input type="text" data-setting="impact.injectBaseUrl" placeholder="https://api.example.com/v1"></label><label class="dai-setting-row"><span><b>场记接口密钥</b><small>选“自定义”才用得上；留空沿用“模型与连接”页。</small></span><input type="password" data-setting="impact.injectApiKey" placeholder="留空沿用“模型与连接”页"></label><label class="dai-setting-row"><span><b>场记模型名</b><small>填好地址后点“拉取模型”挑一个，也可以手填。</small></span><input type="text" data-setting="impact.injectModel" list="dai-impact-models-inject" placeholder="例如 deepseek-chat"><datalist id="dai-impact-models-inject"></datalist></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>场记温度</b><small>0–2；填 0 ＝不指定。跟随酒馆时只在这次生成临时生效，结束还原。</small></span><input type="number" min="0" max="2" step="0.05" data-setting="impact.injectTemperature" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>场记最大输出</b><small>tokens；0 ＝不指定。跟随酒馆时临时覆盖这一轮的输出长度（文本补全只支持这一项）。</small></span><input type="number" min="0" max="32768" step="64" data-setting="impact.injectMaxTokens" placeholder="0 = 不指定"></label></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>场记 top_p</b><small>0–1；0 ＝不指定。</small></span><input type="number" min="0" max="1" step="0.05" data-setting="impact.injectTopP" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>场记存在惩罚</b><small>0–2；0 ＝不指定。</small></span><input type="number" min="0" max="2" step="0.1" data-setting="impact.injectPresencePenalty" placeholder="0 = 不指定"></label><label class="dai-setting-row"><span><b>场记频率惩罚</b><small>0–2；0 ＝不指定。</small></span><input type="number" min="0" max="2" step="0.1" data-setting="impact.injectFrequencyPenalty" placeholder="0 = 不指定"></label></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-impact-models="inject">拉取模型</button><small role="status" data-impact-models-status="inject"></small></div></div><details class="dai-prompt-fold"><summary><span><b>记录员提示词</b><small>生成结束后记账用的规则；点开才展开。</small></span></summary><label class="dai-setting-row"><span><b>规则正文</b><small>打开页面显示的就是当前生效的全文；清空＝恢复内置默认。改写时保持“只输出 JSON”和操作字段名不变。</small></span><textarea data-setting="impact.prompt" rows="14" spellcheck="false" placeholder="留空使用内置提示词"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-impact-prompt-default="decide">填入内置提示词</button><small>改完下一轮生效，不用重启。</small></div></details><details class="dai-prompt-fold"><summary><span><b>场记提示词</b><small>生成前挑选并改写影响用的规则；点开才展开。</small></span></summary><label class="dai-setting-row"><span><b>规则正文</b><small>打开页面显示的就是当前生效的全文；清空＝恢复内置默认。改写时保持“只从账本挑、用 #编号”不变。</small></span><textarea data-setting="impact.injectPrompt" rows="12" spellcheck="false" placeholder="留空使用内置提示词"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-impact-prompt-default="inject">填入内置提示词</button><small>默认收起；改完下一轮生效。</small></div></details></div><div class="dai-settings-card"><div class="dai-card-heading"><b>世界线账本</b><small data-impact-summary>加载中…</small></div><div class="dai-setting-row dai-setting-actions"><select data-impact-filter aria-label="筛选影响"><option value="all">全部</option><option value="active">未了结</option><option value="ripened">已发酵</option><option value="closed">已了结</option></select><select data-impact-weight aria-label="按分量筛选"><option value="">分量</option><option value="world">世界级</option><option value="major">大事</option><option value="minor">小事</option></select><select data-impact-kind aria-label="按性质筛选"><option value="">性质</option><option value="direct">直接</option><option value="ripple">涟漪</option><option value="butterfly">蝴蝶</option></select><input type="search" data-impact-search placeholder="搜标题、对象或原著" aria-label="搜索影响"><button type="button" class="dai-button dai-button-ghost" data-impact-add>添加一条</button><button type="button" class="dai-button dai-button-ghost" data-impact-refresh>刷新</button></div><div class="dai-impact-form" data-impact-form hidden><input type="hidden" data-impact-field="ref"><div class="dai-impact-form-head"><b data-impact-form-title>记一条世界影响</b><small>手动记的条目和记录员记的一样：会进正文、会发酵，也保留在聊天存档里。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>标题</b></span><input type="text" maxlength="60" data-impact-field="title" placeholder="世界哪一块变了"></label><label class="dai-setting-row"><span><b>对象</b></span><input type="text" maxlength="40" data-impact-field="target" placeholder="哪个地方/势力/规矩"></label></div><label class="dai-setting-row"><span><b>详情</b><small>具体变了什么、有什么能被看见的后果。</small></span><textarea rows="3" maxlength="240" data-impact-field="detail" placeholder="例如：城中药材涨价，加列家族开始暗中追查纵火者"></textarea></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>性质</b></span><select data-impact-field="kind"><option value="direct">直接 · 玩家亲手</option><option value="ripple">涟漪 · 旁人因此改主意</option><option value="butterfly">蝴蝶 · 隔了时间才显形</option></select></label><label class="dai-setting-row"><span><b>分量</b></span><select data-impact-field="weight"><option value="minor">小事</option><option value="major">大事</option><option value="world">世界级</option></select></label><label class="dai-setting-row"><span><b>确定性</b></span><select data-impact-field="certainty"><option value="certain">确凿</option><option value="rumor">传闻</option></select></label><label class="dai-setting-row"><span><b>几天后发酵</b><small>留空＝当场见效。</small></span><input type="number" min="1" max="365" step="1" data-impact-field="ripen"></label><label class="dai-setting-row"><span><b>提前/延后几天</b><small>只在编辑时用：负数提前、正数延后；提前到当天就当场应验。</small></span><input type="number" min="-365" max="365" step="1" data-impact-field="days"></label></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>依据</b></span><input type="text" maxlength="120" data-impact-field="evidence" placeholder="哪一楼、哪句话"></label><label class="dai-setting-row"><span><b>对上台账事件</b><small>世界运转里的事件编号，如 e2；没有就留空。</small></span><input type="text" maxlength="40" data-impact-field="eventId" placeholder="例如：e2"></label><label class="dai-setting-row"><span><b>原著节点</b><small>没牵动就留空。</small></span><input type="text" maxlength="60" data-impact-field="canon" placeholder="例如：退婚"></label><label class="dai-setting-row"><span><b>原著偏移</b></span><select data-impact-field="shift"><option value="none">不牵动</option><option value="accelerate">加速</option><option value="delay">延后</option><option value="avoid">避过</option><option value="alter">改写</option></select></label></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button" data-impact-save>保存</button><button type="button" class="dai-button dai-button-ghost" data-impact-form-close>取消</button><small role="status" data-impact-form-status></small></div></div><ol class="dai-impact-list" data-impact-library></ol><details class="dai-impact-archive" data-impact-archive><summary>档案 <small data-impact-archive-count>0 条</small></summary><p class="dai-impact-empty">被删除或因为库满挤出去的旧影响会留在这里，可以恢复。</p><ol class="dai-impact-list" data-impact-archive-list></ol></details></div></section>
+                        <div class="dai-page-heading"><h3>世界影响</h3><p>记录你把这局世界改成了什么样：烧掉的据点、得罪的势力、提前发生或没能发生的原著事件。库跟着这份聊天存档走，写进后续每一轮的正文提示词。账本在下面；添加和编辑都走弹窗。</p></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>世界线账本</b><small data-impact-summary>加载中…</small></div><p class="dai-state-strip" data-impact-stats>本轮还没挑过注入；生成前会自动挑。</p><p class="dai-turn-result" data-impact-decide-status role="status">默认按上面的节奏自动记录；也可以点“现在记录一次”。</p><div class="dai-setting-row dai-setting-actions"><select data-impact-filter aria-label="筛选影响"><option value="all">全部</option><option value="active">未了结</option><option value="ripened">已发酵</option><option value="closed">已了结</option></select><select data-impact-weight aria-label="按分量筛选"><option value="">分量</option><option value="world">世界级</option><option value="major">大事</option><option value="minor">小事</option></select><select data-impact-kind aria-label="按性质筛选"><option value="">性质</option><option value="direct">直接</option><option value="ripple">涟漪</option><option value="butterfly">蝴蝶</option></select><input type="search" data-impact-search placeholder="搜标题、对象或原著" aria-label="搜索影响"><button type="button" class="dai-button dai-button-ghost" data-impact-add>＋ 记一条</button><button type="button" class="dai-button dai-button-ghost" data-impact-record>现在记录一次</button><button type="button" class="dai-button dai-button-ghost" data-impact-refresh>刷新</button></div><ul class="dai-impact-list" data-impact-library></ul><details class="dai-impact-archive" data-impact-archive><summary>档案 <small data-impact-archive-count>0 条</small></summary><p class="dai-impact-empty">被删除或因为库满挤出去的旧影响会留在这里，可以恢复。</p><ol class="dai-impact-list" data-impact-archive-list></ol></details></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>记录与注入</b><small>什么时机记账、怎么进正文；记录员与场记用的接口在「模型设置」页。</small></div><div class="dai-feature-toggle"><span class="dai-feature-icon">⌁</span><span><b>启用世界影响库</b><small>关掉后不记录、不注入，但已记下的内容仍留在聊天存档里。</small></span><input type="checkbox" data-setting="enablePlayerImpact"></div><label class="dai-setting-row dai-setting-toggle"><span><b>生成后自动记录</b><small>让“记录模型”在正文生成结束后把这一轮的世界变化写进库；关掉后只剩手动记录。</small></span><input type="checkbox" data-setting="impact.decideAuto"></label><label class="dai-setting-row"><span><b>记录节奏</b><small>每轮都记更细，但每轮多一次模型调用；每三轮记一次更省，代价是中间两轮的改动要等到下次记账才进库。</small></span><select data-setting="impact.decideEvery"><option value="1">每轮生成后</option><option value="3">每三轮生成后</option></select></label><label class="dai-setting-row dai-setting-toggle"><span><b>把世界线写进正文提示词</b><small>已发生、还没收场的影响会作为“本局世界线”随生成发给正文模型。</small></span><input type="checkbox" data-setting="impact.inject"></label><label class="dai-setting-row dai-setting-toggle"><span><b>注入前让模型挑选</b><small>每轮生成前，让“挑选模型”从账本里挑出这一幕真正用得上的影响，并改写成旁白；关掉则按分量和日期直接取，省一次调用。</small></span><input type="checkbox" data-setting="impact.injectSmart"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>注入字数预算</b><small>每轮最多花多少字描述已改的世界线；超出预算的影响只留在库里。</small></span><input type="number" min="0" max="2000" step="50" data-setting="impact.injectBudget"></label><label class="dai-setting-row"><span><b>注入前看最近几楼</b><small>挑选模型据此判断这一幕的场面：玩家在哪、身边有谁、要做什么。</small></span><input type="number" min="1" max="12" step="1" data-setting="impact.injectFloors"></label></div><label class="dai-setting-row"><span><b>影响链最多接几层</b><small>一条影响还能接出几条后续；超过这个层数就只记录，不再自动接链。</small></span><input type="number" min="0" max="8" step="1" data-setting="impact.maxChainDepth"></label></div>
+                        <details class="dai-prompt-fold"><summary><span><b>记录员提示词</b><small>生成结束后记账用的规则；点开才展开。</small></span></summary><label class="dai-setting-row"><span><b>规则正文</b><small>打开页面显示的就是当前生效的全文；清空＝恢复内置默认。改写时保持“只输出 JSON”和操作字段名不变。</small></span><textarea data-setting="impact.prompt" rows="14" spellcheck="false" placeholder="留空使用内置提示词"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-impact-prompt-default="decide">填入内置提示词</button><small>改完下一轮生效，不用重启。</small></div></details>
+                        <details class="dai-prompt-fold"><summary><span><b>场记提示词</b><small>生成前挑选并改写影响用的规则；点开才展开。</small></span></summary><label class="dai-setting-row"><span><b>规则正文</b><small>打开页面显示的就是当前生效的全文；清空＝恢复内置默认。改写时保持“只从账本挑、用 #编号”不变。</small></span><textarea data-setting="impact.injectPrompt" rows="12" spellcheck="false" placeholder="留空使用内置提示词"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-impact-prompt-default="inject">填入内置提示词</button><small>默认收起；改完下一轮生效。</small></div></details>
+                        <div class="dai-modal-dock" data-modal-dock="impact-form" hidden><div class="dai-settings-card"><div class="dai-impact-form" data-impact-form hidden><input type="hidden" data-impact-field="ref"><div class="dai-impact-form-head"><b data-impact-form-title>记一条世界影响</b><small>手动记的条目和记录员记的一样：会进正文、会发酵，也保留在聊天存档里。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>标题</b></span><input type="text" maxlength="60" data-impact-field="title" placeholder="世界哪一块变了"></label><label class="dai-setting-row"><span><b>对象</b></span><input type="text" maxlength="40" data-impact-field="target" placeholder="哪个地方/势力/规矩"></label></div><label class="dai-setting-row"><span><b>详情</b><small>具体变了什么、有什么能被看见的后果。</small></span><textarea rows="3" maxlength="240" data-impact-field="detail" placeholder="例如：城中药材涨价，加列家族开始暗中追查纵火者"></textarea></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>性质</b></span><select data-impact-field="kind"><option value="direct">直接 · 玩家亲手</option><option value="ripple">涟漪 · 旁人因此改主意</option><option value="butterfly">蝴蝶 · 隔了时间才显形</option></select></label><label class="dai-setting-row"><span><b>分量</b></span><select data-impact-field="weight"><option value="minor">小事</option><option value="major">大事</option><option value="world">世界级</option></select></label><label class="dai-setting-row"><span><b>确定性</b></span><select data-impact-field="certainty"><option value="certain">确凿</option><option value="rumor">传闻</option></select></label><label class="dai-setting-row"><span><b>几天后发酵</b><small>留空＝当场见效。</small></span><input type="number" min="1" max="365" step="1" data-impact-field="ripen"></label><label class="dai-setting-row"><span><b>提前/延后几天</b><small>只在编辑时用：负数提前、正数延后；提前到当天就当场应验。</small></span><input type="number" min="-365" max="365" step="1" data-impact-field="days"></label></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>依据</b></span><input type="text" maxlength="120" data-impact-field="evidence" placeholder="哪一楼、哪句话"></label><label class="dai-setting-row"><span><b>对上台账事件</b><small>世界运转里的事件编号，如 e2；没有就留空。</small></span><input type="text" maxlength="40" data-impact-field="eventId" placeholder="例如：e2"></label><label class="dai-setting-row"><span><b>原著节点</b><small>没牵动就留空。</small></span><input type="text" maxlength="60" data-impact-field="canon" placeholder="例如：退婚"></label><label class="dai-setting-row"><span><b>原著偏移</b></span><select data-impact-field="shift"><option value="none">不牵动</option><option value="accelerate">加速</option><option value="delay">延后</option><option value="avoid">避过</option><option value="alter">改写</option></select></label></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button" data-impact-save>保存</button><button type="button" class="dai-button dai-button-ghost" data-impact-form-close>取消</button><small role="status" data-impact-form-status></small></div></div></div></div>
+                    </section>
                     <section class="dai-settings-page" data-settings-section="sandbox" role="tabpanel" hidden>
                         <div class="dai-page-heading"><span class="dai-page-eyebrow">核心能力 / 10</span><h3>沙盒模式</h3><p>开启后不再按原著主线排期，改为先查前提、再看惯性；世界仍在运转，只是不替玩家安排剧情。</p><p role="status" data-sandbox-status>改动会先保存；本局真正切换口径需要在本局内确认。</p></div>
                         <div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon">◈</span><span><b>启用沙盒模式</b><small>关闭时按主线口径：原著节点到点发生，玩家只影响过程。</small></span><input type="checkbox" data-setting="enableSandboxMode"></div><label class="dai-setting-row"><span><b>世界惯性</b><small>决定原著节点在沙盒里多积极地自行发生。强＝窗口一开始就发生；中＝到窗口结束才发生；弱＝不再自动发生，只留候选。</small></span><select data-setting="sandbox.inertia"><option value="strong">强 · 世界推着走</option><option value="medium">中 · 有人介入才偏离</option><option value="weak">弱 · 默认不动</option></select></label><label class="dai-setting-row dai-setting-toggle"><span><b>原著人物保留自主行动</b><small>关闭后原著人物只对玩家作出反应，不再主动推进自身轨迹。</small></span><input type="checkbox" data-setting="sandbox.canonCharactersAutonomous"></label><label class="dai-setting-row dai-setting-toggle"><span><b>允许中途切换模式</b><small>切换需要确认，而且只做重新对齐，不倒带已经发生的事实、代价和关系。</small></span><input type="checkbox" data-setting="sandbox.allowMidgameSwitch"></label></div>
@@ -2913,6 +3913,7 @@ function createSettingsPanel() {
         }
         if (activeSettingsPage === 'world') refreshWorldPage(panel);
         if (activeSettingsPage === 'impact') renderImpactLibrary(panel);
+        if (activeSettingsPage === 'exp') renderExpPage(panel);
         if (activeSettingsPage === 'npcledger') {
             // 打开页面时把当前生效的记录员规则铺进文本框，改完即用，清空则回默认。
             const area = panel.querySelector('[data-setting="npc.ledgerPrompt"]');
@@ -2956,6 +3957,8 @@ function createSettingsPanel() {
             if (input) input.value = '';
             return worldAdvanceFromPanel(panel, days);
         }
+        const tensionButton = event.target.closest?.('[data-world-tension]');
+        if (tensionButton) return worldApplyFromPanel(panel, [{ op: 'setTension', level: tensionButton.dataset.worldTension }]);
         const infoSet = event.target.closest?.('[data-world-info-set]');
         if (infoSet) {
             const field = infoSet.dataset.worldInfoSet;
@@ -2964,6 +3967,15 @@ function createSettingsPanel() {
             const value = typeof input?.value === 'string' ? input.value.trim() : '';
             if (input) input.value = '';
             return worldApplyFromPanel(panel, [{ op: 'setInfo', field, text: value }]);
+        }
+        const tileEdit = event.target.closest?.('[data-world-tile-edit]');
+        if (tileEdit) {
+            const editor = panel.querySelector(`[data-world-tile-editor="${tileEdit.dataset.worldTileEdit}"]`);
+            if (editor) {
+                editor.hidden = !editor.hidden;
+                if (!editor.hidden) editor.querySelector('input')?.focus();
+            }
+            return;
         }
         if (event.target.closest?.('[data-world-setday-apply]')) {
             const input = panel.querySelector('[data-world-setday]');
@@ -2977,6 +3989,12 @@ function createSettingsPanel() {
         const taskDelete = event.target.closest?.('[data-world-task-delete]');
         if (taskDelete) return worldApplyFromPanel(panel, [{ op: 'deleteTask', id: taskDelete.dataset.worldTaskDelete }]);
         if (event.target.closest?.('[data-world-addtask]')) return worldAddTaskFromPanel(panel);
+        if (event.target.closest?.('[data-world-setfaction]')) return worldSetFactionFromPanel(panel);
+        const factionDelete = event.target.closest?.('[data-world-faction-delete]');
+        if (factionDelete) return worldApplyFromPanel(panel, [{ op: 'deleteFaction', name: factionDelete.dataset.worldFactionDelete }]);
+        if (event.target.closest?.('[data-world-setperson]')) return worldSetPersonFromPanel(panel);
+        const personDelete = event.target.closest?.('[data-world-person-delete]');
+        if (personDelete) return worldApplyFromPanel(panel, [{ op: 'deletePerson', name: personDelete.dataset.worldPersonDelete }]);
         if (event.target.closest?.('[data-world-add]')) return worldAddFromPanel(panel);
         const worldResolve = event.target.closest?.('[data-world-resolve]');
         if (worldResolve) return worldApplyFromPanel(panel, [{ op: 'resolveEvent', id: worldResolve.dataset.worldResolve }]);
@@ -3042,12 +4060,24 @@ function createSettingsPanel() {
             void fetchWorldDecideModels(panel, worldDecideFetch);
             return;
         }
+        const factsFetch = event.target.closest?.('[data-facts-models]');
+        if (factsFetch) {
+            void fetchFactsModels(panel, factsFetch);
+            return;
+        }
         // —— 纳戒：子页签与手动操作。所有手动改动走 applySelfOps，与模型决定同一套校验。——
+        const insideModal = Boolean(event.target.closest?.('.dai-agent-modal'));
         const selfTab = event.target.closest?.('[data-self-tab]');
         if (selfTab) {
             const tab = selfTab.dataset.selfTab;
             for (const item of panel.querySelectorAll('[data-self-tab]')) item.classList.toggle('is-active', item === selfTab);
             for (const pane of panel.querySelectorAll('[data-self-pane]')) pane.hidden = pane.dataset.selfPane !== tab;
+            return;
+        }
+        const selfDetail = event.target.closest?.('[data-self-detail]');
+        if (selfDetail) {
+            const [list, id] = String(selfDetail.dataset.selfDetail).split(':');
+            openSelfDetailModal(panel, list, id);
             return;
         }
         const profileSet = event.target.closest?.('[data-self-profile-set]');
@@ -3108,6 +4138,7 @@ function createSettingsPanel() {
                 const result = applySelfOps([{ op, id }]);
                 setSelfStatus(result.applied.length ? `已移除 ${id}。` : `未生效：${result.rejected[0]?.reason ?? '编号不存在'}`);
             }
+            if (insideModal) closeAgentModal(panel);
             return;
         }
         const selfEquip = event.target.closest?.('[data-self-equip]');
@@ -3117,6 +4148,7 @@ function createSettingsPanel() {
             if (!entry) { setSelfStatus('这件物品已经不在行囊里了。'); return; }
             const result = applySelfOps([{ op: 'updateItem', id, equipped: !entry.equipped }]);
             setSelfStatus(result.applied.length ? `${entry.name} 已${entry.equipped ? '卸下' : '装备'}。` : `未生效：${result.rejected[0]?.reason ?? '无变化'}`);
+            if (insideModal) closeAgentModal(panel);
             return;
         }
         const selfCountSet = event.target.closest?.('[data-self-count-set]');
@@ -3127,6 +4159,7 @@ function createSettingsPanel() {
             if (!Number.isInteger(count) || count < 0) { setSelfStatus('数量要填 0 以上的整数（0 = 用光移除）。'); return; }
             const result = applySelfOps([{ op: 'updateItem', id, count }]);
             setSelfStatus(result.applied.length ? `${id} 数量已改为 ${count}。` : `未生效：${result.rejected[0]?.reason ?? '编号不存在'}`);
+            if (insideModal) closeAgentModal(panel);
             return;
         }
         const selfFinish = event.target.closest?.('[data-self-finish]');
@@ -3134,6 +4167,7 @@ function createSettingsPanel() {
             const [id, result] = String(selfFinish.dataset.selfFinish).split(':');
             const outcome = applySelfOps([{ op: 'finishCraft', id, result: result === 'success' ? 'success' : 'fail' }]);
             setSelfStatus(outcome.applied.length ? `${id} 已出炉${result === 'success' ? '；记得把成品放进行囊。' : '（炸炉）。'}` : `未生效：${outcome.rejected[0]?.reason ?? '编号不存在'}`);
+            if (insideModal) closeAgentModal(panel);
             return;
         }
         const selfGoalFinish = event.target.closest?.('[data-self-goal-finish]');
@@ -3141,6 +4175,7 @@ function createSettingsPanel() {
             const id = selfGoalFinish.dataset.selfGoalFinish;
             const result = applySelfOps([{ op: 'finishGoal', id }]);
             setSelfStatus(result.applied.length ? `目标 ${id} 达成。` : `未生效：${result.rejected[0]?.reason ?? '编号不存在'}`);
+            if (insideModal) closeAgentModal(panel);
             return;
         }
         const selfDecideRun = event.target.closest?.('[data-self-decide-run]');
@@ -3163,6 +4198,37 @@ function createSettingsPanel() {
             const area = panel.querySelector('[data-setting="self.guide"]');
             if (area) {
                 area.value = SELF_GUIDE;
+                area.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            return;
+        }
+        const memoryResolve = event.target.closest?.('[data-memory-resolve]');
+        if (memoryResolve) return memoryApplyFromPanel(panel, [{ op: 'resolveMemory', id: memoryResolve.dataset.memoryResolve }]);
+        const memoryPromote = event.target.closest?.('[data-memory-promote]');
+        if (memoryPromote) return memoryApplyFromPanel(panel, [{ op: 'promote', id: memoryPromote.dataset.memoryPromote }]);
+        const memoryReopen = event.target.closest?.('[data-memory-reopen]');
+        if (memoryReopen) return memoryApplyFromPanel(panel, [{ op: 'reopenMemory', id: memoryReopen.dataset.memoryReopen }]);
+        const memoryForget = event.target.closest?.('[data-memory-forget]');
+        if (memoryForget) return memoryApplyFromPanel(panel, [{ op: 'forgetMemory', id: memoryForget.dataset.memoryForget }]);
+        if (event.target.closest?.('[data-memory-add]')) return memoryAddFromPanel(panel);
+        if (event.target.closest?.('[data-memory-decide-run]')) {
+            void runMemoryDecision({ source: 'manual' });
+            return;
+        }
+        const memoryDecideDefault = event.target.closest?.('[data-memory-decide-default]');
+        if (memoryDecideDefault) {
+            const area = panel.querySelector('[data-setting="memory.decidePrompt"]');
+            if (area) {
+                area.value = MEMORY_DECIDE_PROMPT;
+                area.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            return;
+        }
+        const memoryGuideDefault = event.target.closest?.('[data-memory-guide-default]');
+        if (memoryGuideDefault) {
+            const area = panel.querySelector('[data-setting="memory.guide"]');
+            if (area) {
+                area.value = MEMORY_GUIDE;
                 area.dispatchEvent(new Event('input', { bubbles: true }));
             }
             return;
@@ -3317,16 +4383,29 @@ function createSettingsPanel() {
             return;
         }
         if (event.target.closest?.('[data-npc-ledger-more]')) { npcLedgerShown += 80; renderNpcLedgerList(panel); return; }
-        const ledgerView = event.target.closest?.('[data-npc-ledger-view]');
-        if (ledgerView) {
-            const name = ledgerView.dataset.npcLedgerView;
-            const detail = [...panel.querySelectorAll('[data-npc-ledger-detail]')].find(node => node.dataset.npcLedgerDetail === name);
-            if (detail) {
-                detail.hidden = !detail.hidden;
-                ledgerView.textContent = detail.hidden ? '看全文' : '收起';
-            }
+        const npcOpen = event.target.closest?.('[data-npc-ledger-open]');
+        if (npcOpen) { openNpcProfileModal(panel, npcOpen.dataset.npcLedgerOpen); return; }
+        const npcColdToggle = event.target.closest?.('[data-npc-cold-toggle]');
+        if (npcColdToggle) {
+            const name = npcColdToggle.dataset.npcColdToggle;
+            const result = agentNpcColdRuntime.status().selected.includes(name)
+                ? agentNpcColdRuntime.deselect(name)
+                : agentNpcColdRuntime.select(name);
+            persistNpcCold();
+            setNpcLedgerStatus(result.status === 'selected' ? `${name} 已勾进冷藏推进台。` : `${name} 已移出冷藏推进台。`);
+            renderNpcLedgerList(panel);
             return;
         }
+        const expCondense = event.target.closest?.('[data-exp-condense]');
+        if (expCondense) {
+            expCondense.disabled = true;
+            void runExpCondense(panel, expCondense.dataset.expCondense)
+                .catch(error => setNpcLedgerStatus(`精简失败：${error?.message ?? error}`))
+                .finally(() => { expCondense.disabled = false; renderExpPage(panel); renderNpcLedgerList(panel); });
+            return;
+        }
+        const expConfirm = event.target.closest?.('[data-exp-condense-confirm]');
+        if (expConfirm) { confirmExpCondense(panel, expConfirm.dataset.expCondenseConfirm); return; }
         const ledgerExtractAll = event.target.closest?.('[data-npc-ledger-extract-all]');
         if (ledgerExtractAll) {
             ledgerExtractAll.disabled = true;
@@ -3382,6 +4461,8 @@ function createSettingsPanel() {
                 applyNpcLedgerPayload({ 人物: [{ 姓名: record.name, 在场: next }] }, { source: '手动' });
                 setNpcLedgerStatus(`${record.name} 记为${next}；下一轮按这个档位写进正文。`);
                 refreshNpcLedgerPage(panel);
+                // 档案弹窗里点的：刷新后重开弹窗，看到的就是新档案。
+                if (ledgerPresence.closest?.('.dai-agent-modal')) openNpcProfileModal(panel, record.name);
             }
             return;
         }
@@ -3393,6 +4474,7 @@ function createSettingsPanel() {
                 applyNpcLedgerPayload({ 人物: [{ 姓名: record.name, 重要度: next }] }, { source: '手动' });
                 setNpcLedgerStatus(`${record.name} 标为${next === '重要' ? '重要' : '普通'}；重要的人即使不在场也会写一行处境。`);
                 refreshNpcLedgerPage(panel);
+                if (ledgerImportance.closest?.('.dai-agent-modal')) openNpcProfileModal(panel, record.name);
             }
             return;
         }
@@ -3401,7 +4483,9 @@ function createSettingsPanel() {
             const area = panel.querySelector('[data-npc-ledger-patch]');
             if (area) {
                 area.value = JSON.stringify({ 人物: [{ 姓名: ledgerEdit.dataset.npcLedgerEdit }] }, null, 2);
-                area.focus();
+                const dock = panel.querySelector('[data-modal-dock="npc-patch"]');
+                if (dock) openAgentModal(panel, `记进人物簿 · ${ledgerEdit.dataset.npcLedgerEdit}`, dock);
+                else area.focus();
             }
             return;
         }
@@ -3411,7 +4495,9 @@ function createSettingsPanel() {
             if (result.status === 'removed') {
                 persistNpcLedger();
                 setNpcLedgerStatus(`已把 ${result.record.name} 的档案删掉。`);
+                closeAgentModal(panel);
                 refreshNpcLedgerPage(panel);
+                renderExpPage(panel);
             }
             return;
         }
@@ -3475,7 +4561,13 @@ function createSettingsPanel() {
             if (sequence === settingsSaveSequence) status.textContent = '设置保存失败，请重新打开页面核对。';
         }
     });
-    panel.addEventListener('keydown', event => { if (event.key === 'Escape') closeSettingsPanel(); });
+    panel.addEventListener('keydown', event => {
+        if (event.key !== 'Escape') return;
+        // 先关弹层再关面板：弹窗开着时 ESC 只关弹窗。
+        if (closeAgentModal(panel)) { event.stopPropagation(); return; }
+        closeSettingsPanel();
+    });
+    bindModalActions(panel);
     selectPage(activeSettingsPage);
     syncSettingsForm();
 }
@@ -3589,6 +4681,7 @@ function mount() {
     window.removeEventListener(STATUS_EVENT, handleStatusEvent);
     window.addEventListener(STATUS_EVENT, handleStatusEvent);
     mountSettingsButton();
+    mountOrbHud();
     applyAppearance();
     loadSettingEntries();
     inlineSettingsAttempts = 0;
@@ -3640,8 +4733,10 @@ export function onDisable() {
         document.getElementById(SETTINGS_PANEL_ID)?.remove();
         document.getElementById(SETTINGS_BUTTON_ID)?.remove();
         document.getElementById(INLINE_SETTINGS_ID)?.remove();
+        document.getElementById(ORB_ID)?.remove();
         document.getElementById(STYLE_ID)?.remove();
     }
+    disposeOrbHud();
     root = undefined;
     currentTaskId = undefined;
     dashboardScope = undefined;
@@ -3823,6 +4918,7 @@ function worldAddFromPanel(panel) {
     const textInput = panel.querySelector('[data-world-add-text]');
     const basisInput = panel.querySelector('[data-world-add-basis]');
     const daysInput = panel.querySelector('[data-world-add-days]');
+    const locationInput = panel.querySelector('[data-world-add-location]');
     const body = typeof textInput?.value === 'string' ? textInput.value.trim() : '';
     if (!body) {
         if (textInput) textInput.placeholder = '先写一句事件内容再登记';
@@ -3831,10 +4927,13 @@ function worldAddFromPanel(panel) {
     const basis = typeof basisInput?.value === 'string' ? basisInput.value.trim() : '';
     const rawDays = Number(daysInput?.value);
     const days = Number.isInteger(rawDays) && rawDays >= 1 && rawDays <= 90 ? rawDays : undefined;
-    const result = worldApplyFromPanel(panel, [{ op: 'addEvent', scope: scopeInput?.value ?? 'near', text: body, basis, days, weight: weightInput?.value === 'major' ? 'major' : 'minor' }]);
+    const location = typeof locationInput?.value === 'string' ? locationInput.value.trim() : '';
+    const result = worldApplyFromPanel(panel, [{ op: 'addEvent', scope: scopeInput?.value ?? 'near', text: body, basis, location, days, weight: weightInput?.value === 'major' ? 'major' : 'minor' }]);
     if (textInput) textInput.value = '';
     if (basisInput) basisInput.value = '';
+    if (locationInput) locationInput.value = '';
     if (daysInput) daysInput.value = '';
+    if (result?.status !== 'rejected') closeAgentModal(panel);
     return result;
 }
 
@@ -3853,8 +4952,190 @@ function worldAddTaskFromPanel(panel) {
     const days = Number.isInteger(rawDays) && rawDays >= 1 && rawDays <= 90 ? rawDays : undefined;
     const result = worldApplyFromPanel(panel, [{ op: 'addTask', title, detail: typeof detailInput?.value === 'string' ? detailInput.value.trim() : '', basis: typeof basisInput?.value === 'string' ? basisInput.value.trim() : '', days }]);
     for (const input of [titleInput, detailInput, basisInput, daysInput]) if (input) input.value = '';
+    if (result?.status !== 'rejected') closeAgentModal(panel);
     return result;
 }
+// ── 主角记忆（memory/）：总览、两层清单、手动登记、决定卡；与纳戒页同一套交互惯例 ──
+
+function memoryApplyFromPanel(panel, operations) {
+    const result = applyMemoryOps(operations);
+    const note = panel?.querySelector('[data-memory-journal]');
+    if (note && result.rejected.length) {
+        const warn = makeElement('p', 'dai-turn-result');
+        warn.textContent = `有 ${result.rejected.length} 条操作被拒绝：${result.rejected.map(item => `${item.op}(${item.reason})`).join('、')}`;
+        note.prepend(warn);
+    }
+    return result;
+}
+
+function memoryAddFromPanel(panel) {
+    const textInput = panel.querySelector('[data-memory-new-text]');
+    const body = typeof textInput?.value === 'string' ? textInput.value.trim() : '';
+    if (!body) {
+        if (textInput) textInput.placeholder = '先写一句记忆内容再登记';
+        return { status: 'noop' };
+    }
+    const splitNames = value => (value ?? '')
+        .split(/[、,，;；\s]+/).map(item => item.trim()).filter(Boolean).slice(0, 4);
+    const tier = panel.querySelector('[data-memory-new-tier]')?.value === 'big' ? 'big' : 'small';
+    const tag = panel.querySelector('[data-memory-new-tag]')?.value ?? '';
+    const result = memoryApplyFromPanel(panel, [{
+        op: tier === 'big' ? 'memorize' : 'remember',
+        text: body,
+        quote: typeof panel.querySelector('[data-memory-new-quote]')?.value === 'string' ? panel.querySelector('[data-memory-new-quote]').value.trim() : '',
+        basis: typeof panel.querySelector('[data-memory-new-basis]')?.value === 'string' ? panel.querySelector('[data-memory-new-basis]').value.trim() : '',
+        related: splitNames(panel.querySelector('[data-memory-new-related]')?.value),
+        aliases: splitNames(panel.querySelector('[data-memory-new-aliases]')?.value),
+        weight: panel.querySelector('[data-memory-new-weight]')?.value === 'major' ? 'major' : 'minor',
+        tag: tier === 'big' ? tag : undefined,
+    }]);
+    if (result.rejected.some(item => item.reason === 'related_missing')) {
+        const relatedInput = panel.querySelector('[data-memory-new-related]');
+        if (relatedInput) relatedInput.placeholder = '关联不能空：它是日后按需召回的钥匙';
+    }
+    for (const selector of ['[data-memory-new-text]', '[data-memory-new-basis]', '[data-memory-new-related]', '[data-memory-new-aliases]', '[data-memory-new-quote]']) {
+        const input = panel.querySelector(selector);
+        if (input) input.value = '';
+    }
+    if (!result.rejected.length) closeAgentModal(panel);
+    return result;
+}
+
+function renderMemoryEntryList(container, entries, { done = false, conflicts = null } = {}) {
+    if (!container) return;
+    const list = Array.isArray(entries) ? entries : [];
+    if (!list.length) {
+        container.replaceChildren(makeElement('p', 'dai-turn-result', done ? '还没有了结的记忆。' : '这一层还没有记忆。'));
+        return;
+    }
+    const rows = list.map(entry => {
+        const row = makeElement('div', 'dai-world-event');
+        row.dataset.weight = entry.weight === 'major' ? 'major' : 'minor';
+        const tierLabel = agentMemoryRuntime.tierLabels[entry.tier] ?? entry.tier;
+        const tagLabel = entry.tag ? ` [${agentMemoryRuntime.tagLabels[entry.tag] ?? entry.tag}]` : '';
+        const clash = conflicts?.get(entry.id);
+        const head = makeElement('div', 'dai-world-event-head');
+        head.append(makeElement('b', '', `${clash ? '⚠ ' : ''}${entry.weight === 'major' ? '★' : '·'} ${entry.text}`));
+        head.append(makeElement('small', '', `${tierLabel}${tagLabel} · 第 ${entry.day} 天 · ${entry.id}${entry.recallCount ? ` · 想起过 ${entry.recallCount} 次` : ''}${entry.done && entry.resolvedDay ? ` · 第 ${entry.resolvedDay} 天了结` : ''}`));
+        row.append(head);
+        if (typeof entry.quote === 'string' && entry.quote.trim()) {
+            row.append(makeElement('small', 'dai-world-event-basis', `「${entry.quote.trim()}」`));
+        }
+        if (Array.isArray(entry.aliases) && entry.aliases.length) {
+            row.append(makeElement('small', 'dai-world-event-basis', `别名：${entry.aliases.join('、')}`));
+        }
+        if (Array.isArray(entry.related) && entry.related.length) {
+            row.append(makeElement('small', 'dai-world-event-basis', `关联：${entry.related.join('、')}`));
+        }
+        if (typeof entry.basis === 'string' && entry.basis.trim()) {
+            row.append(makeElement('small', 'dai-world-event-basis', `依据：${entry.basis.trim()}`));
+        }
+        if (typeof entry.note === 'string' && entry.note.trim()) {
+            row.append(makeElement('small', 'dai-world-event-basis', `备注：${entry.note.trim()}`));
+        }
+        if (clash) {
+            row.append(makeElement('small', 'dai-world-event-basis', `⚠ 与 ${clash.join('、')} 疑似重复/矛盾，请核对或了结旧的`));
+        }
+        const actions = makeElement('div', 'dai-world-event-actions');
+        if (entry.done !== true) {
+            if (entry.tier === 'small') {
+                const promote = makeElement('button', 'dai-secondary-button', '转大');
+                promote.type = 'button';
+                promote.dataset.memoryPromote = entry.id;
+                actions.append(promote);
+            }
+            const resolve = makeElement('button', 'dai-secondary-button', '了结');
+            resolve.type = 'button';
+            resolve.dataset.memoryResolve = entry.id;
+            actions.append(resolve);
+        } else {
+            const reopen = makeElement('button', 'dai-secondary-button', '重开');
+            reopen.type = 'button';
+            reopen.dataset.memoryReopen = entry.id;
+            actions.append(reopen);
+        }
+        const forget = makeElement('button', 'dai-secondary-button', '删除');
+        forget.type = 'button';
+        forget.dataset.memoryForget = entry.id;
+        actions.append(forget);
+        row.append(actions);
+        return row;
+    });
+    container.replaceChildren(...rows);
+}
+
+/** 记忆页整页刷新：总览、排序/按人过滤、大/小两层清单、矛盾提醒、已了结、指令流水。 */
+function refreshMemoryPage(panel) {
+    const target = panel ?? (typeof document !== 'undefined' ? document.getElementById(SETTINGS_PANEL_ID) : null);
+    if (!target || target.hidden) return;
+    const section = target.querySelector('[data-settings-section="memory"]');
+    if (!section || section.hidden) return;
+    const status = agentMemoryRuntime.status();
+    const snapshot = agentMemoryRuntime.snapshot();
+    const overview = section.querySelector('[data-memory-overview]');
+    if (overview) {
+        const labels = agentMemoryRuntime.tierLabels;
+        overview.textContent = [
+            `未了结 ${status.open}`,
+            ...Object.entries(labels).map(([key, label]) => `${label} ${status.byTier[key]?.open ?? 0}/${status.byTier[key]?.total ?? 0}`),
+        ].join(' · ');
+    }
+    // 排序与按人过滤都是页面本地状态（不进设置）：时间 = 新的在前；重要性 = 关键优先、想起过的优先。
+    const sortSelect = section.querySelector('[data-memory-sort]');
+    if (sortSelect && !sortSelect.onchange) sortSelect.onchange = () => refreshMemoryPage();
+    const sortMode = sortSelect?.value === 'weight' ? 'weight' : 'time';
+    const personSelect = section.querySelector('[data-memory-person]');
+    if (personSelect) {
+        if (!personSelect.onchange) personSelect.onchange = () => refreshMemoryPage();
+        const wanted = new Map();
+        for (const entry of snapshot.entries) {
+            for (const key of recallKeys(entry)) wanted.set(key, (wanted.get(key) ?? 0) + 1);
+        }
+        const current = personSelect.value;
+        const options = ['<option value="">全部</option>'];
+        for (const [key, count] of [...wanted.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'zh'))) {
+            options.push(`<option value="${key.replace(/"/g, '&quot;')}">${key}（${count}）</option>`);
+        }
+        personSelect.replaceChildren();
+        personSelect.innerHTML = options.join('');
+        if (current && wanted.has(current)) personSelect.value = current;
+    }
+    const person = typeof personSelect?.value === 'string' ? personSelect.value : '';
+    const matchPerson = entry => !person || recallKeys(entry).includes(person);
+    const sortEntries = list => {
+        const copy = [...list];
+        if (sortMode === 'weight') copy.sort((a, b) => (b.weight === 'major') - (a.weight === 'major') || (b.recallCount ?? 0) - (a.recallCount ?? 0) || b.day - a.day);
+        else copy.sort((a, b) => b.day - a.day || a.id.localeCompare(b.id, 'zh', { numeric: true }));
+        return copy;
+    };
+    const open = snapshot.entries.filter(entry => entry.done !== true && matchPerson(entry));
+    const conflicts = new Map();
+    for (const pair of findMemoryConflicts(snapshot.entries.filter(entry => entry.done !== true))) {
+        if (!conflicts.has(pair.a)) conflicts.set(pair.a, []);
+        if (!conflicts.has(pair.b)) conflicts.set(pair.b, []);
+        conflicts.get(pair.a).push(`${pair.b}（${Math.round(pair.similarity * 100)}%）`);
+        conflicts.get(pair.b).push(pair.a);
+    }
+    const conflictStrip = section.querySelector('[data-memory-conflicts]');
+    if (conflictStrip) {
+        const pairs = findMemoryConflicts(snapshot.entries.filter(entry => entry.done !== true));
+        conflictStrip.hidden = pairs.length === 0;
+        if (pairs.length) conflictStrip.textContent = `⚠ 疑似重复/矛盾 ${pairs.length} 对：${pairs.map(pair => `${pair.a}↔${pair.b}（${Math.round(pair.similarity * 100)}%）`).join('、')}——核对后了结或删除旧的`;
+    }
+    renderMemoryEntryList(section.querySelector('[data-memory-list-big]'), sortEntries(open.filter(entry => entry.tier === 'big')), { conflicts });
+    renderMemoryEntryList(section.querySelector('[data-memory-list-small]'), sortEntries(open.filter(entry => entry.tier === 'small')), { conflicts });
+    renderMemoryEntryList(section.querySelector('[data-memory-done]'), sortEntries(snapshot.entries.filter(entry => entry.done === true && matchPerson(entry))), { done: true });
+    const journal = section.querySelector('[data-memory-journal]');
+    if (journal) {
+        const entries = [...snapshot.log].reverse().slice(0, 8);
+        journal.replaceChildren(...(entries.length ? entries.map(entry => {
+            const item = makeElement('p', 'dai-turn-result');
+            item.append(makeElement('b', '', `${journalSourceLabel(entry.source)}：`), document.createTextNode(entry.summaries.join('；') || '（无变化）'));
+            return item;
+        }) : [makeElement('p', 'dai-turn-result', '还没有记忆指令。')]));
+    }
+}
+
 function renderWorldEventList(container, events, { emptyNote } = {}) {
     if (!container) return;
     const active = (Array.isArray(events) ? events : []).filter(event => event?.done !== true);
@@ -3870,7 +5151,8 @@ function renderWorldEventList(container, events, { emptyNote } = {}) {
         const head = makeElement('div', 'dai-world-event-head');
         head.append(makeElement('b', '', `${event.weight === 'major' ? '★' : '·'} ${event.text}`));
         const due = event.endDay !== null && event.endDay !== undefined ? ` · 剩 ${Math.max(1, event.endDay - today + 1)} 天` : '';
-        head.append(makeElement('small', '', `第 ${event.day} 天 · ${event.id}${due}`));
+        const where = typeof event.location === 'string' && event.location.trim() ? ` · ${event.location.trim()}` : '';
+        head.append(makeElement('small', '', `第 ${event.day} 天 · ${event.id}${where}${due}`));
         row.append(head);
         if (typeof event.basis === 'string' && event.basis.trim()) {
             row.append(makeElement('small', 'dai-world-event-basis', `依据：${event.basis.trim()}`));
@@ -3884,6 +5166,101 @@ function renderWorldEventList(container, events, { emptyNote } = {}) {
         pin.dataset.worldPin = event.id;
         pin.dataset.worldPinned = event.pinned ? 'true' : 'false';
         actions.append(resolve, pin);
+        row.append(actions);
+        return row;
+    });
+    container.replaceChildren(...rows);
+}
+
+/** 势力登记：同名更新态度/动向，否则新建。 */
+function worldSetFactionFromPanel(panel) {
+    const nameInput = panel.querySelector('[data-world-faction-name]');
+    const stanceInput = panel.querySelector('[data-world-faction-stance]');
+    const dynamicsInput = panel.querySelector('[data-world-faction-dynamics]');
+    const basisInput = panel.querySelector('[data-world-faction-basis]');
+    const name = typeof nameInput?.value === 'string' ? nameInput.value.trim() : '';
+    if (!name) {
+        if (nameInput) nameInput.placeholder = '先写势力名再登记';
+        return { status: 'noop' };
+    }
+    const result = worldApplyFromPanel(panel, [{ op: 'setFaction', name, stance: stanceInput?.value ?? 'neutral', dynamics: typeof dynamicsInput?.value === 'string' ? dynamicsInput.value.trim() : '', basis: typeof basisInput?.value === 'string' ? basisInput.value.trim() : '' }]);
+    for (const input of [nameInput, dynamicsInput, basisInput]) if (input) input.value = '';
+    if (result?.status !== 'rejected') closeAgentModal(panel);
+    return result;
+}
+
+/** 人物态度登记：同名更新态度，否则新建。 */
+function worldSetPersonFromPanel(panel) {
+    const nameInput = panel.querySelector('[data-world-person-name]');
+    const attitudeInput = panel.querySelector('[data-world-person-attitude]');
+    const basisInput = panel.querySelector('[data-world-person-basis]');
+    const name = typeof nameInput?.value === 'string' ? nameInput.value.trim() : '';
+    const attitude = typeof attitudeInput?.value === 'string' ? attitudeInput.value.trim() : '';
+    if (!name || !attitude) {
+        if (nameInput && !name) nameInput.placeholder = '先写人物名再登记';
+        if (attitudeInput && !attitude) attitudeInput.placeholder = '先写态度再登记';
+        return { status: 'noop' };
+    }
+    const result = worldApplyFromPanel(panel, [{ op: 'setPerson', name, attitude, basis: typeof basisInput?.value === 'string' ? basisInput.value.trim() : '' }]);
+    for (const input of [nameInput, attitudeInput, basisInput]) if (input) input.value = '';
+    if (result?.status !== 'rejected') closeAgentModal(panel);
+    return result;
+}
+
+/** 势力列表：敌对在前、同盟次之、其余按更新时间。 */
+function renderWorldFactionList(container, factions) {
+    if (!container) return;
+    const list = Array.isArray(factions) ? factions : [];
+    if (!list.length) {
+        container.replaceChildren(makeElement('p', 'dai-turn-result', '还没有登记势力。剧情里与谁结怨、谁示好，模型会在这里记一笔，也可以自己登记。'));
+        return;
+    }
+    const stanceRank = { hostile: 0, wary: 1, allied: 2, friendly: 3, neutral: 4 };
+    const labels = { hostile: '敌对', wary: '警惕', neutral: '中立', friendly: '友好', allied: '同盟' };
+    const rows = [...list].sort((a, b) => (stanceRank[a.stance] ?? 2) - (stanceRank[b.stance] ?? 2) || (b.updatedDay ?? 0) - (a.updatedDay ?? 0)).map(faction => {
+        const row = makeElement('div', 'dai-world-faction');
+        row.dataset.stance = faction.stance ?? 'neutral';
+        const head = makeElement('div', 'dai-world-event-head');
+        head.append(makeElement('b', '', faction.name));
+        head.append(makeElement('span', 'dai-world-stance', labels[faction.stance] ?? '中立'));
+        row.append(head);
+        if (typeof faction.dynamics === 'string' && faction.dynamics.trim()) row.append(makeElement('p', 'dai-world-task-detail', faction.dynamics.trim()));
+        const notes = [];
+        if (typeof faction.basis === 'string' && faction.basis.trim()) notes.push(`依据：${faction.basis.trim()}`);
+        if (faction.updatedDay) notes.push(`更新于第 ${faction.updatedDay} 天`);
+        if (notes.length) row.append(makeElement('small', 'dai-world-event-basis', notes.join(' · ')));
+        const actions = makeElement('div', 'dai-world-event-actions');
+        const del = makeElement('button', 'dai-secondary-button', '删除');
+        del.type = 'button';
+        del.dataset.worldFactionDelete = faction.name;
+        actions.append(del);
+        row.append(actions);
+        return row;
+    });
+    container.replaceChildren(...rows);
+}
+
+/** 人物列表：最近更新的在前。 */
+function renderWorldPeopleList(container, people) {
+    if (!container) return;
+    const list = Array.isArray(people) ? people : [];
+    if (!list.length) {
+        container.replaceChildren(makeElement('p', 'dai-turn-result', '还没有登记人物。剧情里谁对你掏心掏肺、谁恨你入骨，都会记在这里。'));
+        return;
+    }
+    const rows = [...list].sort((a, b) => (b.updatedDay ?? 0) - (a.updatedDay ?? 0)).map(person => {
+        const row = makeElement('div', 'dai-world-person');
+        const head = makeElement('div', 'dai-world-event-head');
+        head.append(makeElement('b', '', person.name));
+        head.append(makeElement('small', '', person.updatedDay ? `更新于第 ${person.updatedDay} 天` : ''));
+        row.append(head);
+        row.append(makeElement('p', 'dai-world-task-detail', person.attitude || '态度未明'));
+        if (typeof person.basis === 'string' && person.basis.trim()) row.append(makeElement('small', 'dai-world-event-basis', `依据：${person.basis.trim()}`));
+        const actions = makeElement('div', 'dai-world-event-actions');
+        const del = makeElement('button', 'dai-secondary-button', '删除');
+        del.type = 'button';
+        del.dataset.worldPersonDelete = person.name;
+        actions.append(del);
         row.append(actions);
         return row;
     });
@@ -3946,22 +5323,29 @@ function refreshWorldPage(panel) {
     if (!section || section.hidden) return;
     const status = agentWorldRuntime.status();
     const snapshot = agentWorldRuntime.snapshot();
-    const time = section.querySelector('[data-world-time]');
-    if (time) {
-        const parts = [];
-        if (status.clock.label) parts.push(status.clock.label);
-        for (const [field, label] of [['era', '时期'], ['location', '所在地'], ['weather', '天气'], ['reputation', '名声'], ['wanted', '通缉度']]) {
-            if (status.info[field]) parts.push(`${label}：${status.info[field]}`);
-        }
-        time.textContent = `${agentWorldRuntime.formatClock()}${parts.length ? ` · ${parts.join(' · ')}` : ''}`;
-        for (const input of section.querySelectorAll('[data-world-info]')) {
-            const field = input.dataset.worldInfo;
-            input.value = typeof status.info[field] === 'string' ? status.info[field] : '';
-        }
+    const tensionDisplay = section.querySelector('[data-world-tension-display]');
+    if (tensionDisplay) tensionDisplay.textContent = { calm: '平静', rising: '升温（大事酝酿）', storm: '风波（危机频发）' }[snapshot.tension ?? 'calm'] ?? '平静';
+    // —— 磁贴：天数/时期/所在地/天气/名声/通缉度各占一块，互不挤在一起 ——
+    for (const tile of section.querySelectorAll('[data-world-tile]')) {
+        const field = tile.dataset.worldTile;
+        tile.textContent = field === 'day'
+            ? `第 ${status.clock.day ?? '?'} 天`
+            : (typeof status.info[field] === 'string' && status.info[field] ? status.info[field] : '—');
+        tile.classList.toggle('is-empty', field !== 'day' && !(typeof status.info[field] === 'string' && status.info[field]));
+    }
+    const clockSub = section.querySelector('[data-world-tile-sub="clock"]');
+    if (clockSub) clockSub.textContent = `${agentWorldRuntime.formatClock()}（${seasonOf(agentWorldRuntime.status().clock.day)}季）`;
+    // 刷新后编辑框收起，避免旧输入留在磁贴里；编辑按钮再点开即可。
+    for (const editor of section.querySelectorAll('[data-world-tile-editor]')) editor.hidden = true;
+    for (const input of section.querySelectorAll('[data-world-info]')) {
+        const field = input.dataset.worldInfo;
+        input.value = typeof status.info[field] === 'string' ? status.info[field] : '';
     }
     renderWorldEventList(section.querySelector('[data-world-events-near]'), snapshot.nearEvents);
     renderWorldEventList(section.querySelector('[data-world-events-world]'), snapshot.worldEvents, { emptyNote: '暂无进行中的世界大事。' });
     renderWorldTaskList(section.querySelector('[data-world-tasks]'), snapshot.tasks);
+    renderWorldFactionList(section.querySelector('[data-world-factions]'), snapshot.factions);
+    renderWorldPeopleList(section.querySelector('[data-world-people]'), snapshot.people);
     const journal = section.querySelector('[data-world-journal]');
     if (journal) {
         const entries = [...snapshot.log].reverse().slice(0, 8);
@@ -4005,10 +5389,11 @@ function impactFormField(form, name) {
     return form?.querySelector?.(`[data-impact-field="${name}"]`) ?? null;
 }
 
-/** 打开手动记账表单：不传 record 就是新增，传了就是编辑这一条。 */
+/** 打开手动记账表单（弹窗）：不传 record 就是新增，传了就是编辑这一条。 */
 function openImpactForm(panel, record = null) {
     const form = panel?.querySelector?.('[data-impact-form]');
     if (!form) return { status: 'missing' };
+    const dock = form.closest('[data-modal-dock]');
     form.hidden = false;
     form.dataset.ref = record?.id ?? '';
     const today = worldDay();
@@ -4034,7 +5419,7 @@ function openImpactForm(panel, record = null) {
     if (status) status.textContent = record
         ? '改完点保存；要推动或拖延它，就在“提前/延后几天”里填数字。'
         : '手动记的条目会立刻进账本，也会进下一轮正文。';
-    form.scrollIntoView?.({ block: 'nearest' });
+    openAgentModal(panel, record ? `编辑世界影响 #${record.id}` : '记一条世界影响', dock ?? form, { wide: true });
     impactFormField(form, 'title')?.focus?.();
     return { status: 'open' };
 }
@@ -4045,6 +5430,7 @@ function closeImpactForm(panel) {
     form.hidden = true;
     form.dataset.ref = '';
     form.dataset.originalRipen = '';
+    closeAgentModal(panel);
     return { status: 'closed' };
 }
 
@@ -4188,6 +5574,16 @@ function renderImpactLibrary(panel) {
         return true;
     });
     const summary = target.querySelector('[data-impact-summary]');
+    // 页面顶部状态行：账本规模 + 上一轮注入走了哪条路、挑了几条，功能一眼可见。
+    const statsBox = target?.querySelector?.('[data-impact-stats]');
+    if (statsBox) {
+        const via = lastImpactInjection
+            ? (lastImpactInjection.status === 'injected'
+                ? `上一轮已注入 ${Array.isArray(lastInjectedIds) ? lastInjectedIds.length : 0} 条（${lastImpactInjection.via === 'llm' ? '模型挑选' : '按分量直取'}）`
+                : lastImpactInjection.status === 'skipped' ? '上一轮模型判断这一幕用不上旧账，未注入' : '上一轮没有可注入的影响')
+            : '本轮还没挑过注入；生成前会自动挑。';
+        statsBox.textContent = via;
+    }
     if (summary) {
         const extra = [`已了结 ${status.closed}`];
         if (status.reverted) extra.push(`修复 ${status.reverted}`);
@@ -4304,9 +5700,15 @@ function renderFactsStatus(panel) {
     const last = channel.last;
     if (!last) push('上次注入', '本轮还没有注入过');
     else if (last.status === 'injected') {
-        const ids = Array.isArray(last.usedIds) && last.usedIds.length ? last.usedIds.join('、') : '无编号';
+        // 编号换成“编号 类别·标题”：玩家不用再去索引里查这个编号是哪一条。
+        const used = Array.isArray(last.usedIds) ? last.usedIds : [];
+        const named = used.map(uid => {
+            const entry = agentFactsIndex.get(uid);
+            return entry ? `#${uid}《${entry.name}》` : `#${uid}`;
+        });
+        const ids = named.length ? named.join('；') : '无编号';
         const time = Number.isFinite(last.at) ? new Date(last.at).toLocaleTimeString('zh-CN', { hour12: false }) : '-';
-        push('上次注入', `已注入 ${ids} · ${last.chars} 字${last.truncated ? '（已截断）' : ''} · ${time}${last.cleared ? ' · 已清理' : ' · 仍在提示词里'}`);
+        push('上次注入', `已注入 ${used.length} 条：${ids} · ${last.chars} 字${last.truncated ? '（已截断）' : ''} · ${time}${last.cleared ? ' · 已清理' : ' · 仍在提示词里'}`);
     } else if (last.status === 'failed') push('上次注入', `失败：${last.reason ?? '未知原因'}`, 'warn');
     else push('上次注入', '没有可注入的条目（本轮未命中）');
 

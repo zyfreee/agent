@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>悬浮球冒烟页</title>
+<style>
+    body { margin: 0; font: 16px/1.6 system-ui, sans-serif; background: #20242c; color: #e8eaf0; }
+    .page { max-width: 42rem; margin: 0 auto; padding: 2.5rem 1.5rem; }
+    h1 { font-size: 1.2rem; }
+    p { color: #aeb4c0; }
+</style>
+</head>
+<body>
+<div class="page">
+    <h1>悬浮球冒烟页</h1>
+    <p>页面加载后会自动激活 Agent 扩展（宿主能力是桩）。右侧应出现小球：点它拉成长条，再点图标看只读信息窗。</p>
+    <p>下面这行是给信息窗灌的演示数据：世界第 5 天、纳戒有行囊、人物簿有两个人。</p>
+</div>
+<script type="module">
+    // 最小宿主桩：没有 eventSource、没有 extensionSettings，扩展会走“未连接宿主”的默认路径。
+    globalThis.SillyTavern = { getContext: () => ({ version: '1.18.0' }) };
+
+    const mod = await import('../agent/doupo-agent-ui/index.js');
+    mod.onActivate();
+
+    // 灌一点演示数据，让世界/纳戒/人物簿信息窗有东西可看（不碰宿主存档）。
+    const agent = mod.doupoAgent;
+    agent.worldRuntime.restore({
+        clock: { day: 5, minute: 510, label: '' },
+        info: { era: '斗气大陆', location: '乌坦城', weather: '晴', reputation: '', wanted: '魔炎谷通缉' },
+        nearEvents: [{ id: 'e1', text: '坊市集市开张', day: 4, weight: 'minor', basis: '酒馆听说', endDay: 6 }],
+        worldEvents: [{ id: 'e2', text: '迦南学院招生队路过', day: 3, weight: 'major', endDay: 9, pinned: true }],
+        tasks: [
+            { id: 't1', title: '去坊市买药材', status: 'active', day: 4, endDay: 8, detail: '凑齐三阶魔核的材料', basis: '药老托付' },
+            { id: 't2', title: '给萧薰儿送行', status: 'done', day: 1, doneDay: 3 },
+        ],
+    });
+    agent.selfRuntime.restore({
+        profile: { name: '萧炎', gender: '男', age: '15' },
+        realm: { realm: '斗者', stage: '三星' },
+        gold: 1200,
+        titles: ['萧家废物'],
+        items: [
+            { id: 'b1', name: '玄重尺', count: 1, category: '重尺', equipped: true, grade: '凡品' },
+            { id: 'b2', name: '回气丹', count: 3, category: '丹药' },
+        ],
+        crafts: [{ id: 'c1', craft: '炼药', name: '回气丹', count: 2, startDay: 5, endDay: 6, status: 'open' }],
+        goals: [{ id: 'g1', text: '三年之约上胜过纳兰嫣然', priority: '主线' }],
+    });
+    agent.npcLedger.load({
+        records: [
+            { name: '萧薰儿', favor: 45, presence: '在场', importance: '重要', identity: '萧家小姐' },
+            { name: '药老', favor: 88, presence: '在场', importance: '重要', identity: '寄居戒指的前辈' },
+            { name: '萧战', favor: 0, presence: '不在场', importance: '不重要', identity: '萧家家长' },
+        ],
+    });
+
+    document.getElementById('orb-ready')?.remove();
+    const flag = document.createElement('p');
+    flag.id = 'orb-ready';
+    flag.textContent = '扩展已激活，演示数据已灌入。';
+    document.querySelector('.page').append(flag);
+</script>
+</body>
+</html>

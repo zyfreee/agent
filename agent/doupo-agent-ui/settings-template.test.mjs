@@ -15,10 +15,11 @@ assert.match(entry, /renderExtensionTemplateAsync\('third-party\/agent', 'settin
 assert.match(entry, /new URL\('\.\/settings\.html', import\.meta\.url\)/);
 assert.match(entry, /#extensions_settings2/);
 assert.match(entry, /data-settings-page="overview"/);
-for (const page of ['hub', 'llm', 'facts', 'action', 'world', 'npc', 'npcledger', 'self', 'impact', 'sandbox', 'runtime']) {
+for (const page of ['hub', 'facts', 'action', 'world', 'npc', 'npcledger', 'exp', 'self', 'memory', 'impact', 'sandbox', 'runtime']) {
     assert.match(entry, new RegExp(`data-settings-page="${page}"`), `缺少独立页面：${page}`);
     assert.match(entry, new RegExp(`data-settings-section="${page}"`), `缺少页面内容：${page}`);
 }
+assert.doesNotMatch(entry, /data-settings-page="llm"/, '「模型与连接」页已并入「模型设置」，不该再出现');
 for (const setting of ['llm.provider', 'facts.maxEntries', 'action.requireConfirmation', 'world.tickMinutes', 'npc.maxCandidates', 'impact.maxChainDepth', 'impact.decideTemperature', 'impact.decideMaxTokens', 'impact.decideTopP', 'impact.injectTemperature', 'impact.injectMaxTokens', 'impact.injectPresencePenalty', 'enableSandboxMode', 'sandbox.inertia', 'sandbox.maxActiveGoals', 'budget.maxModules', 'status.showHistory', 'setting.progress', 'injection.depth', 'ui.legacyTurn', 'prompt.select']) {
     assert.match(entry, new RegExp(`data-setting="${setting.replace('.', '\\.')}`), `缺少设置绑定：${setting}`);
 }
@@ -44,16 +45,23 @@ for (const path of new Set(boundPaths)) {
     }
 }
 assert.ok(boundPaths.includes('sandbox.inertia'));
-// 「模型与提示词」集中页必须真的收齐每一路独立模型调用：页面文案承诺“每一次独立调用都在这一页”，
-// 所以这些功能模型的设置键至少要在功能页和集中页各出现一次。
+// 「模型设置」集中页必须真的收齐每一路独立模型调用的接口与参数，且功能页不再重复：
+// 同一份 API 设置只允许出现一次（就在模型设置页），提示词则只留在各功能页。
 const hubStart = entry.indexOf('data-settings-section="hub"');
 const hubEnd = entry.indexOf('data-settings-section="facts"');
-assert.ok(hubStart >= 0 && hubEnd > hubStart, '找不到「模型与提示词」集中页');
+assert.ok(hubStart >= 0 && hubEnd > hubStart, '找不到「模型设置」集中页');
 const hubMarkup = entry.slice(hubStart, hubEnd);
-for (const setting of ['settle.mode', 'world.decideMode', 'npc.ledgerMode', 'npc.coldMode', 'npc.coldPrompt', 'self.decideMode', 'impact.decideMode', 'prompt.select']) {
-    assert.match(hubMarkup, new RegExp(`data-setting="${setting.replace('.', '\\.')}"`), `集中页缺少设置：${setting}`);
-    assert.ok(boundPaths.filter(path => path === setting).length >= 2, `设置只在功能页出现、没进集中页：${setting}`);
+for (const setting of ['llm.mode', 'setting.mode', 'settle.mode', 'world.decideMode', 'npc.ledgerMode', 'npc.coldMode', 'self.decideMode', 'memory.decideMode', 'impact.decideMode', 'impact.injectMode']) {
+    assert.match(hubMarkup, new RegExp(`data-setting="${setting.replace('.', '\\.')}"`), `模型设置页缺少：${setting}`);
+    assert.equal(boundPaths.filter(path => path === setting).length, 1, `接口设置应只在模型设置页出现一次：${setting}`);
 }
+for (const prompt of ['world.decidePrompt', 'npc.ledgerPrompt', 'npc.coldPrompt', 'self.decidePrompt', 'memory.decidePrompt', 'impact.prompt', 'impact.injectPrompt']) {
+    assert.doesNotMatch(hubMarkup, new RegExp(`data-setting="${prompt.replace('.', '\\.')}"`), `提示词不该在模型设置页：${prompt}`);
+    assert.ok(boundPaths.includes(prompt), `功能页缺少提示词绑定：${prompt}`);
+}
+assert.match(entry, /data-agent-modal/, '页面应有统一弹窗容器');
+assert.match(entry, /data-modal-dock=/, '添加表单应停靠进弹窗');
+assert.match(entry, /data-exp-list/, '应有独立的人物经历页');
 // 沙盒开关必须真的写到正式模式记录，否则只是留在设置里的开关。
 assert.match(entry, /data-sandbox-status/);
 assert.match(entry, /function syncSandboxModeFromSettings/);

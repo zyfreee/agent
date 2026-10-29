@@ -1,6 +1,6 @@
 /* 无浏览器自检：喂一段首楼文本，确认正则真的能出卡面、换掉标记，
  * 并检查页面里的选择器都是 data-*（消息楼里 class 会被加 custom- 前缀）。
- * 跑：node cover/test.mjs
+ * 跑：node cover/自检卡面.mjs
  */
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -16,10 +16,10 @@ function check(name, ok, detail = '') {
   if (!ok) failures.push(name);
 }
 
-const regexes = JSON.parse(await read('regex.json'));
-const page = await read('page.html');
-const script = await read('script.js');
-const firstMes = await read('first-mes.txt');
+const regexes = JSON.parse(await read('卡面正则.json'));
+const page = await read('卡面页面源码.html');
+const script = await read('卡面脚本源码.js');
+const firstMes = await read('卡面首楼.txt');
 
 // 1) 显示正则：标记 → 卡面
 const display = regexes.find(item => item.id === 'dpc-cover-mount');
@@ -72,11 +72,13 @@ check('静态卡面的必需挂载点齐全', required.every(attr => page.includ
 // 5) 脚本自带可扩展清单 + 与纳戒字段对齐
 const profileFields = /const PROFILE_FIELDS = \[([^\]]*)\]/.exec(script);
 const fields = profileFields ? profileFields[1].split(',').map(item => item.trim().replace(/'/g, '')) : [];
-check('身份字段与纳戒八项一致', fields.join(',') === 'name,gender,age,race,origin,affiliation,talent,appearance', fields.join(','));
+check('身份字段与纳戒九项一致', fields.join(',') === 'name,gender,age,race,origin,affiliation,attribute,talent,appearance', fields.join(','));
 
 const openingFields = /const OPENING_FIELDS = \[([^\]]*)\]/.exec(script);
 const opens = openingFields ? openingFields[1].split(',').map(item => item.trim().replace(/'/g, '')) : [];
-check('开局字段与纳戒八项不重叠', opens.length === 4 && opens.every(field => !fields.includes(field)), opens.join(','));
+check('开局字段与纳戒九项不重叠', opens.length === 4 && opens.every(field => !fields.includes(field)), opens.join(','));
+check('斗气属性 chips 与自定义框都在', /data-group="attribute"/.test(script) && /data-attribute-custom/.test(script) && /const ATTRIBUTES = \[/.test(script));
+check('斗气属性进预览与开场消息', /斗气属性：\$\{i\.attribute/.test(script));
 check('开局设定是独立一页而不是塞进档案', /STEP_TITLES = \['身份', '来历', '修为与处境', '开局', '天赋与外貌', '确认'\]/.test(script));
 
 // 7) 草稿迁移：旧版本记录不能因为加字段就整份丢掉
@@ -86,7 +88,7 @@ check('人物簿“玩家此刻”只喂它认的四项', /name: String\(record\
 
 // 6) 模板注入：用户输入先转义再进 innerHTML
 check('向导模板对用户输入做了转义', /function esc\(/.test(script) && /esc\(identity\./.test(script));
-check('提交只走斜杠接口或输入框两条路', /setinput/.test(script) && /#send_textarea/.test(script));
+check('提交只走斜杠接口或输入框两条路', /`\/send /.test(script) && /'\/send /.test(script) && /#send_textarea/.test(script));
 check('没有直接调用裸生成', !/\bgenerate\s*\(/.test(script));
 
 console.log(checks.join('\n'));

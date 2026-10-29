@@ -43,7 +43,7 @@
 
 1. **决定调用**（`world/world-decide.js`）：默认提示词 `WORLD_DECIDE_PROMPT` 写死事件取材与输出契约；设置页「模型决定」卡的**决定提示词**框打开就显示当前生效的完整正文（留空时自动铺入内置默认，所见即模型所收），直接改、清空则恢复跟随默认，`world.decidePrompt` 存改写版。世界书侧输入按本轮聊天去 facts 索引匹配条目（`uid|类别|标题|摘要`，上限可设），不铺全文。模型与温度可在设置里单独覆盖（独立接口模式生效；酒馆连接沿用当前模型）。`world.decideAuto` 关掉后退回"只认正文指令块"的降级模式（指南随现状注入，回复末尾 ```world 代码块照旧解析）。
 2. **脚本执行**（`world/world-runtime.js`）：越界数值、未知操作、超长文本只拒绝不炸；同楼重 roll 先撤销上一版指令（含被它到期了结的事件）再落新账。
-3. **操作集**：`advance`（天/分钟）、`setClock`、`addEvent`（scope near|world、basis 依据必写、weight minor|major|rumor、days 有效天数≤90）、`resolveEvent`、`pinEvent`、`setInfo`（weather/location/era/reputation 名声/wanted 通缉度）、`addTask`（title/detail/basis/days 时限）、`completeTask`、`deleteTask`、`updateTask`。任务规则：玩家承诺或接下的事、人物托付、剧情给出的明确目标才立任务；任务栏会注入给正文模型，完成后 completeTask、作废 deleteTask、进展 updateTask。
+3. **操作集**：`advance`（天/分钟）、`setClock`、`addEvent`（scope near|world、basis 依据必写、weight minor|major|rumor、days 有效天数≤90）、`resolveEvent`、`pinEvent`、`setInfo`（weather/location/era/reputation 名声/wanted 通缉度）、`addTask`（title/detail/basis/days 时限）、`completeTask`、`deleteTask`、`updateTask`、`setFaction`（势力名/stance 敌对|警惕|中立|友好|同盟/动向/依据，按名字 upsert）、`deleteFaction`、`setPerson`（人物名/态度/依据）、`deletePerson`、`setTension`（世界氛围 calm 平静|rising 升温|storm 风波）。事件可带 `location`（事发地点）；决定规则要求事件符合所在地特征（魔兽山脉是兽袭与药草，帝都是权贵与阴谋），氛围决定每轮投放事件的频率与烈度。任务规则：玩家承诺或接下的事、人物托付、剧情给出的明确目标才立任务；任务栏会注入给正文模型，完成后 completeTask、作废 deleteTask、进展 updateTask。势力与人物只在剧情真的接触或关系变化时更新，不照世界书预登记。季节为推导值：一年 360 天四季轮转，注入的时钟行与面板都显示季节，环境描写要跟季节对上；固定大会/仪式用 addEvent 带未来 day 登记成预定事件（注入标「预定：第X天」）；advance 一次跨 7 天以上（闭关、赶路）时，决定模型必须补 1-3 条跳跃期间的动向事件，出关时世界不是原地等你。`advance`（天/分钟）、`setClock`、`addEvent`（scope near|world、basis 依据必写、weight minor|major|rumor、days 有效天数≤90）、`resolveEvent`、`pinEvent`、`setInfo`（weather/location/era/reputation 名声/wanted 通缉度）、`addTask`（title/detail/basis/days 时限）、`completeTask`、`deleteTask`、`updateTask`。任务规则：玩家承诺或接下的事、人物托付、剧情给出的明确目标才立任务；任务栏会注入给正文模型，完成后 completeTask、作废 deleteTask、进展 updateTask。
 4. **事件取材规则**（提示词里写死，可改写）：事件从聊天记录里有依据地长出来，题材不拘（市井琐事、势力动作、传闻），basis 必须写清从哪来；没有依据不记，不把世界书里的原著桥段照搬成事件。**rumor=传闻**：未证实消息，正文不得当事实写，查证后 resolveEvent 了结并另记真相或戳穿。**机遇与危机**（拍卖会、药草成熟、仇家寻上门、势力清洗）属于世界主动投放的 major 事件：偶尔来一件、必须有依据。**名声/通缉度**只在剧情真有对应行为时更新，注入的现状行会显示。
 5. **到期清扫**：时限事件推进过线自动了结并留流水；注入列表显示"剩 N 天"。
 6. **持久化**：台账整体存 `chatMetadata.doupo_agent_world`，随聊天保存；切聊天自动恢复。
@@ -52,15 +52,25 @@
 上限保护：单批最多 12 条操作（解析截断 12、运行时执行上限 12，已对齐）、事件单栏最多 60 条（先清已了结、再清未置顶最老的，置顶永不清理）、事件文本 300 字、信息字段 80 字、单次推进最多 365 天；同栏同文的进行中事件不重记（`duplicate_text`）。
 
 
+## 悬浮球（`host/orb-hud.js`）
+
+屏幕右侧挂一颗小球；点一下，球竖直拉伸成一根胶囊长条（顶上和底部都是半圆），条上从上到下排八个图标：总控 ⌂、世界运转 ◌、纳戒 ◉、人物簿 ☰、冷藏推进 ❄、世界影响 ⌁、原著资料 ▤、沙盒模式 ◈。点图标弹出对应功能的**只读信息窗**——世界运转只有时钟/时期/所在地/天气/名声/通缉度与双栏事件、任务；纳戒只有身份/境界/金币/行囊/炼制/目标；人物簿只有档案计数与人物一览（好感刻度照搬）；其余各窗同理。没有按钮、没有输入框，改状态仍走设置面板。
+
+交互：再点同一个图标关信息窗（长条保留）；点球或按 Esc 或点页面其他地方收起整条；换图标直接换窗。信息窗在回合状态事件到达时自动刷新。设置页「总控」的**显示悬浮球**开关（`showOrb`，默认开）控制显隐；配色跟随界面颜色三主题。
+
+分工：`host/orb-hud.js` 是纯逻辑（图标清单 `ORB_ITEMS`、展开/收起状态机 `createOrbState`、八个信息窗的数据投影 `buildOrbPanels`），全部输入可为 undefined、不碰 DOM；挂载、动画与事件接线在 `index.js`（`mountOrbHud`/`syncOrbHud`/`collectOrbData`），样式在 `host/style.css` 的「悬浮球」段。哪路运行时没就绪，对应的窗就显示「暂无」，不会报错。`dev/orb-smoke.html` 是离线冒烟页：静态服务器打开后自动激活扩展并灌演示数据。
+
+
 ## 目录
 
 - `core/`：协调器、回合管线、六阶段实现、编排器、状态库、提交恢复、质量门、数据合同、审计与账本。
 - `world/`：世界事件系统——台账运行时（时钟/双栏事件/指令校验）、指令解析与注入文本、随聊天的存取。
+- `memory/`：主角记忆——小记忆/大记忆两层（按需召回，永不过期）的台账运行时、召回注入、指令解析、决定提示词、随聊天的存取。
 - `self/`：纳戒——主角自身状态与随身之物的运行时（身份/境界/功法/斗技/行囊/制作台/目标）、指令解析与注入文本、决定提示词、随聊天的存取。
 - `narrative/`：事实库、正文核验、历史事件适配与恢复。
 - `request/`：请求分类、路由、行动结算、世界推进。
 - `npc/`：NPC 计划、决定守卫、冲突协调与提交门禁；`npc-ledger.js` 人物簿（档案与好感台账）、`npc-recorder.js` 生成后的记录员提示词与补丁解析、`npc-cold-runtime.js` 冷藏选择/日期游标/预览台、`npc-cold-recorder.js` 冷藏推进提示词。
-- `host/`：宿主能力预检、设置与存档、模型客户端、消息投递、状态持久化、控制台视图与样式。
+- `host/`：宿主能力预检、设置与存档、模型客户端、消息投递、状态持久化、控制台视图与样式、数据库桥接（纳戒/世界台账 ↔ 龙血玄黄·数据库）、悬浮球纯逻辑（`orb-hud.js`）。
 - `index.js`：浏览器入口；`run-tests.mjs`：递归运行全部模块测试；`demo-turn.mjs`：离线跑完整一轮。
 
 ## 人物簿（`npc/npc-ledger.js`）
@@ -86,6 +96,38 @@
 5. **持久化**：整份纳戒存 `chatMetadata.doupo_agent_self`，随聊天保存，切聊天自动恢复。
 6. **面板**：设置页「纳戒」按子页签分六页——基本信息（身份字段逐格手改、境界突破、金币、称号、流水）、功法、斗技、行囊（装备/卸下、改数量）、制作台（配方 + 开工/成丹/炸炉）、目标（立目标/达成/移除）。手动操作与模型决定走同一套校验，改完立即记进流水。
 7. **所有权边界（防双写）**：世界时钟/事件/名声通缉归「世界运转」，NPC 档案与好感归「人物簿」，纳戒只记主角自己；决定提示词里同样写明不越界。
+
+## 数据库桥接（`host/db-bridge.js` + `host/db-tables.js`）
+
+可选把纳戒与世界台账镜像到**「龙血玄黄·数据库」**（酒馆助手脚本，`window.AutoCardUpdaterAPI`）的表格里：**表 = 账本，扩展面板 = 前端**。数据库脚本没装或在设置里关掉（`enableDbBridge`，默认开）时全部调用静默跳过，照旧走聊天存档，零回归。
+
+- **表结构**（`db-tables.js`，13 张，uid 固定）：纳戒 8 张（主角档案单行表含境界/金币/剧情日、称号、功法、斗技、行囊、配方、炼制台、目标）+ 世界 3 张（现状单行表、事件、任务）+ 记忆 2 张（小记忆、大记忆）。每张表的 `initNode/insertNode/updateNode/deleteNode` 全是「禁止操作。」，`updateConfig.updateFrequency=0` 让它们退出数据库自己的 AI 填表调度——数据库 AI 既不会被拉着跑、跑了也写不进，唯一写者是本扩展，无双写。
+- **模板自愈**：换聊天/启动时读当前聊天模板，缺桥接表就用 `importTemplateFromData` 以 `dataMode:'merge'` 补进当前聊天（每个聊天至多一次）；外来表一律不动（旧语义模板带 0=沿用UI 时不置新语义标记，避免误禁外来表的自动更新）。
+- **模板文件**：`agent/斗破Agent数据库桥接表.json` 由 `tools/build-db-template.mjs` 从 `db-tables.js` 生成（13 张表，含 mate 结构、「禁止操作。」节点与 updateConfig，写前结构自检）。可以在数据库脚本的「导入模板」里手动导入这份文件先看表（导入全局预设后切换，或聊天作用域导入）；不导也行——扩展每个聊天会自动补。改表流程：改 `db-tables.js` → `node tools/build-db-template.mjs` 重新生成。
+- **镜像**（写）：`persistSelf/persistWorld` 在存聊天档案后顺手镜像——先 `exportTableAsJson` 读最新表，reconcile 出最小差异（删除按原索引从大到小 → 逐行 updateRow → 追加 insertRow），桥接表按「编号」对行，编号为空的手工行不删不碰。
+- **收养**（读）：换聊天恢复后从表里拉一次，表里有账就**以表为准**盖回 runtime（本地操作流水保留）；表为空不动。`doupoAgent.dbBridgeAdopt()` 可手动重拉。
+- **外部手改回拉**：注册 `registerTableUpdateCallback`，用户在数据库可视化器里改单元格 → 去抖 500ms → 表与账不一致就按表收养并刷新面板；扩展自己的写入用时间窗屏蔽防回环。
+- **冷聊天兜底**：CRUD 写入需要数据库在当前聊天已有楼层锚点；全被拒时自动改走 `importTableAsJson` 全量导入（锚定最新 AI 楼层），仍失败则记入桥状态、数据留在聊天存档不丢。
+- **状态查看**：设置页「纳戒」卡底部的「数据库桥接」行（已连接/未检测到脚本/异常+原因），或 `doupoAgent.dbBridgeStatus()`。
+
+注意：桥接表一旦建立，请勿在数据库脚本里改这 13 张表的表头或 DDL——列名与 `db-tables.js` 里的编解码一一对应（有单测锁定）；改列要走代码。
+
+## 主角记忆（`memory/`）
+
+主角视角的记忆总账，与各账本所有权互斥（目标约定归纳戒、任务归世界、事件归世界台账、NPC 档案好感归人物簿、原著设定归事实库——记忆一律不碰，决定提示词里写死了这条边界）。**记忆是资产：永久保存、按需召回，脚本从不过期任何记忆**，了结/删除只由书记官或玩家主动做。分两层，按分量切而不是按寿命切：
+
+- **小记忆**（`small`）：轻量记录的近事杂事，不必重要才记，保持主角"记得这几天发生过什么"；
+- **大记忆**（`big`）：值得一直记住的事（恩怨/秘密/伏笔/大事），召回优先级更高；`tag` 是可选标签（恩怨/情报/伏笔/大事记），只便于查看；
+- **转大**（`promote`）：小记忆分量够了转成大记忆。
+- **召回钥匙**：`related`（1-4 个人名/地名/物名）必填——没有钥匙的记忆永远召不回来，运行时直接拒绝。
+
+1. **决定调用**（`memory/memory-decide.js`）：与世界/纳戒决定同构——生成结束后（排在世界、影响、纳戒之后，吃得到刚落的新账）读**最近聊天 + 相关世界书条目 + 本场召回的记忆**，输出 `{"note":"…","ops":[…]}(≤12 条)` 由脚本逐条校验执行；`memory.decideAuto` 关掉后退回"只认正文 ```memory 指令块"的降级模式。决定提示词（`memory.decidePrompt`）与降级指南（`memory.guide`）可改写，「主角记忆」页有完整编辑。
+2. **操作集**：`remember`（小记忆）、`memorize`（大记忆）、`promote`、`resolveMemory`（了结，note≤120）、`reopenMemory`（重开）、`forgetMemory`（记错删除）；公共字段 text≤300、basis 必写≤80、related 必写≤4、quote≤60（当时的一句原话，召回时以「」带回）、weight major|minor。同层同文未了结不重记；上限 60 条，清理只影响"已了结 → 小记忆 → 一般 → 最老"，大记忆保到最后。
+3. **强度与召回**（`memory/memory-ops.js`）：召回钥匙 = `related` + `aliases`（面板补的别名，药老/药尘一把抓）；生成前用**最近四楼正文**整词比对，命中的才进独立通道 `doupo_memory`。排序 = 大记忆 → 关键 → **强度**（被想起过的优先，`markRecalled` 记 recallCount/lastRecallDay，纯排练效应、不写流水、不镜像数据库）→ 新的优先；超预算从尾部丢；全不命中什么都不注。`findMemoryConflicts` 用 bigram 相似度在同钥匙记忆里找疑似重复/矛盾，面板标 ⚠ 只提醒不拦账。
+4. **脚本执行**（`memory/memory-runtime.js`）：越界数值、未知操作、缺 related 只拒绝不炸；同楼重 roll 先撤销上一版指令再落新账；opId 去重防重复喂入。
+5. **持久化**：整份记忆（含召回统计）存 `chatMetadata.doupo_agent_memory`；数据库桥接开启时镜像到「龙血玄黄·数据库」的两张表（小记忆/大记忆，含引文/别名/标签列），换聊天表优先收养，外部手改回拉——机制与纳戒/世界完全一致（见「数据库桥接」）。召回统计是运行时强度数据，不进数据库表。
+6. **面板**：设置页「主角记忆」——总览、**排序切换（按生成时间 / 按重要性）**、**按关联过滤**（下场对手戏前按人扫旧账）、大记忆/小记忆两栏清单（转大/了结/删除/重开、引文与别名展示、⚠ 矛盾标记）、已了结、手动登记（层级+标签+关联+别名+引文）、召回开关与预算、决定开关、提示词改写、指令流水。手动操作与模型决定走同一套校验。
+7. **命名空间**：`doupoAgent.memoryStatus()/memorySnapshot()/memoryApplyPersisted()/memoryDecide()/memoryRestoreFromChat()`。
 
 ## 模型与提示词（集中页）
 

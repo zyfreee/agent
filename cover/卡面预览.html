@@ -1,3 +1,216 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>卡面预览 · 斗破苍穹</title>
+<style>
+  body { margin: 0; padding: 24px 12px 60px; background: #efe9dc; }
+  [data-preview-note] { max-width: 620px; margin: 0 auto 18px; font: 13px/1.7 system-ui, sans-serif; color: #6a6157; }
+  [data-preview-note] b { color: #2c2721; }
+</style>
+</head>
+<body>
+<p data-preview-note><b>这是离线试跑页，不是酒馆里的真卡面。</b>排版、点「开始创建身份」、翻页、确认，都是同一份脚本在跑，所以这里能点。区别只有一个：这里没有酒馆的变量接口，填的东西存在浏览器本地；真发消息那一步也不会发出去（会提示你手动手动发）。改完 <code>卡面页面源码.html</code> 或 <code>卡面脚本源码.js</code> 后重跑 <code>node cover/构建卡面.mjs</code> 再刷新。</p>
+<style>
+/* 斗破苍穹 · 卡面（封面 + 向导）
+   样式钩子全部用 data-* 属性：ST 消息楼层会给 class 加 custom- 前缀，
+   属性选择器不受影响，所以这份 CSS 在“正则渲染”和“脚本渲染”两条路上都成立。
+   配色改 [data-dpc] 上的四个变量即可。 */
+[data-dpc] {
+  --dpc-paper: #f7f2e7;
+  --dpc-ink: #2c2721;
+  --dpc-soft: #6a6157;
+  --dpc-line: #ddd2bf;
+  --dpc-accent: #8e3327;
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  margin: 12px 0;
+  color: var(--dpc-ink);
+  font-family: "Songti SC", "SimSun", "Noto Serif SC", "Source Han Serif SC", Georgia, serif;
+  font-size: 15px;
+  line-height: 1.75;
+  text-align: left;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+[data-dpc] *, [data-dpc] *::before, [data-dpc] *::after { box-sizing: inherit; }
+/* 脚本用 hidden 属性收起 actions/read；下面 display:flex 这类规则会盖过
+   浏览器默认的 [hidden]{display:none}，这里必须显式压住。 */
+[data-dpc] [hidden] { display: none !important; }
+
+[data-dpc] [data-p="frame"] {
+  max-width: 620px;
+  margin: 0 auto;
+  padding: 22px 20px 16px;
+  border: 1px solid var(--dpc-line);
+  border-radius: 2px;
+  background: var(--dpc-paper);
+}
+[data-dpc] [data-p="kicker"] { margin: 0 0 10px; font-size: 11px; letter-spacing: .34em; color: var(--dpc-soft); }
+[data-dpc] [data-p="title"] { margin: 0 0 6px; font-size: 27px; line-height: 1.25; font-weight: 600; letter-spacing: .16em; color: var(--dpc-ink); }
+[data-dpc] [data-p="sub"] { margin: 0; font-size: 14px; letter-spacing: .04em; color: var(--dpc-soft); }
+[data-dpc] [data-p="rule"] { position: relative; height: 1px; margin: 16px 0 18px; background: var(--dpc-line); }
+[data-dpc] [data-p="rule"]::after { content: ""; position: absolute; left: 0; top: -1px; width: 46px; height: 3px; background: var(--dpc-accent); }
+[data-dpc] [data-p="sec"] { margin: 0 0 18px; }
+[data-dpc] [data-p="sec"]:last-child { margin-bottom: 0; }
+[data-dpc] [data-p="h"] { margin: 0 0 8px; font-size: 12px; font-weight: 600; letter-spacing: .18em; color: var(--dpc-soft); }
+[data-dpc] [data-p="p"] { margin: 0 0 10px; text-indent: 2em; }
+[data-dpc] [data-p="p"]:last-child { margin-bottom: 0; }
+[data-dpc] [data-p="list"] { margin: 0; padding: 0; list-style: none; }
+[data-dpc] [data-p="item"] {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 6px 0;
+  border-bottom: 1px dashed rgba(44, 39, 33, .12);
+}
+[data-dpc] [data-p="item"]:last-child { border-bottom: none; }
+[data-dpc] [data-p="mark"] { flex: 0 0 16px; text-align: center; font-size: 12px; line-height: 1.9; color: var(--dpc-soft); }
+[data-dpc] [data-state="ok"] [data-p="mark"] { color: #2f6b46; }
+[data-dpc] [data-state="warn"] [data-p="mark"] { color: var(--dpc-accent); }
+[data-dpc] [data-p="need"] { flex: 1 1 auto; min-width: 0; }
+[data-dpc] [data-p="note"] { display: block; font-size: 12px; line-height: 1.6; color: var(--dpc-soft); }
+[data-dpc] [data-p="actions"] { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+[data-dpc] [data-p="btn"] {
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid var(--dpc-ink);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--dpc-ink);
+  font: inherit;
+  font-size: 15px;
+  letter-spacing: .06em;
+  cursor: pointer;
+}
+[data-dpc] [data-p="btn"]:hover { background: rgba(44, 39, 33, .05); }
+[data-dpc] [data-p="btn"][data-variant="primary"] { background: var(--dpc-accent); border-color: var(--dpc-accent); color: #fdf8ef; }
+[data-dpc] [data-p="btn"][data-variant="primary"]:hover { background: #7a2b20; }
+[data-dpc] [data-p="btn"]:focus-visible,
+[data-dpc] [data-p="link"]:focus-visible,
+[data-dpc] [data-p="chip"]:focus-visible { outline: 2px solid var(--dpc-accent); outline-offset: 2px; }
+[data-dpc] [data-p="btn"][disabled] { opacity: .5; cursor: default; }
+[data-dpc] [data-p="link"] {
+  min-height: 44px;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  color: var(--dpc-soft);
+  font: inherit;
+  font-size: 13px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+[data-dpc] [data-p="foot"] { margin: 14px 0 0; font-size: 11px; letter-spacing: .08em; color: var(--dpc-soft); text-align: right; }
+
+/* 向导 */
+[data-dpc] [data-p="wiz"] { margin: 2px 0 0; }
+[data-dpc] [data-p="steps"] { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; font-size: 12px; color: var(--dpc-soft); }
+[data-dpc] [data-p="step"] { padding: 2px 9px; border: 1px solid var(--dpc-line); border-radius: 999px; }
+[data-dpc] [data-p="step"][data-on] { border-color: var(--dpc-accent); color: var(--dpc-accent); }
+[data-dpc] [data-p="field"] { margin: 0 0 12px; }
+[data-dpc] [data-p="label"] { display: block; margin-bottom: 6px; font-size: 13px; letter-spacing: .06em; color: var(--dpc-soft); }
+[data-dpc] [data-p="input"],
+[data-dpc] [data-p="select"],
+[data-dpc] [data-p="area"] {
+  width: 100%;
+  min-height: 44px;
+  padding: 9px 10px;
+  border: 1px solid var(--dpc-line);
+  border-radius: 2px;
+  background: #fffdf7;
+  color: var(--dpc-ink);
+  font: inherit;
+  font-size: 15px;
+}
+[data-dpc] [data-p="area"] { min-height: 88px; resize: vertical; line-height: 1.65; }
+[data-dpc] [data-p="chips"] { display: flex; flex-wrap: wrap; gap: 8px; }
+[data-dpc] [data-p="chip"] {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--dpc-line);
+  border-radius: 999px;
+  background: #fffdf7;
+  color: var(--dpc-ink);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+[data-dpc] [data-p="chip"][aria-pressed="true"] { border-color: var(--dpc-accent); background: #fbeee9; color: var(--dpc-accent); }
+[data-dpc] [data-p="row"] { display: flex; flex-wrap: wrap; gap: 8px; }
+[data-dpc] [data-p="row"] > * { flex: 1 1 140px; min-width: 0; }
+[data-dpc] [data-p="nav"] { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+[data-dpc] [data-p="msg"] { min-height: 20px; margin: 10px 0 0; font-size: 13px; color: var(--dpc-accent); }
+[data-dpc] [data-p="msg"][data-tone="ok"] { color: #2f6b46; }
+[data-dpc] [data-p="sum"] { margin: 0; padding: 0; list-style: none; font-size: 14px; }
+[data-dpc] [data-p="sum"] > li { display: flex; gap: 10px; padding: 5px 0; border-bottom: 1px dashed rgba(44, 39, 33, .12); }
+[data-dpc] [data-p="sum"] > li:last-child { border-bottom: none; }
+[data-dpc] [data-p="sum"] b { flex: 0 0 3.6em; font-weight: 400; color: var(--dpc-soft); }
+[data-dpc] [data-p="sum"] span { flex: 1 1 auto; min-width: 0; white-space: pre-wrap; }
+
+@media (max-width: 430px) {
+  [data-dpc] [data-p="frame"] { padding: 16px 14px 12px; }
+  [data-dpc] [data-p="title"] { font-size: 22px; letter-spacing: .12em; }
+  [data-dpc] [data-p="kicker"] { letter-spacing: .24em; }
+  [data-dpc] [data-p="p"] { text-indent: 0; }
+  [data-dpc] [data-p="actions"] > [data-p="btn"] { flex: 1 1 100%; }
+}
+</style>
+<div data-dpc="cover" data-dpc-version="1">
+  <div data-p="frame">
+    <p data-p="kicker">同人 · 斗破苍穹</p>
+    <h2 data-p="title">斗破苍穹</h2>
+    <p data-p="sub">在这片大陆上，重新活一次。</p>
+    <div data-p="rule"></div>
+
+    <div data-dpc-read>
+      <section data-p="sec">
+        <p data-p="p">斗气大陆没有魔法，只有斗气。从乌坦城的小家族，到中州的门阀与古族，所有的门都只为有实力的人开着。</p>
+        <p data-p="p">你会带着不属于这个世界的记忆醒来，从一具少年人的身体开始。原著里的人各有各的路，他们不会停下来等你——你只是这片大陆上，多出来的一个变量。</p>
+      </section>
+
+      <section data-p="sec">
+        <h3 data-p="h">这一版会跟着你走的东西</h3>
+        <ul data-p="list">
+          <li data-p="item"><span data-p="mark">·</span><span data-p="need">背后有个 Agent 在记账：纳戒里的家当、人物簿里的关系、世界自己推进的事，都记在档上。</span></li>
+          <li data-p="item"><span data-p="mark">·</span><span data-p="need">原著设定从资料库里查，不是凭印象编。</span></li>
+          <li data-p="item"><span data-p="mark">·</span><span data-p="need">你可以给自己一个身份，顺便交代故事从哪一刻开始。</span></li>
+        </ul>
+      </section>
+
+      <section data-p="sec">
+        <h3 data-p="h">需要的东西</h3>
+        <ul data-p="list" data-dpc-needs>
+          <li data-p="item" data-need="client"><span data-p="mark">·</span><span data-p="need">SillyTavern 1.18 及以上<span data-p="note">版本太低时扩展清单不会加载</span></span></li>
+          <li data-p="item" data-need="helper"><span data-p="mark">·</span><span data-p="need">Tavern Helper（JS-Slash-Runner）<span data-p="note">没装的话这张卡面只能看，点不动</span></span></li>
+          <li data-p="item" data-need="bridge"><span data-p="mark">·</span><span data-p="need">斗破同人 Agent 扩展（已启用）<span data-p="note">纳戒、人物簿、世界台账都靠它</span></span></li>
+          <li data-p="item" data-need="worldbook"><span data-p="mark">·</span><span data-p="need">本卡的世界书（已导入并挂上）<span data-p="note">没挂的话原著设定就查不到</span></span></li>
+          <li data-p="item" data-need="model"><span data-p="mark">·</span><span data-p="need">一个能用的模型连接<span data-p="note">看右上角的连接状态</span></span></li>
+          <li data-p="item" data-need="library"><span data-p="mark">·</span><span data-p="need">剧情资料库（可选，后面再加）<span data-p="note">不加也能玩，加了 Agent 查得更准</span></span></li>
+        </ul>
+      </section>
+    </div>
+
+    <div data-dpc-view hidden></div>
+
+    <div data-p="actions" data-dpc-actions>
+      <button type="button" data-p="btn" data-variant="primary" data-dpc-start>开始创建身份</button>
+      <button type="button" data-p="link" data-dpc-skip>先直接开始</button>
+    </div>
+
+    <p data-p="note" data-dpc-boot>若这行字一直不消失：卡面脚本没接管，按钮点了不会有反应。去酒馆助手的脚本库确认这条脚本已启用、并绑定到本卡。</p>
+
+    <p data-p="msg" data-dpc-msg aria-live="polite"></p>
+
+    <p data-p="foot">卡面 v0.1 · 正则 + 脚本</p>
+  </div>
+</div>
+
+<script>
 /* 斗破苍穹 · 卡面脚本（Tavern Helper 脚本）
  *
  * 分工：正则只负责把首楼那行标记变成可见卡面；
@@ -20,10 +233,14 @@
     const LS_PREFIX = 'dpc-opening:';
 
     // 与纳戒（agent/doupo-agent-ui/self/self-runtime.js）的 PROFILE_FIELDS 对齐：
-    // name / gender / age / race / origin / affiliation / talent / appearance
-    const PROFILE_FIELDS = ['name', 'gender', 'age', 'race', 'origin', 'affiliation', 'talent', 'appearance'];
+    // name / gender / age / race / origin / affiliation / attribute / talent / appearance
+    const PROFILE_FIELDS = ['name', 'gender', 'age', 'race', 'origin', 'affiliation', 'attribute', 'talent', 'appearance'];
     const MAX_PROFILE_TEXT = 60;
     const MAX_APPEARANCE_TEXT = 160;
+    const MAX_ATTRIBUTE_TEXT = 12;
+
+    // 常见斗气属性；不在清单里的走旁边的自定义输入框（会覆盖点选的属性）。
+    const ATTRIBUTES = ['火', '风', '雷', '冰', '水', '土', '木', '暗', '毒', '无属性'];
 
     // 开局设定：不进纳戒，只影响这一句话怎么发出去；其中 location / status
     // 会顺手喂给人物簿的“玩家此刻”（那条线只认 location/realm/status/name）。
@@ -32,7 +249,7 @@
 
     const LABELS = {
         name: '姓名', gender: '性别', age: '年龄', race: '种族',
-        origin: '出身', affiliation: '所属', talent: '天赋', appearance: '外貌',
+        origin: '出身', affiliation: '所属', attribute: '斗气属性', talent: '天赋', appearance: '外貌',
     };
 
     const OPENING_LABELS = {
@@ -185,7 +402,9 @@
     }
 
     function capOf(field) {
-        return field === 'appearance' ? MAX_APPEARANCE_TEXT : MAX_PROFILE_TEXT;
+        if (field === 'appearance') return MAX_APPEARANCE_TEXT;
+        if (field === 'attribute') return MAX_ATTRIBUTE_TEXT;
+        return MAX_PROFILE_TEXT;
     }
 
     /* ---------------- 依赖体检 ---------------- */
@@ -315,6 +534,7 @@
 </section>`;
         }
         if (step === 2) {
+            const customAttribute = identity.attribute && !ATTRIBUTES.includes(identity.attribute) ? identity.attribute : '';
             return `
 <section data-p="sec">
   <div data-p="field">
@@ -325,6 +545,16 @@
       <input data-p="input" type="text" maxlength="12" data-realm="stage"
         value="${esc(draft.realm.stage)}" placeholder="三段" autocomplete="off">
     </div>
+  </div>
+  <div data-p="field">
+    <span data-p="label">斗气属性（可以不填）</span>
+    <div data-p="chips" data-group="attribute">
+      ${ATTRIBUTES.map(value => `
+      <button type="button" data-p="chip" data-value="${esc(value)}"
+        aria-pressed="${identity.attribute === value ? 'true' : 'false'}">${esc(value)}</button>`).join('')}
+    </div>
+    <input data-p="input" type="text" maxlength="${MAX_ATTRIBUTE_TEXT}" data-attribute-custom
+      value="${esc(customAttribute)}" placeholder="其他属性自己写，会覆盖上面点选的" autocomplete="off">
   </div>
   <label data-p="field">
     <span data-p="label">此刻在哪（${OPENING_CAPS.location} 字以内）</span>
@@ -435,6 +665,7 @@
         const lines = [head];
         if (places) lines.push(`${places}。`);
         if (realm) lines.push(`眼下的境界是${realm}。`);
+        if (i.attribute.trim()) lines.push(`斗气属性：${i.attribute.trim()}`);
         if (i.talent.trim()) lines.push(`天赋：${i.talent.trim()}`);
         if (i.appearance.trim()) lines.push(`样貌：${i.appearance.trim()}`);
         const scene = [
@@ -546,9 +777,11 @@
         const slash = slashRunner();
         if (slash) {
             try {
+                // 用 /send 把这句话落成一条用户消息；/setinput + /trigger 不行——
+                // /trigger 回调会先清空输入框再续写生成，玩家这句话就丢了。
                 // 换行在斜杠命令里要写成 {{newline}}；竖线会破坏管道，换成全角。
                 const body = message.replace(/\|/g, '｜').replace(/\n/g, '{{newline}}');
-                await slash(`/setinput ${body}`);
+                await slash(`/send ${body}`);
                 draft.committed = true;
                 draft.view = 'wizard';
                 draft.ui.step = LAST_STEP;
@@ -655,6 +888,22 @@
                 input.addEventListener('input', () => syncDraftFields());
                 input.addEventListener('change', () => syncDraftFields());
             }
+            // 斗气属性自定义框：写值直接落 identity.attribute（覆盖点选的属性），
+            // 并把 chips 的选中态清掉；反过来点 chip 也要清掉框里的字，两边不抢一个字段。
+            const customAttribute = root.querySelector('[data-attribute-custom]');
+            if (customAttribute) customAttribute.addEventListener('input', () => {
+                state.draft.identity.attribute = String(customAttribute.value ?? '').slice(0, MAX_ATTRIBUTE_TEXT);
+                for (const chip of root.querySelectorAll('[data-group="attribute"] [data-p="chip"]')) {
+                    chip.setAttribute('aria-pressed', 'false');
+                }
+                saveDraft(state.draft);
+            });
+            for (const chip of root.querySelectorAll('[data-group="attribute"] [data-p="chip"]')) {
+                chip.addEventListener('click', () => {
+                    const custom = root.querySelector('[data-attribute-custom]');
+                    if (custom) custom.value = '';
+                });
+            }
             const back = root.querySelector('[data-dpc-back]');
             if (back) back.addEventListener('click', () => {
                 syncDraftFields();
@@ -706,7 +955,7 @@
             const slash = slashRunner();
             if (!slash) { say(root, '没有斜杠接口，直接点输入框开始就行。'); return; }
             state.draft.view = 'cover';
-            slash('/setinput 我在这片大陆上醒了过来。{{newline}}{{newline}}（请从这里写起。）')
+            slash('/send 我在这片大陆上醒了过来。{{newline}}{{newline}}（请从这里写起。）')
                 .then(() => slash('/trigger'))
                 .catch(error => say(root, `没发出去：${String(error?.message || error)}`));
         });
@@ -781,3 +1030,7 @@
         }
     }
 })();
+
+</script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 /**
  * 纳戒运行时：保存一份"主角此刻长什么样、身上有什么"的状态并在校验后修改它。
  *
- * 状态内容：身份档案（姓名/性别/年龄/种族/出身/所属/天赋/外貌）、境界（境界+段位）、
+ * 状态内容：身份档案（姓名/性别/年龄/种族/出身/所属/斗气属性/天赋/外貌）、境界（境界+段位）、
  * 金币、称号、功法、斗技、行囊（含装备中标记）、制作台（配方 + 进行中/已完成的炼制）、
  * 目标（主线/支线、约定）和一份操作流水。
  *
@@ -12,13 +12,14 @@
  * 绝不抛异常打断调用方。面板手动操作与模型指令走同一条路，规则完全一致。
  */
 
-const PROFILE_FIELDS = Object.freeze(['name', 'gender', 'age', 'race', 'origin', 'affiliation', 'talent', 'appearance']);
+const PROFILE_FIELDS = Object.freeze(['name', 'gender', 'age', 'race', 'origin', 'affiliation', 'attribute', 'talent', 'appearance']);
 const PRIORITIES = Object.freeze(['主线', '支线']);
 const CRAFT_RESULTS = Object.freeze(['success', 'fail']);
-const PROFILE_LABELS = Object.freeze({ name: '姓名', gender: '性别', age: '年龄', race: '种族', origin: '出身', affiliation: '所属', talent: '天赋', appearance: '外貌' });
+const PROFILE_LABELS = Object.freeze({ name: '姓名', gender: '性别', age: '年龄', race: '种族', origin: '出身', affiliation: '所属', attribute: '斗气属性', talent: '天赋', appearance: '外貌' });
 
 const MAX_PROFILE_TEXT = 60;
 const MAX_APPEARANCE_TEXT = 160;
+const MAX_ATTRIBUTE_TEXT = 12;
 const MAX_REALM_TEXT = 12;
 const MAX_STAGE_TEXT = 12;
 const MAX_NAME_TEXT = 30;
@@ -121,7 +122,7 @@ function normalizeState(raw, now) {
     return {
         schemaVersion: 1,
         day: clampInt(source.day, 1, 99999, 1),
-        profile: Object.fromEntries(PROFILE_FIELDS.map(field => [field, text(profileSource[field]).slice(0, field === 'appearance' ? MAX_APPEARANCE_TEXT : MAX_PROFILE_TEXT)])),
+        profile: Object.fromEntries(PROFILE_FIELDS.map(field => [field, text(profileSource[field]).slice(0, field === 'appearance' ? MAX_APPEARANCE_TEXT : field === 'attribute' ? MAX_ATTRIBUTE_TEXT : MAX_PROFILE_TEXT)])),
         realm: {
             realm: text(realmSource.realm).slice(0, MAX_REALM_TEXT),
             stage: text(realmSource.stage).slice(0, MAX_STAGE_TEXT),
@@ -231,7 +232,7 @@ export function createSelfRuntime({
         if (kind === 'setProfile') {
             const field = text(op.field);
             if (!PROFILE_FIELDS.includes(field)) return { ok: false, reason: 'bad_field' };
-            const cap = field === 'appearance' ? MAX_APPEARANCE_TEXT : MAX_PROFILE_TEXT;
+            const cap = field === 'appearance' ? MAX_APPEARANCE_TEXT : field === 'attribute' ? MAX_ATTRIBUTE_TEXT : MAX_PROFILE_TEXT;
             const body = text(op.text).slice(0, cap);
             const before = state.profile[field];
             state.profile[field] = body;

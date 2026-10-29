@@ -8,6 +8,7 @@ const IMPACT_KEY = 'doupo_agent_impact';
 const NPC_KEY = 'doupo_agent_npc';
 const NPC_COLD_KEY = 'doupo_agent_npc_cold';
 const SELF_KEY = 'doupo_agent_self';
+const MEMORY_KEY = 'doupo_agent_memory';
 
 const DEFAULT_SETTINGS = Object.freeze({
     enabled: true,
@@ -19,9 +20,15 @@ const DEFAULT_SETTINGS = Object.freeze({
     enableNpcLedger: true,
     // 纳戒：主角自身状态与随身之物的母库，按聊天存一份，生成后由决定调用追加变化。
     enableSelfLedger: true,
+    // 记忆：主角的四类叙事记忆（恩怨/情报/伏笔/大事记）母库，按聊天存一份，生成后由决定调用追加变化。
+    enableMemoryLedger: true,
+    // 数据库桥接：纳戒/世界台账镜像到「龙血玄黄·数据库」的表格（表=账本，扩展面板=前端）。
+    // 脚本没装或被关时自动停用，照旧走聊天存档。
+    enableDbBridge: true,
     enablePlayerImpact: true,
     enableSandboxMode: false,
     showStatusPanel: true,
+    showOrb: true,
     debug: false,
     settle: Object.freeze({
         // 行动结算的分类判定（丹药/修炼/伤害/通用）独立调用用的连接与参数。
@@ -90,6 +97,12 @@ const DEFAULT_SETTINGS = Object.freeze({
         injectionBudget: 0,
         worldbook: '',
         entries: Object.freeze([]),
+        // 原著选条（含卷外点选）用的连接：跟随酒馆 / 自定义接口。留空参数沿用全局。
+        mode: 'tavern',
+        baseUrl: '',
+        apiKey: '',
+        provider: '',
+        model: '',
     }),
     injection: Object.freeze({
         enabled: true,
@@ -160,6 +173,8 @@ const DEFAULT_SETTINGS = Object.freeze({
         coldPresencePenalty: 0,
         coldFrequencyPenalty: 0,
         coldPrompt: '',
+        // 经历精简提示词覆盖，留空用内置默认。
+        expCondensePrompt: '',
     }),
     self: Object.freeze({
         // 纳戒注入：生成前把主角自身状态写进提示词。
@@ -173,6 +188,28 @@ const DEFAULT_SETTINGS = Object.freeze({
         decideApiKey: '', // 自定义接口密钥（选 custom 才用得上；留空沿用“模型与连接”页）
         decideProvider: '', // 'openai' / 'anthropic'（留空按接口地址判断）
         decideModel: '', // 决定模型名，留空沿用“模型与连接”页
+        decideTemperature: 0, // 0 = 沿用 LLM 页温度
+        decideMaxTokens: 0, // 0 = 沿用 LLM 页输出上限
+        decideTopP: 0, // 0 = 不指定
+        decidePresencePenalty: 0, // 0 = 不指定
+        decideFrequencyPenalty: 0, // 0 = 不指定
+        decideMaxFloors: 6, // 喂给决定模型的最近楼层数
+        decideMaxEntries: 12, // 世界书相关条目上限
+        decidePrompt: '', // 决定提示词，留空用内置默认
+        guide: '', // 降级模式（关自动决定）随现状注入的指令指南，留空用内置默认
+    }),
+    memory: Object.freeze({
+        // 记忆注入：生成前把主角未了结的记忆写进提示词。
+        inject: true,
+        injectBudget: 800, // 注入字数预算，0 = 内置默认
+        // LLM 决定：独立决定调用，读聊天记录+世界书+记忆总账，输出严格 JSON 由脚本执行。
+        decideEnabled: true,
+        decideAuto: true, // 每轮生成后自动决定；关闭则只认正文里的 memory 指令块
+        decideMode: 'tavern', // 'tavern' = 跟随酒馆当前设置；'custom' = 用下面这套自定义连接
+        decideBaseUrl: '', // 自定义接口地址（选 custom 才用得上；留空沿用"模型与连接"页）
+        decideApiKey: '', // 自定义接口密钥（选 custom 才用得上；留空沿用"模型与连接"页）
+        decideProvider: '', // 'openai' / 'anthropic'（留空按接口地址判断）
+        decideModel: '', // 决定模型名，留空沿用"模型与连接"页
         decideTemperature: 0, // 0 = 沿用 LLM 页温度
         decideMaxTokens: 0, // 0 = 沿用 LLM 页输出上限
         decideTopP: 0, // 0 = 不指定
@@ -246,7 +283,7 @@ function clone(value) {
 
 function mergeSettings(current = {}) {
     const source = current && typeof current === 'object' ? current : {};
-    const nested = ['llm', 'budget', 'ui', 'facts', 'setting', 'injection', 'prompt', 'action', 'world', 'npc', 'impact', 'sandbox', 'status', 'settle', 'self'];
+    const nested = ['llm', 'budget', 'ui', 'facts', 'setting', 'injection', 'prompt', 'action', 'world', 'npc', 'impact', 'sandbox', 'status', 'settle', 'self', 'memory'];
     const merged = { ...clone(DEFAULT_SETTINGS), ...source };
     for (const key of nested) {
         const incoming = source[key] && typeof source[key] === 'object' && !Array.isArray(source[key]) ? source[key] : {};
@@ -284,7 +321,7 @@ export function createHostStorage({ getContext } = {}) {
         if (!all || typeof all !== 'object') return { status: 'unavailable', value: clone(DEFAULT_SETTINGS) };
         const current = all[SETTINGS_KEY] && typeof all[SETTINGS_KEY] === 'object' ? all[SETTINGS_KEY] : {};
         const incoming = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : {};
-        const nested = ['llm', 'budget', 'ui', 'facts', 'setting', 'injection', 'prompt', 'action', 'world', 'npc', 'impact', 'sandbox', 'status', 'settle', 'self'];
+        const nested = ['llm', 'budget', 'ui', 'facts', 'setting', 'injection', 'prompt', 'action', 'world', 'npc', 'impact', 'sandbox', 'status', 'settle', 'self', 'memory'];
         const mergedPatch = { ...current, ...incoming };
         for (const key of nested) {
             if (incoming[key] && typeof incoming[key] === 'object' && !Array.isArray(incoming[key])) {
@@ -414,6 +451,24 @@ export function createHostStorage({ getContext } = {}) {
         return { status: 'saved' };
     }
 
+    /** 记忆：同样跟着聊天走；一局一份主角记忆总账，换聊天各记各的。 */
+    function memoryState() {
+        const context = contextOf(getContext);
+        const metadata = context?.chatMetadata;
+        if (!metadata || typeof metadata !== 'object') return { status: 'unavailable', value: undefined };
+        return { status: 'ready', value: metadata[MEMORY_KEY] && typeof metadata[MEMORY_KEY] === 'object' ? clone(metadata[MEMORY_KEY]) : undefined };
+    }
+
+    async function saveMemoryState(value) {
+        const context = contextOf(getContext);
+        if (!context?.chatMetadata || typeof context.chatMetadata !== 'object') return { status: 'unavailable' };
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return { status: 'rejected' };
+        context.chatMetadata[MEMORY_KEY] = clone(value);
+        if (typeof context.saveMetadata !== 'function') return { status: 'changed_not_saved' };
+        await context.saveMetadata();
+        return { status: 'saved' };
+    }
+
     async function clean() {
         const context = contextOf(getContext);
         if (context?.extensionSettings && typeof context.extensionSettings === 'object') delete context.extensionSettings[SETTINGS_KEY];
@@ -424,13 +479,14 @@ export function createHostStorage({ getContext } = {}) {
             delete context.chatMetadata[NPC_KEY];
             delete context.chatMetadata[NPC_COLD_KEY];
             delete context.chatMetadata[SELF_KEY];
+            delete context.chatMetadata[MEMORY_KEY];
         }
         if (typeof context?.saveSettingsDebounced === 'function') await context.saveSettingsDebounced();
         if (typeof context?.saveMetadata === 'function') await context.saveMetadata();
         return { status: 'cleaned' };
     }
 
-    return Object.freeze({ settings, updateSettings, saveSettings, chatState, saveChatState, worldState, saveWorldState, impactState, saveImpactState, npcLedgerState, saveNpcLedgerState, npcColdState, saveNpcColdState, selfState, saveSelfState, clean, keys: Object.freeze({ SETTINGS_KEY, CHAT_KEY, WORLD_KEY, IMPACT_KEY, NPC_KEY, NPC_COLD_KEY, SELF_KEY }) });
+    return Object.freeze({ settings, updateSettings, saveSettings, chatState, saveChatState, worldState, saveWorldState, impactState, saveImpactState, npcLedgerState, saveNpcLedgerState, npcColdState, saveNpcColdState, selfState, saveSelfState, memoryState, saveMemoryState, clean, keys: Object.freeze({ SETTINGS_KEY, CHAT_KEY, WORLD_KEY, IMPACT_KEY, NPC_KEY, NPC_COLD_KEY, SELF_KEY, MEMORY_KEY }) });
 }
 
 export { DEFAULT_SETTINGS };

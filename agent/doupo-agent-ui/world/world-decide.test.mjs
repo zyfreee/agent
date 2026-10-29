@@ -8,6 +8,12 @@ assert.ok(WORLD_DECIDE_PROMPT.includes('reputation') && WORLD_DECIDE_PROMPT.incl
 assert.ok(WORLD_DECIDE_PROMPT.includes('basis'), '默认提示词必须要求事件有依据');
 assert.ok(WORLD_DECIDE_PROMPT.includes('addTask') && WORLD_DECIDE_PROMPT.includes('completeTask'), '默认提示词必须含任务操作');
 assert.ok(WORLD_DECIDE_PROMPT.includes('不要替玩家立他没答应的事'), '任务规则要防越权立任务');
+assert.ok(WORLD_DECIDE_PROMPT.includes('setFaction') && WORLD_DECIDE_PROMPT.includes('setPerson'), '默认提示词必须含势力/人物操作');
+assert.ok(WORLD_DECIDE_PROMPT.includes('不要照着世界书把所有势力'), '势力规则防预登记');
+assert.ok(WORLD_DECIDE_PROMPT.includes('时间跳跃'), '提示词要写时间跳跃补动向规则');
+assert.ok(WORLD_DECIDE_PROMPT.includes('四季轮转'), '提示词要写季节');
+assert.equal(DECIDE_JSON_SCHEMA.properties.ops.items.properties.op.enum.includes('setFaction'), true, 'schema 认势力操作');
+assert.ok(DECIDE_JSON_SCHEMA.properties.ops.items.properties.stance, 'schema 认 stance 字段');
 assert.equal(DECIDE_JSON_SCHEMA.properties.ops.items.properties.op.enum.includes('addEvent'), true);
 assert.equal(DECIDE_JSON_SCHEMA.properties.ops.items.properties.weight.enum.includes('rumor'), true);
 assert.equal(DECIDE_JSON_SCHEMA.properties.ops.items.properties.op.enum.includes('addTask'), true, 'schema 认任务操作');

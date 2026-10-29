@@ -29,7 +29,8 @@ ${fieldMenu()}
 姓名：必填，写正文里出现的那个称呼；别名/称号另起键写。
 好感：只写“本次增减”，整数，正数=变好，负数=变坏；单次最多 ±10，超过会被脚本压回 ±10。不要写累计值，累计由脚本算。
 好感理由：不超过 ${FAVOR_REASON_MAX} 个字，写清“因为什么”，例：护住族人、当众打脸、救命之恩。
-流水：一句话记“他做了什么/发生了什么”，会原样追加到经历里，不要覆盖旧记录。
+流水：一句话记“他做了什么/发生了什么”，会原样追加到流水里，不要覆盖旧记录。
+经历：只记“这个人从此不一样了”的重大转变——心智改变、态度反转、立场易帜、身份更替、结下死契或深仇这类。一件一行，写成完整的一句话；普通小事写“流水”，不要写进经历。
 在场：true 或 false；同时尽量给位置和正在做什么。
 重要：true 或 false。主角身边的关键人物为 true，路人龙套为 false。
 设定：想一次改多个字段时，把字段塞进这个对象里，例：{"设定":{"境界":"斗皇","伤势":"左臂旧伤未愈"}}。
@@ -44,7 +45,7 @@ ${fieldMenu()}
 5. 只输出 JSON，不要解释、不要 Markdown 代码块、不要前后缀。
 
 【输出格式】
-{"人物":[{"姓名":"萧战","好感":3,"好感理由":"护住族人","态度":"对后辈多了几分认可","境界":"斗皇","位置":"萧家议事厅","在场":true,"重要":true,"流水":"主持族会，压下二长老的质疑"}]}
+{"人物":[{"姓名":"萧战","好感":3,"好感理由":"护住族人","态度":"对后辈多了几分认可","境界":"斗皇","位置":"萧家议事厅","在场":true,"重要":true,"流水":"主持族会，压下二长老的质疑","经历":"亲眼看见萧炎击败加列奥后，从轻视转为忌惮，开始暗中调查他的底细"}]}
 
 这一楼没有任何人物变化时，输出 {"人物":[]}。`;
 
@@ -63,6 +64,7 @@ export const NPC_RECORD_JSON_SCHEMA = Object.freeze({
                     在场: { type: 'boolean' },
                     重要: { type: 'boolean' },
                     流水: { type: 'string' },
+                    经历: { type: 'string' },
                 },
                 required: ['姓名'],
             },
@@ -210,4 +212,51 @@ export function parseNpcRecordReply(raw) {
                     : null;
     if (!patches) return { status: 'invalid', reason: 'JSON 里没有“人物”数组', raw: json.slice(0, 400) };
     return { status: 'ok', patches, raw: json };
+}
+
+/** 经历精简：合并同一个人雷同的转变条目，保留关键节点，输出仍是经历清单。 */
+export const EXP_CONDENSE_PROMPT = `你是这部小说的「人物传记整理人」。某人的人物档案里积累了一批“经历”（重大转变），现在要把它们精简：合并重复、归并同一件事的多次反复，保留时间顺序和所有关键转折。
+
+【规矩】
+1. 每条经历仍然是一句完整的话，说清“他经历了什么、从此哪里不一样”。
+2. 同一件事的多次进展（先忌惮→再敌视→终成死敌）可以合并成一条，但不要丢掉最终状态。
+3. 不许发明清单里没有的转变；拿不准的原文保留。
+4. 条数减到原来的三分之一左右；不到 5 条的清单不必硬压，原样返回也行。
+5. 只输出 JSON，不要解释、不要 Markdown 代码块。
+
+【输出格式】
+{"经历":[{"day":12,"text":"亲眼看见萧炎击败加列奥后，从轻视转为忌惮，开始暗中调查他的底细"}]}
+
+day 是这条转变发生的世界天数（合并时取最早那条的）；清单里没有的就写 null。`;
+
+/** 拼给精简调用的材料：这个人是谁 + 现有经历清单。 */
+export function buildExpCondenseUser({ name = '', summary = '', entries = [] } = {}) {
+    const blocks = [`人物：${name || '（未知名）'}`];
+    if (summary) blocks.push(`档案一句话：${String(summary).slice(0, 120)}`);
+    const lines = (Array.isArray(entries) ? entries : []).map((entry, index) => {
+        const day = Number.isFinite(Number(entry?.day)) && entry.day !== null ? `第${Number(entry.day)}天` : '第?天';
+        return `${index + 1}. [${day}] ${entry?.text ?? ''}`;
+    }).filter(line => !line.endsWith('] '));
+    blocks.push(lines.length ? `【现有经历】\n${lines.join('\n')}` : '【现有经历】\n（空的，输出 {"经历":[]}）');
+    return blocks.join('\n\n');
+}
+
+/** 解析精简回答：只认 {"经历":[{day,text}]}，其余原样报错。 */
+export function parseExpCondenseReply(raw) {
+    const cleaned = stripFence(raw);
+    if (!cleaned) return { status: 'empty', reason: '模型没有返回内容' };
+    const json = sliceJson(cleaned);
+    if (!json) return { status: 'invalid', reason: '回答里没有 JSON', raw: cleaned.slice(0, 400) };
+    let payload;
+    try {
+        payload = JSON.parse(json);
+    } catch (error) {
+        return { status: 'invalid', reason: `JSON 解析失败：${error?.message ?? error}`, raw: json.slice(0, 400) };
+    }
+    const entries = Array.isArray(payload?.经历) ? payload.经历
+        : Array.isArray(payload?.exp) ? payload.exp
+            : Array.isArray(payload) ? payload
+                : null;
+    if (!entries) return { status: 'invalid', reason: 'JSON 里没有“经历”数组', raw: json.slice(0, 400) };
+    return { status: 'ok', entries };
 }

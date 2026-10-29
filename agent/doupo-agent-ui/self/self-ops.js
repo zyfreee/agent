@@ -46,7 +46,7 @@ export function buildSelfInjection(snapshot = {}, { maxChars = DEFAULT_MAX_CHARS
     const identityBits = [text(profile.name) || '（未命名）'];
     if (text(profile.gender)) identityBits.push(text(profile.gender));
     if (text(profile.age)) identityBits.push(text(profile.age));
-    const identityExtra = [['race', '种族'], ['origin', '出身'], ['affiliation', '所属'], ['talent', '天赋']]
+    const identityExtra = [['race', '种族'], ['origin', '出身'], ['affiliation', '所属'], ['attribute', '斗气属性'], ['talent', '天赋']]
         .map(([field, label]) => (text(profile[field]) ? `${label}：${text(profile[field])}` : ''))
         .filter(Boolean);
     lines.push(`身份：${identityBits.join('，')}${identityExtra.length ? `；${identityExtra.join('；')}` : ''}`);

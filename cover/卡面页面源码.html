@@ -23,6 +23,9 @@
   word-break: break-word;
 }
 [data-dpc] *, [data-dpc] *::before, [data-dpc] *::after { box-sizing: inherit; }
+/* 脚本用 hidden 属性收起 actions/read；下面 display:flex 这类规则会盖过
+   浏览器默认的 [hidden]{display:none}，这里必须显式压住。 */
+[data-dpc] [hidden] { display: none !important; }
 
 [data-dpc] [data-p="frame"] {
   max-width: 620px;

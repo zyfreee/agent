@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>控制中心冒烟页</title>
+<style>
+    body { margin: 0; font: 16px/1.6 system-ui, sans-serif; background: #20242c; color: #e8eaf0; }
+    .page { max-width: 42rem; margin: 0 auto; padding: 2.5rem 1.5rem; }
+    h1 { font-size: 1.2rem; }
+    p { color: #aeb4c0; }
+</style>
+</head>
+<body>
+<div class="page">
+    <h1>控制中心冒烟页</h1>
+    <p>页面加载后会自动激活 Agent 扩展（宿主能力是桩）、灌演示数据并打开控制中心。逐页检查：模型设置、原著资料、世界运转、人物簿、人物经历、纳戒、世界影响。</p>
+</div>
+<script type="module">
+    globalThis.SillyTavern = { getContext: () => ({ version: '1.18.0' }) };
+
+    const mod = await import('../agent/doupo-agent-ui/index.js');
+    mod.onActivate();
+    window.doupoAgent = mod.doupoAgent;
+
+    const agent = mod.doupoAgent;
+    agent.worldRuntime.restore({
+        clock: { day: 5, minute: 510, label: '' },
+        info: { era: '斗气大陆', location: '乌坦城', weather: '晴', reputation: '乌坦城小有名气', wanted: '' },
+        nearEvents: [{ id: 'e1', text: '坊市集市开张', day: 4, weight: 'minor', basis: '酒馆听说', endDay: 6 }],
+        worldEvents: [{ id: 'e2', text: '迦南学院招生队路过', day: 3, weight: 'major', endDay: 9, pinned: true }],
+        tasks: [{ id: 't1', title: '去坊市买药材', status: 'active', day: 4, endDay: 8, detail: '凑齐三阶魔核的材料', basis: '药老托付' }],
+        factions: [{ name: '云岚宗', stance: 'wary', dynamics: '退婚使者常驻乌坦城' }],
+        people: [{ name: '药老', attitude: '亦师亦父', basis: '第二楼出手相护' }],
+    });
+    agent.selfRuntime.restore({
+        profile: { name: '萧炎', gender: '男', age: '15岁', race: '人族', origin: '乌坦城萧家', affiliation: '萧家', attribute: '火', talent: '曾经的斗气天才', appearance: '黑色衣袍的清瘦少年' },
+        realm: { realm: '斗者', stage: '三星' },
+        gold: 1200,
+        titles: ['萧家废物', '乌坦城新星'],
+        techniques: [{ id: 't1', name: '焚决', grade: '黄阶低级', type: '修炼功法', progress: '第三层', source: '药老所赠' }],
+        skills: [{ id: 's1', name: '八极崩', grade: '玄阶高级', type: '攻击', progress: '小成', source: '药老所授' }],
+        items: [
+            { id: 'b1', name: '玄重尺', count: 1, category: '武器', grade: '凡品', equipped: true },
+            { id: 'b2', name: '回气丹', count: 3, category: '丹药' },
+        ],
+        recipes: [{ id: 'r1', name: '回气丹', craft: '炼药', grade: '一品', materials: '回春草两株、凝气花一株' }],
+        crafts: [{ id: 'c1', craft: '炼药', name: '回气丹', count: 2, startDay: 5, endDay: 6, status: 'open' }],
+        goals: [{ id: 'g1', text: '三年之约上胜过纳兰嫣然', priority: '主线', due: '三年后' }],
+    });
+    agent.npcLedger.apply({ 人物: [
+        { 姓名: '萧薰儿', 性别: '女', 年龄: '15岁', 出身: '萧家', 身份: '萧家小姐', 好感: 45, 态度: '始终相信他', 位置: '萧家祖屋', 在场: true, 重要: true, 经历: [{ text: '萧炎从天才跌成废物，全族轻视，唯独她从未改过称呼', day: 1 }] },
+        { 姓名: '药老', 性别: '男', 身份: '寄居戒指的前辈', 好感: 88, 在场: true, 重要: true, 经历: [{ text: '看出萧炎根骨未废，决定收他为徒', day: 2 }, { text: '教他炼出第一炉聚气散，师徒名分落定', day: 5 }] },
+        { 姓名: '萧战', 身份: '萧家家长', 好感: 0, 在场: false, 重要: false },
+    ]}, { source: '正文', floor: 4, day: 5 });
+    agent.impactRuntime.apply([
+        { op: 'record', title: '萧家坊市的药材一夜涨价', detail: '加列家族囤货抬价，城里丹药铺子都在叫苦', target: '乌坦城药材行市', kind: 'direct', weight: 'minor', certainty: 'certain', evidence: '第三楼集市闲谈' },
+        { op: 'record', title: '魔炎谷记恨萧家', detail: '萧炎当街退敌后，魔炎谷放话要萧家给个交代', target: '魔炎谷对萧家的态度', kind: 'direct', weight: 'major', certainty: 'certain', evidence: '第五楼冲突', ripen: 4 },
+    ], { source: 'manual', day: 5 });
+
+    const ready = document.createElement('p');
+    ready.id = 'dashboard-ready';
+    ready.textContent = '控制中心已打开。';
+    document.querySelector('.page').append(ready);
+
+    // 直接打开设置面板并落在“世界运转”页，方便逐页截图。
+    const button = document.getElementById('doupo-agent-ui-settings-button');
+    button?.click();
+</script>
+</body>
+</html>

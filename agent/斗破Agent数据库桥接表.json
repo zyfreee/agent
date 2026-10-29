@@ -1,0 +1,418 @@
+{
+  "mate": {
+    "type": "chatSheets",
+    "version": 1,
+    "updateConfigUiSentinel": -1
+  },
+  "sheet_dpProfile": {
+    "uid": "sheet_dpProfile",
+    "name": "纳戒·主角档案",
+    "sourceData": {
+      "note": "主角档案+境界+金币，有且仅有一行。只由斗破Agent扩展写入，AI 禁止操作。",
+      "initNode": "禁止操作。",
+      "insertNode": "禁止操作。",
+      "updateNode": "禁止操作。",
+      "deleteNode": "禁止操作。",
+      "ddl": "CREATE TABLE dp_profile ( -- 主角档案表\n  row_id INTEGER PRIMARY KEY, -- 行号\n  char_name TEXT, -- 姓名\n  gender TEXT, -- 性别\n  age TEXT, -- 年龄\n  race TEXT, -- 种族\n  origin TEXT, -- 出身\n  affiliation TEXT, -- 所属\n  talent TEXT, -- 天赋\n  appearance TEXT, -- 外貌\n  realm TEXT, -- 境界\n  stage TEXT, -- 段位\n  gold INTEGER, -- 金币\n  story_day INTEGER, -- 剧情日\n  updated_at TEXT -- 更新时间\n);"
+    },
+    "updateConfig": {
+      "uiSentinel": -1,
+      "contextDepth": -1,
+      "updateFrequency": 0,
+      "batchSize": -1,
+      "skipFloors": -1
+    },
+    "content": [
+      [
+        "row_id",
+        "姓名",
+        "性别",
+        "年龄",
+        "种族",
+        "出身",
+        "所属",
+        "天赋",
+        "外貌",
+        "境界",
+        "段位",
+        "金币",
+        "剧情日",
+        "更新时间"
+      ]
+    ]
+  },
+  "sheet_dpTitles": {
+    "uid": "sheet_dpTitles",
+    "name": "纳戒·称号",
+    "sourceData": {
+      "note": "称号清单，一列一称号。只由斗破Agent扩展写入，AI 禁止操作。",
+      "initNode": "禁止操作。",
+      "insertNode": "禁止操作。",
+      "updateNode": "禁止操作。",
+      "deleteNode": "禁止操作。",
+      "ddl": "CREATE TABLE dp_titles ( -- 称号表\n  row_id INTEGER PRIMARY KEY, -- 行号\n  title TEXT NOT NULL -- 称号\n);"
+    },
+    "updateConfig": {
+      "uiSentinel": -1,
+      "contextDepth": -1,
+      "updateFrequency": 0,
+      "batchSize": -1,
+      "skipFloors": -1
+    },
+    "content": [
+      [
+        "row_id",
+        "称号"
+      ]
+    ]
+  },
+  "sheet_dpTechniques": {
+    "uid": "sheet_dpTechniques",
+    "name": "纳戒·功法",
+    "sourceData": {
+      "note": "功法清单，编号与扩展台账一致。只由斗破Agent扩展写入，AI 禁止操作。",
+      "initNode": "禁止操作。",
+      "insertNode": "禁止操作。",
+      "updateNode": "禁止操作。",
+      "deleteNode": "禁止操作。",
+      "ddl": "CREATE TABLE dp_techniques ( -- 功法表\n  row_id INTEGER PRIMARY KEY, -- 行号\n  entry_id TEXT NOT NULL, -- 编号\n  name TEXT NOT NULL, -- 名称\n  grade TEXT, -- 品阶\n  type TEXT, -- 类型\n  progress TEXT, -- 进度\n  source TEXT -- 来源\n);"
+    },
+    "updateConfig": {
+      "uiSentinel": -1,
+      "contextDepth": -1,
+      "updateFrequency": 0,
+      "batchSize": -1,
+      "skipFloors": -1
+    },
+    "content": [
+      [
+        "row_id",
+        "编号",
+        "名称",
+        "品阶",
+        "类型",
+        "进度",
+        "来源"
+      ]
+    ]
+  },
+  "sheet_dpSkills": {
+    "uid": "sheet_dpSkills",
+    "name": "纳戒·斗技",
+    "sourceData": {
+      "note": "斗技清单，编号与扩展台账一致。只由斗破Agent扩展写入，AI 禁止操作。",
+      "initNode": "禁止操作。",
+      "insertNode": "禁止操作。",
+      "updateNode": "禁止操作。",
+      "deleteNode": "禁止操作。",
+      "ddl": "CREATE TABLE dp_skills ( -- 斗技表\n  row_id INTEGER PRIMARY KEY, -- 行号\n  entry_id TEXT NOT NULL, -- 编号\n  name TEXT NOT NULL, -- 名称\n  grade TEXT, -- 品阶\n  type TEXT, -- 类型\n  source TEXT -- 来源\n);"
+    },
+    "updateConfig": {
+      "uiSentinel": -1,
+      "contextDepth": -1,
+      "updateFrequency": 0,
+      "batchSize": -1,
+      "skipFloors": -1
+    },
+    "content": [
+      [
+        "row_id",
+        "编号",
+        "名称",
+        "品阶",
+        "类型",
+        "来源"
+      ]
+    ]
+  },
+  "sheet_dpItems": {
+    "uid": "sheet_dpItems",
+    "name": "纳戒·行囊",
+    "sourceData": {
+      "note": "行囊物品，同名同类别在扩展侧已并账。只由斗破Agent扩展写入，AI 禁止操作。",
+      "initNode": "禁止操作。",
+      "insertNode": "禁止操作。",
+      "updateNode": "禁止操作。",
+      "deleteNode": "禁止操作。",
+      "ddl": "CREATE TABLE dp_items ( -- 行囊表\n  row_id INTEGER PRIMARY KEY, -- 行号\n  entry_id TEXT NOT NULL, -- 编号\n  name TEXT NOT NULL, -- 名称\n  category TEXT, -- 类别\n  grade TEXT, -- 品阶\n  count INTEGER, -- 数量\n  equipped TEXT, -- 装备中\n  source TEXT -- 来源\n);"
+    },
+    "updateConfig": {
+      "uiSentinel": -1,
+      "contextDepth": -1,
+      "updateFrequency": 0,
+      "batchSize": -1,
+      "skipFloors": -1
+    },
+    "content": [
+      [
+        "row_id",
+        "编号",
+        "名称",
+        "类别",
+        "品阶",
+        "数量",
+        "装备中",
+        "来源"
+      ]
+    ]
+  },
+  "sheet_dpRecipes": {
+    "uid": "sheet_dpRecipes",
+    "name": "纳戒·配方",
+    "sourceData": {
+      "note": "已掌握配方。只由斗破Agent扩展写入，AI 禁止操作。",
+      "initNode": "禁止操作。",
+      "insertNode": "禁止操作。",
+      "updateNode": "禁止操作。",
+      "deleteNode": "禁止操作。",
+      "ddl": "CREATE TABLE dp_recipes ( -- 配方表\n  row_id INTEGER PRIMARY KEY, -- 行号\n  entry_id TEXT NOT NULL, -- 编号\n  name TEXT NOT NULL, -- 名称\n  craft TEXT, -- 类别\n  grade TEXT, -- 品阶\n  materials TEXT -- 材料\n);"
+    },
+    "updateConfig": {
+      "uiSentinel": -1,
+      "contextDepth": -1,
+      "updateFrequency": 0,
+      "batchSize": -1,
+      "skipFloors": -1
+    },
+    "content": [
+      [
+        "row_id",
+        "编号",
+        "名称",
+        "类别",
+        "品阶",
+        "材料"
+      ]
+    ]
+  },
+  "sheet_dpCrafts": {
+    "uid": "sheet_dpCrafts",
+    "name": "纳戒·炼制台",
+    "sourceData": {
+      "note": "炼制进度（进行中/成功/失败），日期按世界时钟。只由斗破Agent扩展写入，AI 禁止操作。",
+      "initNode": "禁止操作。",
+      "insertNode": "禁止操作。",
+      "updateNode": "禁止操作。",
+      "deleteNode": "禁止操作。",
+      "ddl": "CREATE TABLE dp_crafts ( -- 炼制台表\n  row_id INTEGER PRIMARY KEY, -- 行号\n  entry_id TEXT NOT NULL, -- 编号\n  name TEXT NOT NULL, -- 名称\n  craft TEXT, -- 类别\n  start_day INTEGER, -- 开始日\n  end_day INTEGER, -- 结束日\n  status TEXT, -- 状态\n  note TEXT -- 备注\n);"
+    },
+    "updateConfig": {
+      "uiSentinel": -1,
+      "contextDepth": -1,
+      "updateFrequency": 0,
+      "batchSize": -1,
+      "skipFloors": -1
+    },
+    "content": [
+      [
+        "row_id",
+        "编号",
+        "名称",
+        "类别",
+        "开始日",
+        "结束日",
+        "状态",
+        "备注"
+      ]
+    ]
+  },
+  "sheet_dpGoals": {
+    "uid": "sheet_dpGoals",
+    "name": "纳戒·目标",
+    "sourceData": {
+      "note": "目标与约定（主线标星在优先级里）。只由斗破Agent扩展写入，AI 禁止操作。",
+      "initNode": "禁止操作。",
+      "insertNode": "禁止操作。",
+      "updateNode": "禁止操作。",
+      "deleteNode": "禁止操作。",
+      "ddl": "CREATE TABLE dp_goals ( -- 目标表\n  row_id INTEGER PRIMARY KEY, -- 行号\n  entry_id TEXT NOT NULL, -- 编号\n  goal_text TEXT NOT NULL, -- 内容\n  priority TEXT, -- 优先级\n  due TEXT, -- 期限\n  done TEXT -- 达成\n);"
+    },
+    "updateConfig": {
+      "uiSentinel": -1,
+      "contextDepth": -1,
+      "updateFrequency": 0,
+      "batchSize": -1,
+      "skipFloors": -1
+    },
+    "content": [
+      [
+        "row_id",
+        "编号",
+        "内容",
+        "优先级",
+        "期限",
+        "达成"
+      ]
+    ]
+  },
+  "sheet_dpWorldState": {
+    "uid": "sheet_dpWorldState",
+    "name": "世界·现状",
+    "sourceData": {
+      "note": "世界时钟+现状五字段，有且仅有一行。只由斗破Agent扩展写入，AI 禁止操作。",
+      "initNode": "禁止操作。",
+      "insertNode": "禁止操作。",
+      "updateNode": "禁止操作。",
+      "deleteNode": "禁止操作。",
+      "ddl": "CREATE TABLE dp_world_state ( -- 世界现状表\n  row_id INTEGER PRIMARY KEY, -- 行号\n  story_day INTEGER, -- 剧情日\n  minute INTEGER, -- 分钟\n  clock_label TEXT, -- 时段\n  weather TEXT, -- 天气\n  location TEXT, -- 所在地\n  era TEXT, -- 时期\n  reputation TEXT, -- 名声\n  wanted TEXT, -- 通缉度\n  updated_at TEXT -- 更新时间\n);"
+    },
+    "updateConfig": {
+      "uiSentinel": -1,
+      "contextDepth": -1,
+      "updateFrequency": 0,
+      "batchSize": -1,
+      "skipFloors": -1
+    },
+    "content": [
+      [
+        "row_id",
+        "剧情日",
+        "分钟",
+        "时段",
+        "天气",
+        "所在地",
+        "时期",
+        "名声",
+        "通缉度",
+        "更新时间"
+      ]
+    ]
+  },
+  "sheet_dpWorldEvents": {
+    "uid": "sheet_dpWorldEvents",
+    "name": "世界·事件",
+    "sourceData": {
+      "note": "近事/天下事件共表，范围列区分；分量含传闻。只由斗破Agent扩展写入，AI 禁止操作。",
+      "initNode": "禁止操作。",
+      "insertNode": "禁止操作。",
+      "updateNode": "禁止操作。",
+      "deleteNode": "禁止操作。",
+      "ddl": "CREATE TABLE dp_world_events ( -- 世界事件表\n  row_id INTEGER PRIMARY KEY, -- 行号\n  entry_id TEXT NOT NULL, -- 编号\n  scope TEXT, -- 范围\n  day INTEGER, -- 日\n  event_text TEXT NOT NULL, -- 内容\n  basis TEXT, -- 依据\n  end_day INTEGER, -- 有效期至\n  weight TEXT, -- 分量\n  pinned TEXT, -- 置顶\n  done TEXT, -- 已了结\n  resolved_day INTEGER -- 了结日\n);"
+    },
+    "updateConfig": {
+      "uiSentinel": -1,
+      "contextDepth": -1,
+      "updateFrequency": 0,
+      "batchSize": -1,
+      "skipFloors": -1
+    },
+    "content": [
+      [
+        "row_id",
+        "编号",
+        "范围",
+        "日",
+        "内容",
+        "依据",
+        "有效期至",
+        "分量",
+        "置顶",
+        "已了结",
+        "了结日"
+      ]
+    ]
+  },
+  "sheet_dpWorldTasks": {
+    "uid": "sheet_dpWorldTasks",
+    "name": "世界·任务",
+    "sourceData": {
+      "note": "任务清单（进行中/已完成）。只由斗破Agent扩展写入，AI 禁止操作。",
+      "initNode": "禁止操作。",
+      "insertNode": "禁止操作。",
+      "updateNode": "禁止操作。",
+      "deleteNode": "禁止操作。",
+      "ddl": "CREATE TABLE dp_world_tasks ( -- 任务表\n  row_id INTEGER PRIMARY KEY, -- 行号\n  entry_id TEXT NOT NULL, -- 编号\n  title TEXT NOT NULL, -- 标题\n  detail TEXT, -- 详情\n  basis TEXT, -- 依据\n  day INTEGER, -- 接受日\n  end_day INTEGER, -- 时限日\n  status TEXT, -- 状态\n  done_day INTEGER -- 完成日\n);"
+    },
+    "updateConfig": {
+      "uiSentinel": -1,
+      "contextDepth": -1,
+      "updateFrequency": 0,
+      "batchSize": -1,
+      "skipFloors": -1
+    },
+    "content": [
+      [
+        "row_id",
+        "编号",
+        "标题",
+        "详情",
+        "依据",
+        "接受日",
+        "时限日",
+        "状态",
+        "完成日"
+      ]
+    ]
+  },
+  "sheet_dpMemorySmall": {
+    "uid": "sheet_dpMemorySmall",
+    "name": "小记忆",
+    "sourceData": {
+      "note": "小记忆（轻量近事；关联/别名是人名/地名/物名、顿号分隔，是按需召回的钥匙；引文=当时的一句原话）。只由斗破Agent扩展写入，AI 禁止操作。",
+      "initNode": "禁止操作。",
+      "insertNode": "禁止操作。",
+      "updateNode": "禁止操作。",
+      "deleteNode": "禁止操作。",
+      "ddl": "CREATE TABLE dp_memory_small ( -- 小记忆表\n  row_id INTEGER PRIMARY KEY, -- 行号\n  entry_id TEXT NOT NULL, -- 编号\n  content TEXT NOT NULL, -- 内容\n  quote TEXT, -- 引文\n  basis TEXT, -- 依据\n  related TEXT, -- 关联\n  aliases TEXT, -- 别名\n  weight TEXT, -- 分量\n  day INTEGER, -- 记于日\n  done TEXT, -- 已了结\n  resolved_day INTEGER, -- 了结日\n  note TEXT -- 备注\n);"
+    },
+    "updateConfig": {
+      "uiSentinel": -1,
+      "contextDepth": -1,
+      "updateFrequency": 0,
+      "batchSize": -1,
+      "skipFloors": -1
+    },
+    "content": [
+      [
+        "row_id",
+        "编号",
+        "内容",
+        "引文",
+        "依据",
+        "关联",
+        "别名",
+        "分量",
+        "记于日",
+        "已了结",
+        "了结日",
+        "备注"
+      ]
+    ]
+  },
+  "sheet_dpMemoryBig": {
+    "uid": "sheet_dpMemoryBig",
+    "name": "大记忆",
+    "sourceData": {
+      "note": "大记忆（值得一直记住的事；标签列=恩怨/情报/伏笔/大事记，可空；关联/别名是按需召回的钥匙；引文=当时的一句原话）。只由斗破Agent扩展写入，AI 禁止操作。",
+      "initNode": "禁止操作。",
+      "insertNode": "禁止操作。",
+      "updateNode": "禁止操作。",
+      "deleteNode": "禁止操作。",
+      "ddl": "CREATE TABLE dp_memory_big ( -- 大记忆表\n  row_id INTEGER PRIMARY KEY, -- 行号\n  entry_id TEXT NOT NULL, -- 编号\n  content TEXT NOT NULL, -- 内容\n  quote TEXT, -- 引文\n  basis TEXT, -- 依据\n  related TEXT, -- 关联\n  aliases TEXT, -- 别名\n  tag TEXT, -- 标签\n  weight TEXT, -- 分量\n  day INTEGER, -- 记于日\n  done TEXT, -- 已了结\n  resolved_day INTEGER, -- 了结日\n  note TEXT -- 备注\n);"
+    },
+    "updateConfig": {
+      "uiSentinel": -1,
+      "contextDepth": -1,
+      "updateFrequency": 0,
+      "batchSize": -1,
+      "skipFloors": -1
+    },
+    "content": [
+      [
+        "row_id",
+        "编号",
+        "内容",
+        "引文",
+        "依据",
+        "关联",
+        "别名",
+        "标签",
+        "分量",
+        "记于日",
+        "已了结",
+        "了结日",
+        "备注"
+      ]
+    ]
+  }
+}

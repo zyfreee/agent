@@ -100,6 +100,56 @@ assert.equal(taskBack.basis, '药铺掌柜悬赏托付');
 assert.equal(taskBack.status, 'done');
 assert.equal(taskReloaded.apply([{ op: 'addTask', title: '恢复后立新任务' }]).applied[0].summary.includes('t2'), true, '编号接现存最大值');
 
+// —— 势力：登记/更新/删除，按名字 upsert，存档保留 ——
+result = runtime.apply([
+    { op: "setFaction", name: "云岚宗", stance: "wary", dynamics: "为退婚一事派使者常驻乌坦城", basis: "本楼使者登门" },
+    { op: "setFaction", name: "米特尔家族", stance: "friendly", dynamics: "拍卖行给萧家留了面子", basis: "上楼拍卖会互动" },
+], { source: "decide", floor: 30 });
+assert.equal(result.applied.length, 2);
+assert.ok(result.applied[0].summary.includes('势力登记 云岚宗：警惕'));
+result = runtime.apply([{ op: "setFaction", name: "云岚宗", stance: "hostile", dynamics: "因萧炎当众拒婚而震怒", basis: "退婚现场翻脸" }], { source: "decide", floor: 31 });
+assert.equal(result.applied.length, 1);
+assert.ok(result.applied[0].summary.includes('势力更新 云岚宗：敌对'));
+assert.equal(runtime.snapshot().factions.find(f => f.name === '云岚宗').stance, 'hostile');
+assert.equal(runtime.apply([{ op: 'setFaction', name: '云岚宗', stance: 'hostile' }]).rejected[0].reason, 'faction_nothing_to_update');
+assert.equal(runtime.apply([{ op: 'setFaction', name: '不存在', stance: 'bad' }]).applied[0].summary.includes('中立'), true, '未知档位归一为中立');
+runtime.apply([{ op: "deleteFaction", name: "米特尔家族" }]);
+assert.equal(runtime.snapshot().factions.some(f => f.name === '米特尔家族'), false);
+
+// —— 人物：登记/更新态度，存档保留 ——
+result = runtime.apply([{ op: "setPerson", name: "药老", attitude: "严厉但护短，亦师亦父", basis: "第二楼药老出手相护" }]);
+assert.equal(result.applied.length, 1);
+result = runtime.apply([{ op: "setPerson", name: "药老", attitude: "因萧炎隐瞒森林经历而起疑", basis: "本楼谎言被看穿" }]);
+assert.equal(result.applied.length, 1);
+assert.equal(runtime.snapshot().people.find(p => p.name === '药老').attitude, '因萧炎隐瞒森林经历而起疑');
+assert.equal(runtime.apply([{ op: 'setPerson', name: '药老', attitude: '因萧炎隐瞒森林经历而起疑' }]).rejected[0].reason, 'person_nothing_to_update');
+
+// —— 势力/人物随存档恢复 ——
+const socialSaved = JSON.parse(JSON.stringify(runtime.snapshot()));
+const socialReloaded = createWorldRuntime({ now: () => "sr" });
+socialReloaded.restore(socialSaved);
+assert.equal(socialReloaded.snapshot().factions.find(f => f.name === '云岚宗').stance, 'hostile');
+assert.equal(socialReloaded.snapshot().people.find(p => p.name === '药老').basis, '本楼谎言被看穿');
+
+// —— 事件地点：登记/清洗/摘要 ——
+result = runtime.apply([{ op: "addEvent", scope: "world", text: "皇室武库失窃", location: "帝都" }], { source: "decide", floor: 40 });
+assert.equal(result.applied.length, 1);
+assert.ok(result.applied[0].summary.includes('地点：帝都'), result.applied[0].summary);
+assert.equal(runtime.snapshot().worldEvents.find(event => event.text === '皇室武库失窃').location, '帝都');
+
+// —— 热度计：三档切换/非法档位/同档拒绝/存档保留 ——
+assert.equal(runtime.snapshot().tension, 'calm', '开局平静');
+result = runtime.apply([{ op: "setTension", level: "rising" }], { source: "decide", floor: 41 });
+assert.equal(result.applied.length, 1);
+assert.ok(result.applied[0].summary.includes('平静 → 升温'));
+assert.equal(runtime.apply([{ op: 'setTension', level: 'rising' }]).rejected[0].reason, 'tension_nothing_to_update');
+assert.equal(runtime.apply([{ op: 'setTension', level: 'panic' }]).rejected[0].reason, 'bad_tension');
+runtime.apply([{ op: 'setTension', level: 'storm' }]);
+const tensionSaved = JSON.parse(JSON.stringify(runtime.snapshot()));
+const tensionReloaded = createWorldRuntime({ now: () => "tn" });
+tensionReloaded.restore(tensionSaved);
+assert.equal(tensionReloaded.snapshot().tension, 'storm', '氛围随存档恢复');
+
 // —— opId 幂等：重放同一批指令不再二次记账 ——
 const batch = [{ op: 'addEvent', scope: 'near', text: '重放测试', opId: 'tick-1' }];
 result = runtime.apply(batch, { source: 'llm' });

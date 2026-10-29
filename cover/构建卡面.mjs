@@ -1,6 +1,6 @@
-/* 把 cover/page.html 编译成酒馆正则脚本 + 酒馆助手脚本条目。
- * 跑：node cover/build.mjs
- * 好处：卡面 HTML 只有 page.html 一份，改完重跑，不用手抄进 JSON。
+/* 把 cover/卡面页面源码.html 编译成酒馆正则脚本 + 酒馆助手脚本条目。
+ * 跑：node cover/构建卡面.mjs
+ * 好处：卡面 HTML 只有 卡面页面源码.html 一份，改完重跑，不用手抄进 JSON。
  */
 import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -20,8 +20,8 @@ function compact(html) {
     .join('\n');
 }
 
-const page = compact(await read('page.html'));
-const script = await read('script.js');
+const page = compact(await read('卡面页面源码.html'));
+const script = await read('卡面脚本源码.js');
 
 const displayScript = {
   id: 'dpc-cover-mount',
@@ -68,7 +68,7 @@ const helperScript = {
 };
 
 // 离线预览页：把卡面塞进一个普通 HTML，方便在浏览器里直接看排版。
-// 顺手把 script.js 也塞进来，所以这一页的按钮是能点的：走的是同一份脚本，
+// 顺手把 卡面脚本源码.js 也塞进来，所以这一页的按钮是能点的：走的是同一份脚本，
 // 只是变量接口不在，草稿落到 localStorage 里。
 const preview = `<!doctype html>
 <html lang="zh-CN">
@@ -83,8 +83,8 @@ const preview = `<!doctype html>
 </style>
 </head>
 <body>
-<p data-preview-note><b>这是离线试跑页，不是酒馆里的真卡面。</b>排版、点「开始创建身份」、翻页、确认，都是同一份脚本在跑，所以这里能点。区别只有一个：这里没有酒馆的变量接口，填的东西存在浏览器本地；真发消息那一步也不会发出去（会提示你手动手动发）。改完 <code>page.html</code> 或 <code>script.js</code> 后重跑 <code>node cover/build.mjs</code> 再刷新。</p>
-${await read('page.html')}
+<p data-preview-note><b>这是离线试跑页，不是酒馆里的真卡面。</b>排版、点「开始创建身份」、翻页、确认，都是同一份脚本在跑，所以这里能点。区别只有一个：这里没有酒馆的变量接口，填的东西存在浏览器本地；真发消息那一步也不会发出去（会提示你手动手动发）。改完 <code>卡面页面源码.html</code> 或 <code>卡面脚本源码.js</code> 后重跑 <code>node cover/构建卡面.mjs</code> 再刷新。</p>
+${await read('卡面页面源码.html')}
 <script>
 ${script}
 </script>
@@ -92,12 +92,12 @@ ${script}
 </html>
 `;
 
-await writeFile(join(here, 'regex.json'), `${JSON.stringify([displayScript, promptScript], null, 2)}\n`, 'utf8');
-await writeFile(join(here, 'opening-script.json'), `${JSON.stringify(helperScript, null, 2)}\n`, 'utf8');
-await writeFile(join(here, 'first-mes.txt'), `${MARKER}\n`, 'utf8');
-await writeFile(join(here, 'preview.html'), preview, 'utf8');
+await writeFile(join(here, '卡面正则.json'), `${JSON.stringify([displayScript, promptScript], null, 2)}\n`, 'utf8');
+await writeFile(join(here, '卡面脚本.json'), `${JSON.stringify(helperScript, null, 2)}\n`, 'utf8');
+await writeFile(join(here, '卡面首楼.txt'), `${MARKER}\n`, 'utf8');
+await writeFile(join(here, '卡面预览.html'), preview, 'utf8');
 
-console.log(`page.html ${page.length} 字符 → regex.json`);
-console.log(`script.js ${script.length} 字符 → opening-script.json`);
-console.log(`page.html → preview.html（离线看排版用）`);
+console.log(`卡面页面源码.html ${page.length} 字符 → 卡面正则.json`);
+console.log(`卡面脚本源码.js ${script.length} 字符 → 卡面脚本.json`);
+console.log(`卡面页面源码.html → 卡面预览.html（离线看排版用）`);
 console.log(`findRegex: ${displayScript.findRegex}`);
