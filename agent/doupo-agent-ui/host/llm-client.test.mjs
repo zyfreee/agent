@@ -72,6 +72,26 @@ const interpreted = await viaTavern.interpret({ input: '我要修炼', state: {}
 assert.match(seenPrompt, /玩家消息：我要修炼/);
 assert.equal(interpreted.effects[0].value, 5);
 
+// —— 静默飞行标志：酒馆连接调用期间 isQuietBusy 必须为真，收尾后（含事件缓冲）回落 ——
+const busySamples = [];
+const slowContext = {
+    async generateQuietPrompt() {
+        busySamples.push(quietClient.isQuietBusy());
+        await new Promise(resolve => setTimeout(resolve, 20));
+        busySamples.push(quietClient.isQuietBusy());
+        return 'ok';
+    },
+};
+const quietClient = createLlmClient({
+    getSettings: () => ({ llm: { useSillyTavernConnection: true, timeoutMs: 5000 } }),
+    getContext: () => slowContext,
+});
+assert.equal(quietClient.isQuietBusy(), false, '起飞前标志必须为假');
+await quietClient.complete({ system: 's', user: 'u' });
+assert.deepEqual(busySamples, [true, true], '调用全程标志为真');
+await new Promise(resolve => setTimeout(resolve, 700));
+assert.equal(quietClient.isQuietBusy(), false, '收尾加事件缓冲后标志回落');
+
 const calls = [];
 const fakeFetch = async (url, options) => {
     calls.push({ url, options });

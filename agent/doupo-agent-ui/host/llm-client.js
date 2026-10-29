@@ -305,6 +305,14 @@ export async function listModels({ baseUrl = '', apiKey = '', provider = '', fet
 export function createLlmClient({ getSettings, getContext, fetchImpl } = {}) {
     if (typeof getSettings !== 'function') throw new TypeError('getSettings 必须是函数');
 
+    // 静默生成在飞行的深度计数。酒馆对每一次生成（包括这里的静默调用）收尾时都会广播
+    // GENERATION_ENDED，监听方要靠这个计数区分“正文真的写完了”和“自己人的小调用结束了”，
+    // 否则记账链会被自己的调用反复叫醒，形成自激励循环。
+    let quietGenerationDepth = 0;
+    // 酒馆的事件可能在 generateQuietPrompt 兑现之后才发出来，收尾后再压一小段缓冲。
+    const QUIET_EVENT_GRACE_MS = 500;
+    const isQuietBusy = () => quietGenerationDepth > 0;
+
     /**
      * 选连接：hint 是这一次调用自己的要求（记录员/场记可以各自选跟随酒馆或自定义），
      * 没给 hint 才看设置页的全局模式。custom 是这一次调用自带的一套接口参数（地址/密钥/模型），
@@ -401,10 +409,14 @@ export function createLlmClient({ getSettings, getContext, fetchImpl } = {}) {
                 presencePenalty,
                 frequencyPenalty,
             });
+            quietGenerationDepth += 1;
             try {
                 const reply = await withTimeout(Promise.resolve(connection.context.generateQuietPrompt(options)), timeoutMs, signal);
+                // 压过酒馆收尾事件的发布时机：它可能在这句话兑现之后才到。
+                await new Promise(resolve => setTimeout(resolve, QUIET_EVENT_GRACE_MS));
                 return typeof reply === 'string' ? reply : String(reply?.text ?? '');
             } finally {
+                quietGenerationDepth -= 1;
                 restoreSampling();
             }
         }
@@ -541,5 +553,5 @@ export function createLlmClient({ getSettings, getContext, fetchImpl } = {}) {
         return { text, claims: Array.isArray(parsed?.claims) ? parsed.claims : [] };
     }
 
-    return Object.freeze({ configured, interpret, adjudicateAction, selectSettings, compose, complete });
+    return Object.freeze({ configured, interpret, adjudicateAction, selectSettings, compose, complete, isQuietBusy });
 }

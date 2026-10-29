@@ -177,7 +177,11 @@ function bindHostLifecycle() {
         if (typeof event !== 'string' || !event) continue;
         const handler = () => {
             // 生成正常结束才决定/解析；手动停止时最后楼层还是上一轮的，跑了也是白花一次调用。
-            if (name === 'GENERATION_ENDED') {
+            // 酒馆对每一次生成收尾都广播这个事件——包括这里记账链自己发起的静默调用。
+            // 静默调用还在飞的时候就直接跳过记账，否则链会被自己的调用反复叫醒，无限空转。
+            // 真玩家恰好在静默调用飞行中生成正文的情况很少见，漏掉的那一轮会在下一次生成后补记。
+            const quietInFlight = typeof agentLlmClient?.isQuietBusy === 'function' && agentLlmClient.isQuietBusy();
+            if (name === 'GENERATION_ENDED' && !quietInFlight) {
                 const decide = worldDecideSettings();
                 // 影响库要读“这一轮之后”的世界台账，所以排在决定/执行之后，串行跑。
                 const afterWorld = () => {
