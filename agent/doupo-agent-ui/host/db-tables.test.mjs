@@ -72,6 +72,33 @@ const mergedAgain = mergeBridgeSheets(merged.template);
 assert.equal(mergedAgain.added.length, 0, '二次合并不应再补表');
 assert.equal(mergedAgain.template.mate.updateConfigUiSentinel, -1, '二次合并保留新语义标记');
 
+// 旧版副本（同名但表头对不上：预设导入或旧结构残留）让位：从包里剔除、按当前键与结构补上；
+// 同名且结构一致（脚本导入会重生成拼音键）的原样保留，保证幂等
+const staleTemplate = {
+    mate: { type: 'chatSheets', version: 1 },
+    sheet_na_jie_zhu_jue_dang_an: { name: '纳戒·主角档案', content: [['row_id', '姓名']] },
+    sheet_xiao_ji_yi: { name: '小记忆', content: [['row_id', '内容']] },
+};
+const mergedStale = mergeBridgeSheets(staleTemplate);
+assert.equal(mergedStale.replaced.length, 2, '两张表头过期的副本被标记为替换');
+assert.equal(mergedStale.added.length, ALL_TABLE_DEFS.length - 2, '其余桥接表全量补上');
+assert.ok(!('sheet_na_jie_zhu_jue_dang_an' in mergedStale.template) && !('sheet_xiao_ji_yi' in mergedStale.template), '旧键名副本从包里剔除');
+assert.ok(mergedStale.template.sheet_dpProfile && mergedStale.template.sheet_dpMemorySmall, '被替换的表按当前键补上');
+const mergedStaleAgain = mergeBridgeSheets(mergedStale.template);
+assert.equal(mergedStaleAgain.added.length, 0, '替换后二次合并幂等');
+assert.equal(mergedStaleAgain.replaced.length, 0, '替换后无残留副本');
+const pinyinTemplate = {
+    mate: { type: 'chatSheets', version: 1 },
+    sheet_na_jie_zhu_jue_dang_an: {
+        name: '纳戒·主角档案',
+        content: [ALL_TABLE_DEFS[0].headers.slice()],
+        sourceData: { ddl: ALL_TABLE_DEFS[0].ddl },
+    },
+};
+const mergedPinyin = mergeBridgeSheets(pinyinTemplate);
+assert.equal(mergedPinyin.replaced.length, 0, '同名同结构的拼音键表视为已有，不替换');
+assert.equal(mergedPinyin.added.length, ALL_TABLE_DEFS.length - 1, '其余表照常补上');
+
 // 旧语义模板（外来表 updateConfig 带 0=沿用UI、无 mate 标记）：不能置标记，
 // 否则迁移被跳过、旧表的 0 会被新运行时误读成「禁用」。
 const legacy = {
@@ -107,6 +134,36 @@ assert.ok(sanitized.sheet_bad.sourceData.ddl.includes('CREATE TABLE bag ( -- 背
 assert.deepEqual(sanitized.sheet_bad.content, brokenForeign.sheet_bad.content, '行内容不动');
 assert.equal(sanitized.sheet_bad.updateConfig.updateFrequency, 0, 'updateConfig 不动');
 assert.equal(sanitized.sheet_good.sourceData.ddl, brokenForeign.sheet_good.sourceData.ddl, '已对齐的外来表 DDL 原样保留');
+
+// 校验器把表头 NFKC 归一后与注释做全等：表头和注释都是全角（原样相等）也会被判不匹配，
+// 对齐检查必须按同一条 NFKC 口径判，否则这种表会被漏掉、整包导入连坐拒绝。
+const wideForeign = {
+    mate: { type: 'chatSheets', version: 1 },
+    sheet_wide: {
+        name: '全角表',
+        content: [['row_id', '背包分类：核心材料', '进度（%）']],
+        sourceData: { ddl: 'CREATE TABLE wide ( -- 全角表\n  row_id INTEGER PRIMARY KEY, -- 行号\n  core TEXT, -- 背包分类：核心材料\n  progress TEXT, -- 进度（%）\n);' },
+    },
+};
+const sanitizedWide = sanitizeForeignDdl(wideForeign);
+assert.notEqual(sanitizedWide, wideForeign, '全角自洽的表也必须被识别为不对齐');
+assert.ok(sanitizedWide.sheet_wide.sourceData.ddl.includes('-- 背包分类:核心材料'), '全角冒号注释应重建为 NFKC 半角');
+assert.ok(sanitizedWide.sheet_wide.sourceData.ddl.includes('-- 进度(%)'), '全角括号注释应重建为 NFKC 半角');
+assert.deepEqual(sanitizedWide.sheet_wide.content, wideForeign.sheet_wide.content, '全角表的行内容不动');
+assert.equal(
+    sanitizeForeignDdl(sanitizedWide).sheet_wide.sourceData.ddl,
+    sanitizedWide.sheet_wide.sourceData.ddl,
+    '重建后的 DDL 按校验器口径已对齐，二次净化不再改写',
+);
+const cleanForeign = {
+    mate: { type: 'chatSheets', version: 1 },
+    sheet_en: {
+        name: '英文表',
+        content: [['row_id', '金币']],
+        sourceData: { ddl: 'CREATE TABLE en ( -- 英文表\n  row_id INTEGER PRIMARY KEY, -- 行号\n  gold TEXT, -- 金币\n);' },
+    },
+};
+assert.equal(sanitizeForeignDdl(cleanForeign), cleanForeign, '中文表头配 ASCII 列名（注释对不上）也符合校验器口径，不动');
 
 const mergedForSanitize = mergeBridgeSheets(JSON.parse(JSON.stringify(brokenForeign)));
 const sanitizedMerged = sanitizeForeignDdl(mergedForSanitize.template);

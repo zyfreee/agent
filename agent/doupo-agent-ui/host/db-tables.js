@@ -335,8 +335,12 @@ export function buildBridgeSheets() {
 }
 
 /**
- * 把桥接表合并进现有模板（纯函数）：缺的表补上，已有的表一律不动。
- * 返回 { template, added }；existing 为空时返回纯片段。
+ * 数据库脚本导入时会按表名转拼音重生成 sheet 键（不保留包里的键），所以桥接表的
+ * 身份只能认「表名」：已有同名表且表头与当前定义一致 → 原样保留（幂等）；
+ * 同名但表头对不上（旧版结构/预设残留副本）→ 剔除让位，按当前定义补进包里；
+ * 同名都没有 → 直接补。merge 导入是整包替换，包里剔除的旧键会从聊天模板删掉，
+ * 数据库校验器也不会再因同名连坐拒绝整包。表内容以扩展状态为准，镜像会按当前结构重写。
+ * 返回 { template, added, replaced }；existing 为空时返回纯片段。
  */
 export function mergeBridgeSheets(existing) {
     const base = existing && typeof existing === 'object' && !Array.isArray(existing)
@@ -346,15 +350,28 @@ export function mergeBridgeSheets(existing) {
     const fragment = buildBridgeSheets();
     const added = [];
     const addedKeys = [];
+    const replaced = [];
     for (const def of ALL_TABLE_DEFS) {
-        if (!base[def.key]) {
+        const sameNameKey = Object.keys(base).find(key => key.startsWith('sheet_')
+            && normalizeHeaderCell(base[key]?.name) === normalizeHeaderCell(def.name));
+        if (sameNameKey) {
+            const headers = Array.isArray(base[sameNameKey]?.content?.[0])
+                ? base[sameNameKey].content[0].map(header => String(header))
+                : [];
+            const current = headers.length === def.headers.length
+                && headers.every((header, index) => normalizeHeaderCell(header) === normalizeHeaderCell(def.headers[index]));
+            if (current) continue;
+            delete base[sameNameKey];
             base[def.key] = fragment[def.key];
-            added.push(def.name);
-            addedKeys.push(def.key);
+            replaced.push(def.name);
+            continue;
         }
+        base[def.key] = fragment[def.key];
+        added.push(def.name);
+        addedKeys.push(def.key);
     }
     if (addedKeys.length) markNewSentinel(base, addedKeys);
-    return { template: base, added };
+    return { template: base, added, replaced };
 }
 
 // ---------- 导入包净化：外来表 DDL 对齐表头 ----------
@@ -362,6 +379,9 @@ export function mergeBridgeSheets(existing) {
 /**
  * 数据库脚本导入模板时逐列校验「DDL 注释 = 表头」（首列 row_id 豁免），外来表自己的
  * 标点不一致（如全角「进度（%）」对半角表头「进度(%)」）会把整包导入连坐拒绝。
+ * 注意校验器的比较口径：表头先做 NFKC 归一（全角：→半角:、全角（→半角( 等），注释
+ * 不归一就做全等比较——所以「表头和注释都是全角」原样相等也会被判不匹配。
+ * 这里的对齐检查与 DDL 重建都按同一条 NFKC 口径来，别用「原样 vs 原样」误判成已对齐。
  * 而它的 merge 导入是整包替换：外来表必须随包携带才能留在聊天模板里。
  * 这里只把注释与表头对不上的外来表 DDL 按表头重建——表名、表说明、行内容、
  * updateConfig 一律不动，桥接表本身（DDL 与表头同源生成）永不改写。
@@ -384,18 +404,37 @@ export function sanitizeForeignDdl(template) {
     return copied ?? template;
 }
 
-/** 逐列抽出列定义行里的「-- 注释」；CREATE TABLE 行与收尾括号不算列。 */
+/** 校验器口径的字符串归一：NFKC（全角→半角）后去首尾空白。 */
+function normalizeHeaderCell(value) {
+    return String(value ?? '').normalize('NFKC').trim();
+}
+
+function isAsciiText(value) {
+    return /^[\x00-\x7F]*$/.test(value);
+}
+
+/**
+ * 镜像数据库校验器的逐列判定：归一表头必须等于 DDL 注释或物理列名，
+ * 且表头是中文时物理列名必须是 ASCII。任何一列不过就算不对齐。
+ */
 function ddlCommentsAligned(ddl, headers) {
-    const comments = [];
+    const columns = [];
     for (const raw of ddl.split('\n')) {
         const line = raw.trim();
         if (!line || /^CREATE\b/i.test(line) || line.startsWith(')')) continue;
         const at = line.indexOf('--');
-        if (at < 0) continue;
-        comments.push(line.slice(at + 2).trim().replace(/,\s*$/, ''));
+        const head = at >= 0 ? line.slice(0, at) : line;
+        const name = head.trim().split(/\s+/)[0]?.replace(/[",`\[\]]/g, '').replace(/,\s*$/, '') ?? '';
+        const comment = at >= 0 ? line.slice(at + 2).trim().replace(/,\s*$/, '') : '';
+        columns.push({ name, comment });
     }
-    if (comments.length !== headers.length) return false;
-    return headers.slice(1).every((header, index) => comments[index + 1] === header);
+    if (columns.length !== headers.length) return false;
+    return headers.slice(1).every((header, index) => {
+        const normalized = normalizeHeaderCell(header);
+        const column = columns[index + 1];
+        if (normalized !== column.name && normalized !== column.comment) return false;
+        return isAsciiText(normalized) || isAsciiText(column.name);
+    });
 }
 
 /** 按表头重建能通过校验的 DDL：沿用原表名与表说明，列名用 c1..cN。 */
@@ -406,7 +445,8 @@ function rebuildDdlFromHeaders(sheet, headers) {
     const noteMatch = original.match(/\(\s*--\s*(.+)\s*\n/);
     const note = noteMatch ? noteMatch[1].trim() : String(sheet.name ?? tableName);
     const parts = headers.map((header, index) => {
-        const text = index === 0 ? 'row_id INTEGER PRIMARY KEY, -- 行号' : `c${index} TEXT, -- ${header.replace(/\s+/g, ' ')}`;
+        // 注释写 NFKC 归一后的表头：校验器拿归一表头与注释做全等，原样全角注释过不了。
+        const text = index === 0 ? 'row_id INTEGER PRIMARY KEY, -- 行号' : `c${index} TEXT, -- ${normalizeHeaderCell(header).replace(/\s+/g, ' ')}`;
         return index === headers.length - 1 ? `  ${text.replace(/,(\s*--)/, '$1')}` : `  ${text}`;
     });
     return `CREATE TABLE ${tableName} ( -- ${note}\n${parts.join('\n')}\n);`;
@@ -730,16 +770,21 @@ function rowData(def, cells) {
 
 /**
  * 把期望行直接写进一份导出视图的深拷贝（importTableAsJson 冷启动兜底用）。
- * 只动桥接表：数据行 row_id 按 1..n 重排，其余表原样保留。
+ * 只动桥接表：同名表写在它现有的键上（脚本导入会重生成键，别另造一份造成同名冲突），
+ * 没有才用定义键；数据行 row_id 按 1..n 重排，其余表原样保留。
  */
 export function applyDesiredToView(view, desiredGroups) {
     const cloned = JSON.parse(JSON.stringify(view && typeof view === 'object' ? view : {}));
     if (!cloned.mate || typeof cloned.mate !== 'object') cloned.mate = { type: 'chatSheets', version: 1 };
+    const targetKeys = [];
     for (const group of desiredGroups) {
         const { def, rows } = group;
-        cloned[def.key] = {
-            ...(typeof cloned[def.key] === 'object' && cloned[def.key] ? cloned[def.key] : {}),
-            uid: def.key,
+        const existingKey = Object.keys(cloned).find(key => key.startsWith('sheet_')
+            && normalizeHeaderCell(cloned[key]?.name) === normalizeHeaderCell(def.name));
+        const targetKey = existingKey ?? def.key;
+        cloned[targetKey] = {
+            ...(typeof cloned[targetKey] === 'object' && cloned[targetKey] ? cloned[targetKey] : {}),
+            uid: targetKey,
             name: def.name,
             sourceData: {
                 note: def.note,
@@ -752,8 +797,9 @@ export function applyDesiredToView(view, desiredGroups) {
             updateConfig: { ...UPDATE_CONFIG },
             content: [def.headers.slice(), ...rows.map((cells, index) => [String(index + 1), ...cells.map(cell)])],
         };
+        targetKeys.push(targetKey);
     }
-    markNewSentinel(cloned, desiredGroups.map(group => group.def.key));
+    markNewSentinel(cloned, targetKeys);
     return cloned;
 }
 
