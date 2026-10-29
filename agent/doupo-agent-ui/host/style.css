@@ -549,17 +549,19 @@
 .dai-self-entry-badges { display: inline-flex; gap: 0.4rem; color: var(--dai-accent); font-size: 0.76rem; }
 
 /* ---- 人物簿：紧凑小卡，点开信息面板 ---- */
-.dai-npc-grid { grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr)); gap: 0.45rem; }
-.dai-npc-card { display: flex; align-items: stretch; gap: 0.25rem; min-width: 0; padding: 0.45rem 0.5rem; border: 1px solid var(--dai-border); border-radius: 0.55rem; background: var(--dai-field); }
+.dai-npc-grid { grid-template-columns: 1fr; gap: 0.25rem; }
+/* 细长条：一人一行，摘要在中间吃掉剩余宽度截断，图标横排在行尾。
+   选择器带 .dai-status-list 前缀压过 .dai-status-list li 的通用列表行样式（0,1,1）。 */
+.dai-status-list li.dai-npc-card { display: flex; align-items: center; gap: 0.25rem; min-width: 0; padding: 0.22rem 0.5rem; border: 1px solid var(--dai-border); border-radius: 0.45rem; background: var(--dai-field); }
 .dai-npc-card.is-important { border-color: var(--dai-accent); }
 .dai-npc-card.is-injected { box-shadow: inset 0 0 0 1px var(--dai-tint); }
-.dai-npc-card-main { display: grid; grid-template-columns: auto 1fr auto; column-gap: 0.35rem; row-gap: 0.05rem; flex: 1; min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; cursor: pointer; text-align: left; font: inherit; }
-.dai-npc-card-dot { grid-column: 1; grid-row: 1; color: var(--dai-accent); font-size: 0.7rem; line-height: 1.6; }
-.dai-npc-card-name { grid-column: 2; grid-row: 1; overflow: hidden; color: var(--dai-text); font-size: 0.86rem; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
-.dai-npc-card-favor { grid-column: 3; grid-row: 1; color: var(--dai-accent); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
-.dai-npc-card-line { grid-column: 2 / 4; overflow: hidden; color: var(--dai-text); font-size: 0.73rem; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.dai-npc-card-main { display: flex; align-items: center; gap: 0.45rem; flex: 1; min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; cursor: pointer; text-align: left; font: inherit; }
+.dai-npc-card-dot { flex: none; color: var(--dai-accent); font-size: 0.7rem; line-height: 1; }
+.dai-npc-card-name { flex: none; max-width: 9rem; overflow: hidden; color: var(--dai-text); font-size: 0.84rem; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.dai-npc-card-favor { flex: none; color: var(--dai-accent); font-size: 0.76rem; font-variant-numeric: tabular-nums; }
+.dai-npc-card-line { flex: 1; min-width: 0; overflow: hidden; color: var(--dai-text); font-size: 0.73rem; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
 .dai-npc-card-line.is-muted { color: var(--dai-muted); }
-.dai-npc-card-actions { display: flex; flex: none; flex-direction: column; gap: 0.15rem; justify-content: center; }
+.dai-npc-card-actions { display: flex; flex: none; gap: 0.2rem; }
 .dai-npc-icon-button { display: grid; width: 1.5rem; height: 1.25rem; place-items: center; border: 1px solid var(--dai-border); border-radius: 0.3rem; color: var(--dai-muted); background: transparent; cursor: pointer; font-size: 0.7rem; line-height: 1; }
 .dai-npc-icon-button:hover { color: var(--dai-text); border-color: var(--dai-accent); }
 .dai-npc-icon-button.is-active { color: var(--dai-accent); background: var(--dai-tint); }
