@@ -4,6 +4,7 @@ _inspection-context.txt
 .tmp/
 .tmp-inspect*.mjs
 .tmp-*.txt
+.tmp-*.json
 
 # 原著全文与本地工作产物（体积大、含受版权保护的原作正文），不随仓库发布
 原著分卷/

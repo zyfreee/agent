@@ -198,3 +198,35 @@ function createFakeApi() {
     assert.ok(lastView && typeof lastView === 'object');
     delete globalThis.window;
 }
+
+// 5. 聊天模板里有外来表（DDL 注释与表头不一致）：导入包先净化、外来表随包保留。
+// 数据库脚本的 merge 导入是整包替换，且按「注释 = 表头」校验整包——少带外来表等于删表。
+{
+    const { api, calls } = createFakeApi();
+    let importedPayload = null;
+    const rawImport = api.importTemplateFromData;
+    api.importTemplateFromData = async (tmpl, options) => {
+        importedPayload = tmpl ? JSON.parse(JSON.stringify(tmpl)) : null;
+        return rawImport(tmpl, options);
+    };
+    // 预置一个带全角注释外来表的聊天模板（模拟另一张卡留下的表）
+    await api.importTemplateFromData({
+        mate: { type: 'chatSheets', version: 1 },
+        sheet_foreign: {
+            name: '背包与货币',
+            content: [['row_id', '进度(%)']],
+            sourceData: { ddl: 'CREATE TABLE bag ( -- 背包与货币\n  row_id INTEGER PRIMARY KEY, -- 行号\n  progress TEXT, -- 进度（%）\n);' },
+        },
+    }, {});
+    calls.importTemplate = 0;
+    globalThis.window = { AutoCardUpdaterAPI: api };
+    const bridge = createDbBridge({ getSettings: () => undefined });
+    const mirror = await bridge.mirrorSelf(sampleSelf);
+    assert.equal(mirror.ok, true, `外来表存在时镜像应成功：${bridge.status().message}`);
+    assert.equal(calls.importTemplate, 1);
+    assert.ok(importedPayload?.sheet_foreign, '外来表必须随包携带（整包替换语义下少带等于删表）');
+    assert.ok(importedPayload.sheet_foreign.sourceData.ddl.includes('-- 进度(%)'), '外来表 DDL 应先净化再导入');
+    assert.ok(importedPayload.sheet_dpProfile, '桥接表在导入包里');
+    assert.equal(bridge.status().status, 'ready');
+    delete globalThis.window;
+}

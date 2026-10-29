@@ -6,6 +6,7 @@ import {
     MEMORY_TABLE_DEFS,
     buildBridgeSheets,
     mergeBridgeSheets,
+    sanitizeForeignDdl,
     desiredSelfRows,
     desiredWorldRows,
     desiredMemoryRows,
@@ -81,6 +82,39 @@ const mergedLegacy = mergeBridgeSheets(legacy);
 assert.equal(mergedLegacy.added.length, ALL_TABLE_DEFS.length);
 assert.equal(mergedLegacy.template.mate.updateConfigUiSentinel, undefined, '存在旧语义 0 时不得置新语义标记');
 assert.equal(mergedLegacy.template.sheet_legacy.updateConfig.updateFrequency, 0, '外来表 updateConfig 原样保留');
+
+// ---------- 导入包净化：外来表 DDL 注释与表头对齐 ----------
+
+const brokenForeign = {
+    mate: { type: 'chatSheets', version: 1 },
+    sheet_bad: {
+        name: '背包与货币',
+        content: [['row_id', '金币', '进度(%)']],
+        sourceData: { ddl: 'CREATE TABLE bag ( -- 背包与货币\n  row_id INTEGER PRIMARY KEY, -- 行号\n  gold TEXT, -- 金币\n  progress TEXT, -- 进度（%）\n);' },
+        updateConfig: { updateFrequency: 0 },
+    },
+    sheet_good: {
+        name: '好表',
+        content: [['row_id', '名字']],
+        sourceData: { ddl: 'CREATE TABLE good ( -- 好表\n  row_id INTEGER PRIMARY KEY, -- 行号\n  name TEXT, -- 名字\n);' },
+    },
+};
+const sanitized = sanitizeForeignDdl(brokenForeign);
+assert.notEqual(sanitized, brokenForeign, '有需要修复的表时应返回副本');
+assert.ok(sanitized.sheet_bad.sourceData.ddl.includes('-- 进度(%)'), '不一致的注释应按表头重建');
+assert.ok(!sanitized.sheet_bad.sourceData.ddl.includes('进度（%）'), '全角旧注释不应残留');
+assert.ok(sanitized.sheet_bad.sourceData.ddl.includes('CREATE TABLE bag ( -- 背包与货币'), '重建沿用原表名与表说明');
+assert.deepEqual(sanitized.sheet_bad.content, brokenForeign.sheet_bad.content, '行内容不动');
+assert.equal(sanitized.sheet_bad.updateConfig.updateFrequency, 0, 'updateConfig 不动');
+assert.equal(sanitized.sheet_good.sourceData.ddl, brokenForeign.sheet_good.sourceData.ddl, '已对齐的外来表 DDL 原样保留');
+
+const mergedForSanitize = mergeBridgeSheets(JSON.parse(JSON.stringify(brokenForeign)));
+const sanitizedMerged = sanitizeForeignDdl(mergedForSanitize.template);
+assert.equal(sanitizedMerged.sheet_dpProfile.sourceData.ddl, buildBridgeSheets().sheet_dpProfile.sourceData.ddl, '桥接表 DDL 永不改写');
+assert.ok(sanitizedMerged.sheet_bad.sourceData.ddl.includes('-- 进度(%)'), '合并模板里的外来表同样被净化');
+const pureBridge = buildBridgeSheets();
+assert.equal(sanitizeForeignDdl(pureBridge), pureBridge, '纯桥接片段没有外来表时原样返回');
+assert.equal(sanitizeForeignDdl(null), null, '空模板原样返回');
 
 // ---------- 纳戒：状态 → 行 → 表 → 状态 往返 ----------
 

@@ -357,6 +357,61 @@ export function mergeBridgeSheets(existing) {
     return { template: base, added };
 }
 
+// ---------- 导入包净化：外来表 DDL 对齐表头 ----------
+
+/**
+ * 数据库脚本导入模板时逐列校验「DDL 注释 = 表头」（首列 row_id 豁免），外来表自己的
+ * 标点不一致（如全角「进度（%）」对半角表头「进度(%)」）会把整包导入连坐拒绝。
+ * 而它的 merge 导入是整包替换：外来表必须随包携带才能留在聊天模板里。
+ * 这里只把注释与表头对不上的外来表 DDL 按表头重建——表名、表说明、行内容、
+ * updateConfig 一律不动，桥接表本身（DDL 与表头同源生成）永不改写。
+ */
+export function sanitizeForeignDdl(template) {
+    if (!template || typeof template !== 'object' || Array.isArray(template)) return template;
+    const bridgeKeys = new Set(ALL_TABLE_DEFS.map(def => def.key));
+    const foreignKeys = Object.keys(template).filter(key => key.startsWith('sheet_') && !bridgeKeys.has(key));
+    let copied = null;
+    for (const key of foreignKeys) {
+        const sheet = template[key];
+        if (!sheet || typeof sheet !== 'object') continue;
+        const ddl = sheet.sourceData?.ddl;
+        const headers = Array.isArray(sheet.content?.[0]) ? sheet.content[0].map(header => String(header)) : null;
+        if (!headers || headers.length < 2 || typeof ddl !== 'string' || !ddl.trim()) continue;
+        if (ddlCommentsAligned(ddl, headers)) continue;
+        if (!copied) copied = JSON.parse(JSON.stringify(template));
+        copied[key].sourceData.ddl = rebuildDdlFromHeaders(copied[key], headers);
+    }
+    return copied ?? template;
+}
+
+/** 逐列抽出列定义行里的「-- 注释」；CREATE TABLE 行与收尾括号不算列。 */
+function ddlCommentsAligned(ddl, headers) {
+    const comments = [];
+    for (const raw of ddl.split('\n')) {
+        const line = raw.trim();
+        if (!line || /^CREATE\b/i.test(line) || line.startsWith(')')) continue;
+        const at = line.indexOf('--');
+        if (at < 0) continue;
+        comments.push(line.slice(at + 2).trim().replace(/,\s*$/, ''));
+    }
+    if (comments.length !== headers.length) return false;
+    return headers.slice(1).every((header, index) => comments[index + 1] === header);
+}
+
+/** 按表头重建能通过校验的 DDL：沿用原表名与表说明，列名用 c1..cN。 */
+function rebuildDdlFromHeaders(sheet, headers) {
+    const original = typeof sheet.sourceData?.ddl === 'string' ? sheet.sourceData.ddl : '';
+    const nameMatch = original.match(/CREATE TABLE\s+([A-Za-z_][A-Za-z0-9_]*)/);
+    const tableName = nameMatch ? nameMatch[1] : 'foreign_sheet';
+    const noteMatch = original.match(/\(\s*--\s*(.+)\s*\n/);
+    const note = noteMatch ? noteMatch[1].trim() : String(sheet.name ?? tableName);
+    const parts = headers.map((header, index) => {
+        const text = index === 0 ? 'row_id INTEGER PRIMARY KEY, -- 行号' : `c${index} TEXT, -- ${header.replace(/\s+/g, ' ')}`;
+        return index === headers.length - 1 ? `  ${text.replace(/,(\s*--)/, '$1')}` : `  ${text}`;
+    });
+    return `CREATE TABLE ${tableName} ( -- ${note}\n${parts.join('\n')}\n);`;
+}
+
 // ---------- 显示值 ↔ 状态值 ----------
 
 const CRAFT_STATUS_LABELS = Object.freeze({ open: '进行中', success: '成功', fail: '失败' });

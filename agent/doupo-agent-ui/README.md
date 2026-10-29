@@ -102,7 +102,7 @@
 可选把纳戒与世界台账镜像到**「龙血玄黄·数据库」**（酒馆助手脚本，`window.AutoCardUpdaterAPI`）的表格里：**表 = 账本，扩展面板 = 前端**。数据库脚本没装或在设置里关掉（`enableDbBridge`，默认开）时全部调用静默跳过，照旧走聊天存档，零回归。
 
 - **表结构**（`db-tables.js`，13 张，uid 固定）：纳戒 8 张（主角档案单行表含境界/金币/剧情日、称号、功法、斗技、行囊、配方、炼制台、目标）+ 世界 3 张（现状单行表、事件、任务）+ 记忆 2 张（小记忆、大记忆）。每张表的 `initNode/insertNode/updateNode/deleteNode` 全是「禁止操作。」，`updateConfig.updateFrequency=0` 让它们退出数据库自己的 AI 填表调度——数据库 AI 既不会被拉着跑、跑了也写不进，唯一写者是本扩展，无双写。
-- **模板自愈**：换聊天/启动时读当前聊天模板，缺桥接表就用 `importTemplateFromData` 以 `dataMode:'merge'` 补进当前聊天（每个聊天至多一次）；外来表一律不动（旧语义模板带 0=沿用UI 时不置新语义标记，避免误禁外来表的自动更新）。
+- **模板自愈**：换聊天/启动时读当前聊天模板，缺桥接表就用 `importTemplateFromData` 以 `dataMode:'merge'` 补进当前聊天（每个聊天至多一次）。注意数据库脚本的 merge 导入是**整包替换**：外来表必须随包携带才不会丢；而它又按「DDL 注释 = 表头」逐列校验整包，所以导入前会把注释与表头对不上的外来表 DDL 按表头重建（`sanitizeForeignDdl`，表名/表说明/行内容/updateConfig 不动，桥接表永不改写）——外来表的行数据与结构不受影响，只是 DDL 注释被对齐；旧语义模板带 0=沿用UI 时不置新语义标记，避免误禁外来表的自动更新。
 - **模板文件**：`agent/斗破Agent数据库桥接表.json` 由 `tools/build-db-template.mjs` 从 `db-tables.js` 生成（13 张表，含 mate 结构、「禁止操作。」节点与 updateConfig，写前结构自检）。可以在数据库脚本的「导入模板」里手动导入这份文件先看表（导入全局预设后切换，或聊天作用域导入）；不导也行——扩展每个聊天会自动补。改表流程：改 `db-tables.js` → `node tools/build-db-template.mjs` 重新生成。
 - **镜像**（写）：`persistSelf/persistWorld` 在存聊天档案后顺手镜像——先 `exportTableAsJson` 读最新表，reconcile 出最小差异（删除按原索引从大到小 → 逐行 updateRow → 追加 insertRow），桥接表按「编号」对行，编号为空的手工行不删不碰。
 - **收养**（读）：换聊天恢复后从表里拉一次，表里有账就**以表为准**盖回 runtime（本地操作流水保留）；表为空不动。`doupoAgent.dbBridgeAdopt()` 可手动重拉。

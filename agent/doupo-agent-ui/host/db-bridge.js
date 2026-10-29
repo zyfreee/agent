@@ -20,6 +20,7 @@ import {
     memoryStateFromTables,
     mergeBridgeSheets,
     reconcileTables,
+    sanitizeForeignDdl,
     selfStateFromTables,
     worldStateFromTables,
 } from './db-tables.js';
@@ -89,7 +90,9 @@ export function createDbBridge({ getSettings } = {}) {
                     message = '桥接表就绪';
                     return true;
                 }
-                const result = await api.importTemplateFromData(template, { scope: 'chat', dataMode: 'merge' });
+                // 数据库脚本的 merge 导入是整包替换：外来表必须随包携带才能留在聊天模板里，
+                // 而它又按「DDL 注释 = 表头」逐列校验整包——先把对不上的外来表 DDL 按表头重建。
+                const result = await api.importTemplateFromData(sanitizeForeignDdl(template), { scope: 'chat', dataMode: 'merge' });
                 if (result?.success) {
                     ensuredForChat = true;
                     status = 'ready';
