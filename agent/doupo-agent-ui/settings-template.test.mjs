@@ -110,6 +110,13 @@ for (const [button, fn] of [
 }
 assert.match(hubMarkup, /data-impact-models="decide"/, '模型设置页缺少记录员拉取按钮');
 assert.match(hubMarkup, /data-impact-models="inject"/, '模型设置页缺少场记拉取按钮');
+// 人物簿记录员/按世界书补档走的是自己卡上的连接：选了“自定义”时不能拿全局连接是否配好来拦，
+// 否则“全局连接空着、人物簿自己配好了”的合法配置会被误报 not_configured，记录员永远跑不起来
+//（冷藏推进员一直是正确写法，这两处曾是裸的 configured() 检查）。
+const ledgerGuard = entry.slice(entry.indexOf('async function runNpcLedgerRecord'), entry.indexOf('/** 生成前把人物档案写进正文提示词'));
+assert.match(ledgerGuard, /settings\.connection !== 'custom' && agentLlmClient\.configured\(\) !== true/, '记录员的连接检查必须先看自己卡的模式，custom 时不得查全局');
+const extractGuard = entry.slice(entry.indexOf('async function runNpcLedgerExtract'), entry.indexOf('/** 记录员这一路用哪套连接'));
+assert.match(extractGuard, /settings\.connection !== 'custom' && agentLlmClient\.configured\(\) !== true/, '按世界书补档的连接检查必须先看自己卡的模式，custom 时不得查全局');
 // 拉到的模型必须真的可点选：fetchModelList 要给模型输入框接上 datalist（模板没铺就现建），
 // 否则候选拉回来只能塞进空气，状态栏“点模型名那一格就能选”成了一句空话。
 assert.match(entry, /targetInput\.list/, '拉取模型要检查输入框已接的 datalist');

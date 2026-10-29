@@ -1490,7 +1490,8 @@ const NPC_EXTRACT_PROTECTED = new Set([
 async function runNpcLedgerExtract({ names = null, overwrite = false } = {}) {
     const settings = npcLedgerSettings();
     if (!settings.enabled) { setNpcLedgerStatus('人物簿已关闭，没有重抽。'); return { status: 'disabled' }; }
-    if (agentLlmClient.configured() !== true) {
+    // 同记录员：自定义连接不查全局，自己的地址/模型填了就能跑。
+    if (settings.connection !== 'custom' && agentLlmClient.configured() !== true) {
         setNpcLedgerStatus('还没配好模型连接：先在“模型设置”页选好连接，才能按世界书重抽。');
         return { status: 'not_configured' };
     }
@@ -1766,7 +1767,9 @@ async function runNpcLedgerRecord({ source = 'auto' } = {}) {
     if (index < 0) { setNpcLedgerStatus('这一楼还没有正文，记账先跳过。'); return { status: 'no_reply' }; }
     const lastRecorded = Number.isInteger(lastNpcLedgerFloor) ? Math.min(lastNpcLedgerFloor, chat.length - 1) : -1;
     if (source === 'auto' && lastRecorded >= 0 && index - lastRecorded < settings.every) return { status: 'not_due' };
-    if (agentLlmClient.configured() !== true) {
+    // 连接检查只看“跟随酒馆”这条路：记录员选了自定义时，全局连接配没配与它无关，
+    // 拿全局 configured() 拦人会把“自己卡配好了、全局空着”的合法配置挡在门外。
+    if (settings.connection !== 'custom' && agentLlmClient.configured() !== true) {
         setNpcLedgerStatus('还没配好模型连接：先在“模型设置”页选好连接，人物记录员才能跑。');
         return { status: 'not_configured' };
     }
