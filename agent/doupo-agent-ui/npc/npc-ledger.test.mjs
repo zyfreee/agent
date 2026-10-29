@@ -1,5 +1,30 @@
 import assert from 'node:assert/strict';
-import { createNpcLedger, favorLabel, NPC_FIELDS, FAVOR_MIN, FAVOR_MAX, FAVOR_REASON_MAX, FAVOR_STEP_MAX } from './npc-ledger.js';
+import { createNpcLedger, favorLabel, normalizePatch, NPC_FIELDS, FAVOR_MIN, FAVOR_MAX, FAVOR_REASON_MAX, FAVOR_STEP_MAX } from './npc-ledger.js';
+
+// 0) 组键打包（模型的常见输出）：外貌/性格/对玩家/处境带着一堆子字段来时必须拆开逐个收，
+// 不拆的话整组都会被当成不认识的键丢掉，信息面板就只剩空壳。
+{
+    const grouped = normalizePatch({
+        姓名: '说书人',
+        外貌: { 真实样貌: '灰袍老者，须发花白', 示人样貌: '灰袍老者，须发花白' },
+        性格: { 说话风格: '压低嗓音，爱卖关子', 想要什么: '讨几个赏钱' },
+        对玩家: { 态度: '打量后压低声音细说', 当前称呼: '小哥' },
+        处境: { 正在做什么: '收拾摊子' },
+    });
+    assert.equal(grouped.fields.look, '灰袍老者，须发花白');
+    assert.equal(grouped.fields.shownLook, '灰袍老者，须发花白');
+    assert.equal(grouped.fields.speech, '压低嗓音，爱卖关子');
+    assert.equal(grouped.fields.want, '讨几个赏钱');
+    assert.equal(grouped.fields.attitude, '打量后压低声音细说');
+    assert.equal(grouped.fields.appellation, '小哥');
+    assert.equal(grouped.fields.doing, '收拾摊子');
+    assert.deepEqual(grouped.ignored, [], '组键拆包后不许还有整组被丢');
+    // “性格”是字符串时照旧进标签列表，不许拆包逻辑把它改坏。
+    const stringTraits = normalizePatch({ 姓名: '测试', 性格: '高傲、记仇' });
+    assert.deepEqual(stringTraits.fields.traits, ['高傲', '记仇']);
+    // 外貌单发一个字符串也能认。
+    assert.equal(normalizePatch({ 姓名: '测试', 外貌: '青衫少年' }).fields.look, '青衫少年');
+}
 
 // 1) 建档：一人一条，姓名是主键，别名能把后来的写法指回同一份档案。
 {

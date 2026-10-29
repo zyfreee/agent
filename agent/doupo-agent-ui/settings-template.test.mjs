@@ -117,6 +117,13 @@ const ledgerGuard = entry.slice(entry.indexOf('async function runNpcLedgerRecord
 assert.match(ledgerGuard, /settings\.connection !== 'custom' && agentLlmClient\.configured\(\) !== true/, '记录员的连接检查必须先看自己卡的模式，custom 时不得查全局');
 const extractGuard = entry.slice(entry.indexOf('async function runNpcLedgerExtract'), entry.indexOf('/** 记录员这一路用哪套连接'));
 assert.match(extractGuard, /settings\.connection !== 'custom' && agentLlmClient\.configured\(\) !== true/, '按世界书补档的连接检查必须先看自己卡的模式，custom 时不得查全局');
+// 人物信息面板默认只读：右上角铅笔切进编辑，有货的字段铺成文本行，空字段不铺一屏输入框；
+// 弹窗必须 fixed 定位——absolute 在很长的设置页里居中，会把弹窗顶出屏幕外。
+const styleCss = await readFile(new URL('./host/style.css', import.meta.url), 'utf8');
+assert.match(entry, /npcProfileEdit/, '信息面板缺少右上角的编辑铅笔');
+assert.match(entry, /dai-npc-read/, '信息面板缺少只读视图容器');
+assert.match(entry, /function npcProfileReadText/, '只读视图缺少文本渲染函数');
+assert.match(styleCss, /\.dai-agent-modal \{ position: fixed/, '弹窗必须 fixed 定位，否则在长设置页里会超出屏幕');
 // 拉到的模型必须真的可点选：fetchModelList 要给模型输入框接上 datalist（模板没铺就现建），
 // 否则候选拉回来只能塞进空气，状态栏“点模型名那一格就能选”成了一句空话。
 assert.match(entry, /targetInput\.list/, '拉取模型要检查输入框已接的 datalist');

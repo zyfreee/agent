@@ -497,7 +497,8 @@
 }
 
 /* ---- 弹窗：添加/编辑/详情统一收进居中弹层 ---- */
-.dai-agent-modal { position: absolute; inset: 0; z-index: 30; display: grid; place-items: center; }
+/* fixed 而不是 absolute：设置面板本体很长，absolute 居中会落在面板中段、把弹窗顶出屏幕外。 */
+.dai-agent-modal { position: fixed; inset: 0; z-index: 5000; display: grid; place-items: center; }
 .dai-agent-modal[hidden] { display: none; }
 .dai-agent-modal-backdrop { position: absolute; inset: 0; background: #05070cb0; }
 .dai-agent-modal-dialog { position: relative; display: flex; flex-direction: column; width: min(34rem, calc(100vw - 3rem)); max-height: calc(100% - 2.5rem); border: 1px solid var(--dai-border); border-radius: 0.85rem; background: var(--dai-bg); box-shadow: 0 1rem 3rem #0008; }
@@ -599,6 +600,8 @@
 .dai-profile-favor { display: grid; justify-items: center; padding: 0.3rem 0.7rem; border: 1px solid var(--dai-accent); border-radius: 0.6rem; background: var(--dai-tint); }
 .dai-profile-favor b { font-size: 1rem; color: var(--dai-accent); }
 .dai-profile-favor small { color: var(--dai-muted); font-size: 0.72rem; }
+.dai-profile-side { display: flex; align-items: center; gap: 0.5rem; }
+.dai-npc-read { display: grid; gap: 0.6rem; }
 .dai-profile-group { display: grid; gap: 0.15rem; }
 .dai-profile-group-title { color: var(--dai-muted); font-size: 0.76rem; font-weight: 700; letter-spacing: 0.04em; }
 .dai-profile-row { display: grid; grid-template-columns: minmax(5.2rem, max-content) 1fr; gap: 0.6rem; padding: 0.28rem 0.45rem; border-radius: 0.4rem; font-size: 0.84rem; line-height: 1.5; }

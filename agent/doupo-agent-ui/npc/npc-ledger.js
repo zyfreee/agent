@@ -113,7 +113,7 @@ const KEY_ALIASES = new Map([
     ['出身', 'origin'], ['来历', 'origin'], ['origin', 'origin'],
     ['身份', 'identity'], ['职位', 'identity'], ['identity', 'identity'],
     ['师承', 'master'], ['师父', 'master'], ['master', 'master'],
-    ['样貌', 'look'], ['真实样貌', 'look'], ['相貌', 'look'], ['look', 'look'],
+    ['样貌', 'look'], ['真实样貌', 'look'], ['相貌', 'look'], ['外貌', 'look'], ['外观', 'look'], ['look', 'look'],
     ['示人样貌', 'shownLook'], ['假貌', 'shownLook'], ['shownLook', 'shownLook'],
     ['衣着', 'clothes'], ['服饰', 'clothes'], ['衣服', 'clothes'], ['clothes', 'clothes'],
     ['配饰', 'accessories'], ['accessories', 'accessories'],
@@ -384,6 +384,21 @@ export function normalizePatch(raw, context = {}) {
         importance: null, source: SOURCE_OPTIONS.includes(context.source) ? context.source : null, ignored: [],
     };
     const absorb = (key, value) => {
+        // 模型爱把描述按组打包（外貌:{真实样貌,示人样貌}、性格:{说话风格,想要什么}、对玩家:{态度…}），
+        // 组键自己不对应任何字段：拆开逐个往下收。不拆的话整组都会被当成不认识的键丢掉，
+        // 面板就只剩一个空壳；“性格”映射到的列表字段还会把整个对象打成 [object Object]。
+        // 组键有映射（外貌→look）时也拆——只要它的子键里认得出至少一个字段名；
+        // 认不出才按原路走（秘密、物品这类自带格式的对象不受影响）。
+        if (value && typeof value === 'object' && !Array.isArray(value)) {
+            const entries = Object.entries(value);
+            const mapped = KEY_ALIASES.get(String(key).trim());
+            const packable = !mapped || mapped === 'traits'
+                || entries.some(([inner]) => KEY_ALIASES.has(String(inner).trim()));
+            if (packable && entries.length) {
+                for (const [inner, item] of entries) absorb(inner, item);
+                return;
+            }
+        }
         const target = KEY_ALIASES.get(String(key).trim());
         if (!target) { result.ignored.push(String(key)); return; }
         if (target === 'name') { if (!result.name) result.name = normalizeName(value); return; }

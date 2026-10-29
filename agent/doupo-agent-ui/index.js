@@ -1992,7 +1992,10 @@ function applyNpcLedgerPatchFromPanel(panel) {
  * 经历单独一页逐条列出；精简调用让模型把雷同转变合并成少数几条。
  */
 
-/** 弹出某个人的信息面板：字段可直接改，经历单独一页，流水只读。 */
+/** 只读视图跳过的字段：它们已经在抬头和角标里展示了（别名/称号在标题下、在场/重要/位置在角标行），别重复铺。 */
+const NPC_READ_SKIP = new Set(['aliases', 'titles', 'presence', 'importance', 'location']);
+
+/** 弹出某个人的信息面板：默认只读，右上角铅笔切进编辑；经历单独一页，流水只读。 */
 function openNpcProfileModal(panel, name, { tab = 'fields' } = {}) {
     const record = agentNpcLedger.get(name);
     if (!record) return;
@@ -2005,10 +2008,15 @@ function openNpcProfileModal(panel, name, { tab = 'fields' } = {}) {
     if (record.aliases.length) subs.push(`别名：${record.aliases.join('、')}`);
     if (record.titles.length) subs.push(`称号：${record.titles.join('、')}`);
     if (subs.length) titleBox.append(makeElement('small', 'dai-profile-sub', subs.join('　')));
-    head.append(titleBox);
     const favor = makeElement('div', 'dai-profile-favor');
     favor.append(makeElement('b', '', `${record.favor > 0 ? '+' : ''}${record.favor}`), makeElement('small', '', favorLabel(record.favor) || '未定'));
-    head.append(favor);
+    const tools = makeElement('div', 'dai-profile-side');
+    const editToggle = makeElement('button', 'dai-npc-icon-button', '✎');
+    editToggle.type = 'button';
+    editToggle.title = '编辑信息';
+    editToggle.dataset.npcProfileEdit = record.name;
+    tools.append(favor, editToggle);
+    head.append(titleBox, tools);
     page.append(head);
 
     const chips = makeElement('div', 'dai-profile-chips');
@@ -2039,20 +2047,44 @@ function openNpcProfileModal(panel, name, { tab = 'fields' } = {}) {
     }
     page.append(tabBar);
 
-    // —— 信息页：所有字段按组铺成两列，直接改，保存时整份写回 ——
-    const fieldsPane = makeElement('div', 'dai-npc-pane');
-    const groups = new Map();
+    // —— 信息页：默认只读，档案里已有的内容铺成“标签：内容”文本行，空字段不占地方；
+    // 右上角铅笔切进编辑模式才出现表单，保存后回到只读。——
+    const allGroups = new Map();
     for (const field of NPC_FIELDS) {
-        if (!groups.has(field.group)) groups.set(field.group, []);
-        groups.get(field.group).push(field);
+        if (!allGroups.has(field.group)) allGroups.set(field.group, []);
+        allGroups.get(field.group).push(field);
     }
-    for (const [group, fields] of groups) {
+    const fieldsPane = makeElement('div', 'dai-npc-pane');
+    const readView = makeElement('div', 'dai-npc-read');
+    let readRows = 0;
+    for (const [group, fields] of allGroups) {
+        const rows = fields
+            .filter(field => !NPC_READ_SKIP.has(field.key))
+            .map(field => ({ field, display: npcProfileReadText(field, record[field.key]) }))
+            .filter(item => item.display);
+        if (!rows.length) continue;
+        const block = makeElement('section', 'dai-profile-group');
+        block.append(makeElement('b', 'dai-profile-group-title', group));
+        for (const item of rows) {
+            const row = makeElement('div', 'dai-profile-row');
+            row.append(makeElement('span', 'dai-profile-label', item.field.label), makeElement('span', 'dai-profile-value', item.display));
+            block.append(row);
+            readRows += 1;
+        }
+        readView.append(block);
+    }
+    if (!readRows) readView.append(makeElement('p', 'dai-impact-empty', '档案还空着。点右上角的铅笔补第一笔，或让记录员从正文里记。'));
+    fieldsPane.append(readView);
+
+    const editPane = makeElement('div', 'dai-npc-pane');
+    editPane.hidden = true;
+    for (const [group, fields] of allGroups) {
         const block = makeElement('section', 'dai-profile-group');
         block.append(makeElement('b', 'dai-profile-group-title', group));
         const form = makeElement('div', 'dai-npc-form');
         form.append(...fields.map(field => npcProfileFieldCell(field, record)));
         block.append(form);
-        fieldsPane.append(block);
+        editPane.append(block);
     }
     const saveBar = makeElement('div', 'dai-turn-actions');
     const save = makeElement('button', 'dai-run-button', '保存信息');
@@ -2061,7 +2093,15 @@ function openNpcProfileModal(panel, name, { tab = 'fields' } = {}) {
     const status = makeElement('small', 'dai-npc-profile-status');
     status.dataset.npcProfileStatus = record.name;
     saveBar.append(save, status);
-    fieldsPane.append(saveBar);
+    editPane.append(saveBar);
+    fieldsPane.append(editPane);
+    const setEditMode = on => {
+        readView.hidden = on;
+        editPane.hidden = !on;
+        editToggle.textContent = on ? '✕' : '✎';
+        editToggle.title = on ? '收起编辑' : '编辑信息';
+    };
+    editToggle.addEventListener('click', () => setEditMode(editPane.hidden));
 
     // —— 经历页：逐条列出 + 手动补一条 + 精简 ——
     const expPane = makeElement('div', 'dai-npc-pane');
@@ -2205,6 +2245,23 @@ function npcProfileFieldText(field, value) {
             : [item.name ?? '', item.grade ?? '', item.count ?? '', item.source ?? '', item.hidden ? '藏着' : '', item.detail ?? ''].join('|')).join('\n');
     }
     return Array.isArray(value) ? value.join('、') : String(value ?? '');
+}
+
+/** 只读视图里一个字段的展示文本；空值返回 ''，那一行就不渲染，别拿一排空输入框占地方。 */
+function npcProfileReadText(field, value) {
+    if (value === null || value === undefined) return '';
+    if (field.type === 'things') return (Array.isArray(value) ? value : []).map(thingTextForProfile).filter(Boolean).join('；');
+    if (field.type === 'triples') {
+        return (Array.isArray(value) ? value : [])
+            .map(item => [item.who ?? '', item.relation ?? '', item.attitude ?? ''].filter(Boolean).join('·'))
+            .filter(Boolean).join('；');
+    }
+    if (field.type === 'secret') {
+        const secret = value && typeof value === 'object' ? value : {};
+        return [secret.hideFrom ? `瞒着${secret.hideFrom}` : '', secret.what ?? ''].filter(Boolean).join('：');
+    }
+    if (field.type === 'list') return Array.isArray(value) ? value.join('、') : String(value).trim();
+    return String(value).trim();
 }
 
 /** 读信息面板并写回：所有字段一起保存，清空就是清空。 */
