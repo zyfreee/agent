@@ -350,6 +350,15 @@ export function createLlmClient({ getSettings, getContext, fetchImpl } = {}) {
         return resolveConnection() !== null;
     }
 
+    /**
+     * 按这一次调用自己的连接要求判断可用性：'tavern' 只看宿主有没有静默生成接口，
+     * 不拿“全局连接卡配没配”当代理——全局选了自定义但空着时，跟随酒馆这条路照样是通的。
+     * 世界决定/记忆决定这类默认跟随酒馆的功能曾经被 configured() 误拦在门口。
+     */
+    function availableFor(hint) {
+        return resolveConnection(hint === 'custom' || hint === 'tavern' ? hint : null) !== null;
+    }
+
     async function complete({ system, user, jsonSchema, signal, overrides = {} } = {}) {
         // overrides.connection 让单次调用自己选连接：'tavern' = 跟随酒馆，'custom' = 自定义接口。
         const requested = overrides.connection === 'custom' ? 'custom'
@@ -553,5 +562,5 @@ export function createLlmClient({ getSettings, getContext, fetchImpl } = {}) {
         return { text, claims: Array.isArray(parsed?.claims) ? parsed.claims : [] };
     }
 
-    return Object.freeze({ configured, interpret, adjudicateAction, selectSettings, compose, complete, isQuietBusy });
+    return Object.freeze({ configured, availableFor, interpret, adjudicateAction, selectSettings, compose, complete, isQuietBusy });
 }

@@ -881,7 +881,7 @@ async function runSelfDecision({ source = 'auto' } = {}) {
     if (!settings.enabled || !settings.decideEnabled) return { status: 'disabled' };
     if (selfDecideRunning) return { status: 'busy' };
     // 自定义连接有自己的地址和密钥，不依赖全局配置；跟随酒馆才需要先检查全局连接。
-    if (settings.overrides.connection !== 'custom' && agentLlmClient.configured() !== true) {
+    if (settings.overrides.connection !== 'custom' && agentLlmClient.availableFor('tavern') !== true) {
         setSelfDecideStatus('模型连接未配置：先在“模型设置”页选好连接。');
         return { status: 'not_configured' };
     }
@@ -1491,7 +1491,7 @@ async function runNpcLedgerExtract({ names = null, overwrite = false } = {}) {
     const settings = npcLedgerSettings();
     if (!settings.enabled) { setNpcLedgerStatus('人物簿已关闭，没有重抽。'); return { status: 'disabled' }; }
     // 同记录员：自定义连接不查全局，自己的地址/模型填了就能跑。
-    if (settings.connection !== 'custom' && agentLlmClient.configured() !== true) {
+    if (settings.connection !== 'custom' && agentLlmClient.availableFor('tavern') !== true) {
         setNpcLedgerStatus('还没配好模型连接：先在“模型设置”页选好连接，才能按世界书重抽。');
         return { status: 'not_configured' };
     }
@@ -1672,7 +1672,7 @@ async function runNpcColdPreview() {
     const settings = npcColdSettings();
     if (!settings.enabled) { setNpcLedgerStatus('人物簿已关闭，冷藏人物不会推进。'); return { status: 'disabled' }; }
     if (npcColdRunning) return { status: 'busy' };
-    if (settings.connection !== 'custom' && agentLlmClient.configured() !== true) {
+    if (settings.connection !== 'custom' && agentLlmClient.availableFor('tavern') !== true) {
         setNpcLedgerStatus('还没配好冷藏推进用的模型连接。');
         return { status: 'not_configured' };
     }
@@ -1769,7 +1769,7 @@ async function runNpcLedgerRecord({ source = 'auto' } = {}) {
     if (source === 'auto' && lastRecorded >= 0 && index - lastRecorded < settings.every) return { status: 'not_due' };
     // 连接检查只看“跟随酒馆”这条路：记录员选了自定义时，全局连接配没配与它无关，
     // 拿全局 configured() 拦人会把“自己卡配好了、全局空着”的合法配置挡在门外。
-    if (settings.connection !== 'custom' && agentLlmClient.configured() !== true) {
+    if (settings.connection !== 'custom' && agentLlmClient.availableFor('tavern') !== true) {
         setNpcLedgerStatus('还没配好模型连接：先在“模型设置”页选好连接，人物记录员才能跑。');
         return { status: 'not_configured' };
     }
@@ -2340,7 +2340,7 @@ async function runExpCondense(panel, name) {
     const group = agentNpcLedger.exps().find(item => item.name === who);
     if (!group || !group.entries.length) { setNpcLedgerStatus('这个人还没有经历可精简。'); return; }
     const settings = npcLedgerSettings();
-    if (settings.connection !== 'custom' && agentLlmClient.configured() !== true) {
+    if (settings.connection !== 'custom' && agentLlmClient.availableFor('tavern') !== true) {
         setNpcLedgerStatus('还没配好模型连接：先在“模型设置”页选好连接，精简才能跑。');
         return;
     }
@@ -2431,7 +2431,7 @@ let impactReturnToLedger = false;
 /** 叫挑选员：从账本里挑这一幕用得上的影响。失败时返回非 ok，由调用方回落到脚本挑选。 */
 async function pickImpactsForPrompt({ snapshot, settings, chat }) {
     const plan = impactModelPlan(settings);
-    if (agentLlmClient.configured() !== true && plan.inject.connection !== 'custom') return { status: 'unavailable' };
+    if (plan.inject.connection !== 'custom' && agentLlmClient.availableFor('tavern') !== true) return { status: 'unavailable' };
     const { draft, floors } = impactConversation(chat, settings.injectFloors);
     const raw = await agentLlmClient.complete({
         system: settings.injectPrompt,
@@ -2804,7 +2804,7 @@ async function runWorldDecision({ source = 'auto' } = {}) {
     if (!settings.enabled) return { status: 'disabled' };
     if (worldDecideRunning) return { status: 'busy' };
     // 自定义连接有自己的地址和密钥，不依赖全局配置；跟随酒馆才需要先检查全局连接。
-    if (settings.overrides.connection !== 'custom' && agentLlmClient.configured() !== true) {
+    if (settings.overrides.connection !== 'custom' && agentLlmClient.availableFor('tavern') !== true) {
         setWorldDecideStatus('模型连接未配置：先在“模型设置”页选好连接。');
         return { status: 'not_configured' };
     }
@@ -2899,7 +2899,7 @@ async function runMemoryDecision({ source = 'auto' } = {}) {
     if (!settings.decideEnabled) return { status: 'disabled' };
     if (memoryDecideRunning) return { status: 'busy' };
     // 自定义连接有自己的地址和密钥，不依赖全局配置；跟随酒馆才需要先检查全局连接。
-    if (settings.overrides.connection !== 'custom' && agentLlmClient.configured() !== true) {
+    if (settings.overrides.connection !== 'custom' && agentLlmClient.availableFor('tavern') !== true) {
         setMemoryDecideStatus('模型连接未配置：先在"模型设置"页选好连接。');
         return { status: 'not_configured' };
     }
@@ -2974,7 +2974,7 @@ async function runImpactDecision({ source = 'auto' } = {}) {
     if (!settings.enabled || !settings.decideEnabled) return { status: 'disabled' };
     if (impactDecideRunning) return { status: 'busy' };
     const plan = impactModelPlan(settings);
-    if (agentLlmClient.configured() !== true && plan.decide.connection !== 'custom') {
+    if (plan.decide.connection !== 'custom' && agentLlmClient.availableFor('tavern') !== true) {
         setImpactStatus('模型连接未配置：先在“模型设置”页选好连接。');
         return { status: 'not_configured' };
     }
