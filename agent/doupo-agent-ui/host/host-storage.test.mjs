@@ -50,7 +50,7 @@ context.extensionSettings.doupo_agent_ui = {
     schemaVersion: 3, ui: { compact: true }, llm: { model: 'existing-model', apiKey: 'fixture-key' },
 };
 assert.equal(storage.settings().value.ui.theme, 'black');
-assert.equal(storage.settings().value.schemaVersion, 7);
+assert.equal(storage.settings().value.schemaVersion, DEFAULT_SETTINGS.schemaVersion);
 assert.equal(storage.settings().value.sandbox.inertia, 'medium');
 assert.equal(storage.updateSettings({ sandbox: { inertia: 'nonsense', maxActiveGoals: 6 } }).value.sandbox.inertia, 'medium');
 assert.equal(storage.settings().value.sandbox.maxActiveGoals, 6);

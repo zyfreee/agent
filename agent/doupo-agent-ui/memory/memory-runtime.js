@@ -208,6 +208,16 @@ export function createMemoryRuntime({ maxEntries = DEFAULT_MAX_ENTRIES, maxLog =
             entry.tag = TAG_LABELS[op.tag] ? op.tag : entry.tag;
             return { ok: true, id: entry.id, summary: `转大记忆 ${entry.id}：${entry.text}`, undo: { op: '_retier', id: entry.id, ...before } };
         }
+        if (kind === 'setWeight') {
+            const entry = findEntry(text(op.id));
+            if (!entry) return { ok: false, reason: 'entry_not_found' };
+            const weight = WEIGHTS.includes(op.weight) ? op.weight : null;
+            if (!weight) return { ok: false, reason: 'bad_weight' };
+            if (entry.weight === weight) return { ok: false, reason: 'weight_unchanged' };
+            const before = { weight: entry.weight };
+            entry.weight = weight;
+            return { ok: true, id: entry.id, summary: `${entry.id} 分量改为${weight === 'major' ? '关键' : '一般'}`, undo: { op: '_restoreWeight', id: entry.id, ...before } };
+        }
         if (kind === 'resolveMemory') {
             const entry = findEntry(text(op.id));
             if (!entry) return { ok: false, reason: 'entry_not_found' };
@@ -248,6 +258,12 @@ export function createMemoryRuntime({ maxEntries = DEFAULT_MAX_ENTRIES, maxLog =
             entry.tier = TIERS.includes(op.tier) ? op.tier : entry.tier;
             entry.tag = TAG_LABELS[op.tag] ? op.tag : entry.tag;
             return { ok: true, summary: `恢复 ${entry.id} 层级` };
+        }
+        if (kind === '_restoreWeight') {
+            const entry = findEntry(text(op.id));
+            if (!entry) return { ok: false, reason: 'entry_not_found' };
+            entry.weight = WEIGHTS.includes(op.weight) ? op.weight : entry.weight;
+            return { ok: true, summary: `恢复 ${entry.id} 分量` };
         }
         if (kind === '_restoreDone') {
             const entry = findEntry(text(op.id));

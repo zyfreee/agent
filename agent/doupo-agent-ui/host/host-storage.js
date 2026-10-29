@@ -96,6 +96,8 @@ const DEFAULT_SETTINGS = Object.freeze({
         maxItems: 8,
         injectionBudget: 0,
         worldbook: '',
+        // 扫描到过的世界书名称：刷新后下拉框仍能直接选，不用再扫一遍。
+        worldbookOptions: Object.freeze([]),
         entries: Object.freeze([]),
         // 原著选条（含卷外点选）用的连接：跟随酒馆 / 自定义接口。留空参数沿用全局。
         mode: 'tavern',
@@ -103,6 +105,12 @@ const DEFAULT_SETTINGS = Object.freeze({
         apiKey: '',
         provider: '',
         model: '',
+        // 选条/卷外点选自己的采样参数；0 = 不指定，沿用酒馆或全局。
+        temperature: 0,
+        maxTokens: 0,
+        topP: 0,
+        presencePenalty: 0,
+        frequencyPenalty: 0,
     }),
     injection: Object.freeze({
         enabled: true,
@@ -224,6 +232,8 @@ const DEFAULT_SETTINGS = Object.freeze({
         trackResources: true,
         showExplanation: true,
         maxChainDepth: 3,
+        // 世界影响总览页只铺最近几条；全量去“世界账本”弹窗里看。
+        recentCount: 5,
         // 世界影响库：记录玩家把世界线改成了什么样，并在正文提示词里提醒叙事模型。
         inject: true, // 是否把已发生的影响注入正文提示词
         injectBudget: 800, // 注入字数预算
@@ -274,7 +284,12 @@ const DEFAULT_SETTINGS = Object.freeze({
         showHistory: true,
         showCapabilityBadge: true,
     }),
-    schemaVersion: 7,
+    // 悬浮球位置：拖到哪记到哪；null = 用 CSS 默认的右上位置。
+    orb: Object.freeze({
+        x: null,
+        y: null,
+    }),
+    schemaVersion: 8,
 });
 
 function clone(value) {

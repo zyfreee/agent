@@ -19,7 +19,8 @@ const snapshot = {
     assert.ok(body.includes('[大记忆]') && body.includes('[小记忆]'), '行内标注层级');
     assert.ok(body.includes('「把灵石留下，人可以走。」'), '引文以「」带回');
     assert.ok(!body.includes('云韵'), '没命中的不召回');
-    assert.ok(!body.includes('已报的仇'), '已了结不召回');
+    assert.ok(body.includes('已报的仇'), '旧事（已了结）也保留召回权');
+    assert.ok(body.indexOf('穆蛇当众羞辱过萧炎') < body.indexOf('已报的仇'), '未了结的排在旧事前面');
     assert.ok(body.includes('[恩怨]'), '大记忆带标签');
     // 别名也是钥匙：场景里出现"穆老大"同样召回
     assert.ok(recallHits(snapshot, { sceneText: '穆老大来了' }).length === 1, '别名参与召回');

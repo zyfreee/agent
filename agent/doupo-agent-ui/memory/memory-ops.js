@@ -30,7 +30,7 @@ export const MEMORY_GUIDE = [
     '```',
     '两层记忆都永久保存、按需召回（related 是日后召回的钥匙，必写 1-4 个人名/地名/物名）：remember=小记忆（轻量记录的近事杂事，weight 用 minor）；memorize=大记忆（值得一直记住的事，weight 用 major，tag 可选：grudge恩怨/intel情报/thread伏笔/milestone大事，拿不准就空着）；promote(id)=小记忆分量够重了，转成大记忆（召回时优先）。',
     'quote 可选：剧情里最有味道的一句原话（≤60字），召回时会以「」原样带回正文；没有合适的就空着，不要编造没出现过的对白。',
-    '可用操作：remember(text≤300字,basis≤80字,related必写≤4个,quote≤60字)；memorize(text≤300字,basis必写,related必写≤4个,weight:major|minor,tag,quote≤60字)；promote(id)；resolveMemory(id,note≤120字)（报仇了/报恩了/情报过时/伏笔回收）；reopenMemory(id)；forgetMemory(id)（记错删除）。id 用上面召回列表里的编号。',
+    '可用操作：remember(text≤300字,basis≤80字,related必写≤4个,quote≤60字)；memorize(text≤300字,basis必写,related必写≤4个,weight:major|minor,tag,quote≤60字)；promote(id)（小记忆转大）；forgetMemory(id)（记错删除）。id 用上面召回列表里的编号。记忆不是任务：没有“了结”状态，旧事也永远保留召回权，只是按强度与重要性排在后面。',
     '只记"主角亲身经历或得知"的事，且必须有剧情依据（basis 写清从哪楼/谁/什么事来）；不记原著设定、不替人物簿记 NPC 档案与好感、不记该归纳戒目标或世界任务的事；没有新记忆就完全不要输出这个区块。',
 ].join('\n');
 
@@ -54,16 +54,31 @@ export function recallKeys(entry) {
 }
 
 /**
- * 按需召回：related/aliases 整词命中 sceneText 的未了结记忆，按强度排序。
- * 排序 = 大记忆优先 → 关键优先 → 被想起过的优先（recallCount）→ 最近想起的优先 → 新的优先。
+ * 记忆强度（0–100，面板展示用）：层级 + 分量 + 被想起次数。
+ * 记忆没有“过期/了结就作废”——旧事照样有召回权，只是排序自然往后。
+ */
+export function memoryStrength(entry) {
+    if (!entry) return 0;
+    const tier = entry.tier === 'big' ? 40 : 15;
+    const weight = entry.weight === 'major' ? 30 : 0;
+    const recalled = Math.min(20, clampInt(entry.recallCount, 0, 9999, 0) * 2);
+    const freshness = Math.min(10, Math.max(0, 10 - Math.floor(Math.max(0, Number(entry.day) || 0) / 50)));
+    const stale = entry.done === true ? 0 : 10;
+    return Math.min(100, tier + weight + recalled + freshness + stale);
+}
+
+/**
+ * 按需召回：related/aliases 整词命中 sceneText 的记忆，按强度排序。
+ * 排序 = 大记忆优先 → 关键优先 → 被想起过的优先（recallCount）→ 最近想起的优先 → 新的优先；
+ * 旧事（done）不排除，只排在同样内容的未了结条目后面。
  */
 export function recallHits(snapshot = {}, { sceneText = '', limit = RECALL_LIMIT } = {}) {
     const scene = typeof sceneText === 'string' ? sceneText : '';
     if (!scene) return [];
     const hits = (Array.isArray(snapshot.entries) ? snapshot.entries : [])
-        .filter(entry => entry?.done !== true)
         .filter(entry => recallKeys(entry).some(key => scene.includes(key)));
-    const byRecall = (a, b) => (b.tier === 'big') - (a.tier === 'big')
+    const byRecall = (a, b) => (a.done === true) - (b.done === true)
+        || (b.tier === 'big') - (a.tier === 'big')
         || (b.weight === 'major') - (a.weight === 'major')
         || (clampInt(b.recallCount, 0, 9999, 0) - clampInt(a.recallCount, 0, 9999, 0))
         || (clampInt(b.lastRecallDay, 1, 99999, 0) - clampInt(a.lastRecallDay, 1, 99999, 0))

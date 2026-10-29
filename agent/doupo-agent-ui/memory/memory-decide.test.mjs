@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
 import { buildDecideUser, parseDecision, MEMORY_DECIDE_PROMPT, MEMORY_JSON_SCHEMA } from './memory-decide.js';
 
-// 1. 默认提示词契约：两层分工、六条操作、召回钥匙、所有权边界、无变化输出
-for (const keyword of ['remember', 'memorize', 'promote', 'resolveMemory', 'reopenMemory', 'forgetMemory', 'related', 'basis', 'quote', '小记忆', '大记忆', '人物簿', '纳戒', '"note"']) {
+// 1. 默认提示词契约：两层分工、四条操作、召回钥匙、所有权边界、无变化输出
+for (const keyword of ['remember', 'memorize', 'promote', 'forgetMemory', 'related', 'basis', 'quote', '小记忆', '大记忆', '人物簿', '纳戒', '"note"']) {
     assert.ok(MEMORY_DECIDE_PROMPT.includes(keyword), `默认提示词缺少：${keyword}`);
 }
+assert.ok(!MEMORY_DECIDE_PROMPT.includes('resolveMemory') && !MEMORY_DECIDE_PROMPT.includes('reopenMemory'), '记忆没有“了结”语义，不该再教模型了结');
 assert.ok(MEMORY_DECIDE_PROMPT.includes('永久保存'), '不有过期语义');
 assert.ok(!MEMORY_DECIDE_PROMPT.includes('淡出') && !MEMORY_DECIDE_PROMPT.includes('到期'), '不允许出现过期语义');
-assert.deepEqual(MEMORY_JSON_SCHEMA.properties.ops.items.properties.op.enum, ['remember', 'memorize', 'promote', 'resolveMemory', 'reopenMemory', 'forgetMemory']);
+assert.deepEqual(MEMORY_JSON_SCHEMA.properties.ops.items.properties.op.enum, ['remember', 'memorize', 'promote', 'forgetMemory']);
 assert.deepEqual(MEMORY_JSON_SCHEMA.properties.ops.items.properties.tag.enum, ['grudge', 'intel', 'thread', 'milestone']);
 
 // 2. user 组装：本场召回、世界书条目、最近聊天（旧→新）、JSON 收尾

@@ -15,11 +15,12 @@ assert.match(entry, /renderExtensionTemplateAsync\('third-party\/agent', 'settin
 assert.match(entry, /new URL\('\.\/settings\.html', import\.meta\.url\)/);
 assert.match(entry, /#extensions_settings2/);
 assert.match(entry, /data-settings-page="overview"/);
-for (const page of ['hub', 'facts', 'action', 'world', 'npc', 'npcledger', 'exp', 'self', 'memory', 'impact', 'sandbox', 'runtime']) {
+for (const page of ['hub', 'facts', 'action', 'world', 'npc', 'npcledger', 'self', 'memory', 'impact', 'sandbox', 'runtime']) {
     assert.match(entry, new RegExp(`data-settings-page="${page}"`), `缺少独立页面：${page}`);
     assert.match(entry, new RegExp(`data-settings-section="${page}"`), `缺少页面内容：${page}`);
 }
 assert.doesNotMatch(entry, /data-settings-page="llm"/, '「模型与连接」页已并入「模型设置」，不该再出现');
+assert.doesNotMatch(entry, /data-settings-page="exp"/, '独立「经历」页已并入人物信息面板弹窗，不该再出现');
 for (const setting of ['llm.provider', 'facts.maxEntries', 'action.requireConfirmation', 'world.tickMinutes', 'npc.maxCandidates', 'impact.maxChainDepth', 'impact.decideTemperature', 'impact.decideMaxTokens', 'impact.decideTopP', 'impact.injectTemperature', 'impact.injectMaxTokens', 'impact.injectPresencePenalty', 'enableSandboxMode', 'sandbox.inertia', 'sandbox.maxActiveGoals', 'budget.maxModules', 'status.showHistory', 'setting.progress', 'injection.depth', 'ui.legacyTurn', 'prompt.select']) {
     assert.match(entry, new RegExp(`data-setting="${setting.replace('.', '\\.')}`), `缺少设置绑定：${setting}`);
 }
@@ -61,7 +62,9 @@ for (const prompt of ['world.decidePrompt', 'npc.ledgerPrompt', 'npc.coldPrompt'
 }
 assert.match(entry, /data-agent-modal/, '页面应有统一弹窗容器');
 assert.match(entry, /data-modal-dock=/, '添加表单应停靠进弹窗');
-assert.match(entry, /data-exp-list/, '应有独立的人物经历页');
+assert.match(entry, /data-npc-profile/, '人物经历应并进人物信息面板弹窗');
+assert.match(entry, /data-npc-exp-add/, '信息面板应能手动补经历');
+assert.match(entry, /data-exp-condense/, '经历精简应挂在信息面板里');
 // 沙盒开关必须真的写到正式模式记录，否则只是留在设置里的开关。
 assert.match(entry, /data-sandbox-status/);
 assert.match(entry, /function syncSandboxModeFromSettings/);

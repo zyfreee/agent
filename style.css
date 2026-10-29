@@ -138,6 +138,18 @@
 .dai-setting-grid .dai-setting-row { display: grid; align-items: start; }
 .dai-setting-grid .dai-setting-row input { width: 100%; }
 .dai-setting-grid > .dai-secondary-button, .dai-setting-grid > .dai-button, .dai-setting-grid > button { align-self: end; justify-self: start; min-width: 6.5rem; }
+/* 模型设置页：参数区压成小格子，一屏能看全，不再一条参数占一行 */
+[data-settings-section="hub"] .dai-settings-card { padding: 0.6rem 0.75rem; }
+[data-settings-section="hub"] .dai-card-heading { margin-bottom: 0.25rem; }
+[data-settings-section="hub"] .dai-card-heading small { font-size: 0.72rem; line-height: 1.4; }
+[data-settings-section="hub"] .dai-setting-grid { gap: 0.3rem 0.55rem; }
+[data-settings-section="hub"] .dai-setting-row { min-height: 2.15rem; gap: 0.35rem; padding: 0.22rem 0; }
+[data-settings-section="hub"] .dai-setting-row small { font-size: 0.7rem; line-height: 1.3; }
+[data-settings-section="hub"] .dai-setting-row input:not([type="checkbox"]),
+[data-settings-section="hub"] .dai-setting-row select { min-height: 1.95rem; padding: 0.2rem 0.4rem; font-size: 0.8rem; }
+.dai-param-grid { grid-template-columns: repeat(auto-fit, minmax(8.2rem, 1fr)); }
+.dai-param-grid .dai-setting-row { padding: 0.25rem 0.45rem; border: 1px solid var(--dai-border); border-radius: 0.45rem; background: var(--dai-field-hover, rgba(255,255,255,0.04)); }
+.dai-param-grid .dai-setting-row small { font-size: 0.68rem; }
 .dai-impact-list { display: grid; gap: 0.55rem; margin: 0.4rem 0 0; padding: 0 0.25rem 0 0; list-style: none; max-height: 26rem; overflow-y: auto; }
 .dai-impact-item { display: grid; gap: 0.25rem; padding: 0.7rem 0.8rem; border: 1px solid var(--dai-border); border-radius: 0.55rem; background: var(--dai-field); }
 .dai-impact-item.is-fresh { border-color: var(--dai-accent); box-shadow: 0 0 0 2px var(--dai-tint); transition: box-shadow 0.4s ease, border-color 0.4s ease; }
@@ -163,6 +175,26 @@
 .dai-impact-item.is-edited { border-color: #d9b03c; }
 .dai-impact-item.is-edited .dai-impact-item-head b { color: #d9a72b; }
 .dai-impact-badges { color: #d9a72b; font-size: 0.76rem; overflow-wrap: anywhere; }
+.dai-impact-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; margin: 0.45rem 0 0.6rem; }
+.dai-impact-toolbar select, .dai-impact-toolbar input { width: auto; min-height: 2rem; padding: 0.2rem 0.45rem; border: 1px solid var(--dai-border); border-radius: 0.4rem; color: var(--dai-text); background: var(--dai-field); font-size: 0.8rem; }
+.dai-impact-toolbar input[type="search"] { flex: 1 1 9rem; min-width: 7rem; }
+.dai-impact-top { display: flex; align-items: flex-start; gap: 0.45rem; }
+.dai-impact-title { flex: 1; min-width: 0; font-size: 0.88rem; line-height: 1.45; overflow-wrap: anywhere; }
+.dai-impact-chips { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.dai-impact-chip { padding: 0.05rem 0.45rem; border: 1px solid var(--dai-border); border-radius: 999px; color: var(--dai-muted); background: transparent; font-size: 0.7rem; line-height: 1.5; }
+.dai-impact-chip.is-accent { color: var(--dai-accent); border-color: var(--dai-accent); background: var(--dai-tint); }
+.dai-impact-chip.is-warn { color: var(--dai-warn); border-color: var(--dai-warn); }
+.dai-impact-chip.is-world { color: var(--dai-accent); border-color: var(--dai-accent); }
+.dai-impact-chip.is-major { color: var(--dai-text); border-color: var(--dai-accent); }
+.dai-impact-item.is-compact { padding: 0.5rem 0.65rem; }
+.dai-impact-item.is-compact .dai-impact-detail { font-size: 0.82rem; line-height: 1.5; }
+.dai-impact-recent { max-height: none; overflow: visible; }
+.dai-impact-form { gap: 0.4rem; padding: 0.6rem; }
+.dai-impact-form .dai-setting-grid { grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: 0.3rem 0.5rem; }
+.dai-impact-form .dai-setting-row { min-height: 2.1rem; padding: 0.2rem 0; }
+.dai-impact-form .dai-setting-row small { font-size: 0.7rem; line-height: 1.3; }
+.dai-impact-form .dai-setting-row input, .dai-impact-form .dai-setting-row select { min-height: 1.9rem; padding: 0.2rem 0.4rem; font-size: 0.8rem; }
+.dai-impact-form textarea { min-height: 3.2rem; }
 .dai-impact-archive { margin: 0.7rem 0 0; padding: 0.5rem 0.7rem; border: 1px dashed var(--dai-border); border-radius: 0.55rem; }
 .dai-impact-archive > summary { display: flex; align-items: center; gap: 0.5rem; color: var(--dai-muted); font-size: 0.82rem; cursor: pointer; list-style: none; }
 .dai-impact-archive > summary::-webkit-details-marker { display: none; }
@@ -240,6 +272,11 @@
 
 .dai-state-strip { margin: 0; padding: 0.45rem 0.6rem; border: 1px solid var(--dai-border); border-radius: 0.45rem; background: var(--dai-field-hover, rgba(255,255,255,0.04)); color: var(--dai-text); font-size: 0.85rem; line-height: 1.55; }
 .dai-turn-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.dai-pager { display: flex; align-items: center; justify-content: flex-end; gap: 0.45rem; margin-top: 0.55rem; }
+.dai-pager .dai-secondary-button { min-height: 1.9rem; padding: 0.15rem 0.65rem; font-size: 0.78rem; }
+.dai-pager-label { color: var(--dai-muted); font-size: 0.76rem; }
+.dai-memory-strength { flex: none; padding: 0.08rem 0.4rem; border: 1px solid var(--dai-border); border-radius: 999px; color: var(--dai-accent); font-size: 0.7rem; font-variant-numeric: tabular-nums; }
+.dai-memory-card[data-stale="true"] { opacity: 0.82; border-style: dashed; }
 .dai-run-button.is-secondary { background: transparent; color: var(--dai-accent); }
 .dai-version-list { display: flex; flex-wrap: wrap; gap: 0.35rem; }
 .dai-version-button { padding: 0.2rem 0.55rem; border: 1px solid var(--dai-border); border-radius: 999px; background: transparent; color: var(--dai-muted); font-size: 0.78rem; cursor: pointer; }
@@ -291,6 +328,9 @@
 .dai-status-list b { color: var(--dai-muted); font-weight: 600; }
 .dai-status-list span { color: var(--dai-text); word-break: break-word; }
 .dai-status-list li[data-tone="warn"] { border-color: var(--dai-accent); }
+.dai-facts-injection { display: grid; gap: 0.45rem; }
+.dai-facts-injection-list { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.dai-facts-chip { padding: 0.18rem 0.5rem; border: 1px solid var(--dai-border); border-radius: 999px; color: var(--dai-text); background: var(--dai-field-hover, rgba(255,255,255,0.04)); font-size: 0.76rem; }
 
 /* 纳戒页：子页签、清单条目与称号标签 */
 .dai-self-tabs { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.5rem; }
@@ -421,16 +461,19 @@
 .dai-settle-category-body .dai-setting-row textarea { width: 100%; min-height: 12rem; }
 
 /* ---- 悬浮球：小球 ⇄ 竖直拉伸的胶囊长条 ⇄ 只读信息窗 ---- */
-.dai-orb { position: fixed; z-index: 9999; top: 18vh; right: 0.9rem; display: flex; align-items: flex-start; gap: 0.6rem; }
+.dai-orb { position: fixed; z-index: 9999; top: 18vh; right: 0.9rem; display: block; touch-action: none; }
 .dai-orb[hidden] { display: none; }
+.dai-orb.is-dragging { cursor: grabbing; }
+.dai-orb.is-dragging .dai-orb-ball { cursor: grabbing; }
 .dai-orb-capsule { display: flex; flex-direction: column; width: 3rem; height: 3rem; overflow: hidden; border: 1px solid var(--dai-border); border-radius: 999px; background: var(--dai-surface); box-shadow: 0 0.35rem 1.1rem #0005; transition: height 0.28s ease; }
-.dai-orb-ball { flex: none; display: grid; width: 3rem; height: 3rem; place-items: center; border: 0; border-radius: 999px; color: var(--dai-accent); background: var(--dai-tint); cursor: pointer; font-size: 1.05rem; line-height: 1; transition: filter 0.15s ease; }
+.dai-orb-ball { flex: none; display: grid; width: 3rem; height: 3rem; place-items: center; border: 0; border-radius: 999px; color: var(--dai-accent); background: var(--dai-tint); cursor: grab; font-size: 1.05rem; line-height: 1; transition: filter 0.15s ease; touch-action: none; }
 .dai-orb-ball:hover { filter: brightness(1.12); }
 .dai-orb-icon { flex: none; display: grid; width: 3rem; height: 2.9rem; place-items: center; border: 0; color: var(--dai-muted); background: transparent; cursor: pointer; font-size: 0.95rem; line-height: 1; opacity: 0; transform: translateY(-0.4rem); visibility: hidden; pointer-events: none; transition: opacity 0.22s ease, transform 0.22s ease, color 0.15s ease, background 0.15s ease, visibility 0.22s ease; }
 .dai-orb[data-state="expanded"] .dai-orb-icon { opacity: 1; transform: none; visibility: visible; pointer-events: auto; }
 .dai-orb-icon:hover { color: var(--dai-text); background: var(--dai-field-hover, rgba(255,255,255,0.05)); }
 .dai-orb-icon.is-active { color: var(--dai-accent); background: var(--dai-tint); }
-.dai-orb-panel { width: min(20rem, calc(100vw - 6.2rem)); max-height: min(34rem, 72vh); overflow: auto; padding: 0.85rem 0.95rem 0.95rem; border: 1px solid var(--dai-border); border-radius: 0.75rem; background: var(--dai-surface); box-shadow: 0 0.6rem 1.6rem #0005; font-size: 0.85rem; }
+.dai-orb-panel { position: absolute; top: 0; right: calc(100% + 0.6rem); width: min(20rem, calc(100vw - 6.2rem)); max-height: min(34rem, 72vh); overflow: auto; padding: 0.85rem 0.95rem 0.95rem; border: 1px solid var(--dai-border); border-radius: 0.75rem; background: var(--dai-surface); box-shadow: 0 0.6rem 1.6rem #0005; font-size: 0.85rem; }
+.dai-orb[data-side="left"] .dai-orb-panel { right: auto; left: calc(100% + 0.6rem); }
 .dai-orb-panel[hidden] { display: none; }
 .dai-orb-panel-head { display: flex; justify-content: space-between; align-items: start; gap: 0.6rem; margin-bottom: 0.45rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--dai-border); }
 .dai-orb-panel-head > div { display: grid; gap: 0.15rem; min-width: 0; }
@@ -465,6 +508,12 @@
 .dai-modal-dock[hidden] { display: none; }
 .dai-setting-inline { display: inline-flex; align-items: center; gap: 0.45rem; }
 .dai-setting-inline input { width: 9rem; min-height: 2.1rem; padding: 0.25rem 0.5rem; border: 1px solid var(--dai-border); border-radius: 0.4rem; color: var(--dai-text); background: var(--dai-field); }
+/* 按钮组：世界氛围这类“几选一”横着排，别被 label 的 grid 拉成竖条 */
+.dai-setting-row > .dai-segmented { display: inline-flex; flex: none; flex-wrap: nowrap; align-items: center; gap: 0.3rem; }
+.dai-segmented-button { min-height: 2rem; padding: 0.2rem 0.7rem; border: 1px solid var(--dai-border); border-radius: 999px; color: var(--dai-muted); background: transparent; cursor: pointer; font-size: 0.8rem; white-space: nowrap; }
+.dai-segmented-button:hover { color: var(--dai-text); border-color: var(--dai-accent); }
+.dai-segmented-button.is-active { color: #fff; border-color: var(--dai-accent); background: var(--dai-accent); }
+.dai-world-tension { color: var(--dai-muted); font-size: 0.78rem; white-space: nowrap; }
 .dai-secondary-button.is-danger { color: #e06c6c; border-color: #a25454; }
 .dai-secondary-button.is-danger:hover { background: var(--dai-error-bg); }
 .dai-settings-card .dai-impact-edit { min-height: 2.1rem; padding: 0.2rem 0.7rem; }
@@ -498,13 +547,48 @@
 .dai-self-entry-open small { color: var(--dai-muted); font-size: 0.75rem; overflow-wrap: anywhere; }
 .dai-self-entry-badges { display: inline-flex; gap: 0.4rem; color: var(--dai-accent); font-size: 0.76rem; }
 
-/* ---- 人物簿：一人一行，点开档案弹窗 ---- */
-.dai-npc-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0.7rem; }
-.dai-npc-open { display: flex; flex: 1; flex-wrap: wrap; align-items: baseline; gap: 0.45rem; min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; cursor: pointer; text-align: left; font: inherit; }
-.dai-npc-open b { font-size: 0.88rem; }
-.dai-npc-open b:hover { color: var(--dai-accent); }
-.dai-npc-open small { color: var(--dai-muted); font-size: 0.75rem; overflow-wrap: anywhere; }
-.dai-npc-favor { flex: none; color: var(--dai-muted); font-size: 0.78rem; white-space: nowrap; }
+/* ---- 人物簿：紧凑小卡，点开信息面板 ---- */
+.dai-npc-grid { grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr)); gap: 0.45rem; }
+.dai-npc-card { display: flex; align-items: stretch; gap: 0.25rem; min-width: 0; padding: 0.45rem 0.5rem; border: 1px solid var(--dai-border); border-radius: 0.55rem; background: var(--dai-field); }
+.dai-npc-card.is-important { border-color: var(--dai-accent); }
+.dai-npc-card.is-injected { box-shadow: inset 0 0 0 1px var(--dai-tint); }
+.dai-npc-card-main { display: grid; grid-template-columns: auto 1fr auto; column-gap: 0.35rem; row-gap: 0.05rem; flex: 1; min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; cursor: pointer; text-align: left; font: inherit; }
+.dai-npc-card-dot { grid-column: 1; grid-row: 1; color: var(--dai-accent); font-size: 0.7rem; line-height: 1.6; }
+.dai-npc-card-name { grid-column: 2; grid-row: 1; overflow: hidden; color: var(--dai-text); font-size: 0.86rem; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.dai-npc-card-favor { grid-column: 3; grid-row: 1; color: var(--dai-accent); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+.dai-npc-card-line { grid-column: 2 / 4; overflow: hidden; color: var(--dai-text); font-size: 0.73rem; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.dai-npc-card-line.is-muted { color: var(--dai-muted); }
+.dai-npc-card-actions { display: flex; flex: none; flex-direction: column; gap: 0.15rem; justify-content: center; }
+.dai-npc-icon-button { display: grid; width: 1.5rem; height: 1.25rem; place-items: center; border: 1px solid var(--dai-border); border-radius: 0.3rem; color: var(--dai-muted); background: transparent; cursor: pointer; font-size: 0.7rem; line-height: 1; }
+.dai-npc-icon-button:hover { color: var(--dai-text); border-color: var(--dai-accent); }
+.dai-npc-icon-button.is-active { color: var(--dai-accent); background: var(--dai-tint); }
+.dai-npc-icon-button.is-danger:hover { color: #e06c6c; border-color: #e06c6c; }
+
+/* ---- 人物信息面板：页签 + 两列表单 + 经历 ---- */
+.dai-profile-chips { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.dai-profile-chip { padding: 0.12rem 0.5rem; border: 1px solid var(--dai-border); border-radius: 999px; color: var(--dai-muted); font-size: 0.72rem; }
+.dai-profile-chip.is-accent { color: var(--dai-accent); border-color: var(--dai-accent); }
+.dai-npc-tabs { display: flex; gap: 0.3rem; padding-bottom: 0.1rem; border-bottom: 1px solid var(--dai-border); }
+.dai-npc-tab { padding: 0.25rem 0.8rem; border: 1px solid transparent; border-bottom: 0; border-radius: 0.45rem 0.45rem 0 0; color: var(--dai-muted); background: transparent; cursor: pointer; font-size: 0.8rem; }
+.dai-npc-tab:hover { color: var(--dai-text); }
+.dai-npc-tab.is-active { color: var(--dai-accent); border-color: var(--dai-border); background: var(--dai-field); }
+.dai-npc-pane { display: grid; gap: 0.6rem; }
+.dai-npc-pane[hidden] { display: none; }
+.dai-npc-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.35rem 0.55rem; }
+.dai-npc-field { display: grid; gap: 0.12rem; min-width: 0; }
+.dai-npc-field-label { color: var(--dai-muted); font-size: 0.72rem; }
+.dai-npc-field input, .dai-npc-field select, .dai-npc-field textarea { width: 100%; min-height: 1.85rem; padding: 0.2rem 0.45rem; border: 1px solid var(--dai-border); border-radius: 0.4rem; color: var(--dai-text); background: var(--dai-field); font: inherit; font-size: 0.8rem; }
+.dai-npc-field textarea { min-height: 3rem; resize: vertical; line-height: 1.45; }
+.dai-npc-field-hint { color: var(--dai-muted); font-size: 0.66rem; }
+.dai-npc-profile-status { color: var(--dai-muted); font-size: 0.78rem; align-self: center; }
+.dai-npc-exp-list { display: grid; gap: 0.3rem; }
+.dai-npc-exp-row { display: flex; align-items: baseline; gap: 0.5rem; padding: 0.35rem 0.5rem; border: 1px solid var(--dai-border); border-radius: 0.45rem; background: var(--dai-field); }
+.dai-npc-exp-row .dai-exp-text { flex: 1; }
+.dai-npc-exp-add { display: flex; gap: 0.35rem; align-items: center; }
+.dai-npc-exp-text-input { flex: 1; min-width: 0; min-height: 1.9rem; padding: 0.2rem 0.45rem; border: 1px solid var(--dai-border); border-radius: 0.4rem; color: var(--dai-text); background: var(--dai-field); font: inherit; font-size: 0.8rem; }
+.dai-npc-exp-day-input { width: 5.5rem; min-height: 1.9rem; padding: 0.2rem 0.4rem; border: 1px solid var(--dai-border); border-radius: 0.4rem; color: var(--dai-text); background: var(--dai-field); font: inherit; font-size: 0.8rem; }
+.dai-npc-log-list { display: grid; gap: 0.3rem; }
+@media (max-width: 720px) { .dai-npc-form { grid-template-columns: 1fr; } .dai-npc-grid { grid-template-columns: 1fr; } }
 
 /* ---- 档案弹窗：分组 + 固定标签行 ---- */
 .dai-profile { display: grid; gap: 0.7rem; }
@@ -524,8 +608,6 @@
 
 /* ---- 人物经历页：逐条清单与精简预览 ---- */
 .dai-exp-list { display: grid; gap: 0.35rem; margin: 0.3rem 0 0; padding: 0; list-style: none; }
-.dai-exp-person { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; margin-top: 0.45rem; padding: 0.35rem 0.55rem; border: 1px solid var(--dai-accent); border-radius: 0.45rem; background: var(--dai-tint); }
-.dai-exp-person b { font-size: 0.86rem; }
 .dai-exp-entry { display: flex; gap: 0.55rem; align-items: baseline; margin: 0; padding: 0.4rem 0.55rem; border: 1px solid var(--dai-border); border-radius: 0.45rem; background: var(--dai-field-hover, rgba(255,255,255,0.04)); font-size: 0.84rem; line-height: 1.55; }
 .dai-exp-day { flex: none; color: var(--dai-accent); font-size: 0.75rem; white-space: nowrap; }
 .dai-exp-text { min-width: 0; overflow-wrap: anywhere; }

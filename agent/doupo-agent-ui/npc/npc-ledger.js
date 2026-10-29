@@ -599,6 +599,65 @@ export function createNpcLedger({ maxRecords = 200, now = () => new Date() } = {
         return { status: 'replaced', name: record.name, before, after: clean.length };
     }
 
+    /** 信息面板直接改档案：与补丁不同，空值也会写回去（玩家把一格清空就是真清空）。 */
+    function setFields(name, fields, { source = '手填' } = {}) {
+        const key = findKey(name);
+        if (!key) return { status: 'not_found' };
+        const record = records.get(key);
+        const touched = [];
+        for (const [fieldKey, raw] of Object.entries(fields ?? {})) {
+            const field = FIELD_BY_KEY.get(fieldKey);
+            if (!field) continue;
+            let next;
+            if (field.type === 'text') next = text(raw);
+            else if (field.type === 'list') next = list(raw);
+            else if (field.type === 'things') next = things(raw, fieldKey === 'clothes' ? 8 : MAX_THINGS);
+            else if (field.type === 'triples') next = triples(raw);
+            else if (field.type === 'secret') next = secretValue(raw);
+            else if (field.type === 'enum') next = field.options.includes(String(raw ?? '').trim()) ? String(raw).trim() : record[fieldKey];
+            if (JSON.stringify(record[fieldKey]) === JSON.stringify(next)) continue;
+            record[fieldKey] = next;
+            touched.push(field.label);
+        }
+        if (!touched.length) return { status: 'unchanged', name: record.name };
+        record.version += 1;
+        record.updatedAt = stamp();
+        changes += 1;
+        lastChange = { name: record.name, fields: touched, source, at: record.updatedAt };
+        return { status: 'updated', name: record.name, fields: touched };
+    }
+
+    /** 信息面板加一条经历。 */
+    function addExp(name, body, { day = null, floor = null } = {}) {
+        const key = findKey(name);
+        if (!key) return { status: 'not_found' };
+        const clean = normalizeExpEntry({ text: body, day });
+        if (!clean.text) return { status: 'empty' };
+        const record = records.get(key);
+        record.exp.push({ ...clean, floor: Number.isInteger(floor) ? floor : record.lastFloor ?? null });
+        if (record.exp.length > MAX_EXP) record.exp.splice(0, record.exp.length - MAX_EXP);
+        record.version += 1;
+        record.updatedAt = stamp();
+        changes += 1;
+        lastChange = { name: record.name, fields: ['经历'], at: record.updatedAt };
+        return { status: 'added', name: record.name, total: record.exp.length };
+    }
+
+    /** 信息面板删一条经历（index 用档案里的原始下标）。 */
+    function removeExp(name, index) {
+        const key = findKey(name);
+        if (!key) return { status: 'not_found' };
+        const record = records.get(key);
+        const at = Number(index);
+        if (!Number.isInteger(at) || at < 0 || at >= record.exp.length) return { status: 'invalid_index' };
+        const [removed] = record.exp.splice(at, 1);
+        record.version += 1;
+        record.updatedAt = stamp();
+        changes += 1;
+        lastChange = { name: record.name, fields: ['经历'], at: record.updatedAt };
+        return { status: 'removed', name: record.name, entry: removed };
+    }
+
     function clear() {
         records.clear();
         changes += 1;
@@ -690,6 +749,7 @@ export function createNpcLedger({ maxRecords = 200, now = () => new Date() } = {
 
     return Object.freeze({
         apply, get, list, remove, clear, status, exportAll, load, describe, injection, exps, replaceExp,
+        setFields, addExp, removeExp,
         find: name => (findKey(name) ? true : false),
         names: () => [...records.values()].map(record => record.name),
         missing: nameOrRecord => {
