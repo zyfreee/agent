@@ -6166,12 +6166,16 @@ function renderFactsStatus(panel) {
         push('目录外搜索', `要了${asked} → 全库搜到 ${hits} 条 → ${took}`, lastLookupInfo.error ? 'warn' : undefined);
     }
 
-    const llm = settings.llm ?? {};
-    const customMode = llm.mode === 'custom';
-    const connection = customMode
-        ? `自定义接口 · ${llm.baseUrl || '未填地址'} · ${llm.model || '未填模型'}`
-        : `跟随酒馆当前 API · ${llm.model || '沿用酒馆模型'}`;
-    push('模型', connection, customMode && !(llm.baseUrl && llm.model) ? 'warn' : undefined);
+    // 选条用自己的连接卡（setting.*），哪项留空才沿用全局（llm.*）；状态行照实显示这两层，别只看全局。
+    const factsCfg = settings.setting ?? {};
+    const globalLlm = settings.llm ?? {};
+    const factsCustom = factsCfg.mode === 'custom';
+    const factsBaseUrl = factsCfg.baseUrl || globalLlm.baseUrl || '';
+    const factsModel = factsCfg.model || globalLlm.model || '';
+    const connection = factsCustom
+        ? `自定义接口 · ${factsBaseUrl || '未填地址'} · ${factsModel || '未填模型'}${factsCfg.baseUrl && factsCfg.model ? '' : '（空项沿用全局）'}`
+        : `跟随酒馆当前 API · ${globalLlm.model || '沿用酒馆模型'}`;
+    push('模型', connection, factsCustom && !(factsBaseUrl && factsModel) ? 'warn' : undefined);
     push('开关', `注入${settings.setting?.enabled ? '开' : '关'} · 旧链路${settings.ui?.legacyTurn ? '开' : '关'} · 注入通道${settings.injection?.enabled ? '开' : '关'} · 深度 ${settings.injection?.depth ?? 0} · 上限 ${settings.setting?.injectionBudget > 0 ? settings.setting.injectionBudget + " 字" : "不限"}`);
 
     target.replaceChildren(...rows.map(row => {

@@ -109,4 +109,8 @@ for (const [button, fn] of [
 assert.match(entry, /targetInput\.list/, '拉取模型要检查输入框已接的 datalist');
 assert.match(entry, /createElement\('datalist'\)/, '拉取模型要能现建 datalist');
 assert.match(entry, /setAttribute\('list'/, '拉取模型要把 list 属性接到输入框上');
+// 原著设定页的“模型”状态行要读选条自己的连接卡（setting.*），空项才标注沿用全局；
+// 曾经只读全局连接，功能卡配好了状态栏还喊“未填地址·未填模型”，误导排查。
+assert.match(entry, /const factsCfg = settings\.setting \?\? \{\};/, '原著状态行的模型信息必须读 setting 自己的连接');
+assert.match(entry, /空项沿用全局/, '原著状态行要标注哪些项沿用了全局');
 console.log(`settings template smoke checks passed: ${directory}`);

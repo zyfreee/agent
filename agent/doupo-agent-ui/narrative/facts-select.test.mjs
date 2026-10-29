@@ -46,6 +46,22 @@ assert.equal(ok.entries[0].name, '青莲地心火');
 // 只写编号的简写也认。
 assert.deepEqual(parseSelection('{"ids":[1041]}', { index, volume: 2 }).ids, [1041]);
 
+// 自定义接口不发 schema，模型会把目录整行抄进 need（“1041|物品|青莲地心火”）；
+// 行首编号要抠得出来，抠出的编号照样过 index 白名单。
+const rows = parseSelection('{"need":["1041|物品|青莲地心火","217|人物|药尘（药老）|卷01 前情"],"no_match":false}', { index, volume: 2 });
+assert.deepEqual(rows.ids, [1041, 217]);
+assert.equal(rows.status, 'selected');
+// {uid:"整行文本"} 的包裹写法也要认。
+assert.deepEqual(parseSelection('{"need":[{"uid":"217|人物|药尘"}],"no_match":false}', { index, volume: 2 }).ids, [217]);
+// 行首不是数字的照样按 bad_uid 丢弃，不做模糊补全。
+const junk = parseSelection('{"need":["萧炎"]}', { index, volume: 2 });
+assert.deepEqual(junk.ids, []);
+assert.equal(junk.invalid[0].reason, 'bad_uid');
+// 卷外点选同款兼容：候选行也带类别名，行首编号照抠，白名单照拦。
+const lookupRows = parseLookupSelection('{"need":["42|故事线|别离小医仙，黑岩城立名|卷02|她定下行程往西"],"no_match":false}', { allowedUids: [42, 88] });
+assert.deepEqual(lookupRows.ids, [42]);
+assert.equal(parseLookupSelection('{"need":["88|故事线|伏笔"]}', { allowedUids: [42] }).ids.length, 0);
+
 // 越权与编造的编号一律丢弃，不做模糊补全。
 const guarded = parseSelection('{"need":[{"uid":88,"why":"伏笔"},{"uid":9999,"why":"编的"},{"uid":"x"}],"no_match":false}', { index, volume: 2 });
 assert.deepEqual(guarded.ids, []);

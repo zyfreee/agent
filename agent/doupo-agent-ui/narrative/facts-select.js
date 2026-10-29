@@ -10,7 +10,7 @@ export const SELECT_RULES = [
     '2. 除第 1 条外，只选本轮回复必须用到的条目，最多 MAX_PICKS 条。',
     '3. 只是“相关”“大概有用”“可能以后会用”的，一律不选。',
     '4. 会剧透当前进度的条目不要选；玩家这阶段还不知道的事，不算必须用到。',
-    '5. 只能从目录里挑，uid 必须原样抄写，不许自己编。',
+    '5. 只能从目录里挑，need 里只写每行开头的那串数字编号（目录行长得像 “534|人物|萧炎”，只写 534），不许自己编。',
     '6. 目录里没有合适的条目就返回 {"need":[],"no_match":true}，不要拿相近的凑数。',
     '7. 目录里没有、但你判断本轮必须用到的原著内容（人物、物品、能力、地点等），把它的名字或原文里出现过的关键词写进 "lookup"（最多 5 个，不要编造）；脚本会去全库搜出来再问你一次，卷外条目不会直接注入。',
     '8. 如果能判断剧情进行到第几卷，额外输出 "volume": 整数（1-21）；判断不了就省略，不要猜。',
@@ -23,7 +23,7 @@ export const LOOKUP_RULES = [
     '规则：',
     '1. 玩家输入里点到的候选条目，即使标注「后续卷」，也必须选；有就必须调。',
     '2. 除第 1 条外，只选真正必须用到的，最多 MAX_PICKS 条；只是“相关”“可能有用”的一律不选。',
-    '3. uid 只能从候选里原样抄写，不许自己编，也不许选候选以外的条目。',
+    '3. need 里只写候选每行开头的数字编号（行长得像 “42|故事线|…”，只写 42），不许自己编，也不许选候选以外的条目。',
     '4. 一条都不需要就返回 {"need":[],"no_match":true}。',
     '5. 只输出 JSON，不要解释，不要 Markdown 代码块。',
 ].join('\n');
@@ -102,6 +102,17 @@ function extractJson(reply) {
  * 只认目录里的 uid。任何不合格的条目都丢掉并写明原因，不做模糊补全——
  * 补全就是脚本替模型做语义判断，正是这套流程要避免的。
  */
+/** 目录行的样式是 “534|人物|萧炎”。带 schema 的调用会约束成整数，自定义接口不发 schema，
+ *  模型常把整行抄进 need；这里从行首抠出编号，纯数字、{uid:534}、整行文本三种写法都收，
+ *  抠出来的编号仍要过 index 白名单，抄错行首也进不来。 */
+function toUid(value) {
+    const direct = Number(value);
+    if (Number.isInteger(direct)) return direct;
+    if (typeof value !== 'string') return NaN;
+    const match = value.trim().match(/^(\d+)\b/);
+    return match ? Number(match[1]) : NaN;
+}
+
 export function parseSelection(reply, { index, volume = null, maxPicks = DEFAULT_MAX_PICKS } = {}) {
     const parsed = extractJson(reply);
     if (!parsed || typeof parsed !== 'object') return { status: 'unparsed', ids: [], entries: [], invalid: [] };
@@ -113,7 +124,7 @@ export function parseSelection(reply, { index, volume = null, maxPicks = DEFAULT
     const current = toVolume(volume);
 
     for (const raw of rawList) {
-        const uid = Number(typeof raw === 'object' && raw !== null ? raw.uid : raw);
+        const uid = toUid(typeof raw === 'object' && raw !== null ? raw.uid : raw);
         if (!Number.isInteger(uid)) { invalid.push({ uid: null, reason: 'bad_uid' }); continue; }
         if (ids.length >= maxPicks) { invalid.push({ uid, reason: 'over_pick' }); continue; }
         if (seen.has(uid)) { invalid.push({ uid, reason: 'duplicate' }); continue; }
@@ -164,7 +175,7 @@ export function parseLookupSelection(reply, { allowedUids, maxPicks = DEFAULT_MA
     const ids = [];
     const invalid = [];
     for (const raw of rawList) {
-        const uid = Number(typeof raw === 'object' && raw !== null ? raw.uid : raw);
+        const uid = toUid(typeof raw === 'object' && raw !== null ? raw.uid : raw);
         if (!Number.isInteger(uid)) { invalid.push({ uid: null, reason: 'bad_uid' }); continue; }
         if (ids.length >= maxPicks) { invalid.push({ uid, reason: 'over_pick' }); continue; }
         if (ids.includes(uid)) { invalid.push({ uid, reason: 'duplicate' }); continue; }
