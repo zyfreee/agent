@@ -3740,8 +3740,8 @@ function applyImpactModelVisibility(panel) {
     const impact = currentSettings().impact ?? {};
     const split = impact.modelMode === 'split';
     for (const injectBlock of panel.querySelectorAll('[data-impact-inject-model]')) injectBlock.hidden = !split;
-    // 自定义才需要地址/密钥/模型名；跟随酒馆时这几格灰掉，免得以为填了会生效。
-    for (const [mode, fields] of [['decide', ['decideBaseUrl', 'decideApiKey', 'decideModel']], ['inject', ['injectBaseUrl', 'injectApiKey', 'injectModel']]]) {
+    // 自定义才需要地址/密钥/协议/模型名；跟随酒馆时这几格灰掉，免得以为填了会生效。
+    for (const [mode, fields] of [['decide', ['decideBaseUrl', 'decideApiKey', 'decideProvider', 'decideModel']], ['inject', ['injectBaseUrl', 'injectApiKey', 'injectProvider', 'injectModel']]]) {
         const custom = impact[`${mode}Mode`] === 'custom';
         for (const name of fields) {
             for (const input of panel.querySelectorAll(`[data-setting="impact.${name}"]`)) input.disabled = !custom;
@@ -3750,7 +3750,8 @@ function applyImpactModelVisibility(panel) {
     }
 }
 
-/** 通用：某个功能的模型设置选了“跟随酒馆”时，地址/密钥/模型名与拉取按钮一起灰掉；同名设置在功能页和「模型与提示词」页各有一份，全部一起切换。 */
+/** 通用：某个功能的模型设置选了“跟随酒馆”时，地址/密钥/协议/模型名与拉取按钮一起灰掉，选“自定义”才解禁；
+ *  温度等采样参数两种模式都照填，不跟着灰。同名设置在功能页和集中页各有一份，全部一起切换。 */
 function applyFeatureModelVisibility(panel, { modeSetting, fieldNames, buttonAttr }) {
     if (!panel) return;
     const settings = currentSettings();
@@ -3758,6 +3759,7 @@ function applyFeatureModelVisibility(panel, { modeSetting, fieldNames, buttonAtt
     for (const name of fieldNames) {
         for (const input of panel.querySelectorAll(`[data-setting="${name}"]`)) input.disabled = !custom;
     }
+    if (!buttonAttr) return;
     for (const button of panel.querySelectorAll(`[${buttonAttr}]`)) button.disabled = !custom;
 }
 
@@ -3772,7 +3774,7 @@ function applySettleModelVisibility(panel) {
 function applyWorldDecideModelVisibility(panel) {
     return applyFeatureModelVisibility(panel, {
         modeSetting: 'world.decideMode',
-        fieldNames: ['world.decideBaseUrl', 'world.decideApiKey', 'world.decideModel'],
+        fieldNames: ['world.decideBaseUrl', 'world.decideApiKey', 'world.decideProvider', 'world.decideModel'],
         buttonAttr: 'data-worlddecide-models',
     });
 }
@@ -3780,19 +3782,46 @@ function applyWorldDecideModelVisibility(panel) {
 function applySelfDecideModelVisibility(panel) {
     return applyFeatureModelVisibility(panel, {
         modeSetting: 'self.decideMode',
-        fieldNames: ['self.decideBaseUrl', 'self.decideApiKey', 'self.decideModel'],
+        fieldNames: ['self.decideBaseUrl', 'self.decideApiKey', 'self.decideProvider', 'self.decideModel'],
         buttonAttr: 'data-selfdecide-models',
     });
 }
 
-/** 冷藏推进员：功能页与集中页各有一份设置，选“跟随酒馆”时地址/密钥/模型名一起灰掉。 */
+/** 冷藏推进员：功能页与集中页各有一份设置，选“跟随酒馆”时地址/密钥/协议/模型名一起灰掉。 */
 function applyNpcColdModelVisibility(panel) {
     return applyFeatureModelVisibility(panel, {
         modeSetting: 'npc.coldMode',
-        fieldNames: ['npc.coldBaseUrl', 'npc.coldApiKey', 'npc.coldModel'],
+        fieldNames: ['npc.coldBaseUrl', 'npc.coldApiKey', 'npc.coldProvider', 'npc.coldModel'],
         buttonAttr: 'data-npc-cold-models',
     });
 }
+
+/** 人物簿记录员：同样跟随连接模式灰显；这卡没有“拉取模型”按钮，buttonAttr 留空。 */
+function applyNpcLedgerModelVisibility(panel) {
+    return applyFeatureModelVisibility(panel, {
+        modeSetting: 'npc.ledgerMode',
+        fieldNames: ['npc.ledgerBaseUrl', 'npc.ledgerApiKey', 'npc.ledgerProvider', 'npc.ledgerModel'],
+    });
+}
+
+/**
+ * 连接模式的统一登记表：模式下拉的 data-setting → 这张卡的灰显切换。
+ * 切换连接（input 事件）和整页同步（syncSettingsForm）都查这一张表，两条路不会走出两种结果；
+ * 新功能的模型卡在这里补一行就自动接入，不会再出现“选了自定义还灰着”或“跟随酒馆还能改地址”的漏网卡。
+ */
+const CONNECTION_MODE_TOGGLERS = new Map([
+    ['llm.mode', panel => applyLlmModeVisibility(panel, fieldValue(currentSettings(), 'llm.mode') ?? 'tavern')],
+    ['setting.mode', applyFactsModelVisibility],
+    ['settle.mode', applySettleModelVisibility],
+    ['world.decideMode', applyWorldDecideModelVisibility],
+    ['self.decideMode', applySelfDecideModelVisibility],
+    ['memory.decideMode', applyMemoryDecideModelVisibility],
+    ['npc.ledgerMode', applyNpcLedgerModelVisibility],
+    ['npc.coldMode', applyNpcColdModelVisibility],
+    ['impact.modelMode', applyImpactModelVisibility],
+    ['impact.decideMode', applyImpactModelVisibility],
+    ['impact.injectMode', applyImpactModelVisibility],
+]);
 
 /** 元素或 NodeList 统一成数组：同名设置在功能页与「模型与提示词」页各有一份，状态/候选列表要一起填。 */
 function asElementList(value) {
@@ -3902,7 +3931,7 @@ async function fetchFactsModels(panel, button) {
 function applyFactsModelVisibility(panel) {
     return applyFeatureModelVisibility(panel, {
         modeSetting: 'setting.mode',
-        fieldNames: ['setting.baseUrl', 'setting.apiKey', 'setting.model'],
+        fieldNames: ['setting.baseUrl', 'setting.apiKey', 'setting.provider', 'setting.model'],
         buttonAttr: 'data-facts-models',
     });
 }
@@ -3910,7 +3939,7 @@ function applyFactsModelVisibility(panel) {
 function applyMemoryDecideModelVisibility(panel) {
     return applyFeatureModelVisibility(panel, {
         modeSetting: 'memory.decideMode',
-        fieldNames: ['memory.decideBaseUrl', 'memory.decideApiKey', 'memory.decideModel'],
+        fieldNames: ['memory.decideBaseUrl', 'memory.decideApiKey', 'memory.decideProvider', 'memory.decideModel'],
         buttonAttr: 'data-memorydecide-models',
     });
 }
@@ -3946,14 +3975,8 @@ function syncSettingsForm() {
             if (area && !String(area.value ?? '').trim()) area.value = fallback;
         }
     }
-    applyLlmModeVisibility(panel, settings.llm?.mode ?? 'tavern');
-    applyImpactModelVisibility(panel);
-    applySettleModelVisibility(panel);
-    applyWorldDecideModelVisibility(panel);
-    applySelfDecideModelVisibility(panel);
-    applyNpcColdModelVisibility(panel);
-    applyFactsModelVisibility(panel);
-    applyMemoryDecideModelVisibility(panel);
+    // 连接模式的灰显统一查登记表：打开面板、切换模式下拉走的是同一份，行为完全一致。
+    for (const toggle of CONNECTION_MODE_TOGGLERS.values()) toggle(panel);
     renderSettleCustomCategories(panel);
     renderWorldbookPicker(panel);
     applyAppearance(settings);
@@ -4867,12 +4890,8 @@ function createSettingsPanel() {
         const sequence = ++settingsSaveSequence;
         const result = updateSetting(input.dataset.setting, value);
         if (input.dataset.setting === 'enableSandboxMode' || input.dataset.setting.startsWith('sandbox.')) syncSandboxModeFromSettings();
-        if (input.dataset.setting === 'llm.mode') applyLlmModeVisibility(panel, value);
-        if (/^impact\.(modelMode|decideMode|injectMode)$/.test(input.dataset.setting)) applyImpactModelVisibility(panel);
-        if (input.dataset.setting === 'settle.mode') applySettleModelVisibility(panel);
-        if (input.dataset.setting === 'world.decideMode') applyWorldDecideModelVisibility(panel);
-        if (input.dataset.setting === 'self.decideMode') applySelfDecideModelVisibility(panel);
-        if (input.dataset.setting === 'npc.coldMode') applyNpcColdModelVisibility(panel);
+        // 连接模式下拉一换，这张卡的地址/密钥/协议/模型名跟着灰显或解禁：统一查登记表。
+        CONNECTION_MODE_TOGGLERS.get(input.dataset.setting)?.(panel);
         if (input.dataset.setting === 'setting.worldbook') scheduleWorldbookSync(panel);
         if (input.dataset.setting === 'setting.progress') refreshWorldbookStats(panel);
         if (/^(setting|injection|llm)\./.test(input.dataset.setting)) renderFactsStatus(panel);

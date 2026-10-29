@@ -70,4 +70,19 @@ assert.match(entry, /data-sandbox-status/);
 assert.match(entry, /function syncSandboxModeFromSettings/);
 assert.match(entry, /agentSandboxMode\.sync\(\{/);
 assert.match(entry, /agentSandboxMode\.read\(\{/);
+// 连接模式的灰显联动必须一张表管全：模板里每个连接模式下拉都要登记进 CONNECTION_MODE_TOGGLERS，
+// 否则当场切换“跟随酒馆/自定义”时那张卡的地址/密钥不会跟着灰显或解禁
+//（曾经漏过原著资料、记忆书记官、人物簿记录员三张卡，选了自定义还灰着、跟随酒馆还能改地址）。
+const registryStart = entry.indexOf('const CONNECTION_MODE_TOGGLERS');
+const registryEnd = entry.indexOf(']);', registryStart);
+assert.ok(registryStart >= 0 && registryEnd > registryStart, '找不到连接模式登记表 CONNECTION_MODE_TOGGLERS');
+const registryKeys = [...entry.slice(registryStart, registryEnd).matchAll(/\['([a-zA-Z0-9_.]*(?:mode|Mode))',/g)].map(match => match[1]);
+// 连接模式下拉的判据：选项里有“跟随酒馆”(value="tavern")。facts.sourceMode 这类业务模式下拉不算。
+const modeSelects = [...new Set([...entry.matchAll(/<select[^>]*data-setting="([a-zA-Z0-9_.]+)"[^>]*>((?:(?!<\/select>).)*)<\/select>/gs)]
+    .filter(match => match[2].includes('value="tavern"'))
+    .map(match => match[1]))];
+assert.ok(modeSelects.length >= 10, `连接模式下拉数量异常：${modeSelects.join(', ')}`);
+for (const mode of modeSelects) {
+    assert.ok(registryKeys.includes(mode), `连接模式 ${mode} 没登记进 CONNECTION_MODE_TOGGLERS，切换时这张卡不会联动`);
+}
 console.log(`settings template smoke checks passed: ${directory}`);
