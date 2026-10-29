@@ -123,6 +123,10 @@ const styleCss = await readFile(new URL('./host/style.css', import.meta.url), 'u
 assert.match(entry, /npcProfileEdit/, '信息面板缺少右上角的编辑铅笔');
 assert.match(entry, /dai-npc-read/, '信息面板缺少只读视图容器');
 assert.match(entry, /function npcProfileReadText/, '只读视图缺少文本渲染函数');
+// 只读视图必须把字段全部铺出来：有内容写内容，没内容空着画“—”，一页装不下就拆页（基本/心性/资产）。
+// 曾经只铺有值的字段，玩家一看“我要的信息变少了”——空字段也得占一行，页签跟经历/流水同级。
+assert.match(entry, /NPC_INFO_BUNDLES/, '信息页要按组拆成多页（基本/心性/资产）');
+assert.match(styleCss, /is-empty/, '空字段要有占位样式');
 assert.match(styleCss, /\.dai-agent-modal \{ position: fixed/, '弹窗必须 fixed 定位，否则在长设置页里会超出屏幕');
 // 拉到的模型必须真的可点选：fetchModelList 要给模型输入框接上 datalist（模板没铺就现建），
 // 否则候选拉回来只能塞进空气，状态栏“点模型名那一格就能选”成了一句空话。
