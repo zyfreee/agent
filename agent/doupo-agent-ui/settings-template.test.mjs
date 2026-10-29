@@ -85,4 +85,23 @@ assert.ok(modeSelects.length >= 10, `连接模式下拉数量异常：${modeSele
 for (const mode of modeSelects) {
     assert.ok(registryKeys.includes(mode), `连接模式 ${mode} 没登记进 CONNECTION_MODE_TOGGLERS，切换时这张卡不会联动`);
 }
+// “拉取模型”的取值判据：fetchModelList 传进来的名字是 'BaseUrl'/'ApiKey'。
+// 曾把判据写成 name === 'Base'（永远判不中），接口地址取到密钥那一格，
+// 请求变成 “sk-xxx/v1/models” 相对路径打到酒馆自己，所有卡点拉取全是 404。
+assert.doesNotMatch(entry, /name === 'Base'\s*\?/, "拉取模型取值判据写错：'Base' 永远不等于传入的 'BaseUrl'，会把密钥当成接口地址发出去");
+for (const path of ['setting.baseUrl', 'settle.baseUrl', 'world.decideBaseUrl', 'self.decideBaseUrl', 'memory.decideBaseUrl', 'npc.coldBaseUrl']) {
+    assert.match(entry, new RegExp(`name === 'BaseUrl' \\? readSettingInput\\(panel, '${path.replace('.', '\\.')}'\\)`), `拉取模型必须读 ${path}`);
+}
+// 六路“拉取模型”按钮都必须既有取值函数又有点击接线（记忆书记官、冷藏推进员曾经只有按钮没有接线）。
+for (const [button, fn] of [
+    ['data-facts-models', 'fetchFactsModels'],
+    ['data-settle-models', 'fetchSettleModels'],
+    ['data-worlddecide-models', 'fetchWorldDecideModels'],
+    ['data-selfdecide-models', 'fetchSelfDecideModels'],
+    ['data-memorydecide-models', 'fetchMemoryDecideModels'],
+    ['data-npc-cold-models', 'fetchNpcColdModels'],
+]) {
+    assert.match(entry, new RegExp(`function ${fn}\\(`), `缺少拉取函数：${fn}`);
+    assert.match(entry, new RegExp(`closest\\?\\.\\('\\[${button.replace(/-/g, '\\-')}\\]'\\)`), `拉取按钮没有点击接线：${button}`);
+}
 console.log(`settings template smoke checks passed: ${directory}`);

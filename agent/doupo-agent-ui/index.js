@@ -3890,7 +3890,7 @@ function readSettingInput(panel, path) {
 
 async function fetchSettleModels(panel, button) {
     return fetchModelList(panel, {
-        read: name => name === 'Base' ? readSettingInput(panel, 'settle.baseUrl') : readSettingInput(panel, 'settle.apiKey'),
+        read: name => name === 'BaseUrl' ? readSettingInput(panel, 'settle.baseUrl') : readSettingInput(panel, 'settle.apiKey'),
         status: panel.querySelectorAll('[data-settle-models-status]'),
         list: [panel.querySelector('#dai-settle-models'), panel.querySelector('#dai-hub-settle-models')].filter(Boolean),
         target: panel.querySelectorAll('[data-setting="settle.model"]'),
@@ -3900,7 +3900,7 @@ async function fetchSettleModels(panel, button) {
 
 async function fetchWorldDecideModels(panel, button) {
     return fetchModelList(panel, {
-        read: name => name === 'Base' ? readSettingInput(panel, 'world.decideBaseUrl') : readSettingInput(panel, 'world.decideApiKey'),
+        read: name => name === 'BaseUrl' ? readSettingInput(panel, 'world.decideBaseUrl') : readSettingInput(panel, 'world.decideApiKey'),
         status: panel.querySelectorAll('[data-worlddecide-models-status]'),
         list: [panel.querySelector('#dai-worlddecide-models'), panel.querySelector('#dai-hub-worlddecide-models')].filter(Boolean),
         target: panel.querySelectorAll('[data-setting="world.decideModel"]'),
@@ -3910,7 +3910,7 @@ async function fetchWorldDecideModels(panel, button) {
 
 async function fetchSelfDecideModels(panel, button) {
     return fetchModelList(panel, {
-        read: name => name === 'Base' ? readSettingInput(panel, 'self.decideBaseUrl') : readSettingInput(panel, 'self.decideApiKey'),
+        read: name => name === 'BaseUrl' ? readSettingInput(panel, 'self.decideBaseUrl') : readSettingInput(panel, 'self.decideApiKey'),
         status: panel.querySelectorAll('[data-selfdecide-models-status]'),
         list: [panel.querySelector('#dai-selfdecide-models'), panel.querySelector('#dai-hub-selfdecide-models')].filter(Boolean),
         target: panel.querySelectorAll('[data-setting="self.decideModel"]'),
@@ -3920,10 +3920,30 @@ async function fetchSelfDecideModels(panel, button) {
 
 async function fetchFactsModels(panel, button) {
     return fetchModelList(panel, {
-        read: name => name === 'Base' ? readSettingInput(panel, 'setting.baseUrl') : readSettingInput(panel, 'setting.apiKey'),
+        read: name => name === 'BaseUrl' ? readSettingInput(panel, 'setting.baseUrl') : readSettingInput(panel, 'setting.apiKey'),
         status: panel.querySelectorAll('[data-facts-models-status]'),
         list: [panel.querySelector('#dai-facts-models')].filter(Boolean),
         target: panel.querySelectorAll('[data-setting="setting.model"]'),
+        button,
+    });
+}
+
+async function fetchMemoryDecideModels(panel, button) {
+    return fetchModelList(panel, {
+        read: name => name === 'BaseUrl' ? readSettingInput(panel, 'memory.decideBaseUrl') : readSettingInput(panel, 'memory.decideApiKey'),
+        status: panel.querySelectorAll('[data-memorydecide-models-status]'),
+        list: [panel.querySelector('#dai-memorydecide-models'), panel.querySelector('#dai-hub-memorydecide-models')].filter(Boolean),
+        target: panel.querySelectorAll('[data-setting="memory.decideModel"]'),
+        button,
+    });
+}
+
+async function fetchNpcColdModels(panel, button) {
+    return fetchModelList(panel, {
+        read: name => name === 'BaseUrl' ? readSettingInput(panel, 'npc.coldBaseUrl') : readSettingInput(panel, 'npc.coldApiKey'),
+        status: panel.querySelectorAll('[data-npc-cold-models-status]'),
+        list: [panel.querySelector('#dai-npc-cold-models'), panel.querySelector('#dai-hub-npc-cold-models')].filter(Boolean),
+        target: panel.querySelectorAll('[data-setting="npc.coldModel"]'),
         button,
     });
 }
@@ -4346,6 +4366,16 @@ function createSettingsPanel() {
         const factsFetch = event.target.closest?.('[data-facts-models]');
         if (factsFetch) {
             void fetchFactsModels(panel, factsFetch);
+            return;
+        }
+        const memoryDecideFetch = event.target.closest?.('[data-memorydecide-models]');
+        if (memoryDecideFetch) {
+            void fetchMemoryDecideModels(panel, memoryDecideFetch);
+            return;
+        }
+        const npcColdFetch = event.target.closest?.('[data-npc-cold-models]');
+        if (npcColdFetch) {
+            void fetchNpcColdModels(panel, npcColdFetch);
             return;
         }
         // —— 纳戒：子页签与手动操作。所有手动改动走 applySelfOps，与模型决定同一套校验。——
