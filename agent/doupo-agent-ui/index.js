@@ -3656,7 +3656,10 @@ function mountOrbHud() {
     }
     if (!orbDocumentKey) {
         orbDocumentKey = event => {
-            if (event.key !== 'Escape' || !orbElement || orbState.collapsed) return;
+            if (event.key !== 'Escape' || !orbElement) return;
+            // 第一层 Esc 先收小卡，第二层才收长条。
+            if (orbNpcPopElement) { closeOrbNpcPopup(); return; }
+            if (orbState.collapsed) return;
             orbState.collapse();
             syncOrbHud();
         };
@@ -3664,7 +3667,7 @@ function mountOrbHud() {
     }
     if (!orbResizeBound) {
         orbResizeBound = true;
-        window.addEventListener('resize', () => applyOrbPosition());
+        window.addEventListener('resize', () => { applyOrbPosition(); positionOrbNpcPopup(); });
     }
     syncOrbHud();
     applyOrbPosition();
@@ -3684,6 +3687,8 @@ function syncOrbHud() {
     orbElement.querySelector('.dai-orb-ball')?.setAttribute('aria-expanded', orbState.collapsed ? 'false' : 'true');
     const panel = orbElement.querySelector('.dai-orb-panel');
     if (!panel) return;
+    // 小卡只跟着人物簿窗走：收起、关窗或换到别的图标都把它带走。
+    if (orbState.collapsed || orbState.panelId !== 'npcledger') closeOrbNpcPopup();
     if (orbState.collapsed || !orbState.panelId) {
         panel.hidden = true;
         panel.replaceChildren();
@@ -3697,9 +3702,11 @@ function refreshOpenOrbPanel() {
     if (!orbElement || orbState.collapsed || !orbState.panelId) return;
     const panel = orbElement.querySelector('.dai-orb-panel');
     if (panel && !panel.hidden) renderOrbPanel(panel, orbState.panelId);
+    // 回合状态事件带来的新数据也要进小卡：开着就照着最新档案重画一张。
+    if (orbNpcPopElement && orbNpcPopName) openOrbNpcPopup(orbNpcPopName);
 }
 
-/** 收集八个信息窗的只读数据；哪路运行时没就绪就缺哪块，窗里显示“暂无”。 */
+/** 收集十一个信息窗的只读数据；哪路运行时没就绪就缺哪块，窗里显示“暂无”。 */
 function collectOrbData() {
     const settings = currentSettings();
     const safe = getter => { try { return getter(); } catch { return undefined; } };
@@ -3720,6 +3727,7 @@ function collectOrbData() {
             clockText: safe(() => agentWorldRuntime.formatClock()),
         },
         self: { status: safe(() => agentSelfRuntime.status()), snapshot: safe(() => agentSelfRuntime.snapshot()) },
+        memory: { status: safe(() => agentMemoryRuntime.status()), snapshot: safe(() => agentMemoryRuntime.snapshot()) },
         npcledger: { status: safe(() => agentNpcLedger.status()), records: safe(() => agentNpcLedger.list()) },
         cold: { status: safe(() => agentNpcColdRuntime.status()) },
         impact: { status: safe(() => agentImpactRuntime.status()), records: safe(() => agentImpactRuntime.list({ state: 'active' })) },
@@ -3728,6 +3736,8 @@ function collectOrbData() {
             worldbook: typeof settings.setting?.worldbook === 'string' ? settings.setting.worldbook.trim() : '',
             volume: { label: volume ? `第 ${volume} 卷（${manualVolume !== null ? '手动' : '自动'}）` : '' },
         },
+        mirror: { bridge: safe(() => agentDbBridge.status()), mvu: safe(() => agentSelfMvu.status()) },
+        journal: { records: safe(() => agentAuditLog.list({ limit: 40 })) },
         sandbox: { read: safe(() => agentSandboxMode.read({ sessionId: agentActiveScope?.sessionId, branchId: agentActiveScope?.branchId })) },
     };
 }
@@ -3763,6 +3773,14 @@ function renderOrbPanel(panel, id) {
                 card.append(makeElement('b', '', item.head));
                 if (item.meta) card.append(makeElement('small', '', item.meta));
                 if (item.detail) card.append(makeElement('p', '', item.detail));
+                // 人物簿一览的每行可以点开：在信息窗外侧弹一张只读小档案卡。
+                if (id === 'npcledger' && item.head) {
+                    card.classList.add('is-clickable');
+                    card.dataset.orbNpc = item.head;
+                    card.title = '点开这个人的完整档案';
+                    card.setAttribute('role', 'button');
+                    card.addEventListener('click', () => toggleOrbNpcPopup(item.head));
+                }
                 block.append(card);
             }
         }
@@ -3771,10 +3789,128 @@ function renderOrbPanel(panel, id) {
     panel.replaceChildren(heading, body);
 }
 
+// —— 悬浮球人物小卡：点人物簿信息窗里的一行，贴在信息窗外侧弹出只读小档案。——
+// 卡挂在 orbElement 里：点卡不算点外面，长条不会因此收起；换图标/收起/Esc 才关。——
+let orbNpcPopElement;
+let orbNpcPopName = null;
+
+function toggleOrbNpcPopup(name) {
+    if (orbNpcPopName === name) closeOrbNpcPopup();
+    else openOrbNpcPopup(name);
+}
+
+function closeOrbNpcPopup() {
+    orbNpcPopElement?.remove();
+    orbNpcPopElement = undefined;
+    orbNpcPopName = null;
+}
+
+function openOrbNpcPopup(name) {
+    if (!orbElement) return;
+    const record = agentNpcLedger.get(name);
+    if (!record) { closeOrbNpcPopup(); return; }
+    orbNpcPopElement?.remove();
+    orbNpcPopElement = buildOrbNpcPopup(record);
+    orbNpcPopName = record.name;
+    orbElement.append(orbNpcPopElement);
+    positionOrbNpcPopup();
+}
+
+/** 小卡内容：抬头（名字/好感/别名称号）+ 角标 + 只挑有内容的字段按组列 + 最近经历与流水。 */
+function buildOrbNpcPopup(record) {
+    const pop = makeElement('aside', 'dai-orb-pop');
+    pop.dataset.orbNpcPop = record.name;
+    const head = makeElement('div', 'dai-orb-pop-head');
+    const titleBox = makeElement('div');
+    const nameLine = makeElement('div', 'dai-orb-pop-name');
+    nameLine.append(
+        makeElement('b', '', record.name),
+        makeElement('small', '', `${record.favor > 0 ? '+' : ''}${record.favor} ${favorLabel(record.favor) || '未定'}`),
+    );
+    titleBox.append(nameLine);
+    const subs = [];
+    if (record.aliases.length) subs.push(`别名：${record.aliases.join('、')}`);
+    if (record.titles.length) subs.push(`称号：${record.titles.join('、')}`);
+    if (subs.length) titleBox.append(makeElement('small', 'dai-orb-pop-sub', subs.join('　')));
+    head.append(titleBox);
+    const close = makeElement('button', 'dai-orb-pop-close', '×');
+    close.type = 'button';
+    close.title = '收起小卡';
+    close.setAttribute('aria-label', `收起${record.name}的小档案`);
+    close.addEventListener('click', closeOrbNpcPopup);
+    head.append(close);
+    pop.append(head);
+
+    const chips = makeElement('div', 'dai-orb-pop-chips');
+    chips.append(makeElement('span', 'dai-profile-chip', record.presence === '在场' ? '● 在场' : '○ 不在场'));
+    if (record.importance === '重要') chips.append(makeElement('span', 'dai-profile-chip is-accent', '★ 重要'));
+    if (record.location) chips.append(makeElement('span', 'dai-profile-chip', `@${record.location}`));
+    if (record.identity) chips.append(makeElement('span', 'dai-profile-chip', record.identity));
+    pop.append(chips);
+
+    const groups = new Map();
+    // 身份已经做成角标，小卡里不再重复一行；设置页大面板保留这行不动。
+    const popSkip = new Set([...NPC_READ_SKIP, 'identity']);
+    for (const field of NPC_FIELDS) {
+        if (popSkip.has(field.key)) continue;
+        const display = npcProfileReadText(field, record[field.key]);
+        if (!display) continue;
+        if (!groups.has(field.group)) groups.set(field.group, []);
+        groups.get(field.group).push([field.label, display]);
+    }
+    for (const [groupName, rows] of groups) {
+        const block = makeElement('section', 'dai-orb-pop-group');
+        block.append(makeElement('b', '', groupName));
+        for (const [label, value] of rows) {
+            const line = makeElement('div', 'dai-profile-row');
+            line.append(makeElement('span', 'dai-profile-label', label), makeElement('span', 'dai-profile-value', value));
+            block.append(line);
+        }
+        pop.append(block);
+    }
+
+    if (record.exp.length) {
+        const block = makeElement('section', 'dai-orb-pop-group');
+        block.append(makeElement('b', '', '经历'));
+        for (const item of [...record.exp].reverse().slice(0, 3)) {
+            block.append(makeElement('p', 'dai-orb-pop-entry', `${item.day !== null && item.day !== undefined ? `第 ${item.day} 天 · ` : ''}${item.text}`));
+        }
+        pop.append(block);
+    }
+    if (record.log.length) {
+        const block = makeElement('section', 'dai-orb-pop-group');
+        block.append(makeElement('b', '', '流水'));
+        for (const item of [...record.log].reverse().slice(0, 3)) {
+            block.append(makeElement('p', 'dai-orb-pop-entry', `${item.day !== null && item.day !== undefined ? `第 ${item.day} 天 · ` : ''}${item.text}`));
+        }
+        pop.append(block);
+    }
+    return pop;
+}
+
+/** 贴着信息窗的外侧放；塞不下就收进视口，宁可压住信息窗也不出屏。 */
+function positionOrbNpcPopup() {
+    if (!orbNpcPopElement || !orbElement || typeof window === 'undefined') return;
+    const orbRect = orbElement.getBoundingClientRect();
+    const panel = orbElement.querySelector('.dai-orb-panel');
+    const panelRect = panel && !panel.hidden ? panel.getBoundingClientRect() : orbRect;
+    const popRect = orbNpcPopElement.getBoundingClientRect();
+    const margin = 8;
+    // 球在右缘时信息窗往左开，小卡再往左一格；球在左缘则相反。
+    const panelOnLeft = orbElement.dataset.side !== 'left';
+    const left = panelOnLeft ? panelRect.left - popRect.width - margin : panelRect.right + margin;
+    const clampedLeft = Math.min(Math.max(margin, left), Math.max(margin, window.innerWidth - popRect.width - margin));
+    const top = Math.min(Math.max(margin, orbRect.top), Math.max(margin, window.innerHeight - popRect.height - margin));
+    orbNpcPopElement.style.left = `${Math.round(clampedLeft)}px`;
+    orbNpcPopElement.style.top = `${Math.round(top)}px`;
+}
+
 function disposeOrbHud() {
     if (orbDocumentClick) { document.removeEventListener('pointerdown', orbDocumentClick, true); orbDocumentClick = undefined; }
     if (orbDocumentKey) { document.removeEventListener('keydown', orbDocumentKey); orbDocumentKey = undefined; }
     orbElement = undefined;
+    orbNpcPopElement = undefined;
+    orbNpcPopName = null;
     orbState = createOrbState();
 }
 

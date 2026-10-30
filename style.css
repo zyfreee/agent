@@ -465,7 +465,9 @@
 .dai-orb[hidden] { display: none; }
 .dai-orb.is-dragging { cursor: grabbing; }
 .dai-orb.is-dragging .dai-orb-ball { cursor: grabbing; }
-.dai-orb-capsule { display: flex; flex-direction: column; width: 3rem; height: 3rem; overflow: hidden; border: 1px solid var(--dai-border); border-radius: 999px; background: var(--dai-surface); box-shadow: 0 0.35rem 1.1rem #0005; transition: height 0.28s ease; }
+.dai-orb-capsule { display: flex; flex-direction: column; width: 3rem; height: 3rem; max-height: calc(100vh - 1.6rem); overflow: hidden; border: 1px solid var(--dai-border); border-radius: 999px; background: var(--dai-surface); box-shadow: 0 0.35rem 1.1rem #0005; transition: height 0.28s ease; scrollbar-width: none; }
+.dai-orb-capsule::-webkit-scrollbar { display: none; }
+.dai-orb[data-state="expanded"] .dai-orb-capsule { overflow-y: auto; }
 .dai-orb-ball { flex: none; display: grid; width: 3rem; height: 3rem; place-items: center; border: 0; border-radius: 999px; color: var(--dai-accent); background: var(--dai-tint); cursor: grab; font-size: 1.05rem; line-height: 1; transition: filter 0.15s ease; touch-action: none; }
 .dai-orb-ball:hover { filter: brightness(1.12); }
 .dai-orb-icon { flex: none; display: grid; width: 3rem; height: 2.9rem; place-items: center; border: 0; color: var(--dai-muted); background: transparent; cursor: pointer; font-size: 0.95rem; line-height: 1; opacity: 0; transform: translateY(-0.4rem); visibility: hidden; pointer-events: none; transition: opacity 0.22s ease, transform 0.22s ease, color 0.15s ease, background 0.15s ease, visibility 0.22s ease; }
@@ -488,10 +490,28 @@
 .dai-orb-group { display: grid; gap: 0.35rem; margin-top: 0.7rem; }
 .dai-orb-group-title { color: var(--dai-muted); font-size: 0.78rem; font-weight: 600; }
 .dai-orb-entry { display: grid; gap: 0.15rem; padding: 0.45rem 0.55rem; border: 1px solid var(--dai-border); border-radius: 0.5rem; background: var(--dai-field-hover, rgba(255,255,255,0.04)); }
+.dai-orb-entry.is-clickable { cursor: pointer; }
+.dai-orb-entry.is-clickable:hover { border-color: var(--dai-accent); color: var(--dai-text); }
+.dai-orb-entry.is-clickable:hover b { color: var(--dai-accent); }
 .dai-orb-entry b { font-size: 0.82rem; font-weight: 600; line-height: 1.45; word-break: break-word; }
 .dai-orb-entry small { color: var(--dai-muted); font-size: 0.74rem; line-height: 1.4; overflow-wrap: anywhere; }
 .dai-orb-entry p { margin: 0; font-size: 0.8rem; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 .dai-orb-empty { margin: 0; padding: 0.35rem 0.1rem; color: var(--dai-muted); font-size: 0.8rem; }
+/* 悬浮球人物小卡：点人物簿里的一行，贴在信息窗外侧弹出的只读小档案。 */
+.dai-orb-pop { position: fixed; z-index: 9998; display: flex; flex-direction: column; width: min(20rem, calc(100vw - 2rem)); max-height: min(30rem, calc(100dvh - 2rem)); overflow: auto; padding: 0.75rem 0.85rem 0.85rem; border: 1px solid var(--dai-border); border-radius: 0.75rem; background: var(--dai-surface); box-shadow: 0 0.6rem 1.6rem #0007; font-size: 0.82rem; }
+.dai-orb-pop-head { display: flex; justify-content: space-between; align-items: start; gap: 0.6rem; margin-bottom: 0.45rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--dai-border); }
+.dai-orb-pop-head > div { display: grid; gap: 0.15rem; min-width: 0; }
+.dai-orb-pop-name { display: flex; align-items: baseline; gap: 0.45rem; }
+.dai-orb-pop-name b { font-size: 0.95rem; }
+.dai-orb-pop-name small { color: var(--dai-accent); }
+.dai-orb-pop-sub { color: var(--dai-muted); font-size: 0.74rem; line-height: 1.4; overflow-wrap: anywhere; }
+.dai-orb-pop-close { flex: none; display: grid; width: 1.6rem; height: 1.6rem; place-items: center; border: 0; border-radius: 50%; color: var(--dai-muted); background: transparent; cursor: pointer; font-size: 1rem; line-height: 1; }
+.dai-orb-pop-close:hover { color: var(--dai-text); background: var(--dai-field-hover, rgba(255,255,255,0.06)); }
+.dai-orb-pop-chips { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-bottom: 0.2rem; }
+.dai-orb-pop-group { display: grid; gap: 0.1rem; margin-top: 0.55rem; }
+.dai-orb-pop-group > b { color: var(--dai-muted); font-size: 0.74rem; font-weight: 700; letter-spacing: 0.04em; }
+.dai-orb-pop-group .dai-profile-row { padding: 0.22rem 0.4rem; font-size: 0.8rem; }
+.dai-orb-pop-entry { margin: 0; padding: 0.3rem 0.4rem; border-radius: 0.4rem; background: var(--dai-field-hover, rgba(255,255,255,0.04)); font-size: 0.78rem; line-height: 1.5; overflow-wrap: anywhere; }
 @media (prefers-reduced-motion: reduce) {
     .dai-orb-capsule, .dai-orb-ball, .dai-orb-icon { transition: none !important; }
 }
@@ -501,7 +521,8 @@
 .dai-agent-modal { position: fixed; inset: 0; z-index: 5000; display: grid; place-items: center; }
 .dai-agent-modal[hidden] { display: none; }
 .dai-agent-modal-backdrop { position: absolute; inset: 0; background: #05070cb0; }
-.dai-agent-modal-dialog { position: relative; display: flex; flex-direction: column; width: min(34rem, calc(100vw - 3rem)); max-height: calc(100% - 2.5rem); border: 1px solid var(--dai-border); border-radius: 0.85rem; background: var(--dai-bg); box-shadow: 0 1rem 3rem #0008; }
+/* max-height 用视口单位：弹窗是 place-items:center 的 grid 子项，百分比 max-height 对着内容自适应的行解析，等于没设，小屏会整块顶出屏幕。 */
+.dai-agent-modal-dialog { position: relative; display: flex; flex-direction: column; width: min(34rem, calc(100vw - 3rem)); max-height: calc(100vh - 2.5rem); max-height: calc(100dvh - 2.5rem); border: 1px solid var(--dai-border); border-radius: 0.85rem; background: var(--dai-bg); box-shadow: 0 1rem 3rem #0008; }
 .dai-agent-modal[data-wide="true"] .dai-agent-modal-dialog { width: min(46rem, calc(100vw - 3rem)); }
 .dai-agent-modal-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.7rem 1rem; border-bottom: 1px solid var(--dai-border); }
 .dai-agent-modal-title { font-size: 0.98rem; }

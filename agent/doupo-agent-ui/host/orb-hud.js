@@ -5,17 +5,25 @@
  * 这个模块只管纯逻辑：图标清单、展开/收起的状态机、以及把各运行时的
  * 现状折成信息窗要显示的行与条目。DOM 结构、动画与挂载在 index.js，
  * 这里不碰 document，全部输入都可能是 undefined——没接上的功能显示“暂无”。
+ * 只从纯逻辑模块借几张贴好的标签（季节/立场/氛围/记忆标签），不引宿主层。
  */
+
+import { STANCE_LABELS, TENSION_LABELS } from '../world/world-runtime.js';
+import { seasonOf } from '../world/world-ops.js';
+import { TAG_LABELS } from '../memory/memory-runtime.js';
 
 /** 长条上从上到下的图标（球帽下面第一格就是第一项）。 */
 export const ORB_ITEMS = Object.freeze([
     Object.freeze({ id: 'overview', icon: '⌂', title: '总控', hint: '模块开关与最近任务' }),
-    Object.freeze({ id: 'world', icon: '◌', title: '世界运转', hint: '时间、地点与事件' }),
+    Object.freeze({ id: 'world', icon: '◌', title: '世界运转', hint: '时间、势力与事件' }),
     Object.freeze({ id: 'self', icon: '◉', title: '纳戒', hint: '主角自身与随身之物' }),
+    Object.freeze({ id: 'memory', icon: '✧', title: '主角记忆', hint: '大小记忆与召回' }),
     Object.freeze({ id: 'npcledger', icon: '☰', title: '人物簿', hint: '人物档案与好感' }),
     Object.freeze({ id: 'cold', icon: '❄', title: '冷藏推进', hint: '后台人物的推进记录' }),
     Object.freeze({ id: 'impact', icon: '⌁', title: '世界影响', hint: '世界被改成了什么样' }),
     Object.freeze({ id: 'facts', icon: '▤', title: '原著资料', hint: '设定库与注入通道' }),
+    Object.freeze({ id: 'mirror', icon: '⇄', title: '数据镜像', hint: '数据库桥接与 MVU 同步' }),
+    Object.freeze({ id: 'journal', icon: '✎', title: '运行日志', hint: 'Agent 的运行流水' }),
     Object.freeze({ id: 'sandbox', icon: '◈', title: '沙盒模式', hint: '本局的口径与惯性' }),
 ]);
 
@@ -74,13 +82,17 @@ function capRows(rows) {
     return rows.filter(item => item.value !== EMPTY || item.tone).slice(0, ROW_CAP);
 }
 
-/** 世界运转：时钟、五个信息字段、双栏事件与任务，只读。 */
+/** 世界运转：时钟、五个信息字段、氛围、双栏事件、势力人物与任务，只读。 */
 export function buildWorldPanel({ status, snapshot, clockText } = {}) {
     const info = status?.info ?? {};
+    const dayNum = Number(snapshot?.clock?.day ?? status?.clock?.day);
+    const season = Number.isInteger(dayNum) && dayNum >= 1 ? seasonOf(dayNum) : '';
     const rows = [row('时钟', clockText)];
+    if (season) rows.push(row('季节', `${season}季`));
     for (const [field, label] of [['era', '时期'], ['location', '所在地'], ['weather', '天气'], ['reputation', '名声'], ['wanted', '通缉度']]) {
         rows.push(row(label, info[field]));
     }
+    if (snapshot?.tension) rows.push(row('世界氛围', TENSION_LABELS[snapshot.tension] ?? ''));
     const today = status?.clock?.day ?? 1;
     const eventItem = event => entry(
         event.text,
@@ -90,6 +102,16 @@ export function buildWorldPanel({ status, snapshot, clockText } = {}) {
     );
     const near = clip((snapshot?.nearEvents ?? []).filter(event => !event.done));
     const world = clip((snapshot?.worldEvents ?? []).filter(event => !event.done));
+    const factionItem = faction => entry(
+        faction.name,
+        [STANCE_LABELS[faction.stance] ?? '中立', `第 ${faction.updatedDay ?? faction.day ?? '?'} 天更新`].filter(Boolean).join(' · '),
+        [faction.dynamics, text(faction.basis) ? `依据：${faction.basis}` : ''].filter(Boolean).join('\n'),
+    );
+    const personItem = person => entry(
+        person.name,
+        text(person.attitude) || '态度未明',
+        person.basis,
+    );
     const taskItem = task => {
         const overdue = task.status !== 'done' && task.endDay !== null && task.endDay !== undefined && task.endDay < today;
         return entry(
@@ -100,6 +122,8 @@ export function buildWorldPanel({ status, snapshot, clockText } = {}) {
         );
     };
     const tasks = clip([...(snapshot?.tasks ?? [])].sort((a, b) => rankTask(a, today) - rankTask(b, today)), 6);
+    const factions = clip([...(snapshot?.factions ?? [])].sort((a, b) => rankFaction(a) - rankFaction(b) || (b.updatedDay ?? 0) - (a.updatedDay ?? 0)), 6);
+    const people = clip([...(snapshot?.people ?? [])].sort((a, b) => (b.updatedDay ?? 0) - (a.updatedDay ?? 0)), 6);
     return {
         title: '世界运转', icon: '◌',
         summary: clockText || EMPTY,
@@ -107,9 +131,17 @@ export function buildWorldPanel({ status, snapshot, clockText } = {}) {
         lists: [
             list('附近事件', '附近没有进行中的事件。', near.map(eventItem)),
             list('世界大事', '暂无进行中的世界大事。', world.map(eventItem)),
+            list('势力动向', '还没有剧情接触过的势力。', factions.map(factionItem)),
+            list('相关人物', '还没有记过态度的人物。', people.map(personItem)),
             list('任务', '没有立下的任务。', tasks.map(taskItem)),
         ],
     };
+}
+
+const FACTION_STANCE_RANK = Object.freeze({ hostile: 0, wary: 1, allied: 2, friendly: 3, neutral: 4 });
+
+function rankFaction(faction) {
+    return FACTION_STANCE_RANK[faction?.stance] ?? 2;
 }
 
 function remainingDays(endDay, today) {
@@ -123,11 +155,19 @@ function rankTask(task, today) {
     return 1;
 }
 
-/** 纳戒：身份、境界、金币与各清单计数，只读。 */
+/** 纳戒：身份、境界、金币、功法斗技与各清单，只读。 */
 export function buildSelfPanel({ status, snapshot } = {}) {
     const profile = status?.profile ?? {};
     const realm = `${text(status?.realm?.realm)}${text(status?.realm?.stage)}`;
     const titles = clip(snapshot?.titles ?? []);
+    const martialItem = item => entry(
+        `${item.name}${item.grade ? `（${item.grade}）` : ''}`,
+        item.type,
+        item.note,
+    );
+    const techniques = clip(snapshot?.techniques ?? [], 6);
+    const skills = clip(snapshot?.skills ?? [], 6);
+    const recipes = clip(snapshot?.recipes ?? [], 4);
     const items = clip([...(snapshot?.items ?? [])].sort((a, b) => (b.equipped === true) - (a.equipped === true) || b.count - a.count));
     const goals = clip([...(snapshot?.goals ?? [])].sort((a, b) => (a.done === true) - (b.done === true) || (a.priority === '主线' ? 0 : 1) - (b.priority === '主线' ? 0 : 1)), 6);
     const crafts = clip((snapshot?.crafts ?? []).filter(job => job.status === 'open'), 4);
@@ -148,9 +188,15 @@ export function buildSelfPanel({ status, snapshot } = {}) {
         rows,
         lists: [
             list('称号', '还没有称号。', titles.map(title => entry(title))),
+            list('功法', '还没有修行的功法。', techniques.map(martialItem)),
+            list('斗技', '还没有学会的斗技。', skills.map(martialItem)),
             list('行囊', '行囊空空如也。', items.map(item => entry(
                 `${item.equipped ? '[装备中] ' : ''}${item.name}${item.grade ? `（${item.grade}）` : ''} ×${item.count}`,
                 item.category, item.note,
+            ))),
+            list('配方', '还没有掌握配方。', recipes.map(recipe => entry(
+                `${recipe.name}${recipe.grade ? `（${recipe.grade}）` : ''}`,
+                recipe.craft, recipe.note,
             ))),
             list('炼制中', '没有进行中的炼制。', crafts.map(job => {
                 const overdue = job.endDay !== null && job.endDay !== undefined && job.endDay < (status?.day ?? 0);
@@ -269,6 +315,98 @@ export function buildFactsPanel({ stats, worldbook, volume } = {}) {
     };
 }
 
+/** 主角记忆：两层计数与进行中的记忆，只读。 */
+export function buildMemoryPanel({ status, snapshot } = {}) {
+    const byTier = status?.byTier ?? {};
+    const open = clip([...(snapshot?.entries ?? [])].filter(entry => entry.done !== true), 60);
+    const rank = (a, b) => (b.weight === 'major') - (a.weight === 'major') || (b.day ?? 0) - (a.day ?? 0);
+    const memoryItem = item => entry(
+        `${item.weight === 'major' ? '★ ' : ''}${item.text}`,
+        [`第 ${item.day ?? '?'} 天`, TAG_LABELS[item.tag] ?? '', item.related?.length ? `关联：${item.related.join('、')}` : ''].filter(Boolean).join(' · '),
+        [text(item.quote) ? `「${item.quote}」` : '', item.basis].filter(Boolean).join('\n'),
+    );
+    const rows = capRows([
+        row('记忆总数', status?.total !== undefined ? `${status.total} 条` : ''),
+        row('大记忆', byTier.big?.open !== undefined ? `${byTier.big.open} 条（记了 ${byTier.big.total}）` : ''),
+        row('小记忆', byTier.small?.open !== undefined ? `${byTier.small.open} 条（记了 ${byTier.small.total}）` : ''),
+        row('已了结', status?.total !== undefined && status?.open !== undefined ? `${status.total - status.open} 条` : ''),
+    ]);
+    return {
+        title: '主角记忆', icon: '✧',
+        summary: status?.total ? `记着 ${status.total} 条记忆，大记忆 ${byTier.big?.open ?? 0} 条、小记忆 ${byTier.small?.open ?? 0} 条还没了结。` : '还没有记下任何记忆。',
+        rows,
+        lists: [
+            list('大记忆', '没有进行中的大记忆。', clip(open.filter(entry => entry.tier === 'big').sort(rank), 6).map(memoryItem)),
+            list('小记忆', '没有进行中的小记忆。', clip(open.filter(entry => entry.tier === 'small').sort(rank), 6).map(memoryItem)),
+        ],
+    };
+}
+
+const BRIDGE_LABELS = Object.freeze({ ready: '已连接', missing: '未检测到脚本', off: '已关闭', error: '异常' });
+
+function shortTime(value) {
+    if (typeof value !== 'string' || !value) return '';
+    const date = new Date(value);
+    if (!Number.isFinite(date.getTime())) return '';
+    return date.toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+/** 数据镜像：数据库桥接与 MVU 同步的现状，只读。 */
+export function buildMirrorPanel({ bridge, mvu } = {}) {
+    const bridgeState = bridge?.status ? (BRIDGE_LABELS[bridge.status] ?? bridge.status) : '';
+    const rows = capRows([
+        row('数据库桥接', bridgeState, bridge?.status === 'error' || bridge?.status === 'missing' ? 'warn' : undefined),
+        row('桥接表', bridge?.tables !== undefined && bridge?.enabled ? `${bridge.tables} 张` : ''),
+        row('桥接说明', bridge?.message, bridge?.status === 'error' ? 'warn' : undefined),
+        row('MVU 同步', mvu ? (mvu.present ? `已写入 ${mvu.namespace}` : '未检测到 MVU 主脚本') : ''),
+        row('上次同步', shortTime(mvu?.lastSyncAt)),
+        row('同步异常', mvu?.lastError, mvu?.lastError ? 'warn' : undefined),
+    ]);
+    return {
+        title: '数据镜像', icon: '⇄',
+        summary: bridgeState === '已连接' ? '纳戒与世界台账正在镜像到数据库表格。'
+            : bridgeState === '已关闭' ? '数据库桥接已关闭，只走聊天存档。'
+            : bridgeState === '未检测到脚本' ? '没找到数据库脚本，数据只走聊天存档。'
+            : bridgeState === '异常' ? '数据库桥接出错了，数据仍在聊天存档里。'
+            : '镜像状态还没有载入。',
+        rows,
+        lists: [],
+    };
+}
+
+const JOURNAL_EVENTS = Object.freeze({
+    task_start: '任务开始', stage_start: '阶段开始', stage_complete: '阶段完成', stage_failed: '阶段失败',
+    task_cancelled: '任务取消', candidate_ready: '候选就绪', quality_rejected: '质量门拦截', narrative_rejected: '叙述门拦截',
+    awaiting_message_evidence: '等消息确认', commit_complete: '提交完成', commit_uncertain: '提交存疑',
+    npc_plan_reassessment_requested: 'NPC 计划重估', npc_plan_reassessment_duplicate: '重估重复', npc_plan_reassessment_blocked: '重估受阻',
+    npc_plan_reassessment_cleared: '重估解除', npc_plan_candidates_invalidated: 'NPC 候选作废',
+    narrative_candidates_invalidated: '正文候选作废', history_changed_after_commit: '提交后历史变动', history_candidate_invalidated: '历史候选作废',
+});
+const JOURNAL_OUTCOMES = Object.freeze({
+    completed: '完成', processing: '进行中', aborted: '中止', aborted_before_stage: '未开始就中止',
+    achieved: '达成', not_achieved: '未达成', budget_exhausted: '预算耗尽', candidate_ready_not_committed: '候选未提交',
+    awaiting_message_evidence: '等消息确认', quality_rejected: '被拦截', narrative_rejected: '被拦截',
+    npc_plan_changed: '计划已变', npc_plan_changed_after_message: '计划已变', unapproved_setting_use: '未授权设定',
+});
+
+/** 运行日志：审计流水倒序看最近几条，只读。 */
+export function buildJournalPanel({ records } = {}) {
+    const recent = clip([...(Array.isArray(records) ? records : [])].reverse(), 12);
+    const journalItem = record => entry(
+        JOURNAL_EVENTS[record.event] ?? record.event,
+        [JOURNAL_OUTCOMES[record.outcome] ?? record.outcome,
+            record.stage ?? '',
+            record.taskId ? `任务 ${record.taskId}` : '',
+            shortTime(Number.isFinite(record.timestamp) ? new Date(record.timestamp).toISOString() : '')].filter(Boolean).join(' · '),
+    );
+    return {
+        title: '运行日志', icon: '✎',
+        summary: records?.length ? `审计流水记到 ${records.length} 条，最近的最上面。` : '还没有运行流水。跑过回合后这里会有记录。',
+        rows: [],
+        lists: [list('最近流水', '还没有运行流水。跑过回合后这里会有记录。', recent.map(journalItem))],
+    };
+}
+
 /** 沙盒模式：本局口径，只读。 */
 export function buildSandboxPanel({ read } = {}) {
     if (!read || read.status !== 'ready') {
@@ -304,16 +442,19 @@ export function buildOverviewPanel({ dashboard } = {}) {
     };
 }
 
-/** 一次折好八个信息窗；输入缺哪块，哪个窗就是“暂无”状态。每个功能各吃各的输入包，互不撞字段。 */
+/** 一次折好十一个信息窗；输入缺哪块，哪个窗就是“暂无”状态。每个功能各吃各的输入包，互不撞字段。 */
 export function buildOrbPanels(input = {}) {
     return {
         overview: buildOverviewPanel(input),
         world: buildWorldPanel(input.world),
         self: buildSelfPanel(input.self),
+        memory: buildMemoryPanel(input.memory),
         npcledger: buildNpcPanel(input.npcledger),
         cold: buildColdPanel(input.cold),
         impact: buildImpactPanel(input.impact),
         facts: buildFactsPanel(input.facts),
+        mirror: buildMirrorPanel(input.mirror),
+        journal: buildJournalPanel(input.journal),
         sandbox: buildSandboxPanel(input.sandbox),
     };
 }

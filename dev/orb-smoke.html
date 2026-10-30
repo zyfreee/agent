@@ -15,7 +15,7 @@
 <div class="page">
     <h1>悬浮球冒烟页</h1>
     <p>页面加载后会自动激活 Agent 扩展（宿主能力是桩）。右侧应出现小球：点它拉成长条，再点图标看只读信息窗。</p>
-    <p>下面这行是给信息窗灌的演示数据：世界第 5 天、纳戒有行囊、人物簿有两个人。</p>
+    <p>下面这行是给信息窗灌的演示数据：世界第 5 天（含势力/氛围）、纳戒有功法行囊、记忆两条、人物簿有三个人。</p>
 </div>
 <script type="module">
     // 最小宿主桩：没有 eventSource、没有 extensionSettings，扩展会走“未连接宿主”的默认路径。
@@ -29,8 +29,16 @@
     agent.worldRuntime.restore({
         clock: { day: 5, minute: 510, label: '' },
         info: { era: '斗气大陆', location: '乌坦城', weather: '晴', reputation: '', wanted: '魔炎谷通缉' },
+        tension: 'rising',
         nearEvents: [{ id: 'e1', text: '坊市集市开张', day: 4, weight: 'minor', basis: '酒馆听说', endDay: 6 }],
         worldEvents: [{ id: 'e2', text: '迦南学院招生队路过', day: 3, weight: 'major', endDay: 9, pinned: true }],
+        factions: [
+            { name: '魔炎谷', stance: 'hostile', dynamics: '扬言寻仇', basis: '上楼放话', day: 3, updatedDay: 4 },
+            { name: '乌坦城萧家', stance: 'allied', dynamics: '在筹备护卫', day: 2, updatedDay: 3 },
+        ],
+        people: [
+            { name: '萧薰儿', attitude: '亲近', basis: '同窗之情', day: 2, updatedDay: 4 },
+        ],
         tasks: [
             { id: 't1', title: '去坊市买药材', status: 'active', day: 4, endDay: 8, detail: '凑齐三阶魔核的材料', basis: '药老托付' },
             { id: 't2', title: '给萧薰儿送行', status: 'done', day: 1, doneDay: 3 },
@@ -41,12 +49,21 @@
         realm: { realm: '斗者', stage: '三星' },
         gold: 1200,
         titles: ['萧家废物'],
+        techniques: [{ id: 't1', name: '焚诀', grade: '黄阶低级', type: '火属性', note: '药老所授' }],
+        skills: [{ id: 's1', name: '八极崩', grade: '玄阶低级' }],
+        recipes: [{ id: 'r1', name: '回气丹', grade: '一品', craft: '炼药' }],
         items: [
             { id: 'b1', name: '玄重尺', count: 1, category: '重尺', equipped: true, grade: '凡品' },
             { id: 'b2', name: '回气丹', count: 3, category: '丹药' },
         ],
         crafts: [{ id: 'c1', craft: '炼药', name: '回气丹', count: 2, startDay: 5, endDay: 6, status: 'open' }],
         goals: [{ id: 'g1', text: '三年之约上胜过纳兰嫣然', priority: '主线' }],
+    });
+    agent.memoryRuntime.restore({
+        entries: [
+            { id: 'm1', tier: 'big', text: '戒指里住着一位灵魂状态的老师，自称药老', weight: 'major', day: 2, quote: '你且叫我老师', related: ['药老', '戒指'], basis: '开局剧情' },
+            { id: 'm2', tier: 'small', text: '与纳兰嫣然定下三年之约', weight: 'major', day: 1, related: ['纳兰嫣然'], tag: 'grudge', basis: '退婚剧情' },
+        ],
     });
     agent.npcLedger.load({
         records: [
