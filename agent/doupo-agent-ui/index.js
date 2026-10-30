@@ -63,6 +63,7 @@ import { createMemoryRuntime } from './memory/memory-runtime.js';
 import { buildMemoryInjection, recallHits, recallKeys, findMemoryConflicts, memoryStrength, extractOpsBlock as extractMemoryOpsBlock, parseOps as parseMemoryOps, stripOpsBlock as stripMemoryOpsBlock, MEMORY_GUIDE, MEMORY_HEADER } from './memory/memory-ops.js';
 import { buildDecideUser as buildMemoryDecideUser, parseDecision as parseMemoryDecision, MEMORY_DECIDE_PROMPT, MEMORY_JSON_SCHEMA } from './memory/memory-decide.js';
 import { createDbBridge } from './host/db-bridge.js';
+import { createSelfMvuBridge } from './host/self-mvu.js';
 import { sameSelfState, sameWorldState, sameMemoryState, selfStateFromTables, worldStateFromTables, memoryStateFromTables } from './host/db-tables.js';
 
 const EXTENSION_ID = 'doupo-agent-ui';
@@ -355,6 +356,9 @@ export const agentDbBridge = createDbBridge({
         try { return currentSettings(); } catch { return undefined; }
     },
 });
+/** 纳戒 → MVU 变量桥：主角档案/境界/金币/剧情日投影到 stat_data.斗破纳戒，
+ *  给状态栏/EJS/MVU 生态当只读镜像。MVU 主脚本没装或被关时静默跳过，零回归。 */
+export const agentSelfMvu = createSelfMvuBridge();
 /** World-book index (uid -> category/name/volumes/content) and the model-side selector that names uids. */
 export const agentFactsIndex = createFactsIndex();
 /** 原著选条用哪套连接：设置里选“自定义”才换连接；采样参数在跟随酒馆时也照填。 */
@@ -594,6 +598,7 @@ function selfLedgerSettings() {
 function restoreSelfFromChat() {
     const record = hostStorage?.selfState?.();
     const result = record?.status === 'ready' && record.value ? agentSelfRuntime.restore(record.value) : agentSelfRuntime.reset();
+    void agentSelfMvu.sync(agentSelfRuntime.snapshot()).catch(() => { /* 开局先把命名空间立住，失败不影响恢复 */ });
     void adoptSelfFromDb();
     return result;
 }
@@ -655,6 +660,7 @@ function persistSelf() {
     const result = hostStorage?.saveSelfState?.(snapshot);
     if (result && typeof result.catch === 'function') result.catch(() => { /* 保存失败由下次操作重试 */ });
     void agentDbBridge.mirrorSelf(snapshot).catch(() => { /* 镜像失败记在桥状态里，不阻断记账 */ });
+    void agentSelfMvu.sync(snapshot).catch(() => { /* MVU 同步失败记在桥状态里，不阻断记账 */ });
     return result;
 }
 
@@ -3159,6 +3165,8 @@ export const doupoAgent = Object.freeze({
     selfRestoreFromChat: () => restoreSelfFromChat(),
     selfStatus: () => agentSelfRuntime.status(),
     selfSnapshot: () => agentSelfRuntime.snapshot(),
+    selfMvuStatus: () => agentSelfMvu.status(),
+    selfMvuSync: () => agentSelfMvu.sync(agentSelfRuntime.snapshot()),
     selfJournal: () => agentSelfRuntime.journal(),
     dbBridgeStatus: () => agentDbBridge.status(),
     dbBridgeAdopt: () => Promise.all([adoptWorldFromDb(), adoptSelfFromDb(), adoptMemoryFromDb()]),
