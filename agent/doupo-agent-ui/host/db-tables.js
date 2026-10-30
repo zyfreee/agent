@@ -44,8 +44,37 @@ function markNewSentinel(template, addedKeys) {
 }
 
 /** 单张表定义：headers 与 DDL 注释一一对应（第 0 列固定 row_id）。 */
-function defineTable(key, name, englishName, headers, ddl, note) {
-    return Object.freeze({ key, name, englishName, headers, ddl, note });
+function defineTable(key, name, englishName, headers, ddl, note, exportConfig) {
+    return Object.freeze({
+        key, name, englishName, headers, ddl, note,
+        exportConfig: exportConfig ? Object.freeze(JSON.parse(JSON.stringify(exportConfig))) : null,
+    });
+}
+
+/**
+ * 记忆表的数据库「导出配置」（exportConfig）：龙血玄黄按每张表自带的这份配置生成世界书条目——
+ * keyword 绿光条目逐行一条，触发词取 keywords 里列出的列（逗号分隔多个列名），行里那些列的值
+ * 再按逗号切成一个个触发词；人名/地名命中最近楼层就整行注入，模板里的 $1 是该行内容。
+ * 这是“数据库的召回把记忆召回出来”的正道：配置跟着表格定义走，数据库脚本一行不用改。
+ * 与 updateConfig.updateFrequency=0（AI 禁填）互不相干——导出是展示侧，双写防护照旧。
+ */
+function memoryExportConfig(entryName, order) {
+    return {
+        enabled: true,
+        splitByRow: true,
+        entryType: 'keyword',
+        keywords: '关联,别名',
+        preventRecursion: true,
+        entryName,
+        injectionTemplate: `<${entryName}>\n$1\n</${entryName}>`,
+        extraIndexEnabled: false,
+        extraIndexEntryName: `${entryName}-索引`,
+        extraIndexColumns: [],
+        extraIndexColumnModes: {},
+        extraIndexInjectionTemplate: '',
+        entryPlacement: { position: 'at_depth_as_system', depth: 999, order },
+        extraIndexPlacement: { position: 'at_depth_as_system', depth: 999, order: order + 1 },
+    };
 }
 
 const SELF_PROFILE = defineTable(
@@ -265,7 +294,8 @@ const MEMORY_SMALL = defineTable(
   resolved_day INTEGER, -- 了结日
   note TEXT -- 备注
 );`,
-    '小记忆（轻量近事；关联/别名是人名/地名/物名、顿号分隔，是按需召回的钥匙；引文=当时的一句原话）。只由斗破Agent扩展写入，AI 禁止操作。',
+    '小记忆（轻量近事；关联/别名是人名/地名/物名、逗号分隔，是数据库关键词召回的触发词；引文=当时的一句原话）。只由斗破Agent扩展写入，AI 禁止操作。',
+    memoryExportConfig('主角近事', 10022),
 );
 
 const MEMORY_BIG = defineTable(
@@ -288,7 +318,8 @@ const MEMORY_BIG = defineTable(
   resolved_day INTEGER, -- 了结日
   note TEXT -- 备注
 );`,
-    '大记忆（值得一直记住的事；标签列=恩怨/情报/伏笔/大事记，可空；关联/别名是按需召回的钥匙；引文=当时的一句原话）。只由斗破Agent扩展写入，AI 禁止操作。',
+    '大记忆（值得一直记住的事；标签列=恩怨/情报/伏笔/大事记，可空；关联/别名是人名/地名/物名、逗号分隔，是数据库关键词召回的触发词；引文=当时的一句原话）。只由斗破Agent扩展写入，AI 禁止操作。',
+    memoryExportConfig('主角记忆', 10020),
 );
 
 export const MEMORY_TABLE_DEFS = Object.freeze([MEMORY_SMALL, MEMORY_BIG]);
@@ -328,6 +359,7 @@ export function buildBridgeSheets() {
                 ddl: def.ddl,
             },
             updateConfig: { ...UPDATE_CONFIG },
+            ...(def.exportConfig ? { exportConfig: JSON.parse(JSON.stringify(def.exportConfig)) } : {}),
             content: [def.headers.slice()],
         };
     }
@@ -340,7 +372,9 @@ export function buildBridgeSheets() {
  * 同名但表头对不上（旧版结构/预设残留副本）→ 剔除让位，按当前定义补进包里；
  * 同名都没有 → 直接补。merge 导入是整包替换，包里剔除的旧键会从聊天模板删掉，
  * 数据库校验器也不会再因同名连坐拒绝整包。表内容以扩展状态为准，镜像会按当前结构重写。
- * 返回 { template, added, replaced }；existing 为空时返回纯片段。
+ * 同名同表头但导出配置对不上（比如数据库补了默认关闭的 exportConfig）→ 原位刷成当前定义，
+ * 算进 updated——否则记忆表的关键词召回配置永远送不进已建好的表。
+ * 返回 { template, added, replaced, updated }；existing 为空时返回纯片段。
  */
 export function mergeBridgeSheets(existing) {
     const base = existing && typeof existing === 'object' && !Array.isArray(existing)
@@ -351,6 +385,7 @@ export function mergeBridgeSheets(existing) {
     const added = [];
     const addedKeys = [];
     const replaced = [];
+    const updated = [];
     for (const def of ALL_TABLE_DEFS) {
         const sameNameKey = Object.keys(base).find(key => key.startsWith('sheet_')
             && normalizeHeaderCell(base[key]?.name) === normalizeHeaderCell(def.name));
@@ -360,7 +395,14 @@ export function mergeBridgeSheets(existing) {
                 : [];
             const current = headers.length === def.headers.length
                 && headers.every((header, index) => normalizeHeaderCell(header) === normalizeHeaderCell(def.headers[index]));
-            if (current) continue;
+            if (current) {
+                const desired = def.exportConfig ? JSON.parse(JSON.stringify(def.exportConfig)) : null;
+                if (desired && JSON.stringify(base[sameNameKey].exportConfig ?? null) !== JSON.stringify(desired)) {
+                    base[sameNameKey].exportConfig = desired;
+                    updated.push(def.name);
+                }
+                continue;
+            }
             delete base[sameNameKey];
             base[def.key] = fragment[def.key];
             replaced.push(def.name);
@@ -371,7 +413,7 @@ export function mergeBridgeSheets(existing) {
         addedKeys.push(def.key);
     }
     if (addedKeys.length) markNewSentinel(base, addedKeys);
-    return { template: base, added, replaced };
+    return { template: base, added, replaced, updated };
 }
 
 // ---------- 导入包净化：外来表 DDL 对齐表头 ----------
@@ -795,6 +837,7 @@ export function applyDesiredToView(view, desiredGroups) {
                 ddl: def.ddl,
             },
             updateConfig: { ...UPDATE_CONFIG },
+            ...(def.exportConfig ? { exportConfig: JSON.parse(JSON.stringify(def.exportConfig)) } : {}),
             content: [def.headers.slice(), ...rows.map((cells, index) => [String(index + 1), ...cells.map(cell)])],
         };
         targetKeys.push(targetKey);
@@ -830,11 +873,13 @@ const TIER_TAG_VALUES = invert(TIER_TAG_LABELS);
 
 export function desiredMemoryRows(memory) {
     const entries = Array.isArray(memory?.entries) ? memory.entries : [];
+    // 关联/别名两列是数据库关键词召回的触发词列：数据库的触发词拆分只认逗号（,，），
+    // 所以镜像里用逗号连接（扩展台账内部仍是数组，面板显示不受影响）。
     const baseCells = entry => [
         cell(entry.id), cell(entry.text), cell(entry.quote),
         cell(entry.basis),
-        (Array.isArray(entry.related) ? entry.related : []).join('、'),
-        (Array.isArray(entry.aliases) ? entry.aliases : []).join('、'),
+        (Array.isArray(entry.related) ? entry.related : []).join(','),
+        (Array.isArray(entry.aliases) ? entry.aliases : []).join(','),
     ];
     const tailCells = entry => [
         WEIGHT_LABELS[entry.weight] || WEIGHT_LABELS.minor,
@@ -854,7 +899,8 @@ export function desiredMemoryRows(memory) {
 }
 
 function splitNames(value) {
-    return cell(value).split('、').map(item => item.trim()).filter(Boolean).slice(0, 4);
+    // 兼容历史行：旧镜像用顿号连接，新镜像用逗号（数据库触发词拆分只认逗号）。
+    return cell(value).split(/[、,，]/).map(item => item.trim()).filter(Boolean).slice(0, 4);
 }
 
 export function memoryStateFromTables(tableData) {

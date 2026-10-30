@@ -404,3 +404,58 @@ const sampleMemory = {
     b.entries[0].tier = 'big';
     assert.ok(!sameMemoryState(a, b));
 }
+
+// 12. 记忆表导出配置（数据库关键词召回）：小/大记忆都带 keyword 配置，触发词=关联,别名
+{
+    const fragment = buildBridgeSheets();
+    const small = fragment[ALL_TABLE_DEFS.find(def => def.name === '小记忆').key];
+    const big = fragment[ALL_TABLE_DEFS.find(def => def.name === '大记忆').key];
+    for (const sheet of [small, big]) {
+        assert.equal(sheet.exportConfig.enabled, true, '导出配置要启用');
+        assert.equal(sheet.exportConfig.entryType, 'keyword', '关键词召回');
+        assert.equal(sheet.exportConfig.keywords, '关联,别名', '触发词列=关联,别名');
+        assert.equal(sheet.exportConfig.splitByRow, true, '逐行一条目');
+        assert.ok(sheet.exportConfig.injectionTemplate.includes('$1'), '注入模板带行内容占位');
+    }
+}
+
+// 13. 关联/别名镜像用逗号（数据库触发词拆分只认逗号），读取兼容顿号旧行
+{
+    const view = applyDesiredToView({}, desiredMemoryRows(sampleMemory));
+    const smallRows = view[ALL_TABLE_DEFS.find(def => def.name === '小记忆').key].content;
+    const m1 = smallRows.find(row => row[1] === 'm1');
+    assert.equal(m1[5], '穆蛇', '关联列逗号连接（单值）');
+    assert.equal(m1[6], '穆老大', '别名列逗号连接');
+    const derived = memoryStateFromTables(view);
+    assert.deepEqual(derived.state.entries[0].related, ['穆蛇']);
+    // 顿号旧行也能读回
+    const legacy = JSON.parse(JSON.stringify(view));
+    const legacyRow = legacy[ALL_TABLE_DEFS.find(def => def.name === '小记忆').key].content.find(row => row[1] === 'm1');
+    legacyRow[5] = '穆蛇、坊市';
+    const legacyState = memoryStateFromTables(legacy);
+    const legacyM1 = legacyState.state.entries.find(entry => entry.id === 'm1');
+    assert.deepEqual(legacyM1.related, ['穆蛇', '坊市'], '顿号旧行兼容');
+}
+
+// 14. mergeBridgeSheets：同表同表头但导出配置对不上（数据库补了默认关闭）→ 原位刷新算 updated
+{
+    const existing = JSON.parse(JSON.stringify(buildBridgeSheets()));
+    const bigKey = ALL_TABLE_DEFS.find(def => def.name === '大记忆').key;
+    existing[bigKey].exportConfig = { enabled: false, entryType: 'constant', keywords: '', entryName: '大记忆', splitByRow: false, preventRecursion: true, injectionTemplate: '', extraIndexEnabled: false, extraIndexEntryName: '大记忆-索引', extraIndexColumns: [], extraIndexColumnModes: {}, extraIndexInjectionTemplate: '', entryPlacement: {}, extraIndexPlacement: {} };
+    const merged = mergeBridgeSheets(existing);
+    assert.equal(merged.added.length, 0, '表都在不补');
+    assert.equal(merged.replaced.length, 0, '表头一致不替换');
+    assert.equal(merged.updated.length, 1, '导出配置对不上要刷新');
+    assert.equal(merged.updated[0], '大记忆');
+    assert.equal(merged.template[bigKey].exportConfig.enabled, true, '刷新成 keyword 配置');
+    assert.equal(merged.template[bigKey].exportConfig.keywords, '关联,别名');
+    const mergedAgain = mergeBridgeSheets(merged.template);
+    assert.equal(mergedAgain.updated.length, 0, '刷新后幂等');
+}
+
+// 15. 非记忆表不带导出配置（不污染其他桥接表）
+{
+    const fragment = buildBridgeSheets();
+    const profileKey = ALL_TABLE_DEFS.find(def => def.name === '纳戒·主角档案').key;
+    assert.equal(fragment[profileKey].exportConfig, undefined, '纳戒档案表不配导出');
+}

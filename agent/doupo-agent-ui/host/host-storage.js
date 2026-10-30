@@ -191,6 +191,7 @@ const DEFAULT_SETTINGS = Object.freeze({
         // LLM 决定：独立决定调用，读聊天记录+世界书+纳戒，输出严格 JSON 由脚本执行。
         decideEnabled: true,
         decideAuto: true, // 每轮生成后自动决定；关闭则只认正文里的 self 指令块
+        decideMerged: false, // 合并决定（纳戒+记忆共用一次调用）；开合并时召回归数据库条目，扩展自带记忆注入关闭
         decideMode: 'tavern', // 'tavern' = 跟随酒馆当前设置；'custom' = 用下面这套自定义连接
         decideBaseUrl: '', // 自定义接口地址（选 custom 才用得上；留空沿用“模型与连接”页）
         decideApiKey: '', // 自定义接口密钥（选 custom 才用得上；留空沿用“模型与连接”页）

@@ -83,8 +83,8 @@ export function createDbBridge({ getSettings } = {}) {
                 } catch (error) {
                     console.warn('[斗破Agent·数据库桥] 读取当前模板失败，按全量导入处理', error);
                 }
-                const { template, added, replaced } = mergeBridgeSheets(currentTemplate);
-                if (!added.length && !replaced.length) {
+                const { template, added, replaced, updated } = mergeBridgeSheets(currentTemplate);
+                if (!added.length && !replaced.length && !updated.length) {
                     ensuredForChat = true;
                     status = 'ready';
                     message = '桥接表就绪';
@@ -92,11 +92,15 @@ export function createDbBridge({ getSettings } = {}) {
                 }
                 // 数据库脚本的 merge 导入是整包替换：外来表必须随包携带才能留在聊天模板里，
                 // 而它又按「DDL 注释 = 表头（NFKC 归一后）」逐列校验整包——先把对不上的外来表 DDL 按表头重建。
-                const result = await api.importTemplateFromData(sanitizeForeignDdl(template), { scope: 'chat', dataMode: 'merge' });
+                const result = await api.importTemplateFromData(sanitizeForeignDdl(template), { scope: 'chat', dataMode: 'replace' });
                 if (result?.success) {
                     ensuredForChat = true;
                     status = 'ready';
-                    message = `已向当前聊天补 ${added.length} 张桥接表${replaced.length ? `，替换 ${replaced.length} 张旧结构副本` : ''}（${[...added, ...replaced].join('、')}）`;
+                    const parts = [];
+                    if (added.length) parts.push(`补 ${added.length} 张桥接表（${added.join('、')}）`);
+                    if (replaced.length) parts.push(`替换 ${replaced.length} 张旧结构副本（${replaced.join('、')}）`);
+                    if (updated.length) parts.push(`刷新 ${updated.length} 张表的导出配置（${updated.join('、')}）`);
+                    message = `已向当前聊天${parts.join('，')}`;
                     return true;
                 }
                 markError(result?.message || '桥接表模板导入失败（scope=chat, dataMode=merge）');

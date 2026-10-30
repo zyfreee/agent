@@ -62,6 +62,7 @@ import { buildSelfDecideUser, parseSelfDecision, SELF_DECIDE_PROMPT, SELF_JSON_S
 import { createMemoryRuntime } from './memory/memory-runtime.js';
 import { buildMemoryInjection, recallHits, recallKeys, findMemoryConflicts, memoryStrength, extractOpsBlock as extractMemoryOpsBlock, parseOps as parseMemoryOps, stripOpsBlock as stripMemoryOpsBlock, MEMORY_GUIDE, MEMORY_HEADER } from './memory/memory-ops.js';
 import { buildDecideUser as buildMemoryDecideUser, parseDecision as parseMemoryDecision, MEMORY_DECIDE_PROMPT, MEMORY_JSON_SCHEMA } from './memory/memory-decide.js';
+import { UNIFIED_DECIDE_PROMPT, UNIFIED_JSON_SCHEMA, buildUnifiedDecideUser, parseUnifiedDecision } from './unified/unified-decide.js';
 import { createDbBridge } from './host/db-bridge.js';
 import { createSelfMvuBridge } from './host/self-mvu.js';
 import { sameSelfState, sameWorldState, sameMemoryState, selfStateFromTables, worldStateFromTables, memoryStateFromTables } from './host/db-tables.js';
@@ -201,12 +202,19 @@ function bindHostLifecycle() {
                     // 纳戒记账也要用”这一轮之后”的世界天数（炼制时限、超期显示），同样排在世界之后，与影响库互不阻塞。
                     try {
                         const self = selfLedgerSettings();
+                        const memory = memorySettings();
+                        // 合并决定：纳戒+记忆一次调用（用纳戒侧连接）；开关关闭或单边停用时回到各自独立调用。
+                        if (self.enabled && self.decideEnabled && self.decideAuto && self.decideMerged
+                            && memory.enabled && memory.decideEnabled && memory.decideAuto) {
+                            void runUnifiedDecision({ source: 'auto' });
+                            return;
+                        }
                         if (self.enabled && self.decideEnabled && self.decideAuto) void runSelfDecision({ source: 'auto' });
                     } catch { /* 记账失败不影响生成 */ }
                     // 记忆决定排最后：它要同时看”这一轮之后”的世界天数和前面账本刚落的新账，四条链互不阻塞。
                     try {
                         const memory = memorySettings();
-                        if (memory.enabled && memory.decideEnabled && memory.decideAuto) void runMemoryDecision({ source: 'auto' });
+                        if (memory.enabled && memory.decideEnabled && memory.decideAuto && !unifiedActive()) void runMemoryDecision({ source: 'auto' });
                     } catch { /* 记账失败不影响生成 */ }
                 };
                 if (decide.enabled && decide.auto) {
@@ -573,6 +581,8 @@ function selfLedgerSettings() {
         injectBudget: Number.isInteger(self.injectBudget) && self.injectBudget > 0 ? Math.min(self.injectBudget, 4000) : 900,
         decideEnabled: self.decideEnabled !== false,
         decideAuto: self.decideAuto !== false,
+        // 合并决定（方法 A）：纳戒+记忆共用一次模型调用，输出 {self,memory,cited} 三桶。
+        decideMerged: self.decideMerged !== false,
         maxFloors: Number.isInteger(self.decideMaxFloors) && self.decideMaxFloors > 0 ? Math.min(12, self.decideMaxFloors) : 6,
         maxEntries: Number.isInteger(self.decideMaxEntries) && self.decideMaxEntries >= 0 ? Math.min(40, self.decideMaxEntries) : 12,
         prompt: typeof self.decidePrompt === 'string' && self.decidePrompt.trim() ? self.decidePrompt.trim() : SELF_DECIDE_PROMPT,
@@ -730,6 +740,9 @@ function persistMemory() {
 function writeMemoryInjectionForPrompt() {
     const settings = memorySettings();
     if (!settings.enabled || !settings.inject) { agentMemoryPromptInjection.clear(); return { status: 'disabled' }; }
+    // 合并决定开启时召回归数据库的关键词条目（记忆表的 exportConfig），扩展不再注入记忆正文，
+    // 避免同一条记忆在提示词里出现两遍（扩展注入 + 世界书条目）。排练改由合并决定的 cited 补记。
+    if (unifiedActive()) { agentMemoryPromptInjection.clear(); return { status: 'delegated' }; }
     const probe = agentMemoryPromptInjection.inspect();
     if (probe.status !== 'ready') return probe;
     // 召回钥匙的比对面：最近四楼正文（玩家+AI 都算），命中 related/别名 才召回。
@@ -2961,6 +2974,120 @@ async function runMemoryDecision({ source = 'auto' } = {}) {
     }
 }
 
+// ---------- 合并决定（方法 A）：纳戒+记忆共用一次调用 ----------
+
+let unifiedDecideRunning = false;
+
+/** 合并决定是否生效：开关开着，且两侧的启用+决定都开着（单边停用自动回到独立调用）。 */
+function unifiedActive() {
+    const self = selfLedgerSettings();
+    const memory = memorySettings();
+    return Boolean(self.enabled && self.decideEnabled && memory.enabled && memory.decideEnabled && self.decideMerged);
+}
+
+/**
+ * 合并决定：一次模型调用同时产出纳戒 ops、记忆 ops 和 cited（本轮用到的旧记忆编号）。
+ * 楼层/世界书只读一遍只发一遍；两侧 ops 各交各的 runtime 逐条校验落账（账本、镜像互不牵连）；
+ * cited 走 markRecalled 补排练计数——召回注入已交给数据库的关键词条目，注入动作扩展看不见，
+ * 排练由这次决定顺手补记。连接用纳戒侧的（贴身账房为主场）。生成后自动跑；按钮/命名空间手动可跑。
+ */
+async function runUnifiedDecision({ source = 'auto' } = {}) {
+    const selfSettings = selfLedgerSettings();
+    const memorySettingsValue = memorySettings();
+    if (!selfSettings.enabled || !selfSettings.decideEnabled || !memorySettingsValue.enabled || !memorySettingsValue.decideEnabled) {
+        return { status: 'disabled' };
+    }
+    if (unifiedDecideRunning) return { status: 'busy' };
+    // 合并调用走纳戒侧的连接配置；跟随酒馆时先检查全局连接。
+    if (selfSettings.overrides.connection !== 'custom' && agentLlmClient.availableFor('tavern') !== true) {
+        setSelfDecideStatus('模型连接未配置：先在“模型设置”页选好连接。');
+        setMemoryDecideStatus('合并决定未运行：模型连接未配置。');
+        return { status: 'not_configured' };
+    }
+    unifiedDecideRunning = true;
+    setSelfDecideStatus('合并决定进行中（一次调用管纳戒+记忆）……');
+    setMemoryDecideStatus('合并决定进行中……');
+    try {
+        // 连接取舍：任一侧配了自定义连接就用自定义的（用户填过密钥的那套），否则才跟随酒馆。
+        // 两侧都跟随时按纳戒侧（贴身账房为主场）。
+        const customSide = selfSettings.overrides.connection === 'custom'
+            ? { settings: selfSettings, label: '纳戒' }
+            : memorySettingsValue.overrides.connection === 'custom'
+                ? { settings: memorySettingsValue, label: '记忆' }
+                : null;
+        const overrides = customSide ? customSide.settings.overrides : selfSettings.overrides;
+        const context = getHostContext();
+        const chat = Array.isArray(context?.chat) ? context.chat : [];
+        const maxFloors = Math.max(selfSettings.maxFloors, memorySettingsValue.maxFloors);
+        const floors = [];
+        for (let cursor = chat.length - 1; cursor >= 0 && floors.length < maxFloors; cursor -= 1) {
+            const message = chat[cursor];
+            if (!message || typeof message.mes !== 'string' || !message.mes.trim()) continue;
+            if (message.is_system === true) continue;
+            floors.unshift({ role: message.is_user === true ? '玩家' : '角色', text: message.mes });
+        }
+        if (!floors.length) {
+            setSelfDecideStatus('聊天里还没有内容，合并决定无从下手。');
+            setMemoryDecideStatus('聊天里还没有内容。');
+            return { status: 'no_input' };
+        }
+        // 世界书侧输入：两侧上限取大者，同一批命中只发一遍。
+        const recentText = floors.map(floor => floor.text).join('\n');
+        const maxEntries = Math.max(selfSettings.maxEntries, memorySettingsValue.maxEntries);
+        const hits = maxEntries > 0 && agentFactsIndex.stats().total > 0
+            ? agentFactsIndex.matchTokens(recentText, { limit: maxEntries, volume: currentVolumeForWorld() })
+            : [];
+        const bookLines = hits.map(hit => {
+            const entry = agentFactsIndex.get(hit.uid);
+            return entry ? `${entry.uid}|${entry.category}|${entry.name}|${entry.summary}` : null;
+        }).filter(Boolean);
+        const user = buildUnifiedDecideUser({
+            selfSnapshot: agentSelfRuntime.snapshot(),
+            memorySnapshot: agentMemoryRuntime.snapshot(),
+            floors,
+            worldbookLines: bookLines,
+        });
+        const raw = await agentLlmClient.complete({
+            system: UNIFIED_DECIDE_PROMPT,
+            user,
+            jsonSchema: UNIFIED_JSON_SCHEMA,
+            overrides,
+        });
+        const decision = parseUnifiedDecision(raw);
+        if (decision.status === 'invalid') {
+            setSelfDecideStatus(`合并决定输出无法解析：${decision.error}`);
+            setMemoryDecideStatus(`合并决定输出无法解析：${decision.error}`);
+            return { status: 'invalid', error: decision.error };
+        }
+        // 两桶分开落账：一侧全废不影响另一侧（apply 内逐条校验）。
+        const applyContext = { source: 'decide', floor: lastReplyIndex(chat), day: worldDay() };
+        const selfResult = agentSelfRuntime.apply(decision.selfOps, applyContext);
+        persistSelf();
+        if (!selfResult.applied.length) agentSelfRuntime.note(decision.selfNote || decision.note || '模型判断本轮纳戒无变化。', { source: 'decide' });
+        const memoryResult = agentMemoryRuntime.apply(decision.memoryOps, applyContext);
+        const recalled = decision.cited.length ? agentMemoryRuntime.markRecalled(decision.cited, { day: applyContext.day }) : { touched: 0 };
+        persistMemory();
+        if (!memoryResult.applied.length) agentMemoryRuntime.note(decision.memoryNote || decision.note || '模型判断本轮无新记忆。', { source: 'decide' });
+        renderSelfDecisionResult({ note: decision.selfNote || decision.note }, selfResult);
+        renderMemoryDecisionResult({ note: decision.memoryNote || decision.note }, memoryResult);
+        const done = source === 'auto' ? '生成后自动合并决定完成。' : '合并决定完成。';
+        setSelfDecideStatus(`${done}（一次调用；排练补记 ${recalled.touched ?? 0} 条）`);
+        setMemoryDecideStatus(`${done}（cited 补排练 ${recalled.touched ?? 0} 条）`);
+        refreshSelfPage();
+        refreshMemoryPage();
+        return { status: 'ok', decision, selfResult, memoryResult, recalled };
+    } catch (error) {
+        const message = error?.code === 'llm_custom_not_configured'
+            ? '合并决定走纳戒侧“自定义模型”，但接口地址或模型名还没填全（填在“纳戒 → 模型决定”里，或改回跟随酒馆）。'
+            : `合并决定失败：${error?.message ?? error}`;
+        setSelfDecideStatus(message);
+        setMemoryDecideStatus(message);
+        return { status: 'failed', reason: String(message) };
+    } finally {
+        unifiedDecideRunning = false;
+    }
+}
+
 let impactDecideRunning = false;
 let lastImpactResult = null;
 
@@ -3173,6 +3300,7 @@ export const doupoAgent = Object.freeze({
     memoryRuntime: agentMemoryRuntime,
     memoryInjection: writeMemoryInjectionForPrompt,
     memoryDecide: options => runMemoryDecision(options),
+    unifiedDecide: options => runUnifiedDecision(options),
     memoryApplyPersisted: operations => applyMemoryOps(operations),
     memoryApplyFromLatestReply: () => applyMemoryOpsFromLatestReply(),
     memoryRestoreFromChat: () => restoreMemoryFromChat(),
@@ -4259,7 +4387,7 @@ function createSettingsPanel() {
                         </div>
                         <div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon">◉</span><span><b>启用纳戒</b><small>关闭后不记账、不注入；已记下的内容仍留在聊天存档里。</small></span><input type="checkbox" data-setting="enableSelfLedger"></div><label class="dai-setting-row dai-setting-toggle"><span><b>把纳戒写进正文提示词</b><small>生成前把主角自身状态写进提示词，正文必须与之保持一致。</small></span><input type="checkbox" data-setting="self.inject"></label><label class="dai-setting-row"><span><b>注入字数上限</b><small>超预算从目标、进行中炼制、行囊往上丢，身份境界永远保留；0 为默认 900。</small></span><input type="number" min="0" max="4000" step="100" data-setting="self.injectBudget"></label><label class="dai-setting-row dai-setting-toggle"><span><b>镜像到龙血玄黄数据库</b><small>把纳戒与世界台账同步写进「龙血玄黄·数据库」的表格（表=账本，面板=前端）；没装该脚本时自动停用，照旧存聊天档案。</small></span><input type="checkbox" data-setting="enableDbBridge"></label><p class="dai-turn-result" data-self-dbbridge></p></div>
                         <details class="dai-settle-category"><summary><span class="dai-feature-icon">◉</span><span><b>指令指南（降级模式）</b><small>关闭自动决定时随纳戒现状注入的规则正文；点开修改，清空恢复内置默认。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>规则正文</b><small>操作清单、记账规则（有据可依、不照搬原著、炼成补账）都写在这里，可按你的玩法改写。</small></span><textarea data-setting="self.guide" rows="9" spellcheck="false" placeholder="打开页面会自动铺入当前生效的规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-secondary-button" data-self-guide-default>填入默认规则</button><small>默认规则含“只记主角自身、变化要有依据、炼成后补记行囊”。</small></div></div></details>
-                        <div class="dai-settings-card"><div class="dai-card-heading"><b>模型决定（LLM 决定脚本执行）</b><small>生成结束后，模型读最近聊天 + 相关世界书条目 + 纳戒现状做一次独立决定，输出严格 JSON，脚本逐条校验执行并显示在这里。决定用的接口与参数在「模型设置」页。</small></div><div class="dai-feature-toggle"><span class="dai-feature-icon">◉</span><span><b>启用模型决定</b><small>关闭后退回“只认正文 self 指令块”的降级模式。</small></span><input type="checkbox" data-setting="self.decideEnabled"></div><label class="dai-setting-row dai-setting-toggle"><span><b>每轮生成后自动决定</b><small>关闭后只能点“让模型决定一次”手动跑。</small></span><input type="checkbox" data-setting="self.decideAuto"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>喂最近几楼聊天</b></span><input type="number" min="1" max="12" step="1" data-setting="self.decideMaxFloors"></label><label class="dai-setting-row"><span><b>世界书条目上限</b><small>按本轮聊天匹配相关条目，0 = 不带世界书。</small></span><input type="number" min="0" max="40" step="1" data-setting="self.decideMaxEntries"></label></div><p class="dai-turn-result" data-self-decide-status role="status">还没有运行。生成结束后会自动决定。</p><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-self-decide-run>让模型决定一次</button><button type="button" class="dai-secondary-button" data-self-reset>清空本局纳戒</button></div><div class="dai-world-decide-result" data-self-decide-result></div><details class="dai-prompt-fold"><summary><span><b>决定提示词</b><small>模型做决定时收到的 system 规则；点开修改，清空恢复内置默认。改写时保持“只输出 JSON”和操作字段名不变。</small></span></summary><label class="dai-setting-row"><span><b>规则正文</b><small>境界阶梯、炼成补账、有据可依的规则都在这里，可按玩法改写。</small></span><textarea data-setting="self.decidePrompt" rows="10" spellcheck="false" placeholder="打开页面会自动铺入当前生效的规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-secondary-button" data-self-decide-default>填入默认规则</button><small>默认规则含“境界必须剧情真到位、炼成后补记行囊、无变化不记账”。</small></div></details></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>模型决定（LLM 决定脚本执行）</b><small>生成结束后，模型读最近聊天 + 相关世界书条目 + 纳戒现状做一次独立决定，输出严格 JSON，脚本逐条校验执行并显示在这里。决定用的接口与参数在「模型设置」页。</small></div><div class="dai-feature-toggle"><span class="dai-feature-icon">◉</span><span><b>启用模型决定</b><small>关闭后退回“只认正文 self 指令块”的降级模式。</small></span><input type="checkbox" data-setting="self.decideEnabled"></div><label class="dai-setting-row dai-setting-toggle"><span><b>每轮生成后自动决定</b><small>关闭后只能点“让模型决定一次”手动跑。</small></span><input type="checkbox" data-setting="self.decideAuto"></label><label class="dai-setting-row dai-setting-toggle"><span><b>合并决定（纳戒+记忆一次调用）</b><small>开启后纳戒和记忆共用一次模型调用，一次产出纳戒变化、新记忆和本轮用到的旧记忆编号（补排练计数）；楼层与世界书只读一遍只发一遍，省一次调用。关闭回到各自独立调用，随时可退。连接走纳戒侧的配置。</small></span><input type="checkbox" data-setting="self.decideMerged"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>喂最近几楼聊天</b></span><input type="number" min="1" max="12" step="1" data-setting="self.decideMaxFloors"></label><label class="dai-setting-row"><span><b>世界书条目上限</b><small>按本轮聊天匹配相关条目，0 = 不带世界书。</small></span><input type="number" min="0" max="40" step="1" data-setting="self.decideMaxEntries"></label></div><p class="dai-turn-result" data-self-decide-status role="status">还没有运行。生成结束后会自动决定。</p><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-self-decide-run>让模型决定一次</button><button type="button" class="dai-secondary-button" data-self-reset>清空本局纳戒</button></div><div class="dai-world-decide-result" data-self-decide-result></div><details class="dai-prompt-fold"><summary><span><b>决定提示词</b><small>模型做决定时收到的 system 规则；点开修改，清空恢复内置默认。改写时保持“只输出 JSON”和操作字段名不变。</small></span></summary><label class="dai-setting-row"><span><b>规则正文</b><small>境界阶梯、炼成补账、有据可依的规则都在这里，可按玩法改写。</small></span><textarea data-setting="self.decidePrompt" rows="10" spellcheck="false" placeholder="打开页面会自动铺入当前生效的规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-secondary-button" data-self-decide-default>填入默认规则</button><small>默认规则含“境界必须剧情真到位、炼成后补记行囊、无变化不记账”。</small></div></details></div>
                         <div class="dai-modal-dock" data-modal-dock="self-techniques" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>登记功法</b><small>模型漏记时在这里补一笔。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>名称</b></span><input type="text" data-self-new="techniques.name" placeholder="如 焚决"></label><label class="dai-setting-row"><span><b>品级</b></span><input type="text" data-self-new="techniques.grade" placeholder="黄阶低级 ~ 天阶高级"></label><label class="dai-setting-row"><span><b>类型</b></span><input type="text" data-self-new="techniques.type" placeholder="修炼功法 / 身法 / 炼药术"></label><label class="dai-setting-row"><span><b>进度</b></span><input type="text" data-self-new="techniques.progress" placeholder="如 第三层"></label><label class="dai-setting-row"><span><b>来源</b></span><input type="text" data-self-new="techniques.source" placeholder="如 药老所赠"></label></div><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-self-create="techniques">登记功法</button><button type="button" class="dai-secondary-button" data-agent-modal-close>取消</button></div></div></div>
                         <div class="dai-modal-dock" data-modal-dock="self-skills" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>登记斗技</b></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>名称</b></span><input type="text" data-self-new="skills.name" placeholder="如 八极崩"></label><label class="dai-setting-row"><span><b>品级</b></span><input type="text" data-self-new="skills.grade" placeholder="黄阶低级 ~ 天阶高级"></label><label class="dai-setting-row"><span><b>类型</b></span><input type="text" data-self-new="skills.type" placeholder="攻击 / 防御 / 身法 / 辅助"></label><label class="dai-setting-row"><span><b>熟练度</b></span><input type="text" data-self-new="skills.progress" placeholder="如 小成"></label><label class="dai-setting-row"><span><b>来源</b></span><input type="text" data-self-new="skills.source" placeholder="从哪学来的"></label></div><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-self-create="skills">登记斗技</button><button type="button" class="dai-secondary-button" data-agent-modal-close>取消</button></div></div></div>
                         <div class="dai-modal-dock" data-modal-dock="self-items" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>放入物品</b></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>名称</b></span><input type="text" data-self-new="items.name" placeholder="如 回气丹"></label><label class="dai-setting-row"><span><b>类别</b></span><select data-self-new="items.category"><option value="丹药">丹药</option><option value="材料">材料</option><option value="武器">武器</option><option value="防具">防具</option><option value="杂物">杂物</option><option value="关键物">关键物</option></select></label><label class="dai-setting-row"><span><b>品级</b></span><input type="text" data-self-new="items.grade" placeholder="如 一品"></label><label class="dai-setting-row"><span><b>数量</b></span><input type="number" min="1" max="999999" step="1" data-self-new="items.count" placeholder="1"></label></div><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-self-create="items">放入行囊</button><button type="button" class="dai-secondary-button" data-agent-modal-close>取消</button></div></div></div>
@@ -4605,7 +4733,9 @@ function createSettingsPanel() {
         const selfDecideRun = event.target.closest?.('[data-self-decide-run]');
         if (selfDecideRun) {
             selfDecideRun.disabled = true;
-            void runSelfDecision({ source: 'manual' }).finally(() => { selfDecideRun.disabled = false; });
+            // 合并决定开着就走一次调用（纳戒+记忆一起出结果），关了才单跑纳戒。
+            const run = unifiedActive() ? runUnifiedDecision({ source: 'manual' }) : runSelfDecision({ source: 'manual' });
+            void run.finally(() => { selfDecideRun.disabled = false; });
             return;
         }
         const selfDecideDefault = event.target.closest?.('[data-self-decide-default]');
@@ -4644,7 +4774,7 @@ function createSettingsPanel() {
         if (memoryForget) return memoryApplyFromPanel(panel, [{ op: 'forgetMemory', id: memoryForget.dataset.memoryForget }]);
         if (event.target.closest?.('[data-memory-add]')) return memoryAddFromPanel(panel);
         if (event.target.closest?.('[data-memory-decide-run]')) {
-            void runMemoryDecision({ source: 'manual' });
+            void (unifiedActive() ? runUnifiedDecision({ source: 'manual' }) : runMemoryDecision({ source: 'manual' }));
             return;
         }
         const memoryDecideDefault = event.target.closest?.('[data-memory-decide-default]');
