@@ -4797,7 +4797,7 @@ function createSettingsPanel() {
                     </section>
                     <section class="dai-settings-page" data-settings-section="self" role="tabpanel" hidden>
                         <div class="dai-page-heading"><h3>纳戒</h3><p>主角自身与随身之物的总账：身份、境界、功法斗技、行囊、制作台、目标约定。生成结束后由决定模型读剧情记账，脚本逐条校验执行；这里也能手动改，与模型走同一套规则。条目点开看完整资料，添加表单收进了弹窗。</p></div>
-                        <div class="dai-settings-card"><div class="dai-card-heading"><b>初始化主角档案（MVU）</b><small>开局填一次：写入纳戒账本，并同步 MVU 变量（stat_data.斗破纳戒）与数据库表；留空的项保持原样不动。模型决定从此有账可算。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>姓名</b></span><input type="text" data-self-init="name" maxlength="24"></label><label class="dai-setting-row"><span><b>性别</b></span><select data-self-init="gender"><option value="">（不填）</option><option>男</option><option>女</option></select></label><label class="dai-setting-row"><span><b>年龄</b></span><input type="text" data-self-init="age" maxlength="12" placeholder="如 15 / 十五岁"></label><label class="dai-setting-row"><span><b>出身</b></span><input type="text" data-self-init="origin" maxlength="24" placeholder="如 萧家 / 青山镇"></label><label class="dai-setting-row"><span><b>斗气属性</b></span><input type="text" data-self-init="attribute" maxlength="12" placeholder="火/风/雷/无属性…"></label><label class="dai-setting-row"><span><b>境界</b></span><input type="text" data-self-init="realm" maxlength="12" placeholder="斗之气/斗者…"></label><label class="dai-setting-row"><span><b>段位</b></span><input type="text" data-self-init="stage" maxlength="10" placeholder="三段/一星…"></label><label class="dai-setting-row"><span><b>金币</b></span><input type="number" data-self-init="gold" min="0" max="9999999" step="1" placeholder="初始身家"></label></div><div class="dai-turn-actions"><button type="button" class="dai-button" data-self-init-run>初始化并同步 MVU</button><span class="dai-turn-result" data-self-init-status role="status">还没初始化。</span></div></div>
+                        <details class="dai-settle-category"><summary><span class="dai-feature-icon">✦</span><span><b>初始化主角档案（MVU）</b><small>开局填一次，默认收起：写入纳戒账本，并同步 MVU 变量（stat_data.斗破纳戒）与数据库表；留空的项保持原样不动。</small></span></summary><div class="dai-settle-category-body"><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>姓名</b></span><input type="text" data-self-init="name" maxlength="24"></label><label class="dai-setting-row"><span><b>性别</b></span><select data-self-init="gender"><option value="">（不填）</option><option>男</option><option>女</option></select></label><label class="dai-setting-row"><span><b>年龄</b></span><input type="text" data-self-init="age" maxlength="12" placeholder="如 15 / 十五岁"></label><label class="dai-setting-row"><span><b>出身</b></span><input type="text" data-self-init="origin" maxlength="24" placeholder="如 萧家 / 青山镇"></label><label class="dai-setting-row"><span><b>斗气属性</b></span><input type="text" data-self-init="attribute" maxlength="12" placeholder="火/风/雷/无属性…"></label><label class="dai-setting-row"><span><b>境界</b></span><input type="text" data-self-init="realm" maxlength="12" placeholder="斗之气/斗者…"></label><label class="dai-setting-row"><span><b>段位</b></span><input type="text" data-self-init="stage" maxlength="10" placeholder="三段/一星…"></label><label class="dai-setting-row"><span><b>金币</b></span><input type="number" data-self-init="gold" min="0" max="9999999" step="1" placeholder="初始身家"></label></div><div class="dai-turn-actions"><button type="button" class="dai-button" data-self-init-run>初始化并同步 MVU</button><span class="dai-turn-result" data-self-init-status role="status">还没初始化。</span></div></div></details>
                         <div class="dai-settings-card">
                             <div class="dai-self-tabs" role="tablist">
                                 <button type="button" class="dai-self-tab is-active" data-self-tab="profile">基本信息</button>
@@ -6147,18 +6147,7 @@ function renderMemoryEntryList(container, entries, { conflicts = null, tier = 's
         if (typeof entry.quote === 'string' && entry.quote.trim()) {
             row.append(makeElement('small', 'dai-world-event-basis', `「${entry.quote.trim()}」`));
         }
-        if (Array.isArray(entry.aliases) && entry.aliases.length) {
-            row.append(makeElement('small', 'dai-world-event-basis', `别名：${entry.aliases.join('、')}`));
-        }
-        if (Array.isArray(entry.related) && entry.related.length) {
-            row.append(makeElement('small', 'dai-world-event-basis', `关联：${entry.related.join('、')}`));
-        }
-        if (typeof entry.basis === 'string' && entry.basis.trim()) {
-            row.append(makeElement('small', 'dai-world-event-basis', `依据：${entry.basis.trim()}`));
-        }
-        if (typeof entry.note === 'string' && entry.note.trim()) {
-            row.append(makeElement('small', 'dai-world-event-basis', `备注：${entry.note.trim()}`));
-        }
+        // 别名/关联/依据/备注收进详情弹窗，行内只留一句简介。
         if (clash) {
             row.append(makeElement('small', 'dai-world-event-basis', `⚠ 与 ${clash.join('、')} 疑似重复/矛盾，请核对后删除或合并`));
         }
@@ -6179,6 +6168,12 @@ function renderMemoryEntryList(container, entries, { conflicts = null, tier = 's
         forget.dataset.memoryForget = entry.id;
         actions.append(forget);
         row.append(actions);
+        wireRowDetail(row, panel => {
+            openReadonlyDetailModal(panel, capDetailTitle(entry.text), [
+                { rows: [['层级', `${tierLabel}${entry.tag ? ` · ${agentMemoryRuntime.tagLabels[entry.tag] ?? entry.tag}` : ''}`], ['登记', `第 ${entry.day} 天`], ['强度', `强度 ${memoryStrength(entry)}`], ['想起', entry.recallCount ? `想起过 ${entry.recallCount} 次` : ''], ['状态', entry.done === true ? '旧事（已并入总结，召回靠后）' : ''], ['原文', typeof entry.quote === 'string' ? entry.quote.trim() : '']] },
+                { title: '关联与出处', rows: [['别名', Array.isArray(entry.aliases) ? entry.aliases.join('、') : ''], ['关联', Array.isArray(entry.related) ? entry.related.join('、') : ''], ['依据', typeof entry.basis === 'string' ? entry.basis.trim() : ''], ['备注', typeof entry.note === 'string' ? entry.note.trim() : '']] },
+            ]);
+        });
         return row;
     });
     container.replaceChildren(...rows);
@@ -6291,7 +6286,42 @@ function refreshMemoryPage(panel) {
     }
 }
 
-function renderWorldEventList(container, events, { emptyNote } = {}) {
+/** 只读详情弹窗：与人物信息面板同一套“标签 + 值”分块观感；空值的行直接不渲染。 */
+function openReadonlyDetailModal(panel, title, sections, { wide = false } = {}) {
+    const page = makeElement('div', 'dai-npc-read');
+    for (const section of Array.isArray(sections) ? sections : []) {
+        const rows = (section?.rows ?? []).filter(([, value]) => value !== null && value !== undefined && String(value).trim() !== '');
+        if (!rows.length) continue;
+        const block = makeElement('section', 'dai-profile-group');
+        if (section.title) block.append(makeElement('b', 'dai-profile-group-title', section.title));
+        for (const [label, value] of rows) {
+            const row = makeElement('div', 'dai-profile-row');
+            row.append(makeElement('span', 'dai-profile-label', label), makeElement('span', 'dai-profile-value', String(value)));
+            block.append(row);
+        }
+        page.append(block);
+    }
+    openAgentModal(panel, title, page, { wide });
+}
+
+/** 弹窗标题截断：事件/记忆正文可能很长，标题行只留前 30 字。 */
+function capDetailTitle(text) {
+    const value = String(text ?? '').trim();
+    return value.length > 30 ? `${value.slice(0, 30)}…` : value;
+}
+
+/** 行级点击 → 详情弹窗：行内操作按钮照常工作，点它们不弹窗。 */
+function wireRowDetail(row, build) {
+    row.classList.add('is-clickable');
+    row.addEventListener('click', clickEvent => {
+        if (clickEvent.target.closest('button')) return;
+        const panel = typeof document === 'undefined' ? null : document.getElementById(SETTINGS_PANEL_ID);
+        if (!panel) return;
+        build(panel);
+    });
+}
+
+function renderWorldEventList(container, events, { emptyNote, scope = 'near' } = {}) {
     if (!container) return;
     const active = (Array.isArray(events) ? events : []).filter(event => event?.done !== true);
     if (!active.length) {
@@ -6322,6 +6352,13 @@ function renderWorldEventList(container, events, { emptyNote } = {}) {
         pin.dataset.worldPinned = event.pinned ? 'true' : 'false';
         actions.append(resolve, pin);
         row.append(actions);
+        wireRowDetail(row, panel => {
+            const due = event.endDay !== null && event.endDay !== undefined ? `剩 ${Math.max(1, event.endDay - today + 1)} 天` : '不限时';
+            openReadonlyDetailModal(panel, capDetailTitle(event.text), [
+                { rows: [['范围', scope === 'world' ? '大陆层面（世界大事）' : '主角身边（附近事件）'], ['级别', event.weight === 'major' ? '重大 ★（置顶不参与上限清理）' : '普通'], ['登记', `第 ${event.day} 天`], ['地点', typeof event.location === 'string' ? event.location.trim() : ''], ['期限', due], ['编号', event.id]] },
+                { title: '依据', rows: [['依据', typeof event.basis === 'string' ? event.basis.trim() : '']] },
+            ]);
+        });
         return row;
     });
     container.replaceChildren(...rows);
@@ -6390,6 +6427,12 @@ function renderWorldFactionList(container, factions) {
         del.dataset.worldFactionDelete = faction.name;
         actions.append(del);
         row.append(actions);
+        wireRowDetail(row, panel => {
+            openReadonlyDetailModal(panel, faction.name, [
+                { rows: [['态度', labels[faction.stance] ?? '中立'], ['更新', faction.updatedDay ? `第 ${faction.updatedDay} 天` : '']] },
+                { title: '动向与依据', rows: [['动向', typeof faction.dynamics === 'string' ? faction.dynamics.trim() : ''], ['依据', typeof faction.basis === 'string' ? faction.basis.trim() : '']] },
+            ]);
+        });
         return row;
     });
     container.replaceChildren(...rows);
@@ -6417,6 +6460,12 @@ function renderWorldPeopleList(container, people) {
         del.dataset.worldPersonDelete = person.name;
         actions.append(del);
         row.append(actions);
+        wireRowDetail(row, panel => {
+            openReadonlyDetailModal(panel, person.name, [
+                { rows: [['态度', person.attitude || '态度未明'], ['更新', person.updatedDay ? `第 ${person.updatedDay} 天` : '']] },
+                { title: '依据', rows: [['依据', typeof person.basis === 'string' ? person.basis.trim() : '']] },
+            ]);
+        });
         return row;
     });
     container.replaceChildren(...rows);
@@ -6457,6 +6506,15 @@ function renderWorldTaskList(container, tasks) {
         del.dataset.worldTaskDelete = task.id;
         actions.append(del);
         row.append(actions);
+        wireRowDetail(row, panel => {
+            const statusText = task.status === 'done'
+                ? `已完成${task.doneDay ? `于第 ${task.doneDay} 天` : ''}`
+                : (task.endDay !== null && task.endDay !== undefined ? (task.endDay < today ? `已逾期（限第 ${task.endDay} 天前）` : `进行中 · 剩 ${task.endDay - today + 1} 天`) : '进行中 · 不限时');
+            openReadonlyDetailModal(panel, capDetailTitle(task.title), [
+                { rows: [['状态', statusText], ['接取', `第 ${task.day} 天`], ['期限', task.endDay !== null && task.endDay !== undefined ? `第 ${task.endDay} 天` : '不限时'], ['编号', task.id]] },
+                { title: '详情与来源', rows: [['详情', typeof task.detail === 'string' ? task.detail.trim() : ''], ['来源', typeof task.basis === 'string' ? task.basis.trim() : '']] },
+            ]);
+        });
         return row;
     });
     container.replaceChildren(...rows);
@@ -6505,7 +6563,7 @@ function refreshWorldPage(panel) {
         input.value = typeof status.info[field] === 'string' ? status.info[field] : '';
     }
     renderWorldEventList(section.querySelector('[data-world-events-near]'), snapshot.nearEvents);
-    renderWorldEventList(section.querySelector('[data-world-events-world]'), snapshot.worldEvents, { emptyNote: '暂无进行中的世界大事。' });
+    renderWorldEventList(section.querySelector('[data-world-events-world]'), snapshot.worldEvents, { emptyNote: '暂无进行中的世界大事。', scope: 'world' });
     renderWorldTaskList(section.querySelector('[data-world-tasks]'), snapshot.tasks);
     renderWorldFactionList(section.querySelector('[data-world-factions]'), snapshot.factions);
     renderWorldPeopleList(section.querySelector('[data-world-people]'), snapshot.people);
