@@ -2,8 +2,9 @@ import assert from 'node:assert/strict';
 import { buildControlDashboard, normalizeTheme } from './control-dashboard.js';
 import { createAuditLog } from '../core/audit-log.js';
 
-for (const theme of ['white', 'black', 'beige']) assert.equal(normalizeTheme(theme), theme);
-for (const invalid of ['', null, undefined, 'unknown', {}, '__proto__']) assert.equal(normalizeTheme(invalid), 'black');
+for (const theme of ['gilt', 'graphite', 'parchment']) assert.equal(normalizeTheme(theme), theme);
+for (const [legacy, mapped] of [['black', 'gilt'], ['white', 'parchment'], ['beige', 'parchment']]) assert.equal(normalizeTheme(legacy), mapped);
+for (const invalid of ['', null, undefined, 'unknown', {}, '__proto__']) assert.equal(normalizeTheme(invalid), 'gilt');
 const scope = { sessionId: 'chat-a', branchId: 'branch-a', taskIds: ['task-a', 'task-b'] };
 const identity = { sessionId: scope.sessionId, branchId: scope.branchId, taskId: 'task-a', stateVersion: 'v1' };
 const audit = createAuditLog();
@@ -12,7 +13,7 @@ const build = extra => buildControlDashboard({ scope, records: audit.list(), ...
 const moduleOf = (view, id) => view.modules.find(module => module.id === id);
 const empty = build();
 assert.equal(empty.modules.length, 8);
-assert.equal(moduleOf(empty, 'sandbox').title, '沙盒模式');
+assert.equal(moduleOf(empty, 'sandbox').title, '开放世界');
 assert.equal(moduleOf(empty, 'sandbox').id, 'sandbox');
 assert.equal(moduleOf(empty, 'self').title, '纳戒');
 assert.equal(moduleOf(empty, 'self').id, 'self');

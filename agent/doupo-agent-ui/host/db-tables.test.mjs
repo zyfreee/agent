@@ -2,21 +2,18 @@ import assert from 'node:assert/strict';
 import {
     ALL_TABLE_DEFS,
     SELF_TABLE_DEFS,
-    WORLD_TABLE_DEFS,
     MEMORY_TABLE_DEFS,
+    RETIRED_TABLE_NAMES,
     buildBridgeSheets,
     mergeBridgeSheets,
     sanitizeForeignDdl,
     desiredSelfRows,
-    desiredWorldRows,
     desiredMemoryRows,
     reconcileTables,
     selfStateFromTables,
-    worldStateFromTables,
     memoryStateFromTables,
     applyDesiredToView,
     sameSelfState,
-    sameWorldState,
     sameMemoryState,
 } from './db-tables.js';
 
@@ -38,11 +35,13 @@ for (const def of ALL_TABLE_DEFS) {
 assert.equal(new Set(ALL_TABLE_DEFS.map(def => def.key)).size, ALL_TABLE_DEFS.length, '表键重复');
 assert.equal(new Set(ALL_TABLE_DEFS.map(def => def.name)).size, ALL_TABLE_DEFS.length, '表名重复');
 assert.equal(SELF_TABLE_DEFS.length, 8);
-assert.equal(WORLD_TABLE_DEFS.length, 3);
 assert.equal(MEMORY_TABLE_DEFS.length, 2);
 assert.equal(new Set(MEMORY_TABLE_DEFS.map(def => def.name)).size, 2);
 assert.deepEqual(MEMORY_TABLE_DEFS.map(def => def.name), ['小记忆', '大记忆']);
-assert.equal(ALL_TABLE_DEFS.length, 13);
+assert.equal(ALL_TABLE_DEFS.length, 10);
+// 世界运转不连数据库：世界三表不在桥接定义里，只存在于退役名单（合并导入时剔除）
+assert.ok(!ALL_TABLE_DEFS.some(def => def.name.startsWith('世界·')), '世界表不得再进桥接定义');
+assert.deepEqual([...RETIRED_TABLE_NAMES].sort(), ['世界·事件', '世界·现状', '世界·任务'].sort());
 
 // 模板片段：mate 齐全、节点全部禁止、content 只有表头行、退出数据库自动更新
 const fragment = buildBridgeSheets();
@@ -218,39 +217,25 @@ const emptySelf = selfStateFromTables(applyDesiredToView({}, desiredSelfRows({
 })));
 assert.equal(emptySelf.empty, true);
 
-// ---------- 世界：状态 → 行 → 表 → 状态 往返 ----------
-
-const sampleWorld = {
-    schemaVersion: 1,
-    clock: { day: 9, minute: 750, label: '午后' },
-    info: { weather: '晴', location: '乌坦城', era: '斗气大陆', reputation: '崭露头角', wanted: '无' },
-    nearEvents: [
-        { id: 'e1', scope: 'near', day: 8, text: '坊市起了争执', basis: '第 8 楼', endDay: 12, weight: 'minor', pinned: false, done: false, resolvedDay: null },
-        { id: 'e3', scope: 'near', day: 6, text: '传闻魔兽袭村', basis: '路人说', endDay: null, weight: 'rumor', pinned: true, done: true, resolvedDay: 8 },
-    ],
-    worldEvents: [{ id: 'e2', scope: 'world', day: 5, text: '云岚宗集结', basis: '第 5 楼', endDay: 20, weight: 'major', pinned: false, done: false, resolvedDay: null }],
-    tasks: [
-        { id: 't1', title: '采凝骨草', detail: '坊市外山', basis: '委托', day: 8, endDay: 11, status: 'active', doneDay: null },
-        { id: 't2', title: '赴约', detail: '', basis: '', day: 2, endDay: null, status: 'done', doneDay: 4 },
-    ],
-    log: [],
-    updatedAt: '2026-10-29T00:00:00.000Z',
-};
-
-const worldGroups = desiredWorldRows(sampleWorld);
-assert.equal(worldGroups.length, WORLD_TABLE_DEFS.length);
-const worldView = applyDesiredToView({}, worldGroups);
-const derivedWorld = worldStateFromTables(worldView);
-assert.equal(derivedWorld.empty, false);
-assert.ok(sameWorldState(derivedWorld.state, sampleWorld), '世界往返应等值');
-assert.equal(derivedWorld.state.nearEvents.length, 2);
-assert.equal(derivedWorld.state.worldEvents.length, 1);
-assert.equal(derivedWorld.state.nearEvents[1].weight, 'rumor');
-assert.equal(derivedWorld.state.nearEvents[1].pinned, true);
-assert.equal(derivedWorld.state.nearEvents[1].resolvedDay, 8);
-assert.equal(derivedWorld.state.tasks[1].status, 'done');
-assert.equal(derivedWorld.state.tasks[1].doneDay, 4);
-assert.equal(derivedWorld.state.clock.minute, 750);
+// 退役桥接表剔除：旧版世界三表按表名从包里删掉（merge 整包替换 → 聊天模板同步移除），幂等
+{
+    const legacyTemplate = {
+        mate: { type: 'chatSheets', version: 1 },
+        sheet_foreign: { name: '背包与货币', content: [['row_id', '金币']] },
+        sheet_dpWorldState: { name: '世界·现状', content: [['row_id', '剧情日']] },
+        sheet_shi_jian: { name: '世界·事件', content: [['row_id', '编号']] },
+        sheet_ren_wu: { name: '世界·任务', content: [['row_id', '编号']] },
+    };
+    const merged = mergeBridgeSheets(legacyTemplate);
+    assert.equal(merged.removed.length, 3, '三张退役世界表被剔除');
+    assert.deepEqual([...merged.removed].sort(), ['世界·事件', '世界·现状', '世界·任务'].sort());
+    assert.ok(!Object.keys(merged.template).some(key => key.startsWith('sheet_dpWorld')), '退役表不再随包携带');
+    assert.ok(merged.template.sheet_foreign, '外来表原样保留');
+    assert.equal(merged.added.length, ALL_TABLE_DEFS.length, '现役桥接表照常补上');
+    const mergedAgain = mergeBridgeSheets(merged.template);
+    assert.equal(mergedAgain.removed.length, 0, '剔除后幂等');
+    assert.equal(mergedAgain.added.length, 0);
+}
 
 // ---------- reconcile：最小差异 ----------
 
@@ -311,22 +296,25 @@ const bridgeOnlyView = buildBridgeSheets(); // 只有表头行
     assert.equal(ops.length, 0, '空编号行保留，其余行无变化，应为零操作');
 }
 
-// 6. 单行表多余行回收
+// 6. 单行表多余行回收（档案表是单行表：sampleSelf 档案 + 手加的第二行）
 {
-    const view = applyDesiredToView(bridgeOnlyView, desiredWorldRows(sampleWorld));
-    view.sheet_dpWorldState.content.push(['2', '9', '750', '午后', '晴', '乌坦城', '斗气大陆', '崭露头角', '无', '2026-10-29T00:00:00.000Z']);
-    const { ops } = reconcileTables(view, desiredWorldRows(sampleWorld));
+    const view = applyDesiredToView(bridgeOnlyView, desiredSelfRows(sampleSelf));
+    view.sheet_dpProfile.content.push(['2', '别人', '', '', '', '', '', '', '', '', '', '', '', '', '']);
+    const { ops } = reconcileTables(view, desiredSelfRows(sampleSelf));
     const deletes = ops.filter(op => op.kind === 'deleteRow');
-    assert.deepEqual(deletes, [{ kind: 'deleteRow', table: '世界·现状', rowIndex: 2 }]);
+    assert.deepEqual(deletes, [{ kind: 'deleteRow', table: '纳戒·主角档案', rowIndex: 2 }]);
 }
 
 // 7. 表缺失要上报（模板没铺成功时桥会停手）
 {
-    const { missingTables } = reconcileTables({}, desiredWorldRows(sampleWorld));
-    assert.deepEqual(missingTables.sort(), ['世界·事件', '世界·现状', '世界·任务'].sort());
+    const { missingTables } = reconcileTables({}, desiredSelfRows(sampleSelf));
+    assert.deepEqual(missingTables.sort(), [
+        '纳戒·主角档案', '纳戒·称号', '纳戒·功法', '纳戒·斗技',
+        '纳戒·行囊', '纳戒·配方', '纳戒·炼制台', '纳戒·目标',
+    ].sort());
 }
 
-// 8. sameSelfState / sameWorldState 的口径：log 不参与（不镜像），updatedAt 随镜像走
+// 8. sameSelfState 的口径：log 不参与（不镜像），updatedAt 随镜像走
 {
     const a = JSON.parse(JSON.stringify(sampleSelf));
     const b = JSON.parse(JSON.stringify(sampleSelf));
@@ -334,10 +322,6 @@ const bridgeOnlyView = buildBridgeSheets(); // 只有表头行
     assert.ok(sameSelfState(a, b));
     b.gold = 1;
     assert.ok(!sameSelfState(a, b));
-    const wa = JSON.parse(JSON.stringify(sampleWorld));
-    const wb = JSON.parse(JSON.stringify(sampleWorld));
-    wb.log = [{ note: '不同流水' }];
-    assert.ok(sameWorldState(wa, wb));
 }
 
 // ---------- 记忆：小/大两张表往返 + reconcile ----------

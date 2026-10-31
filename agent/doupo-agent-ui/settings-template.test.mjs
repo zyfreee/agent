@@ -21,12 +21,12 @@ for (const page of ['hub', 'facts', 'action', 'world', 'npc', 'npcledger', 'self
 }
 assert.doesNotMatch(entry, /data-settings-page="llm"/, '「模型与连接」页已并入「模型设置」，不该再出现');
 assert.doesNotMatch(entry, /data-settings-page="exp"/, '独立「经历」页已并入人物信息面板弹窗，不该再出现');
-for (const setting of ['llm.provider', 'facts.maxEntries', 'action.requireConfirmation', 'world.tickMinutes', 'npc.maxCandidates', 'impact.maxChainDepth', 'impact.decideTemperature', 'impact.decideMaxTokens', 'impact.decideTopP', 'impact.injectTemperature', 'impact.injectMaxTokens', 'impact.injectPresencePenalty', 'enableSandboxMode', 'sandbox.inertia', 'sandbox.maxActiveGoals', 'budget.maxModules', 'status.showHistory', 'setting.progress', 'injection.depth', 'ui.legacyTurn', 'prompt.select']) {
+for (const setting of ['llm.provider', 'facts.maxEntries', 'action.requireConfirmation', 'world.tickMinutes', 'npc.maxCandidates', 'impact.maxChainDepth', 'impact.decideTemperature', 'impact.decideMaxTokens', 'impact.decideTopP', 'impact.injectTemperature', 'impact.injectMaxTokens', 'impact.injectPresencePenalty', 'enableSandboxMode', 'sandbox.inertia', 'budget.maxModules', 'status.showHistory', 'setting.progress', 'injection.depth', 'ui.legacyTurn', 'prompt.select']) {
     assert.match(entry, new RegExp(`data-setting="${setting.replace('.', '\\.')}`), `缺少设置绑定：${setting}`);
 }
 assert.match(entry, /activeSettingsPage/);
 assert.match(entry, /data-module-list/);
-for (const theme of ['white', 'black', 'beige']) {
+for (const theme of ['gilt', 'graphite', 'parchment']) {
     assert.match(entry, new RegExp(`type="radio"[^>]+value="${theme}"[^>]+data-setting="ui\\.theme"`));
 }
 assert.match(entry, /await hostStorage\.saveSettings\(\)/);
@@ -52,10 +52,14 @@ const hubStart = entry.indexOf('data-settings-section="hub"');
 const hubEnd = entry.indexOf('data-settings-section="facts"');
 assert.ok(hubStart >= 0 && hubEnd > hubStart, '找不到「模型设置」集中页');
 const hubMarkup = entry.slice(hubStart, hubEnd);
-for (const setting of ['llm.mode', 'setting.mode', 'settle.mode', 'world.decideMode', 'npc.ledgerMode', 'npc.coldMode', 'self.decideMode', 'memory.decideMode', 'impact.decideMode', 'impact.injectMode']) {
+for (const setting of ['llm.mode', 'setting.mode', 'settle.mode', 'world.decideMode', 'npc.ledgerMode', 'npc.coldMode', 'memory.decideMode', 'impact.decideMode', 'impact.injectMode']) {
     assert.match(hubMarkup, new RegExp(`data-setting="${setting.replace('.', '\\.')}"`), `模型设置页缺少：${setting}`);
     assert.equal(boundPaths.filter(path => path === setting).length, 1, `接口设置应只在模型设置页出现一次：${setting}`);
 }
+// 纳戒与记忆的决定连接合并成一套（统一存 memory.decide*，模型设置页“纳戒与记忆 · 决定模型”一张卡）：
+// 纳戒侧的独立连接卡、模式下拉与拉取按钮不该再出现。
+assert.doesNotMatch(entry, /data-setting="self\.decideMode"/, '纳戒决定连接已并入记忆侧共用卡，不该再有 self.decideMode 绑定');
+assert.doesNotMatch(entry, /data-selfdecide-models/, '纳戒侧拉取模型按钮已随合并卡删除');
 for (const prompt of ['world.decidePrompt', 'npc.ledgerPrompt', 'npc.coldPrompt', 'self.decidePrompt', 'memory.decidePrompt', 'impact.prompt', 'impact.injectPrompt']) {
     assert.doesNotMatch(hubMarkup, new RegExp(`data-setting="${prompt.replace('.', '\\.')}"`), `提示词不该在模型设置页：${prompt}`);
     assert.ok(boundPaths.includes(prompt), `功能页缺少提示词绑定：${prompt}`);
@@ -81,7 +85,7 @@ const registryKeys = [...entry.slice(registryStart, registryEnd).matchAll(/\['([
 const modeSelects = [...new Set([...entry.matchAll(/<select[^>]*data-setting="([a-zA-Z0-9_.]+)"[^>]*>((?:(?!<\/select>).)*)<\/select>/gs)]
     .filter(match => match[2].includes('value="tavern"'))
     .map(match => match[1]))];
-assert.ok(modeSelects.length >= 10, `连接模式下拉数量异常：${modeSelects.join(', ')}`);
+assert.ok(modeSelects.length >= 9, `连接模式下拉数量异常：${modeSelects.join(', ')}`);
 for (const mode of modeSelects) {
     assert.ok(registryKeys.includes(mode), `连接模式 ${mode} 没登记进 CONNECTION_MODE_TOGGLERS，切换时这张卡不会联动`);
 }
@@ -89,7 +93,7 @@ for (const mode of modeSelects) {
 // 曾把判据写成 name === 'Base'（永远判不中），接口地址取到密钥那一格，
 // 请求变成 “sk-xxx/v1/models” 相对路径打到酒馆自己，所有卡点拉取全是 404。
 assert.doesNotMatch(entry, /name === 'Base'\s*\?/, "拉取模型取值判据写错：'Base' 永远不等于传入的 'BaseUrl'，会把密钥当成接口地址发出去");
-for (const path of ['llm.baseUrl', 'setting.baseUrl', 'settle.baseUrl', 'world.decideBaseUrl', 'self.decideBaseUrl', 'memory.decideBaseUrl', 'npc.ledgerBaseUrl', 'npc.coldBaseUrl']) {
+for (const path of ['llm.baseUrl', 'setting.baseUrl', 'settle.baseUrl', 'world.decideBaseUrl', 'memory.decideBaseUrl', 'npc.ledgerBaseUrl', 'npc.coldBaseUrl']) {
     assert.match(entry, new RegExp(`name === 'BaseUrl' \\? readSettingInput\\(panel, '${path.replace('.', '\\.')}'\\)`), `拉取模型必须读 ${path}`);
 }
 // 每一张连接卡都必须有“拉取模型”按钮，且模板里的按钮、取值函数、点击接线三者一个不能少
@@ -99,7 +103,6 @@ for (const [button, fn] of [
     ['data-facts-models', 'fetchFactsModels'],
     ['data-settle-models', 'fetchSettleModels'],
     ['data-worlddecide-models', 'fetchWorldDecideModels'],
-    ['data-selfdecide-models', 'fetchSelfDecideModels'],
     ['data-memorydecide-models', 'fetchMemoryDecideModels'],
     ['data-npc-ledger-models', 'fetchNpcLedgerModels'],
     ['data-npc-cold-models', 'fetchNpcColdModels'],

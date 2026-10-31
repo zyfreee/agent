@@ -179,8 +179,8 @@ assert.equal(mixed.self.rows.find(row => row.label === '金币'), undefined);
 const sandbox = buildSandboxPanel({
     read: { status: 'ready', mode: 'sandbox', inertia: '中', canonCharactersAutonomous: true, history: [{ from: 'mainline', to: 'sandbox' }] },
 });
-assert.equal(sandbox.rows.find(row => row.label === '本局口径').value, '沙盒');
-assert.match(sandbox.rows.find(row => row.label === '口径切换').value, /最近 主线 → 沙盒/);
+assert.equal(sandbox.rows.find(row => row.label === '本局口径').value, '开放世界');
+assert.match(sandbox.rows.find(row => row.label === '口径切换').value, /最近 主线 → 开放世界/);
 assert.equal(buildSandboxPanel({ read: { status: 'empty' } }).rows.length, 0);
 
 // —— 主角记忆：两层计数 + 关键排前 + 引文与关联 ——

@@ -71,13 +71,83 @@ assert.deepEqual(Object.values(TAG_LABELS), ['恩怨', '情报', '伏笔', '大�
     let entry = rt.snapshot().entries[0];
     assert.equal(entry.tier, 'big');
     assert.equal(entry.tag, 'intel');
-    assert.equal(rt.apply([{ op: 'promote', id: 'm1' }]).rejected[0].reason, 'entry_already_big');
-    // 同楼重 roll：撤销 promote
-    rt.apply([{ op: 'remember', text: '一条新小记忆', related: ['某地'] }], { source: 'decide', floor: 10, day: 10 });
-    rt.apply([{ op: 'promote', id: 'm2' }], { source: 'decide', floor: 11, day: 10 });
+    assert.equal(rt.apply([{ op: 'promote', id: 'm1' }], { source: 'panel' }).rejected[0].reason, 'entry_already_big');
+    // 手动 promote 照常可用（大记忆收紧只限模型通道）
+    rt.apply([{ op: 'remember', text: '一条新小记忆', related: ['某地'] }], { source: 'panel', day: 10 });
+    rt.apply([{ op: 'promote', id: 'm2' }], { source: 'panel' });
     assert.equal(rt.snapshot().entries[1].tier, 'big');
-    rt.apply([{ op: 'remember', text: '换个说法的小记忆', related: ['某地'] }], { source: 'decide', floor: 11, day: 10 });
-    assert.equal(rt.snapshot().entries[1].tier, 'small', '同楼重 roll 应撤销 promote');
+}
+
+// 2b. 大记忆收紧：模型通道 memorize 降级为小记忆、promote 停用；手动不受限
+{
+    const rt = createMemoryRuntime({ now: NOW });
+    const down = rt.apply([{ op: 'memorize', text: '决定想记的大事', basis: '第 1 楼', related: ['某人'], weight: 'major', tag: 'grudge' }], { source: 'decide', day: 2 });
+    assert.equal(down.status, 'applied');
+    let entry = rt.snapshot().entries[0];
+    assert.equal(entry.tier, 'small', 'decide 通道的 memorize 应降级为小记忆');
+    assert.equal(entry.weight, 'major', '降级保留分量');
+    const retire = rt.apply([{ op: 'promote', id: entry.id }], { source: 'decide', day: 3 });
+    assert.equal(retire.status, 'rejected');
+    assert.equal(retire.rejected[0].reason, 'promote_retired');
+    assert.equal(rt.snapshot().entries[0].tier, 'small', 'decide 通道的 promote 应被拒');
+    // llm 通道（降级指令块）同样受限
+    const viaGuide = rt.apply([{ op: 'memorize', text: '指令块想记的大事', related: ['某地'] }], { source: 'llm', day: 4 });
+    assert.equal(viaGuide.status, 'applied');
+    assert.equal(rt.snapshot().entries[1].tier, 'small', 'llm 通道的 memorize 也应降级');
+}
+
+// 2c. consolidate：小记忆整批转化成一条大记忆，钥匙保全，原条目退役
+{
+    const rt = createMemoryRuntime({ now: NOW });
+    rt.apply([
+        { op: 'remember', text: '穆蛇拦路被赶跑', basis: '第 2 楼', related: ['穆蛇', '坊市'], quote: '把灵石留下。' },
+        { op: 'remember', text: '坊市掌柜藏着血莲', basis: '第 4 楼', related: ['坊市掌柜'], aliases: ['掌柜'] },
+        { op: 'remember', text: '云岚宗弟子进城', basis: '第 5 楼', related: ['云岚宗'] },
+    ], { source: 'panel', day: 5 });
+    const before = rt.snapshot().entries.map(entry => entry.id);
+    const result = rt.consolidate({
+        ids: before,
+        big: { text: '穆蛇拦路、掌柜藏莲、云岚宗弟子进城——坊市这几天不太平', related: ['穆蛇'], weight: 'major', tag: 'thread' },
+        day: 6,
+    });
+    assert.equal(result.ok, true, `consolidate 应成功：${result.reason ?? ''}`);
+    const snapshot = rt.snapshot();
+    assert.equal(snapshot.entries.length, 1, '三条小记忆应退役成一条大记忆');
+    const big = snapshot.entries[0];
+    assert.equal(big.tier, 'big');
+    assert.equal(big.id, result.id);
+    assert.equal(big.weight, 'major');
+    assert.equal(big.tag, 'thread');
+    assert.ok(big.related.includes('穆蛇'), '模型选的钥匙优先');
+    // 召回钥匙一张不丢：related 优先填满（≤4），溢出的落别名——related 与别名在召回里同权。
+    const keys = [...big.related, ...big.aliases];
+    for (const key of ['穆蛇', '坊市', '坊市掌柜', '掌柜', '云岚宗']) {
+        assert.ok(keys.includes(key), `召回钥匙 ${key} 应保全在 related+aliases 里（实际 related=${big.related.join('、')} 别名=${big.aliases.join('、')}）`);
+    }
+    assert.ok(big.related.length <= 4 && big.aliases.length <= 4, 'related/aliases 各自不超上限');
+    assert.ok(snapshot.log.some(item => item.source === 'consolidate'), '总结要写进流水');
+    // 失败路径（用独立小账本，免得消费完后没有小记忆可指）：没文本、id 不存在、同文重复
+    const rt2 = createMemoryRuntime({ now: NOW });
+    rt2.apply([{ op: 'remember', text: '一条小记忆', related: ['某地'] }], { source: 'panel', day: 1 });
+    assert.equal(rt2.consolidate({ ids: ['m1'], big: { text: '', related: ['a'] } }).reason, 'text_missing');
+    assert.equal(rt2.consolidate({ ids: ['不存在'], big: { text: 'y', related: ['a'] } }).reason, 'nothing_to_consolidate');
+    const first = rt2.consolidate({ ids: ['m1'], big: { text: '总结成的大记忆', related: ['某地'] }, day: 2 });
+    assert.equal(first.ok, true);
+    // 退役登记：删除/并入的编号进 retiredIds（数据库存储帧重放复活这些行时，收养守卫靠它认出僵尸）
+    assert.ok(rt2.snapshot().retiredIds.includes('m1'), '并入的小记忆应进退役登记');
+    const rt3 = createMemoryRuntime({ now: NOW });
+    rt3.apply([{ op: 'remember', text: '要删的一条', related: ['某地'] }], { source: 'panel', day: 1 });
+    rt3.apply([{ op: 'forgetMemory', id: 'm1' }], { source: 'panel' });
+    assert.ok(rt3.snapshot().retiredIds.includes('m1'), '忘记的记忆应进退役登记');
+    rt3.restore(rt3.snapshot());
+    assert.ok(rt3.snapshot().retiredIds.includes('m1'), 'restore 后退役登记仍在');
+    // 撤销删除＝解除退役登记
+    rt3.apply([{ op: '_restoreEntry', entry: { id: 'm1', tier: 'small', text: '要删的一条', related: ['某地'], day: 1 } }], { source: 'panel' });
+    assert.ok(!rt3.snapshot().retiredIds.includes('m1'), '恢复记忆应解除退役登记');
+    assert.equal(rt2.consolidate({ ids: [], big: { text: '总结成的大记忆', related: ['a'] } }).reason, 'nothing_to_consolidate');
+    rt2.apply([{ op: 'remember', text: '又一条小记忆', related: ['别处'] }], { source: 'panel', day: 3 });
+    const small2 = rt2.snapshot().entries.find(entry => entry.tier === 'small');
+    assert.equal(rt2.consolidate({ ids: [small2.id], big: { text: '总结成的大记忆', related: ['别处'] } }).reason, 'duplicate_text');
 }
 
 // 3. resolve / reopen / forget：了结与重开，无任何自动过期

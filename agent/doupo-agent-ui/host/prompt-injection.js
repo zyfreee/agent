@@ -57,6 +57,13 @@ export function createPromptInjection({ getContext, key = DEFAULT_KEY, maxChars 
         };
     }
 
+    /** 换聊天/启动时从聊天存档恢复「上次注入」记录：面板和悬浮球随时打开都能看到最近一轮。 */
+    function restore(record) {
+        if (!record || typeof record !== 'object' || !record.status) return last;
+        last = { ...record };
+        return last;
+    }
+
     /** Must run after every generation: the container is global and would leak into later turns. */
     function clear() {
         const value = channel();
@@ -106,7 +113,7 @@ export function createPromptInjection({ getContext, key = DEFAULT_KEY, maxChars 
         };
     }
 
-    return Object.freeze({ key, inspect, write, clear });
+    return Object.freeze({ key, inspect, write, clear, restore });
 }
 
 export { DEFAULT_KEY as PROMPT_INJECTION_KEY, DEFAULT_MAX_CHARS };

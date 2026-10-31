@@ -1,6 +1,8 @@
 /**
- * 数据库桥：把纳戒/世界台账镜像到「龙血玄黄·数据库」（酒馆助手脚本）的表格里，
+ * 数据库桥：把纳戒/记忆镜像到「龙血玄黄·数据库」（酒馆助手脚本）的表格里，
  * 并把表格内容回拉成状态（换聊天收养、用户在数据库可视化器里手改后收回）。
+ * 世界运转不连数据库：世界台账只跟扩展台账与聊天存档走（旧版世界表由
+ * mergeBridgeSheets 的退役剔除从聊天模板里移除）。
  *
  * 与宿主的分工（见 README「数据库桥接」）：
  * - 扩展 runtime 仍是大脑：决定、校验、同楼回滚逻辑一行不改；
@@ -16,20 +18,18 @@ import {
     applyDesiredToView,
     desiredMemoryRows,
     desiredSelfRows,
-    desiredWorldRows,
     memoryStateFromTables,
     mergeBridgeSheets,
     reconcileTables,
     sanitizeForeignDdl,
     selfStateFromTables,
-    worldStateFromTables,
 } from './db-tables.js';
 
 const WRITER_FLAG_MS = 30000;
 const EXTERNAL_DEBOUNCE_MS = 500;
 
-const DESIRED_BY_KIND = Object.freeze({ self: desiredSelfRows, world: desiredWorldRows, memory: desiredMemoryRows });
-const DERIVE_BY_KIND = Object.freeze({ self: selfStateFromTables, world: worldStateFromTables, memory: memoryStateFromTables });
+const DESIRED_BY_KIND = Object.freeze({ self: desiredSelfRows, memory: desiredMemoryRows });
+const DERIVE_BY_KIND = Object.freeze({ self: selfStateFromTables, memory: memoryStateFromTables });
 
 export function createDbBridge({ getSettings } = {}) {
     let status = 'off'; // 'off' | 'missing' | 'ready' | 'error'
@@ -83,8 +83,8 @@ export function createDbBridge({ getSettings } = {}) {
                 } catch (error) {
                     console.warn('[斗破Agent·数据库桥] 读取当前模板失败，按全量导入处理', error);
                 }
-                const { template, added, replaced, updated } = mergeBridgeSheets(currentTemplate);
-                if (!added.length && !replaced.length && !updated.length) {
+                const { template, added, replaced, updated, removed } = mergeBridgeSheets(currentTemplate);
+                if (!added.length && !replaced.length && !updated.length && !removed.length) {
                     ensuredForChat = true;
                     status = 'ready';
                     message = '桥接表就绪';
@@ -100,7 +100,18 @@ export function createDbBridge({ getSettings } = {}) {
                     if (added.length) parts.push(`补 ${added.length} 张桥接表（${added.join('、')}）`);
                     if (replaced.length) parts.push(`替换 ${replaced.length} 张旧结构副本（${replaced.join('、')}）`);
                     if (updated.length) parts.push(`刷新 ${updated.length} 张表的导出配置（${updated.join('、')}）`);
+                    if (removed.length) parts.push(`移除退役桥接表（${removed.join('、')}）`);
                     message = `已向当前聊天${parts.join('，')}`;
+                    return true;
+                }
+                // 优雅降级：导入被数据库预检拒绝，但十张桥接表本身都已就位（无缺失、无过期结构）时
+                // 照样按就绪处理——数据镜像走 CRUD / 全量导入兜底，不依赖模板导入；模板级清理
+                // （退役表移除、导出配置刷新）留待数据库侧问题解除后的下次载入自动补做。
+                if (!added.length && !replaced.length) {
+                    ensuredForChat = true;
+                    status = 'ready';
+                    const reason = String(result?.message ?? '').slice(0, 120);
+                    message = `桥接表就绪；模板级清理暂被数据库预检拒绝，数据镜像照常（${reason}）`;
                     return true;
                 }
                 markError(result?.message || '桥接表模板导入失败（scope=chat, dataMode=merge）');
@@ -256,10 +267,8 @@ export function createDbBridge({ getSettings } = {}) {
 
     return Object.freeze({
         mirrorSelf: snapshot => mirror('self', snapshot),
-        mirrorWorld: snapshot => mirror('world', snapshot),
         mirrorMemory: snapshot => mirror('memory', snapshot),
         adoptSelf: () => adopt('self'),
-        adoptWorld: () => adopt('world'),
         adoptMemory: () => adopt('memory'),
         onExternalChange,
         onChatChanged,

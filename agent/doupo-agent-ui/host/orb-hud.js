@@ -17,14 +17,14 @@ export const ORB_ITEMS = Object.freeze([
     Object.freeze({ id: 'overview', icon: '⌂', title: '总控', hint: '模块开关与最近任务' }),
     Object.freeze({ id: 'world', icon: '◌', title: '世界运转', hint: '时间、势力与事件' }),
     Object.freeze({ id: 'self', icon: '◉', title: '纳戒', hint: '主角自身与随身之物' }),
-    Object.freeze({ id: 'memory', icon: '✧', title: '主角记忆', hint: '大小记忆与召回' }),
+    Object.freeze({ id: 'memory', icon: '✧', title: '记忆存储', hint: '大小记忆与召回' }),
     Object.freeze({ id: 'npcledger', icon: '☰', title: '人物簿', hint: '人物档案与好感' }),
     Object.freeze({ id: 'cold', icon: '❄', title: '冷藏推进', hint: '后台人物的推进记录' }),
     Object.freeze({ id: 'impact', icon: '⌁', title: '世界影响', hint: '世界被改成了什么样' }),
     Object.freeze({ id: 'facts', icon: '▤', title: '原著资料', hint: '设定库与注入通道' }),
     Object.freeze({ id: 'mirror', icon: '⇄', title: '数据镜像', hint: '数据库桥接与 MVU 同步' }),
     Object.freeze({ id: 'journal', icon: '✎', title: '运行日志', hint: 'Agent 的运行流水' }),
-    Object.freeze({ id: 'sandbox', icon: '◈', title: '沙盒模式', hint: '本局的口径与惯性' }),
+    Object.freeze({ id: 'sandbox', icon: '◈', title: '开放世界', hint: '本局的口径与惯性' }),
 ]);
 
 const ITEM_IDS = new Set(ORB_ITEMS.map(item => item.id));
@@ -298,8 +298,15 @@ export function buildImpactPanel({ status, records } = {}) {
     };
 }
 
-/** 原著资料：检索库与注入通道现状，只读。 */
-export function buildFactsPanel({ stats, worldbook, volume } = {}) {
+/** 原著资料：检索库与注入通道现状 + 最近一轮注入的条目，只读。 */
+export function buildFactsPanel({ stats, worldbook, volume, lastInjection, entryName } = {}) {
+    const inj = lastInjection && typeof lastInjection === 'object' ? lastInjection : null;
+    const injTime = inj && Number.isFinite(inj.at) ? new Date(inj.at).toLocaleTimeString('zh-CN', { hour12: false }) : '';
+    const injState = !inj ? ''
+        : inj.status === 'failed' ? '注入失败'
+        : inj.status === 'empty' ? '本轮未命中'
+        : inj.status === 'injected' ? (inj.cleared ? '已清理' : '仍在提示词里')
+        : '';
     const rows = capRows([
         row('世界书', worldbook, worldbook ? undefined : 'warn'),
         row('索引', stats?.total ? `${stats.total} 条` : '', stats?.total ? undefined : 'warn'),
@@ -307,15 +314,27 @@ export function buildFactsPanel({ stats, worldbook, volume } = {}) {
         row('卷数', stats?.volumes ? `${Object.keys(stats.volumes).length} 卷` : ''),
         row('缺卷号', stats?.missingVolume !== undefined ? `${stats.missingVolume} 条` : ''),
     ]);
+    const injRows = capRows([
+        row('上次注入', inj ? `${inj.usedIds?.length ?? 0} 条 · ${inj.chars ?? 0} 字${injTime ? ` · ${injTime}` : ''}` : '', inj?.status === 'failed' ? 'warn' : undefined),
+        row('状态', injState, inj?.status === 'failed' ? 'warn' : undefined),
+    ]);
+    const usedIds = Array.isArray(inj?.usedIds) ? inj.usedIds.slice(0, LIST_CAP) : [];
     return {
         title: '原著资料', icon: '▤',
-        summary: stats?.total ? `索引 ${stats.total} 条，当前${volume?.label ?? '未定卷'}。` : '检索库是空的，先在设置里导入世界书。',
-        rows,
-        lists: [],
+        summary: inj?.status === 'injected'
+            ? `上一轮注入了 ${usedIds.length} 条原著设定（${inj.chars ?? 0} 字）${inj.cleared ? '，已随生成结束清理。' : '。'}`
+            : inj?.status === 'failed' ? '上一轮注入失败，详情见设置页。'
+            : inj ? '上一轮没有挑中可注入的原著条目。'
+            : stats?.total ? `索引 ${stats.total} 条，当前${volume?.label ?? '未定卷'}。` : '检索库是空的，先在设置里导入世界书。',
+        rows: [...rows, ...injRows],
+        lists: [list('注入的原著条目', '最近一轮没有注入原著条目。', usedIds.map(uid => entry(
+            `#${uid} ${typeof entryName === 'function' ? (entryName(uid) || `#${uid}`) : `#${uid}`}`,
+            '本轮进入正文提示词',
+        )))],
     };
 }
 
-/** 主角记忆：两层计数与进行中的记忆，只读。 */
+/** 记忆存储：两层计数与进行中的记忆，只读。 */
 export function buildMemoryPanel({ status, snapshot } = {}) {
     const byTier = status?.byTier ?? {};
     const open = clip([...(snapshot?.entries ?? [])].filter(entry => entry.done !== true), 60);
@@ -332,7 +351,7 @@ export function buildMemoryPanel({ status, snapshot } = {}) {
         row('已了结', status?.total !== undefined && status?.open !== undefined ? `${status.total - status.open} 条` : ''),
     ]);
     return {
-        title: '主角记忆', icon: '✧',
+        title: '记忆存储', icon: '✧',
         summary: status?.total ? `记着 ${status.total} 条记忆，大记忆 ${byTier.big?.open ?? 0} 条、小记忆 ${byTier.small?.open ?? 0} 条还没了结。` : '还没有记下任何记忆。',
         rows,
         lists: [
@@ -407,37 +426,56 @@ export function buildJournalPanel({ records } = {}) {
     };
 }
 
-/** 沙盒模式：本局口径，只读。 */
+/** 开放世界：本局口径，只读。 */
 export function buildSandboxPanel({ read } = {}) {
     if (!read || read.status !== 'ready') {
         return {
-            title: '沙盒模式', icon: '◈',
+            title: '开放世界', icon: '◈',
             summary: '本局还没有口径记录，进入对话后建立。',
             rows: [], lists: [],
         };
     }
     const last = Array.isArray(read.history) ? read.history.at(-1) : null;
     const rows = capRows([
-        row('本局口径', read.mode === 'sandbox' ? '沙盒' : read.mode === 'mainline' ? '主线' : ''),
+        row('本局口径', read.mode === 'sandbox' ? '开放世界' : read.mode === 'mainline' ? '主线' : ''),
         row('惯性', read.inertia),
         row('原著角色自主', read.canonCharactersAutonomous === false ? '否' : '是'),
-        row('口径切换', last ? `共 ${read.history.length} 次，最近 ${last.from === 'sandbox' ? '沙盒' : '主线'} → ${last.to === 'sandbox' ? '沙盒' : '主线'}` : '本局没切过'),
+        row('口径切换', last ? `共 ${read.history.length} 次，最近 ${last.from === 'sandbox' ? '开放世界' : '主线'} → ${last.to === 'sandbox' ? '开放世界' : '主线'}` : '本局没切过'),
     ]);
     return {
-        title: '沙盒模式', icon: '◈',
-        summary: read.mode === 'sandbox' ? '本局按沙盒口径运行。' : '本局按主线口径运行。',
+        title: '开放世界', icon: '◈',
+        summary: read.mode === 'sandbox' ? '本局按开放世界口径运行。' : '本局按主线口径运行。',
         rows,
         lists: [],
     };
 }
 
-/** 总控：各模块开关与最近运行记录，只读。 */
-export function buildOverviewPanel({ dashboard } = {}) {
+/** 调用体检的紧凑版：每个功能一行，只报最近一次结果；失败带原因，没调过不占行。 */
+function buildCallRows(calls) {
+    const log = Array.isArray(calls) ? calls : [];
+    if (!log.length) return [row('模型调用体检', '本次会话还没有模型调用记录')];
+    const byLabel = new Map();
+    for (const item of log) {
+        const key = typeof item?.label === 'string' && item.label ? item.label : '未标注调用';
+        byLabel.set(key, item);
+    }
+    const rows = [];
+    for (const [label, item] of byLabel) {
+        const time = typeof item?.at === 'string' ? new Date(item.at).toLocaleTimeString() : '';
+        rows.push(row(label, item?.ok === true ? `✓ ${time}` : `✗ ${item?.error || '失败'}（${time}）`, item?.ok === true ? undefined : 'warn'));
+    }
+    return rows;
+}
+
+/** 总控：各模块开关与最近运行记录 + 模型调用体检，只读。 */
+export function buildOverviewPanel({ dashboard, calls } = {}) {
     const modules = Array.isArray(dashboard?.modules) ? dashboard.modules : [];
+    const rows = modules.map(module => row(module.title, `${module.configuration} · ${module.label}`));
+    rows.push(...buildCallRows(calls));
     return {
         title: '总控', icon: '⌂',
         summary: dashboard ? `总控${dashboard.enabled ? '已开启' : '已暂停'} · 最近任务：${dashboard.taskLabel ?? '暂无任务'}` : '总控状态还没有载入。',
-        rows: capRows(modules.map(module => row(module.title, `${module.configuration} · ${module.label}`))),
+        rows: capRows(rows),
         lists: [],
     };
 }

@@ -76,7 +76,7 @@ export function createSandboxMode({ now = () => new Date().toISOString(), maxHis
         const record = records.get(keyOf({ sessionId, branchId }));
         if (!record) return { status: 'empty', mode: 'mainline', inertia: 'medium', text: '' };
         const lines = record.mode === 'sandbox'
-            ? ['当前为沙盒口径：原著节点只是候选，前提成立且无人介入时才发生；世界惯性照常推进。',
+            ? ['当前为开放世界口径：不跟随原著剧情、不用世界书，世界照自身逻辑运转；原著节点只是候选，前提成立且无人介入时才发生。',
                 `世界惯性：${INERTIA_LABELS[record.inertia]}。`,
                 record.canonCharactersAutonomous ? '原著人物保留自主行动，结果不预设。' : '原著人物不主动推进自身轨迹，只对玩家作出反应。']
             : ['当前为主线口径：原著节点按排期发生，玩家只能影响过程。'];

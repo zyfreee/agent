@@ -24,7 +24,7 @@ assert.equal(mode.read(scope).inertia, 'weak');
 
 const described = mode.describe(scope);
 assert.equal(described.mode, 'sandbox');
-assert.match(described.text, /沙盒口径/);
+assert.match(described.text, /开放世界口径/);
 assert.match(described.text, /弱/);
 
 const refused = mode.sync({ ...scope, enabled: false, allowMidgameSwitch: false });

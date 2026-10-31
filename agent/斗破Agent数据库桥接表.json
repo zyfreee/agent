@@ -246,110 +246,11 @@
       ]
     ]
   },
-  "sheet_dpWorldState": {
-    "uid": "sheet_dpWorldState",
-    "name": "世界·现状",
-    "sourceData": {
-      "note": "世界时钟+现状五字段，有且仅有一行。只由斗破Agent扩展写入，AI 禁止操作。",
-      "initNode": "禁止操作。",
-      "insertNode": "禁止操作。",
-      "updateNode": "禁止操作。",
-      "deleteNode": "禁止操作。",
-      "ddl": "CREATE TABLE dp_world_state ( -- 世界现状表\n  row_id INTEGER PRIMARY KEY, -- 行号\n  story_day INTEGER, -- 剧情日\n  minute INTEGER, -- 分钟\n  clock_label TEXT, -- 时段\n  weather TEXT, -- 天气\n  location TEXT, -- 所在地\n  era TEXT, -- 时期\n  reputation TEXT, -- 名声\n  wanted TEXT, -- 通缉度\n  updated_at TEXT -- 更新时间\n);"
-    },
-    "updateConfig": {
-      "uiSentinel": -1,
-      "contextDepth": -1,
-      "updateFrequency": 0,
-      "batchSize": -1,
-      "skipFloors": -1
-    },
-    "content": [
-      [
-        "row_id",
-        "剧情日",
-        "分钟",
-        "时段",
-        "天气",
-        "所在地",
-        "时期",
-        "名声",
-        "通缉度",
-        "更新时间"
-      ]
-    ]
-  },
-  "sheet_dpWorldEvents": {
-    "uid": "sheet_dpWorldEvents",
-    "name": "世界·事件",
-    "sourceData": {
-      "note": "近事/天下事件共表，范围列区分；分量含传闻。只由斗破Agent扩展写入，AI 禁止操作。",
-      "initNode": "禁止操作。",
-      "insertNode": "禁止操作。",
-      "updateNode": "禁止操作。",
-      "deleteNode": "禁止操作。",
-      "ddl": "CREATE TABLE dp_world_events ( -- 世界事件表\n  row_id INTEGER PRIMARY KEY, -- 行号\n  entry_id TEXT NOT NULL, -- 编号\n  scope TEXT, -- 范围\n  day INTEGER, -- 日\n  event_text TEXT NOT NULL, -- 内容\n  basis TEXT, -- 依据\n  end_day INTEGER, -- 有效期至\n  weight TEXT, -- 分量\n  pinned TEXT, -- 置顶\n  done TEXT, -- 已了结\n  resolved_day INTEGER -- 了结日\n);"
-    },
-    "updateConfig": {
-      "uiSentinel": -1,
-      "contextDepth": -1,
-      "updateFrequency": 0,
-      "batchSize": -1,
-      "skipFloors": -1
-    },
-    "content": [
-      [
-        "row_id",
-        "编号",
-        "范围",
-        "日",
-        "内容",
-        "依据",
-        "有效期至",
-        "分量",
-        "置顶",
-        "已了结",
-        "了结日"
-      ]
-    ]
-  },
-  "sheet_dpWorldTasks": {
-    "uid": "sheet_dpWorldTasks",
-    "name": "世界·任务",
-    "sourceData": {
-      "note": "任务清单（进行中/已完成）。只由斗破Agent扩展写入，AI 禁止操作。",
-      "initNode": "禁止操作。",
-      "insertNode": "禁止操作。",
-      "updateNode": "禁止操作。",
-      "deleteNode": "禁止操作。",
-      "ddl": "CREATE TABLE dp_world_tasks ( -- 任务表\n  row_id INTEGER PRIMARY KEY, -- 行号\n  entry_id TEXT NOT NULL, -- 编号\n  title TEXT NOT NULL, -- 标题\n  detail TEXT, -- 详情\n  basis TEXT, -- 依据\n  day INTEGER, -- 接受日\n  end_day INTEGER, -- 时限日\n  status TEXT, -- 状态\n  done_day INTEGER -- 完成日\n);"
-    },
-    "updateConfig": {
-      "uiSentinel": -1,
-      "contextDepth": -1,
-      "updateFrequency": 0,
-      "batchSize": -1,
-      "skipFloors": -1
-    },
-    "content": [
-      [
-        "row_id",
-        "编号",
-        "标题",
-        "详情",
-        "依据",
-        "接受日",
-        "时限日",
-        "状态",
-        "完成日"
-      ]
-    ]
-  },
   "sheet_dpMemorySmall": {
     "uid": "sheet_dpMemorySmall",
     "name": "小记忆",
     "sourceData": {
-      "note": "小记忆（轻量近事；关联/别名是人名/地名/物名、顿号分隔，是按需召回的钥匙；引文=当时的一句原话）。只由斗破Agent扩展写入，AI 禁止操作。",
+      "note": "小记忆（轻量近事；关联/别名是人名/地名/物名、逗号分隔，是数据库关键词召回的触发词；引文=当时的一句原话）。只由斗破Agent扩展写入，AI 禁止操作。",
       "initNode": "禁止操作。",
       "insertNode": "禁止操作。",
       "updateNode": "禁止操作。",
@@ -362,6 +263,30 @@
       "updateFrequency": 0,
       "batchSize": -1,
       "skipFloors": -1
+    },
+    "exportConfig": {
+      "enabled": true,
+      "splitByRow": true,
+      "entryType": "keyword",
+      "keywords": "关联,别名",
+      "preventRecursion": true,
+      "entryName": "主角近事",
+      "injectionTemplate": "<主角近事>\n$1\n</主角近事>",
+      "extraIndexEnabled": false,
+      "extraIndexEntryName": "主角近事-索引",
+      "extraIndexColumns": [],
+      "extraIndexColumnModes": {},
+      "extraIndexInjectionTemplate": "",
+      "entryPlacement": {
+        "position": "at_depth_as_system",
+        "depth": 999,
+        "order": 10022
+      },
+      "extraIndexPlacement": {
+        "position": "at_depth_as_system",
+        "depth": 999,
+        "order": 10023
+      }
     },
     "content": [
       [
@@ -384,7 +309,7 @@
     "uid": "sheet_dpMemoryBig",
     "name": "大记忆",
     "sourceData": {
-      "note": "大记忆（值得一直记住的事；标签列=恩怨/情报/伏笔/大事记，可空；关联/别名是按需召回的钥匙；引文=当时的一句原话）。只由斗破Agent扩展写入，AI 禁止操作。",
+      "note": "大记忆（值得一直记住的事；标签列=恩怨/情报/伏笔/大事记，可空；关联/别名是人名/地名/物名、逗号分隔，是数据库关键词召回的触发词；引文=当时的一句原话）。只由斗破Agent扩展写入，AI 禁止操作。",
       "initNode": "禁止操作。",
       "insertNode": "禁止操作。",
       "updateNode": "禁止操作。",
@@ -397,6 +322,30 @@
       "updateFrequency": 0,
       "batchSize": -1,
       "skipFloors": -1
+    },
+    "exportConfig": {
+      "enabled": true,
+      "splitByRow": true,
+      "entryType": "keyword",
+      "keywords": "关联,别名",
+      "preventRecursion": true,
+      "entryName": "主角记忆",
+      "injectionTemplate": "<主角记忆>\n$1\n</主角记忆>",
+      "extraIndexEnabled": false,
+      "extraIndexEntryName": "主角记忆-索引",
+      "extraIndexColumns": [],
+      "extraIndexColumnModes": {},
+      "extraIndexInjectionTemplate": "",
+      "entryPlacement": {
+        "position": "at_depth_as_system",
+        "depth": 999,
+        "order": 10020
+      },
+      "extraIndexPlacement": {
+        "position": "at_depth_as_system",
+        "depth": 999,
+        "order": 10021
+      }
     },
     "content": [
       [

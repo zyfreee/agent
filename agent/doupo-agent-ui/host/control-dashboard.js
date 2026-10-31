@@ -6,7 +6,7 @@ const MODULES = Object.freeze([
     { id: 'npc', title: 'NPC 决策', setting: 'enableNpcAutonomy' },
     { id: 'self', title: '纳戒', setting: 'enableSelfLedger' },
     { id: 'impact', title: '世界影响', setting: 'enablePlayerImpact' },
-    { id: 'sandbox', title: '沙盒模式', setting: 'enableSandboxMode', stage: 'sandbox-advance' },
+    { id: 'sandbox', title: '开放世界', setting: 'enableSandboxMode', stage: 'sandbox-advance' },
     { id: 'llm', title: '模型与连接' },
 ]);
 
@@ -33,8 +33,13 @@ const TASK_LABELS = Object.freeze({
     failed_unapplied: '失败，未生效', save_uncertain: '保存结果待核对',
 });
 
+const THEMES = Object.freeze(['gilt', 'graphite', 'parchment']);
+// 旧主题（black/white/beige）已退役：老存档按明暗就近迁移，避免读到未定义配色。
+const LEGACY_THEMES = new Map([['black', 'gilt'], ['white', 'parchment'], ['beige', 'parchment']]);
+
 export function normalizeTheme(theme) {
-    return ['white', 'black', 'beige'].includes(theme) ? theme : 'black';
+    if (LEGACY_THEMES.has(theme)) return LEGACY_THEMES.get(theme);
+    return THEMES.includes(theme) ? theme : 'gilt';
 }
 
 /** Scope filtering is explicit: an unknown scope shows no cross-chat records. */

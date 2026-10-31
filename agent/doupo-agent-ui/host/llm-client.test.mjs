@@ -217,6 +217,86 @@ assert.equal(await forced.complete({ system: 's', user: 'u', overrides: { connec
 assert.equal(forcedCalls[0].body.model, 'impact-model');
 assert.equal(forcedCalls[0].body.temperature, 0.9, '自定义分支沿用全局温度');
 
+// —— 回归：设置页写明 baseUrl 等 custom 字段“选自定义才用得上”，跟随酒馆时残留的地址不得劫持连接 ——
+const leftoverCalls = [];
+const leftover = createLlmClient({
+    getSettings: () => ({ llm: { mode: 'tavern', model: 'global-model' } }),
+    getContext: () => ({ generateQuietPrompt: async () => 'from-tavern' }),
+    fetchImpl: async (url, options) => {
+        leftoverCalls.push({ url, body: JSON.parse(options.body) });
+        return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'from-leftover' } }] }) };
+    },
+});
+assert.equal(
+    await leftover.complete({
+        system: 's',
+        user: 'u',
+        overrides: { connection: 'tavern', custom: { baseUrl: 'https://api.leftover.example/v1', apiKey: 'sk-leftover', model: 'leftover-model' } },
+    }),
+    'from-tavern',
+    '跟随酒馆时残留的自定义地址不能把调用劫持去自定义端点',
+);
+assert.equal(leftoverCalls.length, 0, '劫持路径一次都不该发起');
+
+// —— 调用体检：complete 记成功/失败/报错/耗时/模型；错误原样上抛；只记元数据，密钥永不进日志 ——
+{
+    let hits = 0;
+    const probed = createLlmClient({
+        getSettings: () => ({ llm: { mode: 'custom', baseUrl: 'https://api.example/v1', apiKey: 'sk-secret', model: 'm1' } }),
+        fetchImpl: async () => {
+            hits += 1;
+            if (hits === 1) return { ok: false, status: 503 };
+            return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'ok-reply' } }] }) };
+        },
+    });
+    await assert.rejects(probed.complete({ system: 's', user: 'u', label: '试验一' }), /HTTP 503/, '失败要原样上抛');
+    assert.equal(await probed.complete({ system: 's', user: 'u', overrides: { model: 'm2' }, label: '试验二' }), 'ok-reply');
+    const log = probed.callLog();
+    assert.equal(log.length, 2);
+    assert.equal(log[0].label, '试验一');
+    assert.equal(log[0].ok, false);
+    assert.match(log[0].error, /503/);
+    assert.equal(log[0].model, 'm1');
+    assert.equal(log[1].ok, true);
+    assert.equal(log[1].chars, 'ok-reply'.length);
+    assert.equal(log[1].model, 'm2', '单次覆盖的模型要署名');
+    assert.ok(Number.isFinite(log[1].ms) && log[1].ms >= 0);
+    const flat = JSON.stringify(log);
+    assert.ok(!flat.includes('sk-secret'), '体检记录绝不带密钥');
+    assert.ok(!flat.includes('提示词'), '只记元数据，不记提示词');
+    await probed.complete({ system: 's', user: 'u' });
+    assert.equal(probed.callLog().at(-1).label, '未标注调用', '没报 label 的记成未标注');
+    probed.clearCallLog();
+    assert.equal(probed.callLog().length, 0, '清零后日志为空');
+}
+
+// —— 全局统管：开关一开，扩展发起的所有调用（含跟随酒馆、含各功能自带自定义）都走全局连接 ——
+{
+    const hits = [];
+    const governed = createLlmClient({
+        getSettings: () => ({ llm: { mode: 'custom', baseUrl: 'https://global.example/v1', apiKey: 'sk-global', model: 'global-model', governAll: true } }),
+        fetchImpl: async (url, options) => {
+            hits.push({ url, body: JSON.parse(options.body) });
+            return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'ok' } }] }) };
+        },
+    });
+    await governed.complete({ system: 's', user: 'u', overrides: { connection: 'tavern' } });
+    await governed.complete({ system: 's', user: 'u', overrides: { connection: 'custom', custom: { baseUrl: 'https://other.example/v1', apiKey: 'sk-other', model: 'other-model' } } });
+    assert.equal(hits.length, 2, '两次调用都该发出');
+    for (const hit of hits) {
+        assert.ok(hit.url.startsWith('https://global.example/v1'), `统管后应走全局地址：${hit.url}`);
+        assert.equal(hit.body.model, 'global-model', '统管后模型应是全局模型');
+    }
+    const flat = JSON.stringify(hits);
+    assert.ok(!flat.includes('other.example') && !flat.includes('sk-other'), '功能自带的连接在统管期间让位');
+    // 全局没配齐（缺模型名）时按原逻辑走，不把人锁在门外
+    const fallback = createLlmClient({
+        getSettings: () => ({ llm: { mode: 'custom', baseUrl: 'https://global.example/v1', governAll: true } }),
+        getContext: () => ({ generateQuietPrompt: async () => 'from-tavern' }),
+    });
+    assert.equal(await fallback.complete({ system: 's', user: 'u', overrides: { connection: 'tavern' } }), 'from-tavern', '全局没配齐应回落原逻辑');
+}
+
 const noEndpoint = createLlmClient({
     getSettings: () => ({ llm: { mode: 'tavern' } }),
     getContext: () => ({ generateQuietPrompt: async () => 'x' }),

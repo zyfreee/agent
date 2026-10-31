@@ -62,6 +62,9 @@ const DEFAULT_SETTINGS = Object.freeze({
         useSillyTavernConnection: true,
         // 'tavern' = 直接用酒馆当前 API；'custom' = 走下面的独立接口。
         mode: 'tavern',
+        // 全局统管：开着的期间，扩展发起的每一次模型调用都走这套全局自定义连接，
+        // 各功能页里选的"跟随酒馆 / 自定义"连同各自填的地址模型都暂时让位。
+        governAll: false,
     }),
     budget: Object.freeze({
         maxModules: 8,
@@ -70,7 +73,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     }),
     ui: Object.freeze({
         compact: false,
-        theme: 'black',
+        theme: 'gilt',
         placeholder: false,
         // 旧“扩展自己写正文”入口默认关闭：正文交回酒馆主生成，原著设定只做注入。
         legacyTurn: false,
@@ -192,18 +195,8 @@ const DEFAULT_SETTINGS = Object.freeze({
         decideEnabled: true,
         decideAuto: true, // 每轮生成后自动决定；关闭则只认正文里的 self 指令块
         decideMerged: false, // 合并决定（纳戒+记忆共用一次调用）；开合并时召回归数据库条目，扩展自带记忆注入关闭
-        decideMode: 'tavern', // 'tavern' = 跟随酒馆当前设置；'custom' = 用下面这套自定义连接
-        decideBaseUrl: '', // 自定义接口地址（选 custom 才用得上；留空沿用“模型与连接”页）
-        decideApiKey: '', // 自定义接口密钥（选 custom 才用得上；留空沿用“模型与连接”页）
-        decideProvider: '', // 'openai' / 'anthropic'（留空按接口地址判断）
-        decideModel: '', // 决定模型名，留空沿用“模型与连接”页
-        decideTemperature: 0, // 0 = 沿用 LLM 页温度
-        decideMaxTokens: 0, // 0 = 沿用 LLM 页输出上限
-        decideTopP: 0, // 0 = 不指定
-        decidePresencePenalty: 0, // 0 = 不指定
-        decideFrequencyPenalty: 0, // 0 = 不指定
-        decideMaxFloors: 6, // 喂给决定模型的最近楼层数
-        decideMaxEntries: 12, // 世界书相关条目上限
+        // 决定调用的连接与参数（decideMode/decideBaseUrl…）已与记忆合并成一套，统一存 memory.decide*，
+        // 模型设置页“纳戒与记忆 · 决定模型”一张卡管两个功能——这里只留开关与提示词。
         decidePrompt: '', // 决定提示词，留空用内置默认
         guide: '', // 降级模式（关自动决定）随现状注入的指令指南，留空用内置默认
     }),
@@ -214,6 +207,8 @@ const DEFAULT_SETTINGS = Object.freeze({
         // LLM 决定：独立决定调用，读聊天记录+世界书+记忆总账，输出严格 JSON 由脚本执行。
         decideEnabled: true,
         decideAuto: true, // 每轮生成后自动决定；关闭则只认正文里的 memory 指令块
+        consolidateAfter: 6, // 小记忆攒够这个数就自动总结成一条大记忆；0 = 关闭
+        // 决定连接与参数：纳戒决定、记忆决定、合并决定、记忆总结共用这一套（模型设置页一张卡）。
         decideMode: 'tavern', // 'tavern' = 跟随酒馆当前设置；'custom' = 用下面这套自定义连接
         decideBaseUrl: '', // 自定义接口地址（选 custom 才用得上；留空沿用"模型与连接"页）
         decideApiKey: '', // 自定义接口密钥（选 custom 才用得上；留空沿用"模型与连接"页）
@@ -297,6 +292,13 @@ function clone(value) {
     return structuredClone(value);
 }
 
+// 纳戒与记忆合并共用的决定连接/参数键：统一存 memory.decide*，self 侧同名键已废弃。
+const SELF_DECIDE_SHARED_KEYS = Object.freeze([
+    'decideMode', 'decideBaseUrl', 'decideApiKey', 'decideProvider', 'decideModel',
+    'decideTemperature', 'decideMaxTokens', 'decideTopP', 'decidePresencePenalty', 'decideFrequencyPenalty',
+    'decideMaxFloors', 'decideMaxEntries',
+]);
+
 function mergeSettings(current = {}) {
     const source = current && typeof current === 'object' ? current : {};
     const nested = ['llm', 'budget', 'ui', 'facts', 'setting', 'injection', 'prompt', 'action', 'world', 'npc', 'impact', 'sandbox', 'status', 'settle', 'self', 'memory'];
@@ -310,6 +312,17 @@ function mergeSettings(current = {}) {
     // 旧版只有 useSillyTavernConnection 开关：没写过 mode 的老配置按老开关迁移，避免默默跳回酒馆连接。
     if (source.llm && typeof source.llm === 'object' && source.llm.mode === undefined && source.llm.useSillyTavernConnection === false) {
         merged.llm.mode = 'custom';
+    }
+    // 决定连接并成一套后，老配置纳戒侧单独填过、记忆侧还是默认值的，把纳戒那份搬过来当共用，
+    // 免得升级后纳戒的连接悄悄丢掉；两侧都填过以记忆侧为准（集中页那张卡一直是它）。
+    // 搬完（或没得搬）都把纳戒侧的死键清掉：旧值不再躺在存档里，也不会下次加载又被搬一遍。
+    const oldSelf = source.self && typeof source.self === 'object' ? source.self : {};
+    for (const key of SELF_DECIDE_SHARED_KEYS) {
+        if (merged.memory[key] === DEFAULT_SETTINGS.memory[key]
+            && oldSelf[key] !== undefined && oldSelf[key] !== DEFAULT_SETTINGS.memory[key]) {
+            merged.memory[key] = oldSelf[key];
+        }
+        delete merged.self[key];
     }
     merged.schemaVersion = DEFAULT_SETTINGS.schemaVersion;
     return merged;

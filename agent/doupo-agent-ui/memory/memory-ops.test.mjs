@@ -118,7 +118,8 @@ assert.ok(cleaned.includes('剧情正文第二段'));
 }
 
 // 5. 指南与抬头：两层分工、召回钥匙、所有权边界
-assert.ok(MEMORY_GUIDE.includes('remember') && MEMORY_GUIDE.includes('memorize') && MEMORY_GUIDE.includes('promote'));
+assert.ok(MEMORY_GUIDE.includes('remember') && !MEMORY_GUIDE.includes('memorize') && !MEMORY_GUIDE.includes('promote(id)'));
+assert.ok(MEMORY_GUIDE.includes('自动总结成大记忆'), '指南要写明大记忆由自动总结生成');
 assert.ok(MEMORY_GUIDE.includes('related'));
 assert.ok(MEMORY_GUIDE.includes('人物簿') && MEMORY_GUIDE.includes('纳戒'));
 assert.ok(MEMORY_HEADER.includes('按需召回'));

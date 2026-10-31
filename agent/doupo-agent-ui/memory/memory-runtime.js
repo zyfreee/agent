@@ -52,6 +52,7 @@ function initialState(now) {
         schemaVersion: 2,
         entries: [],
         log: [],
+        retiredIds: [],
         updatedAt: now(),
     };
 }
@@ -89,16 +90,24 @@ function normalizeOneEntry(raw, seq) {
     };
 }
 
+const MAX_RETIRED_IDS = 200;
+
 function normalizeState(raw, now) {
     const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
     const entries = (Array.isArray(source.entries) ? source.entries : [])
         .map((item, index) => normalizeOneEntry(item, index + 1))
         .filter(Boolean)
         .slice(-DEFAULT_MAX_ENTRIES);
+    const retired = [];
+    for (const id of Array.isArray(source.retiredIds) ? source.retiredIds : []) {
+        const key = text(id);
+        if (key && !retired.includes(key)) retired.push(key);
+    }
     return {
         schemaVersion: 2,
         entries,
         log: (Array.isArray(source.log) ? source.log : []).slice(-DEFAULT_MAX_LOG),
+        retiredIds: retired.slice(-MAX_RETIRED_IDS),
         updatedAt: text(source.updatedAt) || now(),
     };
 }
@@ -243,6 +252,7 @@ export function createMemoryRuntime({ maxEntries = DEFAULT_MAX_ENTRIES, maxLog =
             const entry = findEntry(id);
             if (!entry) return { ok: false, reason: 'entry_not_found' };
             state.entries = state.entries.filter(item => item.id !== id);
+            retire([id]);
             return { ok: true, id, summary: `忘记${TIER_LABELS[entry.tier]} ${id}：${entry.text}`, undo: { op: '_restoreEntry', entry } };
         }
         // 内部撤销操作：只由同楼重 roll 的回滚调用，不写进模型指南。
@@ -278,10 +288,21 @@ export function createMemoryRuntime({ maxEntries = DEFAULT_MAX_ENTRIES, maxLog =
             if (!restored) return { ok: false, reason: 'entry_not_found' };
             if (findEntry(restored.id)) restored.id = nextId(); // 删除后同号已被占用，换号避免双份
             state.entries.push(restored);
+            state.retiredIds = state.retiredIds.filter(id => id !== restored.id); // 撤销删除＝解除退役登记
             prune();
             return { ok: true, summary: `恢复记忆 ${restored.id}` };
         }
         return { ok: false, reason: 'unknown_op' };
+    }
+
+    /** 退役登记：被删除/被并入的编号记一笔，数据库存储帧重放把这些行复活时，收养守卫认得它们。 */
+    function retire(ids) {
+        for (const id of Array.isArray(ids) ? ids : []) {
+            const key = text(id);
+            if (!key || state.retiredIds.includes(key)) continue;
+            state.retiredIds.push(key);
+        }
+        if (state.retiredIds.length > MAX_RETIRED_IDS) state.retiredIds = state.retiredIds.slice(-MAX_RETIRED_IDS);
     }
 
     function apply(operations, { source = 'llm', floor = null, day = null } = {}) {
@@ -300,11 +321,21 @@ export function createMemoryRuntime({ maxEntries = DEFAULT_MAX_ENTRIES, maxLog =
         const rejected = [];
         const undoSteps = [];
         const duplicate = [];
-        for (const op of list) {
+        for (let op of list) {
             const opId = text(op?.opId);
             if (opId && opIdMemory.includes(opId)) {
                 duplicate.push(opId);
                 continue;
+            }
+            // 大记忆收紧：书记官只记小记忆。模型通道里 memorize 一律按小记忆落账（内容与分量
+            // 保留，不丢账），promote 停用——大记忆由"小记忆攒够自动总结"生成，不再由决定直转。
+            // 面板手动操作不受限（手动登记/转大是玩家自己的决定）。
+            if (fromModel && op && typeof op === 'object' && !Array.isArray(op)) {
+                if (op.op === 'memorize') op = { ...op, op: 'remember' };
+                else if (op.op === 'promote') {
+                    rejected.push({ op: 'promote', reason: 'promote_retired' });
+                    continue;
+                }
             }
             const result = runOne(op);
             if (result.ok) {
@@ -325,6 +356,69 @@ export function createMemoryRuntime({ maxEntries = DEFAULT_MAX_ENTRIES, maxLog =
             state.log = state.log.slice(-maxLog);
         }
         return { status: rejected.length && !applied.length ? 'rejected' : applied.length ? 'applied' : 'noop', applied, rejected, duplicate };
+    }
+
+    /**
+     * 小记忆总结成大记忆（脚本自己的入口，不进模型操作字典）：
+     * 把给定的小记忆整批提炼成一条大记忆，原条目退役删除——"转化"，不是复制。
+     * 召回钥匙尽量保全：模型选的 related 优先，这批小记忆的其余钥匙落进 aliases。
+     * 大记忆只此一条入口（decide 不再直写），fail 一律带原因返回，绝不抛异常。
+     */
+    function consolidate({ ids = [], big = {}, day = null } = {}) {
+        const wanted = (Array.isArray(ids) ? ids : []).map(id => text(id)).filter(Boolean);
+        const consumed = state.entries.filter(entry => entry.tier === 'small' && wanted.includes(entry.id));
+        if (!consumed.length) return { ok: false, reason: 'nothing_to_consolidate' };
+        const body = text(big?.text);
+        if (!body) return { ok: false, reason: 'text_missing' };
+        if (body.length > MAX_TEXT) return { ok: false, reason: 'text_too_long' };
+        // 同文大记忆不重记：同一天重跑总结的保险。
+        if (state.entries.some(entry => entry.tier === 'big' && entry.text === body)) return { ok: false, reason: 'duplicate_text' };
+        const unionKeys = [];
+        for (const entry of consumed) {
+            for (const key of [...(entry.related ?? []), ...(entry.aliases ?? [])]) {
+                if (key && !unionKeys.includes(key)) unionKeys.push(key);
+            }
+        }
+        const chosenRelated = (Array.isArray(big?.related) ? big.related : [])
+            .map(item => text(item).slice(0, MAX_RELATED_TEXT))
+            .filter(Boolean);
+        const related = [];
+        for (const key of [...chosenRelated, ...unionKeys]) {
+            if (related.length >= MAX_RELATED) break;
+            if (!related.includes(key)) related.push(key);
+        }
+        // 没有钥匙的大记忆永远召不回，跟 remember 一样不打收。
+        if (!related.length) return { ok: false, reason: 'related_missing' };
+        const aliases = unionKeys.filter(key => !related.includes(key)).slice(0, MAX_ALIASES);
+        const dayKey = intIn(day, 1, MAX_DAY) ?? stateDay();
+        const idList = consumed.map(entry => entry.id);
+        const basis = text(big?.basis).slice(0, MAX_BASIS) || `由 ${idList.join('、')} 总结`.slice(0, MAX_BASIS);
+        const entry = {
+            id: nextId(),
+            tier: 'big',
+            text: body,
+            quote: text(big?.quote).slice(0, MAX_QUOTE),
+            basis,
+            related,
+            aliases,
+            weight: WEIGHTS.includes(big?.weight) ? big.weight : 'major',
+            tag: TAG_LABELS[big?.tag] ? big.tag : '',
+            day: dayKey,
+            done: false,
+            resolvedDay: null,
+            note: '',
+            recallCount: 0,
+            lastRecallDay: null,
+        };
+        state.entries = state.entries.filter(item => !idList.includes(item.id));
+        state.entries.push(entry);
+        retire(idList);
+        prune();
+        state.updatedAt = now();
+        const summary = `小记忆 ×${idList.length}（${idList.join('、')}）总结成大记忆 ${entry.id}：${body}`;
+        state.log.push({ at: now(), source: 'consolidate', summaries: [summary], rejected: 0 });
+        state.log = state.log.slice(-maxLog);
+        return { ok: true, id: entry.id, summary, consumed: idList, entry };
     }
 
     /** 召回记账：被想起过的记忆强度回涨（排练效应）；纯统计，不写流水、不镜像数据库。 */
@@ -378,5 +472,5 @@ export function createMemoryRuntime({ maxEntries = DEFAULT_MAX_ENTRIES, maxLog =
         return { status: 'noted' };
     }
 
-    return Object.freeze({ apply, snapshot, status, restore, reset, note, markRecalled, tiers: TIERS, tierLabels: TIER_LABELS, tagLabels: TAG_LABELS, config: Object.freeze({ maxEntries, maxLog, maxOps }) });
+    return Object.freeze({ apply, consolidate, snapshot, status, restore, reset, note, markRecalled, tiers: TIERS, tierLabels: TIER_LABELS, tagLabels: TAG_LABELS, config: Object.freeze({ maxEntries, maxLog, maxOps }) });
 }

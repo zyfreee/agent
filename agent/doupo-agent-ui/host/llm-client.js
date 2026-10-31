@@ -305,6 +305,35 @@ export async function listModels({ baseUrl = '', apiKey = '', provider = '', fet
 export function createLlmClient({ getSettings, getContext, fetchImpl } = {}) {
     if (typeof getSettings !== 'function') throw new TypeError('getSettings 必须是函数');
 
+    // 调用体检：每个功能的每次模型调用都记一笔（成功/失败/报错/耗时/模型），
+    // 总控页与悬浮球据此显示"哪个功能调没调模型、成没成功"。只记元数据，
+    // 提示词与回复正文一概不记，密钥永远不会出现在这里。
+    const callLogEntries = [];
+    const CALL_LOG_MAX = 80;
+    function recordCall(entry) {
+        callLogEntries.push(entry);
+        if (callLogEntries.length > CALL_LOG_MAX) callLogEntries.splice(0, callLogEntries.length - CALL_LOG_MAX);
+        try {
+            if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+                window.dispatchEvent(new CustomEvent('dai-calllog', { detail: entry }));
+            }
+        } catch { /* 无窗口环境忽略 */ }
+    }
+
+    /** 这次调用会走哪条连接、哪个模型——只用来给体检记录署名，无副作用。 */
+    function describeConnection(args = {}) {
+        const overrides = args.overrides && typeof args.overrides === 'object' ? args.overrides : {};
+        const requested = overrides.connection === 'custom' ? 'custom'
+            : overrides.connection === 'tavern' ? 'tavern' : null;
+        const custom = overrides.custom && typeof overrides.custom === 'object' ? overrides.custom : null;
+        const connection = resolveConnection(requested, overrides.model, custom);
+        if (!connection) return '未配置';
+        if (connection.kind === 'sillytavern') return '酒馆当前模型';
+        const model = typeof overrides.model === 'string' && overrides.model.trim() ? overrides.model.trim()
+            : (typeof connection.llm?.model === 'string' && connection.llm.model.trim() ? connection.llm.model.trim() : '');
+        return model || String(connection.llm?.baseUrl ?? '自定义接口');
+    }
+
     // 静默生成在飞行的深度计数。酒馆对每一次生成（包括这里的静默调用）收尾时都会广播
     // GENERATION_ENDED，监听方要靠这个计数区分“正文真的写完了”和“自己人的小调用结束了”，
     // 否则记账链会被自己的调用反复叫醒，形成自激励循环。
@@ -317,13 +346,24 @@ export function createLlmClient({ getSettings, getContext, fetchImpl } = {}) {
      * 选连接：hint 是这一次调用自己的要求（记录员/场记可以各自选跟随酒馆或自定义），
      * 没给 hint 才看设置页的全局模式。custom 是这一次调用自带的一套接口参数（地址/密钥/模型），
      * 有不完整的地方就沿用“模型与连接”页填的值。
+     * custom 只在这次调用明确要“自定义”时生效——设置页写明这些字段“选自定义才用得上”，
+     * 否则残留的地址会把“跟随酒馆”悄悄劫持成直连（真机踩过：纳戒决定跟随酒馆，却被残留
+     * 的 decideBaseUrl 拉去自定义端点）。
      */
     function resolveConnection(hint, modelHint, custom) {
         const settings = getSettings() ?? {};
         const llm = settings.llm ?? {};
         const context = getContext?.();
+        // 全局统管：开关打开且全局自定义连接配齐了，扩展发起的每一次调用都走这一套——
+        // 各功能页里选的"跟随酒馆 / 自定义"连同各自填的地址模型都暂时让位（正文生成是酒馆
+        // 自己发的，不经过这里，天然不受影响）。全局没配齐就按原逻辑走，不把人锁在门外。
+        if (llm.governAll === true && llm.mode === 'custom'
+            && typeof llm.baseUrl === 'string' && llm.baseUrl.trim()
+            && typeof llm.model === 'string' && llm.model.trim()) {
+            return { kind: 'openai', llm, fetchImpl: fetchImpl ?? globalThis.fetch };
+        }
         // 这一次调用自带的自定义接口：地址优先用它，密钥/服务商/模型缺哪项就沿用全局。
-        const own = custom && typeof custom === 'object' && typeof custom.baseUrl === 'string' && custom.baseUrl.trim()
+        const own = hint === 'custom' && custom && typeof custom === 'object' && typeof custom.baseUrl === 'string' && custom.baseUrl.trim()
             ? { ...llm, baseUrl: custom.baseUrl.trim(), apiKey: typeof custom.apiKey === 'string' && custom.apiKey.trim() ? custom.apiKey.trim() : llm.apiKey, provider: custom.provider || llm.provider, model: typeof custom.model === 'string' && custom.model.trim() ? custom.model.trim() : llm.model }
             : null;
         // 设置页的“跟随酒馆 / 自定义”优先；旧版布尔开关只在没写 mode 时兜底。
@@ -359,7 +399,7 @@ export function createLlmClient({ getSettings, getContext, fetchImpl } = {}) {
         return resolveConnection(hint === 'custom' || hint === 'tavern' ? hint : null) !== null;
     }
 
-    async function complete({ system, user, jsonSchema, signal, overrides = {} } = {}) {
+    async function completeInner({ system, user, jsonSchema, signal, overrides = {} } = {}) {
         // overrides.connection 让单次调用自己选连接：'tavern' = 跟随酒馆，'custom' = 自定义接口。
         const requested = overrides.connection === 'custom' ? 'custom'
             : overrides.connection === 'tavern' ? 'tavern' : null;
@@ -493,9 +533,38 @@ export function createLlmClient({ getSettings, getContext, fetchImpl } = {}) {
         return content;
     }
 
+    /**
+     * complete 的体检壳：记一笔"谁在什么时候调了模型、成功没、报错什么、多久、哪个模型"，
+     * 然后原样转发给 completeInner。label 由各调用点自报（纳戒决定/世界决定/人物记录…），
+     * 没报的记"未标注调用"。抛错原样上抛，调用方的失败处理一行不用改。
+     */
+    async function complete(args = {}) {
+        const label = typeof args?.label === 'string' && args.label.trim() ? args.label.trim() : '未标注调用';
+        const model = describeConnection(args);
+        const startedAt = Date.now();
+        try {
+            const reply = await completeInner(args);
+            recordCall({ at: new Date().toISOString(), label, ok: true, model, ms: Date.now() - startedAt, chars: typeof reply === 'string' ? reply.length : 0, error: '' });
+            return reply;
+        } catch (error) {
+            recordCall({ at: new Date().toISOString(), label, ok: false, model, ms: Date.now() - startedAt, chars: 0, error: String(error?.message ?? error).slice(0, 200) });
+            throw error;
+        }
+    }
+
+    /** 体检读数：每次调用一笔（副本，改不动原件）。 */
+    function callLog() {
+        return callLogEntries.map(item => ({ ...item }));
+    }
+
+    /** 清空体检记录（面板上的"清零"按钮）。 */
+    function clearCallLog() {
+        callLogEntries.length = 0;
+    }
+
     async function interpret({ input, state, allowedFields, categories, signal }) {
         needText(input, 'input');
-        const raw = await complete({ system: INTERPRET_SYSTEM, user: buildInterpretPrompt({ input, state, allowedFields, categories }), signal });
+        const raw = await complete({ system: INTERPRET_SYSTEM, user: buildInterpretPrompt({ input, state, allowedFields, categories }), signal, label: '意图解析' });
         return normalizeInterpretation(extractJson(raw), { allowedFields });
     }
 
@@ -507,6 +576,7 @@ export function createLlmClient({ getSettings, getContext, fetchImpl } = {}) {
             system,
             user: buildAdjudicatePrompt({ categoryLabel, input, state, allowedFields, preliminary }),
             signal,
+            label: '行动判定',
             ...(overrides && typeof overrides === 'object' ? { overrides } : {}),
         });
         const normalized = normalizeInterpretation(extractJson(raw), { allowedFields });
@@ -526,6 +596,7 @@ export function createLlmClient({ getSettings, getContext, fetchImpl } = {}) {
             system: SELECT_SYSTEM,
             user: buildSettingSelectPrompt({ input, recentTexts, candidates: list, budget, maxItems, asOf }),
             signal,
+            label: '设定挑选',
         });
         let parsed;
         try {
@@ -551,7 +622,7 @@ export function createLlmClient({ getSettings, getContext, fetchImpl } = {}) {
 
     async function compose({ input, facts, changes, state, outcome, taskType, signal }) {
         needText(input, 'input');
-        const raw = await complete({ system: COMPOSE_SYSTEM, user: buildComposePrompt({ input, facts, changes, state, outcome, taskType }), signal });
+        const raw = await complete({ system: COMPOSE_SYSTEM, user: buildComposePrompt({ input, facts, changes, state, outcome, taskType }), signal, label: '正文撰写' });
         let parsed;
         try {
             parsed = extractJson(raw);
@@ -562,5 +633,5 @@ export function createLlmClient({ getSettings, getContext, fetchImpl } = {}) {
         return { text, claims: Array.isArray(parsed?.claims) ? parsed.claims : [] };
     }
 
-    return Object.freeze({ configured, availableFor, interpret, adjudicateAction, selectSettings, compose, complete, isQuietBusy });
+    return Object.freeze({ configured, availableFor, interpret, adjudicateAction, selectSettings, compose, complete, callLog, clearCallLog, isQuietBusy });
 }

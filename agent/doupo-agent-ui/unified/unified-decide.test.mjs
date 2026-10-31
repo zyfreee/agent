@@ -7,7 +7,8 @@ assert.ok(UNIFIED_DECIDE_PROMPT.includes('"self":{"ops":'), '提示词要写明 
 assert.ok(UNIFIED_DECIDE_PROMPT.includes('"memory":{"ops":'), '提示词要写明 memory 桶格式');
 assert.ok(UNIFIED_DECIDE_PROMPT.includes('"cited"'), '提示词要写明 cited 桶格式');
 assert.ok(UNIFIED_DECIDE_PROMPT.includes('setProfile'), '纳戒操作字典要在提示词里');
-assert.ok(UNIFIED_DECIDE_PROMPT.includes('memorize'), '记忆操作字典要在提示词里');
+assert.ok(UNIFIED_DECIDE_PROMPT.includes('remember'), '记忆操作字典要在提示词里');
+assert.ok(UNIFIED_DECIDE_PROMPT.includes('你没有 memorize/promote 这类操作'), '大记忆不归决定管要写明');
 assert.ok(UNIFIED_DECIDE_PROMPT.includes('related 必写 1-4'), 'related 规则要带上');
 
 const selfItem = UNIFIED_JSON_SCHEMA.properties.self.properties.ops.items;
@@ -101,7 +102,7 @@ const memorySnapshot = {
         worldbookLines: ['12|势力|加列奥家族|乌坦城三大家族之一'],
     });
     assert.ok(user.includes('【纳戒现状'), 'user 要带纳戒现状块');
-    assert.ok(user.includes('【主角记忆'), 'user 要带本场召回的记忆块');
+    assert.ok(user.includes('【记忆存储'), 'user 要带本场召回的记忆块');
     assert.ok(user.includes('与加列奥家在集市结过怨'), '命中的旧记忆要出现（给 cited 选题用）');
     assert.ok(user.includes('【世界书资料'), 'user 要带世界书块');
     assert.ok(user.includes('加列奥家族'), '命中的世界书条目要出现');

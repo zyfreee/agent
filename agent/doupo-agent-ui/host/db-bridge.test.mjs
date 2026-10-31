@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createDbBridge } from './db-bridge.js';
-import { sameSelfState, sameWorldState, sameMemoryState } from './db-tables.js';
+import { sameSelfState, sameMemoryState, buildBridgeSheets } from './db-tables.js';
 
 const sampleSelf = {
     schemaVersion: 1,
@@ -19,18 +19,7 @@ const sampleSelf = {
     updatedAt: '2026-10-29T00:00:00.000Z',
 };
 
-const sampleWorld = {
-    schemaVersion: 1,
-    clock: { day: 3, minute: 480, label: '' },
-    info: { weather: '晴', location: '乌坦城·萧家', era: '', reputation: '', wanted: '' },
-    nearEvents: [{ id: 'e1', scope: 'near', day: 2, text: '纳戒测试事件', basis: '测试', endDay: null, weight: 'minor', pinned: false, done: false, resolvedDay: null }],
-    worldEvents: [],
-    tasks: [],
-    log: [],
-    updatedAt: '2026-10-29T00:00:00.000Z',
-};
-
-/** 内存版数据库脚本：只实现桥用到的九个方法，行语义与真机一致（第 0 行表头、row_id 在首列）。 */
+/** 内存版数据库脚本：只实现桥用到的方法，行语义与真机一致（第 0 行表头、row_id 在首列）。 */
 function createFakeApi() {
     const calls = { importTemplate: 0, importTable: 0, crudFails: false, callbacks: [] };
     let template = null;
@@ -130,13 +119,7 @@ function createFakeApi() {
     assert.equal((await bridge.adoptSelf()).gold, 999);
     assert.equal(bridge.status().status, 'ready');
 
-    // 世界台账同链路
-    const worldMirror = await bridge.mirrorWorld(sampleWorld);
-    assert.equal(worldMirror.ok, true);
-    const worldAdopted = await bridge.adoptWorld();
-    assert.ok(sameWorldState(worldAdopted, sampleWorld));
-
-    // 记忆同链路：模板导入一次覆盖全部 13 张表，小/大两张记忆表走同一套 CRUD
+    // 记忆同链路：模板导入一次覆盖全部 10 张表，小/大两张记忆表走同一套 CRUD
     const sampleMemory = {
         schemaVersion: 2,
         entries: [
@@ -199,6 +182,39 @@ function createFakeApi() {
     delete globalThis.window;
 }
 
+// 6. 优雅降级：模板导入被数据库预检拒绝、但十张桥接表都已就位 → 按就绪处理，镜像照常
+{
+    const { api, calls } = createFakeApi();
+    // 预置完整当前结构 + 一张退役世界表：merge 只报 removed，导入必败，应走降级
+    const preset = JSON.parse(JSON.stringify(buildBridgeSheets()));
+    preset.sheet_dpWorldState = { name: '世界·现状', content: [['row_id', '剧情日']] };
+    await api.importTemplateFromData(preset, {});
+    api.importTemplateFromData = async () => ({ success: false, message: '完整 replay candidate DDL/表头预检失败: 旧归档连坐' });
+    globalThis.window = { AutoCardUpdaterAPI: api };
+    const bridge = createDbBridge({ getSettings: () => undefined });
+    // 先单独 ensure：降级消息在这里看（镜像成功后状态消息会被「镜像完成」覆盖）
+    await bridge.ensure();
+    assert.ok(bridge.status().message.includes('桥接表就绪'), `降级消息应说明就绪：${bridge.status().message}`);
+    assert.ok(bridge.status().message.includes('预检拒绝'), '降级消息应说明模板级清理被暂拒');
+    const mirror = await bridge.mirrorSelf(sampleSelf);
+    assert.equal(mirror.ok, true, `降级路径下镜像应成功：${bridge.status().message}`);
+    assert.equal(bridge.status().status, 'ready', '降级后状态应为 ready 而非 error');
+    delete globalThis.window;
+}
+
+// 7. 降级不适用：桥接表真的缺失（导入失败且补不了）→ 仍是 error
+{
+    const { api } = createFakeApi();
+    api.importTemplateFromData = async () => ({ success: false, message: '预检拒绝' });
+    await api.importTemplateFromData({ mate: { type: 'chatSheets', version: 1 } }, {});
+    globalThis.window = { AutoCardUpdaterAPI: api };
+    const bridge = createDbBridge({ getSettings: () => undefined });
+    const mirror = await bridge.mirrorSelf(sampleSelf);
+    assert.equal(mirror.ok, false, '缺表且导入失败时镜像应失败');
+    assert.equal(bridge.status().status, 'error', '缺表时状态保持 error');
+    delete globalThis.window;
+}
+
 // 5. 聊天模板里有外来表（DDL 注释与表头不一致）：导入包先净化、外来表随包保留。
 // 数据库脚本的 merge 导入是整包替换，且按「注释 = 表头」校验整包——少带外来表等于删表。
 {
@@ -209,7 +225,7 @@ function createFakeApi() {
         importedPayload = tmpl ? JSON.parse(JSON.stringify(tmpl)) : null;
         return rawImport(tmpl, options);
     };
-    // 预置一个带全角注释外来表的聊天模板（模拟另一张卡留下的表）
+    // 预置一个带全角注释外来表 + 退役世界表的聊天模板（模拟旧版桥接与另一张卡留下的表）
     await api.importTemplateFromData({
         mate: { type: 'chatSheets', version: 1 },
         sheet_foreign: {
@@ -217,16 +233,21 @@ function createFakeApi() {
             content: [['row_id', '进度(%)']],
             sourceData: { ddl: 'CREATE TABLE bag ( -- 背包与货币\n  row_id INTEGER PRIMARY KEY, -- 行号\n  progress TEXT, -- 进度（%）\n);' },
         },
+        sheet_dpWorldState: { name: '世界·现状', content: [['row_id', '剧情日']] },
     }, {});
     calls.importTemplate = 0;
     globalThis.window = { AutoCardUpdaterAPI: api };
     const bridge = createDbBridge({ getSettings: () => undefined });
+    // 先单独 ensure：退役剔除的导入汇报在这里看（镜像成功后状态消息会被「镜像完成」覆盖）
+    await bridge.ensure();
+    assert.ok(bridge.status().message.includes('移除退役桥接表'), `ensure 汇报应说明退役表被移除：${bridge.status().message}`);
     const mirror = await bridge.mirrorSelf(sampleSelf);
     assert.equal(mirror.ok, true, `外来表存在时镜像应成功：${bridge.status().message}`);
     assert.equal(calls.importTemplate, 1);
     assert.ok(importedPayload?.sheet_foreign, '外来表必须随包携带（整包替换语义下少带等于删表）');
     assert.ok(importedPayload.sheet_foreign.sourceData.ddl.includes('-- 进度(%)'), '外来表 DDL 应先净化再导入');
     assert.ok(importedPayload.sheet_dpProfile, '桥接表在导入包里');
+    assert.ok(!('sheet_dpWorldState' in importedPayload), '退役世界表不再随包携带（整包替换语义下等于从聊天模板移除）');
     assert.equal(bridge.status().status, 'ready');
     delete globalThis.window;
 }

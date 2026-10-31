@@ -20,18 +20,17 @@ const CONFLICT_SIMILARITY = 0.6;
 const FENCE_RE = /```memory[^\S\n]*\n([\s\S]*?)```/g;
 const OP_LINE_RE = /^[ \t]*\{[ \t]*"op"[ \t]*:/;
 
-export const MEMORY_HEADER = '【主角记忆·本场召回】以下是本场剧情勾出来的主角记忆（按需召回），正文不得与之矛盾；新记忆靠文末 memory 指令登记。';
+export const MEMORY_HEADER = '【记忆存储·本场召回】以下是本场剧情勾出来的记忆（按需召回），正文不得与之矛盾；新记忆靠文末 memory 指令登记。';
 
 export const MEMORY_GUIDE = [
-    '【记忆指令通道】若本轮剧情让主角"记下了一件值得记住的事"或"了结了一件旧事"，在回复的最末尾输出一个 memory 代码块，每行一条 JSON：',
+    '【记忆指令通道】若本轮剧情里有值得记住的事、或旧账有了结，在回复的最末尾输出一个 memory 代码块，每行一条 JSON：',
     '```memory',
-    '{"op":"remember","text":"穆蛇在坊市拦路勒索被萧炎打跑","basis":"第 6 楼坊市冲突","related":["穆蛇","坊市"],"quote":"把灵石留下，人可以走。"}',
-    '{"op":"memorize","text":"欠药老一条命","basis":"第 3 楼药老出手相救","related":["药老"],"weight":"major","tag":"grudge","quote":"这条命，是老夫捡回来的。"}',
+    '{“op”:”remember”,”text”:”穆蛇在坊市拦路勒索被萧炎打跑”,”basis”:”第 6 楼坊市冲突”,”related”:[“穆蛇”,”坊市”],”quote”:”把灵石留下，人可以走。”}',
     '```',
-    '两层记忆都永久保存、按需召回（related 是日后召回的钥匙，必写 1-4 个人名/地名/物名）：remember=小记忆（轻量记录的近事杂事，weight 用 minor）；memorize=大记忆（值得一直记住的事，weight 用 major，tag 可选：grudge恩怨/intel情报/thread伏笔/milestone大事，拿不准就空着）；promote(id)=小记忆分量够重了，转成大记忆（召回时优先）。',
+    '只记小记忆（remember）：轻量记录的近事杂事，weight 用 minor，不必重要才记，保持主角”记得这几天发生过什么”；related 是日后召回的钥匙，必写 1-4 个人名/地名/物名。大记忆不用你登记——小记忆攒够后脚本会自动总结成大记忆。',
     'quote 可选：剧情里最有味道的一句原话（≤60字），召回时会以「」原样带回正文；没有合适的就空着，不要编造没出现过的对白。',
-    '可用操作：remember(text≤300字,basis≤80字,related必写≤4个,quote≤60字)；memorize(text≤300字,basis必写,related必写≤4个,weight:major|minor,tag,quote≤60字)；promote(id)（小记忆转大）；forgetMemory(id)（记错删除）。id 用上面召回列表里的编号。记忆不是任务：没有“了结”状态，旧事也永远保留召回权，只是按强度与重要性排在后面。',
-    '只记"主角亲身经历或得知"的事，且必须有剧情依据（basis 写清从哪楼/谁/什么事来）；不记原著设定、不替人物簿记 NPC 档案与好感、不记该归纳戒目标或世界任务的事；没有新记忆就完全不要输出这个区块。',
+    '可用操作：remember(text≤300字,basis≤80字,related必写≤4个,quote≤60字)；forgetMemory(id)（记错删除）。id 用上面召回列表里的编号。记忆不是任务：没有“了结”状态，旧事也永远保留召回权，只是按强度与重要性排在后面。',
+    '只记玩家看得到的事（主角亲历/得知，或正文实际演到的情节），用中性记事口吻写清"谁/在哪/发生了什么"，不要写成"我"的第一人称日记；必须有剧情依据（basis 写清从哪楼/谁/什么事来）；不记原著设定、不替人物簿记 NPC 档案与好感、不记该归纳戒目标或世界任务的事；没有新记忆就完全不要输出这个区块。',
 ].join('\n');
 
 function clampInt(value, min, max, fallback) {

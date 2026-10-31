@@ -1,13 +1,16 @@
 /**
  * 数据库桥接的表结构与纯函数编解码。
  *
- * 纳戒/世界台账的实质状态镜像到「龙血玄黄·数据库」（window.AutoCardUpdaterAPI）的表格里：
+ * 纳戒与记忆的实质状态镜像到「龙血玄黄·数据库」（window.AutoCardUpdaterAPI）的表格里：
  * 表结构在这里定义（uid/表名/表头/DDL 固定），状态↔表格行的互转和差异协调（reconcile）
  * 全部是纯函数，不碰 window/DOM，可离线单测。API 调用见 db-bridge.js。
  *
- * 所有权约定：这些表只由本扩展写。每张表的 initNode/insertNode/updateNode/deleteNode
- * 都是「禁止操作。」，updateConfig.updateFrequency=0 让它们退出数据库自己的 AI 自动
- * 更新调度，双写从根上排除；表头/DDL 改动必须同步改测试。
+ * 分工约定：数据库只连纳戒与记忆——世界运转（时钟/事件/任务）不进数据库，
+ * 只跟扩展台账与聊天存档走；旧版本镜像过的三张世界表在合并导入时按表名剔除
+ * （见 RETIRED_TABLE_NAMES）。所有权约定：这些表只由本扩展写。每张表的
+ * initNode/insertNode/updateNode/deleteNode 都是「禁止操作。」，
+ * updateConfig.updateFrequency=0 让它们退出数据库自己的 AI 自动更新调度，
+ * 双写从根上排除；表头/DDL 改动必须同步改测试。
  */
 
 const PROHIBIT = '禁止操作。';
@@ -215,66 +218,6 @@ const SELF_GOALS = defineTable(
     '目标与约定（主线标星在优先级里）。只由斗破Agent扩展写入，AI 禁止操作。',
 );
 
-const WORLD_STATE = defineTable(
-    'sheet_dpWorldState',
-    '世界·现状',
-    'dp_world_state',
-    ['row_id', '剧情日', '分钟', '时段', '天气', '所在地', '时期', '名声', '通缉度', '更新时间'],
-    `CREATE TABLE dp_world_state ( -- 世界现状表
-  row_id INTEGER PRIMARY KEY, -- 行号
-  story_day INTEGER, -- 剧情日
-  minute INTEGER, -- 分钟
-  clock_label TEXT, -- 时段
-  weather TEXT, -- 天气
-  location TEXT, -- 所在地
-  era TEXT, -- 时期
-  reputation TEXT, -- 名声
-  wanted TEXT, -- 通缉度
-  updated_at TEXT -- 更新时间
-);`,
-    '世界时钟+现状五字段，有且仅有一行。只由斗破Agent扩展写入，AI 禁止操作。',
-);
-
-const WORLD_EVENTS = defineTable(
-    'sheet_dpWorldEvents',
-    '世界·事件',
-    'dp_world_events',
-    ['row_id', '编号', '范围', '日', '内容', '依据', '有效期至', '分量', '置顶', '已了结', '了结日'],
-    `CREATE TABLE dp_world_events ( -- 世界事件表
-  row_id INTEGER PRIMARY KEY, -- 行号
-  entry_id TEXT NOT NULL, -- 编号
-  scope TEXT, -- 范围
-  day INTEGER, -- 日
-  event_text TEXT NOT NULL, -- 内容
-  basis TEXT, -- 依据
-  end_day INTEGER, -- 有效期至
-  weight TEXT, -- 分量
-  pinned TEXT, -- 置顶
-  done TEXT, -- 已了结
-  resolved_day INTEGER -- 了结日
-);`,
-    '近事/天下事件共表，范围列区分；分量含传闻。只由斗破Agent扩展写入，AI 禁止操作。',
-);
-
-const WORLD_TASKS = defineTable(
-    'sheet_dpWorldTasks',
-    '世界·任务',
-    'dp_world_tasks',
-    ['row_id', '编号', '标题', '详情', '依据', '接受日', '时限日', '状态', '完成日'],
-    `CREATE TABLE dp_world_tasks ( -- 任务表
-  row_id INTEGER PRIMARY KEY, -- 行号
-  entry_id TEXT NOT NULL, -- 编号
-  title TEXT NOT NULL, -- 标题
-  detail TEXT, -- 详情
-  basis TEXT, -- 依据
-  day INTEGER, -- 接受日
-  end_day INTEGER, -- 时限日
-  status TEXT, -- 状态
-  done_day INTEGER -- 完成日
-);`,
-    '任务清单（进行中/已完成）。只由斗破Agent扩展写入，AI 禁止操作。',
-);
-
 const MEMORY_SMALL = defineTable(
     'sheet_dpMemorySmall',
     '小记忆',
@@ -295,7 +238,7 @@ const MEMORY_SMALL = defineTable(
   note TEXT -- 备注
 );`,
     '小记忆（轻量近事；关联/别名是人名/地名/物名、逗号分隔，是数据库关键词召回的触发词；引文=当时的一句原话）。只由斗破Agent扩展写入，AI 禁止操作。',
-    memoryExportConfig('主角近事', 10022),
+    memoryExportConfig('记忆近事', 10022),
 );
 
 const MEMORY_BIG = defineTable(
@@ -319,7 +262,7 @@ const MEMORY_BIG = defineTable(
   note TEXT -- 备注
 );`,
     '大记忆（值得一直记住的事；标签列=恩怨/情报/伏笔/大事记，可空；关联/别名是人名/地名/物名、逗号分隔，是数据库关键词召回的触发词；引文=当时的一句原话）。只由斗破Agent扩展写入，AI 禁止操作。',
-    memoryExportConfig('主角记忆', 10020),
+    memoryExportConfig('记忆存储', 10020),
 );
 
 export const MEMORY_TABLE_DEFS = Object.freeze([MEMORY_SMALL, MEMORY_BIG]);
@@ -329,8 +272,14 @@ export const SELF_TABLE_DEFS = Object.freeze([
     SELF_PROFILE, SELF_TITLES, SELF_TECHNIQUES, SELF_SKILLS, SELF_ITEMS,
     SELF_RECIPES, SELF_CRAFTS, SELF_GOALS,
 ]);
-export const WORLD_TABLE_DEFS = Object.freeze([WORLD_STATE, WORLD_EVENTS, WORLD_TASKS]);
-export const ALL_TABLE_DEFS = Object.freeze([...SELF_TABLE_DEFS, ...WORLD_TABLE_DEFS, ...MEMORY_TABLE_DEFS]);
+export const ALL_TABLE_DEFS = Object.freeze([...SELF_TABLE_DEFS, ...MEMORY_TABLE_DEFS]);
+
+/**
+ * 退役桥接表（按中文表名认）：旧版本曾把世界运转镜像进数据库，现在世界不连数据库，
+ * 这些残留副本在 mergeBridgeSheets 里按名剔除——merge 导入是整包替换，不随包携带
+ * 就会从聊天模板里删掉，数据无损失（世界真账本一直在扩展台账与聊天存档里）。
+ */
+export const RETIRED_TABLE_NAMES = Object.freeze(['世界·现状', '世界·事件', '世界·任务']);
 
 const TABLE_BY_KEY = new Map(ALL_TABLE_DEFS.map(def => [def.key, def]));
 const TABLE_BY_NAME = new Map(ALL_TABLE_DEFS.map(def => [def.name, def]));
@@ -374,13 +323,22 @@ export function buildBridgeSheets() {
  * 数据库校验器也不会再因同名连坐拒绝整包。表内容以扩展状态为准，镜像会按当前结构重写。
  * 同名同表头但导出配置对不上（比如数据库补了默认关闭的 exportConfig）→ 原位刷成当前定义，
  * 算进 updated——否则记忆表的关键词召回配置永远送不进已建好的表。
- * 返回 { template, added, replaced, updated }；existing 为空时返回纯片段。
+ * 返回 { template, added, replaced, updated, removed }；existing 为空时返回纯片段。
  */
 export function mergeBridgeSheets(existing) {
     const base = existing && typeof existing === 'object' && !Array.isArray(existing)
         ? JSON.parse(JSON.stringify(existing))
         : { mate: { type: 'chatSheets', version: 1 } };
     if (!base.mate || typeof base.mate !== 'object') base.mate = { type: 'chatSheets', version: 1 };
+    const removed = [];
+    for (const [key, sheet] of Object.entries(base)) {
+        if (!key.startsWith('sheet_')) continue;
+        const name = normalizeHeaderCell(sheet?.name);
+        if (name && RETIRED_TABLE_NAMES.includes(name)) {
+            delete base[key];
+            removed.push(sheet.name);
+        }
+    }
     const fragment = buildBridgeSheets();
     const added = [];
     const addedKeys = [];
@@ -413,7 +371,7 @@ export function mergeBridgeSheets(existing) {
         addedKeys.push(def.key);
     }
     if (addedKeys.length) markNewSentinel(base, addedKeys);
-    return { template: base, added, replaced, updated };
+    return { template: base, added, replaced, updated, removed };
 }
 
 // ---------- 导入包净化：外来表 DDL 对齐表头 ----------
@@ -497,8 +455,6 @@ function rebuildDdlFromHeaders(sheet, headers) {
 // ---------- 显示值 ↔ 状态值 ----------
 
 const CRAFT_STATUS_LABELS = Object.freeze({ open: '进行中', success: '成功', fail: '失败' });
-const EVENT_SCOPE_LABELS = Object.freeze({ near: '近事', world: '天下' });
-const EVENT_WEIGHT_LABELS = Object.freeze({ minor: '轻微', major: '重大', rumor: '传闻' });
 const YES = '是';
 const NO = '否';
 
@@ -506,8 +462,6 @@ function invert(map) {
     return Object.fromEntries(Object.entries(map).map(([k, v]) => [v, k]));
 }
 const CRAFT_STATUS_VALUES = invert(CRAFT_STATUS_LABELS);
-const EVENT_SCOPE_VALUES = invert(EVENT_SCOPE_LABELS);
-const EVENT_WEIGHT_VALUES = invert(EVENT_WEIGHT_LABELS);
 
 function cell(value) {
     if (value === null || value === undefined) return '';
@@ -582,38 +536,6 @@ export function desiredSelfRows(self) {
     ];
 }
 
-export function desiredWorldRows(world) {
-    const state = world && typeof world === 'object' ? world : {};
-    const clock = state.clock && typeof state.clock === 'object' ? state.clock : {};
-    const info = state.info && typeof state.info === 'object' ? state.info : {};
-    const events = [...(Array.isArray(state.nearEvents) ? state.nearEvents : []), ...(Array.isArray(state.worldEvents) ? state.worldEvents : [])]
-        .filter(item => item && typeof item === 'object')
-        .map(e => [
-            cell(e.id), EVENT_SCOPE_LABELS[e.scope] || EVENT_SCOPE_LABELS.near, intCell(e.day), cell(e.text), cell(e.basis),
-            dayCell(e.endDay), EVENT_WEIGHT_LABELS[e.weight] || EVENT_WEIGHT_LABELS.minor,
-            flagCell(e.pinned), flagCell(e.done), dayCell(e.resolvedDay),
-        ]);
-    const tasks = (Array.isArray(state.tasks) ? state.tasks : [])
-        .filter(item => item && typeof item === 'object')
-        .map(t => [
-            cell(t.id), cell(t.title), cell(t.detail), cell(t.basis), intCell(t.day), dayCell(t.endDay),
-            t.status === 'done' ? '已完成' : '进行中', dayCell(t.doneDay),
-        ]);
-    return [
-        {
-            def: WORLD_STATE,
-            single: true,
-            rows: [[
-                intCell(clock.day), intCell(clock.minute), cell(clock.label),
-                cell(info.weather), cell(info.location), cell(info.era), cell(info.reputation), cell(info.wanted),
-                cell(state.updatedAt),
-            ]],
-        },
-        { def: WORLD_EVENTS, rows: events },
-        { def: WORLD_TASKS, rows: tasks },
-    ];
-}
-
 // ---------- 表格行 → 状态（回拉/收养用） ----------
 
 function sheetRows(tableData, def) {
@@ -671,7 +593,7 @@ export function selfStateFromTables(tableData) {
         gold: readInt(profileRow[12], 0),
         titles, techniques, skills, items, recipes, crafts, goals,
         log: [],
-        updatedAt: cell(profileRow[14]) || new Date().toISOString(),
+        updatedAt: cell(profileRow[14]) || '',
     };
     return { ok: true, empty: isEmptySelfState(state), state };
 }
@@ -681,40 +603,6 @@ function isEmptySelfState(state) {
         && !state.recipes.length && !state.crafts.length && !state.goals.length
         && Object.values(state.profile).every(value => !value)
         && !state.realm.realm && !state.realm.stage && !state.gold;
-}
-
-export function worldStateFromTables(tableData) {
-    const worldRows = sheetRows(tableData, WORLD_STATE);
-    const clockRow = worldRows[0] || [];
-    const events = sheetRows(tableData, WORLD_EVENTS).map((row, i) => ({
-        id: entryId(row[1], 'e', i + 1), scope: readLabel(row[2], EVENT_SCOPE_VALUES, 'near'), day: Math.max(1, readInt(row[3], 1)),
-        text: cell(row[4]), basis: cell(row[5]), endDay: readDay(row[6]),
-        weight: readLabel(row[7], EVENT_WEIGHT_VALUES, 'minor'), pinned: readFlag(row[8]), done: readFlag(row[9]), resolvedDay: readDay(row[10]),
-    }));
-    const tasks = sheetRows(tableData, WORLD_TASKS).map((row, i) => ({
-        id: entryId(row[1], 't', i + 1), title: cell(row[2]), detail: cell(row[3]), basis: cell(row[4]), day: Math.max(1, readInt(row[5], 1)),
-        endDay: readDay(row[6]), status: cell(row[7]) === '已完成' ? 'done' : 'active', doneDay: readDay(row[8]),
-    }));
-    const state = {
-        schemaVersion: 1,
-        clock: { day: Math.max(1, readInt(clockRow[1], 1)), minute: Math.min(1439, Math.max(0, readInt(clockRow[2], 480))), label: cell(clockRow[3]) },
-        info: {
-            weather: cell(clockRow[4]), location: cell(clockRow[5]), era: cell(clockRow[6]),
-            reputation: cell(clockRow[7]), wanted: cell(clockRow[8]),
-        },
-        nearEvents: events.filter(e => e.scope === 'near'),
-        worldEvents: events.filter(e => e.scope === 'world'),
-        tasks,
-        log: [],
-        updatedAt: cell(clockRow[9]) || new Date().toISOString(),
-    };
-    return { ok: true, empty: isEmptyWorldState(state), state };
-}
-
-function isEmptyWorldState(state) {
-    return !state.nearEvents.length && !state.worldEvents.length && !state.tasks.length
-        && Object.values(state.info).every(value => !value)
-        && (state.clock.day === 1 && state.clock.minute === 480 && !state.clock.label);
 }
 
 // ---------- 差异协调（reconcile） ----------
@@ -858,10 +746,6 @@ function projectGroups(groups) {
 
 export function sameSelfState(a, b) {
     return projectGroups(desiredSelfRows(a)) === projectGroups(desiredSelfRows(b));
-}
-
-export function sameWorldState(a, b) {
-    return projectGroups(desiredWorldRows(a)) === projectGroups(desiredWorldRows(b));
 }
 
 // ---------- 记忆：状态 ↔ 表格行（小/大两张表，按 tier 分流） ----------

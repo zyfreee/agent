@@ -49,13 +49,13 @@ assert.equal(context.chatMetadata.doupo_agent_self, undefined);
 context.extensionSettings.doupo_agent_ui = {
     schemaVersion: 3, ui: { compact: true }, llm: { model: 'existing-model', apiKey: 'fixture-key' },
 };
-assert.equal(storage.settings().value.ui.theme, 'black');
+assert.equal(storage.settings().value.ui.theme, 'gilt');
 assert.equal(storage.settings().value.schemaVersion, DEFAULT_SETTINGS.schemaVersion);
 assert.equal(storage.settings().value.sandbox.inertia, 'medium');
 assert.equal(storage.updateSettings({ sandbox: { inertia: 'nonsense', maxActiveGoals: 6 } }).value.sandbox.inertia, 'medium');
 assert.equal(storage.settings().value.sandbox.maxActiveGoals, 6);
 assert.equal(DEFAULT_SETTINGS.enableSandboxMode, false);
-for (const theme of ['white', 'beige', 'black']) {
+for (const theme of ['graphite', 'parchment', 'gilt']) {
     const updated = storage.updateSettings({ ui: { theme } }).value;
     assert.equal(updated.ui.theme, theme);
     assert.equal(updated.ui.compact, true);
@@ -63,7 +63,7 @@ for (const theme of ['white', 'beige', 'black']) {
     await storage.saveSettings();
     assert.equal(createHostStorage({ getContext: () => context }).settings().value.ui.theme, theme);
 }
-assert.equal(storage.updateSettings({ ui: { theme: 'invalid' } }).value.ui.theme, 'black');
+assert.equal(storage.updateSettings({ ui: { theme: 'invalid' } }).value.ui.theme, 'gilt');
 assert.equal(storage.updateSettings({ llm: { temperature: 0.4 } }).value.llm.model, 'existing-model');
 assert.equal(storage.settings().value.llm.apiKey, 'fixture-key');
 assert.equal(createHostStorage().settings().status, 'unavailable');
@@ -99,7 +99,7 @@ settleStorage.updateSettings({ settle: { temperature: 0.3 } });
 assert.equal(settleStorage.settings().value.settle.customCategories.length, 1, '改温度不丢自定义判定');
 settleStorage.updateSettings({ settle: { prompt: { alchemy: '改写' } } });
 assert.equal(settleStorage.settings().value.settle.customCategories[0].name, '炼器判定', '改提示词不丢自定义判定');
-// 纳戒设置：独立嵌套块合并，注入与决定参数默认齐备。
+// 纳戒设置：独立嵌套块合并，注入与决定开关默认齐备；决定连接已并入 memory.decide*，self 侧不再有。
 const freshContext = { extensionSettings: {} };
 const freshStorage = createHostStorage({ getContext: () => freshContext });
 const selfSettings = freshStorage.settings().value.self;
@@ -108,12 +108,42 @@ assert.equal(selfSettings.inject, true);
 assert.equal(selfSettings.injectBudget, 900);
 assert.equal(selfSettings.decideEnabled, true);
 assert.equal(selfSettings.decideAuto, true);
-assert.equal(selfSettings.decideMode, 'tavern');
-assert.equal(selfSettings.decideMaxFloors, 6);
-assert.equal(selfSettings.decideMaxEntries, 12);
+assert.equal(selfSettings.decideMode, undefined, '决定连接已并到记忆侧，self 不该再有 decideMode');
+assert.equal(selfSettings.decideMaxFloors, undefined);
+assert.equal(selfSettings.decideMaxEntries, undefined);
 assert.equal(selfSettings.decidePrompt, '');
 assert.equal(selfSettings.guide, '');
 freshStorage.updateSettings({ self: { injectBudget: 1200, decidePrompt: '' } });
 assert.equal(freshStorage.settings().value.self.injectBudget, 1200);
 assert.equal(freshStorage.settings().value.self.decideEnabled, true, '改预算不丢决定开关');
+// 决定连接并成一套：老配置纳戒侧单独填过、记忆侧还是默认值 → 纳戒那份搬进 memory.decide* 当共用，
+// 且纳戒侧死键清掉（下次加载不会再被搬一遍）；两侧都填过以记忆侧为准。
+const selfCustomLegacy = { extensionSettings: { doupo_agent_ui: { self: { decideMode: 'custom', decideBaseUrl: 'https://ring.example/v1', decideApiKey: 'ring-key', decideModel: 'ring-model', decideTemperature: 0.3, decideMaxFloors: 9 }, memory: {} } } };
+const migrated = createHostStorage({ getContext: () => selfCustomLegacy }).settings().value;
+assert.equal(migrated.memory.decideMode, 'custom', '纳戒侧自定义连接搬成共用');
+assert.equal(migrated.memory.decideBaseUrl, 'https://ring.example/v1');
+assert.equal(migrated.memory.decideApiKey, 'ring-key');
+assert.equal(migrated.memory.decideModel, 'ring-model');
+assert.equal(migrated.memory.decideTemperature, 0.3);
+assert.equal(migrated.memory.decideMaxFloors, 9);
+assert.equal(migrated.memory.decideMaxEntries, 12, '记忆侧默认值没动');
+assert.equal(migrated.self.decideMode, undefined, '纳戒侧死键清掉');
+assert.equal(migrated.self.decideBaseUrl, undefined);
+// 迁移后把共用卡改回跟随酒馆，不会被纳戒侧残留旧值再搬回去。
+const migratedContext = { extensionSettings: { doupo_agent_ui: {} } };
+migratedContext.extensionSettings.doupo_agent_ui = JSON.parse(JSON.stringify(migrated));
+migratedContext.extensionSettings.doupo_agent_ui.memory.decideMode = 'tavern';
+migratedContext.extensionSettings.doupo_agent_ui.memory.decideBaseUrl = '';
+migratedContext.extensionSettings.doupo_agent_ui.memory.decideApiKey = '';
+migratedContext.extensionSettings.doupo_agent_ui.memory.decideModel = '';
+assert.equal(createHostStorage({ getContext: () => migratedContext }).settings().value.memory.decideMode, 'tavern', '共用卡改回跟随酒馆不被旧值打回');
+// 两侧都配过：记忆侧（集中页一直管的那张卡）赢，纳戒侧让位。
+const bothCustom = { extensionSettings: { doupo_agent_ui: { self: { decideMode: 'custom', decideBaseUrl: 'https://ring.example/v1' }, memory: { decideMode: 'custom', decideBaseUrl: 'https://memory.example/v1', decideApiKey: 'mem-key', decideModel: 'mem-model' } } } };
+const bothMigrated = createHostStorage({ getContext: () => bothCustom }).settings().value;
+assert.equal(bothMigrated.memory.decideBaseUrl, 'https://memory.example/v1', '两侧都配过以记忆侧为准');
+assert.equal(bothMigrated.memory.decideModel, 'mem-model');
+// 记忆侧配过、纳戒侧没配过：原样保留。
+const memoryOnly = { extensionSettings: { doupo_agent_ui: { self: {}, memory: { decideMode: 'custom', decideBaseUrl: 'https://memory.example/v1', decideApiKey: 'mem-key', decideModel: 'mem-model' } } } };
+const memoryOnlyMigrated = createHostStorage({ getContext: () => memoryOnly }).settings().value;
+assert.equal(memoryOnlyMigrated.memory.decideBaseUrl, 'https://memory.example/v1', '记忆侧已有配置不被空纳戒覆盖');
 console.log('host storage tests passed');
