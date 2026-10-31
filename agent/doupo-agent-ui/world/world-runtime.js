@@ -13,6 +13,7 @@ const INFO_FIELDS = Object.freeze(['weather', 'location', 'era', 'reputation', '
 const STANCES = Object.freeze(['hostile', 'wary', 'neutral', 'friendly', 'allied']);
 export const STANCE_LABELS = Object.freeze({ hostile: '敌对', wary: '警惕', neutral: '中立', friendly: '友好', allied: '同盟' });
 const MAX_EVENT_TEXT = 300;
+const MAX_EVENT_TITLE = 16;
 const MAX_BASIS_TEXT = 80;
 const MAX_EVENT_DAYS = 90;
 const MAX_TASK_TITLE = 60;
@@ -309,7 +310,8 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
             if (eventsOf(scope).some(event => !event.done && event.text === body)) return { ok: false, reason: 'duplicate_text' };
             const location = text(op.location).slice(0, MAX_EVENT_LOCATION);
             const basis = text(op.basis).slice(0, MAX_BASIS_TEXT);
-            const event = { id: nextId(), scope, day, text: body, location, basis, endDay, weight: WEIGHTS.includes(op.weight) ? op.weight : 'minor', pinned: false, done: false, resolvedDay: null };
+            const title = text(op.title).slice(0, MAX_EVENT_TITLE);
+            const event = { id: nextId(), scope, day, title, text: body, location, basis, endDay, weight: WEIGHTS.includes(op.weight) ? op.weight : 'minor', pinned: false, done: false, resolvedDay: null };
             eventsOf(scope).push(event);
             prune(scope);
             const expiryNote = endDay !== null ? `，有效至第 ${endDay} 天` : '';

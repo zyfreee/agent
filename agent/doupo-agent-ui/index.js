@@ -51,6 +51,7 @@ import { createLlmClient, listModels } from './host/llm-client.js';
 import { createMessageAdapter } from './host/message-adapter.js';
 import { createStatePersistence } from './host/state-persistence.js';
 import { createPromptInjection } from './host/prompt-injection.js';
+import { ensureDisplayRegexScripts } from './host/display-regex.js';
 import { loadWorldbookEntries, summarizeWorldbookEntries } from './narrative/worldbook-source.js';
 import { createFactsIndex } from './narrative/facts-index.js';
 import { createFactsSelector, LOOKUP_RULES, SELECT_RULES } from './narrative/facts-select.js';
@@ -140,6 +141,21 @@ function hydrateFactsLastInjection() {
     } catch { /* 恢复失败就当没有记录 */ }
 }
 
+/** 楼层显示美化：把三条仅显示层正则（本轮输入卡片等）注册进酒馆正则扩展的全局列表。
+ *  只在缺脚本时补装并保存；首次补装后刷新一次当前聊天，让已渲染的老楼层立刻套上美化。
+ *  同名脚本已存在就不碰（用户在正则面板手改过的为准），所以这里每次启动多半是空转。 */
+function installDisplayRegex() {
+    try {
+        const context = getHostContext();
+        const store = context?.extensionSettings;
+        if (!store || !Array.isArray(store.regex)) return;
+        const result = ensureDisplayRegexScripts(store.regex);
+        if (result.status !== 'ready' || !result.added.length) return;
+        context.saveSettingsDebounced?.();
+        Promise.resolve(context.reloadCurrentChat?.()).catch(() => { /* 刷新失败时下次渲染再生效 */ });
+    } catch { /* 显示层失败不影响任何功能 */ }
+}
+
 function bindHostLifecycle() {
     const context = getHostContext();
     if (!context?.eventSource || !context.event_types || typeof context.eventSource.on !== 'function') return { status: 'unavailable' };
@@ -149,6 +165,7 @@ function bindHostLifecycle() {
         hostContext = getHostContext();
         hostStorage = createHostStorage({ getContext: getHostContext });
         initializeHistoryEvents();
+        installDisplayRegex();
         mount();
         restoreWorldFromChat();
         restoreImpactFromChat();
@@ -3974,6 +3991,7 @@ function mountOrbHud() {
             if (event.key !== 'Escape' || !orbElement) return;
             // 第一层 Esc 先收小卡，第二层才收长条。
             if (orbNpcPopElement) { closeOrbNpcPopup(); return; }
+            if (orbItemPopElement) { closeOrbItemPopup(); return; }
             if (orbState.collapsed) return;
             orbState.collapse();
             syncOrbHud();
@@ -3982,7 +4000,7 @@ function mountOrbHud() {
     }
     if (!orbResizeBound) {
         orbResizeBound = true;
-        window.addEventListener('resize', () => { applyOrbPosition(); positionOrbNpcPopup(); });
+        window.addEventListener('resize', () => { applyOrbPosition(); positionOrbNpcPopup(); positionOrbItemPopup(); });
     }
     syncOrbHud();
     applyOrbPosition();
@@ -4004,6 +4022,8 @@ function syncOrbHud() {
     if (!panel) return;
     // 小卡只跟着人物簿窗走：收起、关窗或换到别的图标都把它带走。
     if (orbState.collapsed || orbState.panelId !== 'npcledger') closeOrbNpcPopup();
+    // 详情小卡跟着各自的信息窗走：收起或换图标都收走。
+    if (orbItemPopElement && (orbState.collapsed || orbItemPopRef?.panelId !== orbState.panelId)) closeOrbItemPopup();
     if (orbState.collapsed || !orbState.panelId) {
         panel.hidden = true;
         panel.replaceChildren();
@@ -4019,6 +4039,7 @@ function refreshOpenOrbPanel() {
     if (panel && !panel.hidden) renderOrbPanel(panel, orbState.panelId);
     // 回合状态事件带来的新数据也要进小卡：开着就照着最新档案重画一张。
     if (orbNpcPopElement && orbNpcPopName) openOrbNpcPopup(orbNpcPopName);
+    if (orbItemPopElement && orbItemPopRef) openOrbItemPopup(orbItemPopRef);
 }
 
 /** 收集十一个信息窗的只读数据；哪路运行时没就绪就缺哪块，窗里显示“暂无”。 */
@@ -4091,13 +4112,13 @@ function renderOrbPanel(panel, id) {
                 card.append(makeElement('b', '', item.head));
                 if (item.meta) card.append(makeElement('small', '', item.meta));
                 if (item.detail) card.append(makeElement('p', '', item.detail));
-                // 人物簿一览的每行可以点开：在信息窗外侧弹一张只读小档案卡。
-                if (id === 'npcledger' && item.head) {
+                // 带引用的条目都能点开：人物簿弹完整档案小卡，其余按引用弹各自的详情小卡，都贴在信息窗旁。
+                if (item.ref) {
                     card.classList.add('is-clickable');
-                    card.dataset.orbNpc = item.head;
-                    card.title = '点开这个人的完整档案';
+                    if (item.ref.kind === 'npc') card.dataset.orbNpc = item.ref.id;
+                    card.title = '点开查看详情';
                     card.setAttribute('role', 'button');
-                    card.addEventListener('click', () => toggleOrbNpcPopup(item.head));
+                    card.addEventListener('click', () => toggleOrbItemPopup(item.ref));
                 }
                 block.append(card);
             }
@@ -4127,6 +4148,7 @@ function openOrbNpcPopup(name) {
     if (!orbElement) return;
     const record = agentNpcLedger.get(name);
     if (!record) { closeOrbNpcPopup(); return; }
+    closeOrbItemPopup();
     orbNpcPopElement?.remove();
     orbNpcPopElement = buildOrbNpcPopup(record);
     orbNpcPopName = record.name;
@@ -4207,20 +4229,211 @@ function buildOrbNpcPopup(record) {
 }
 
 /** 贴着信息窗的外侧放；塞不下就收进视口，宁可压住信息窗也不出屏。 */
-function positionOrbNpcPopup() {
-    if (!orbNpcPopElement || !orbElement || typeof window === 'undefined') return;
+function positionOrbPopElement(pop) {
+    if (!pop || !orbElement || typeof window === 'undefined') return;
     const orbRect = orbElement.getBoundingClientRect();
     const panel = orbElement.querySelector('.dai-orb-panel');
     const panelRect = panel && !panel.hidden ? panel.getBoundingClientRect() : orbRect;
-    const popRect = orbNpcPopElement.getBoundingClientRect();
+    const popRect = pop.getBoundingClientRect();
     const margin = 8;
     // 球在右缘时信息窗往左开，小卡再往左一格；球在左缘则相反。
     const panelOnLeft = orbElement.dataset.side !== 'left';
     const left = panelOnLeft ? panelRect.left - popRect.width - margin : panelRect.right + margin;
     const clampedLeft = Math.min(Math.max(margin, left), Math.max(margin, window.innerWidth - popRect.width - margin));
     const top = Math.min(Math.max(margin, orbRect.top), Math.max(margin, window.innerHeight - popRect.height - margin));
-    orbNpcPopElement.style.left = `${Math.round(clampedLeft)}px`;
-    orbNpcPopElement.style.top = `${Math.round(top)}px`;
+    pop.style.left = `${Math.round(clampedLeft)}px`;
+    pop.style.top = `${Math.round(top)}px`;
+}
+
+function positionOrbNpcPopup() {
+    positionOrbPopElement(orbNpcPopElement);
+}
+
+// —— 悬浮球通用详情小卡：附近事件/世界大事/任务/势力/人物/记忆/影响的条目都能点开，
+// 按条目引用回运行时取最新数据，贴在信息窗外侧弹出只读详情；再点同一条收起。——
+let orbItemPopElement;
+let orbItemPopRef = null;
+
+const ORB_POP_STANCE_LABELS = Object.freeze({ hostile: '敌对', wary: '警惕', neutral: '中立', friendly: '友好', allied: '同盟' });
+const ORB_POP_IMPACT_WEIGHT = Object.freeze({ world: '世界级', major: '大事', minor: '小事' });
+
+function popText(value) {
+    return typeof value === 'string' && value.trim() ? value.trim() : '';
+}
+
+function popDueLabel(endDay, today) {
+    if (endDay === null || endDay === undefined) return '';
+    return Number(endDay) < Number(today) ? '已逾期' : `剩 ${endDay - today + 1} 天`;
+}
+
+function toggleOrbItemPopup(ref) {
+    if (ref?.kind === 'npc') { toggleOrbNpcPopup(ref.id); return; }
+    const same = orbItemPopRef && ref && orbItemPopRef.kind === ref.kind && orbItemPopRef.id === ref.id && orbItemPopRef.scope === ref.scope;
+    if (same) { closeOrbItemPopup(); return; }
+    openOrbItemPopup(ref);
+}
+
+function closeOrbItemPopup() {
+    orbItemPopElement?.remove();
+    orbItemPopElement = undefined;
+    orbItemPopRef = null;
+}
+
+function openOrbItemPopup(ref) {
+    if (!orbElement || !ref) return;
+    const model = buildOrbItemPopModel(ref);
+    if (!model) { closeOrbItemPopup(); return; }
+    closeOrbNpcPopup();
+    orbItemPopElement?.remove();
+    orbItemPopElement = buildOrbItemPopup(model);
+    orbItemPopRef = { ...ref, panelId: orbState.panelId };
+    orbElement.append(orbItemPopElement);
+    positionOrbItemPopup();
+}
+
+/** 小卡骨架：抬头（标题/分类 + 关闭）+ 分组的“标签 + 值”行；空值行不渲染。 */
+function buildOrbItemPopup(model) {
+    const pop = makeElement('aside', 'dai-orb-pop');
+    const head = makeElement('div', 'dai-orb-pop-head');
+    const titleBox = makeElement('div');
+    const nameLine = makeElement('div', 'dai-orb-pop-name');
+    nameLine.append(makeElement('b', '', model.title));
+    if (model.sub) nameLine.append(makeElement('small', '', model.sub));
+    titleBox.append(nameLine);
+    const close = makeElement('button', 'dai-orb-pop-close', '×');
+    close.type = 'button';
+    close.title = '收起小卡';
+    close.setAttribute('aria-label', `收起${model.title}的详情小卡`);
+    close.addEventListener('click', closeOrbItemPopup);
+    head.append(titleBox, close);
+    pop.append(head);
+    for (const group of model.groups ?? []) {
+        const rows = (group?.rows ?? []).filter(([, value]) => value !== null && value !== undefined && String(value).trim() !== '');
+        if (!rows.length) continue;
+        const block = makeElement('section', 'dai-orb-pop-group');
+        if (group.heading) block.append(makeElement('b', '', group.heading));
+        for (const [label, value] of rows) {
+            const line = makeElement('div', 'dai-profile-row');
+            line.append(makeElement('span', 'dai-profile-label', label), makeElement('span', 'dai-profile-value', String(value)));
+            block.append(line);
+        }
+        pop.append(block);
+    }
+    return pop;
+}
+
+/** 按条目引用回各运行时取活数据；数据已消失（被删/被归档）就不弹。 */
+function buildOrbItemPopModel(ref) {
+    if (!ref || typeof document === 'undefined') return null;
+    const safe = getter => { try { return getter(); } catch { return undefined; } };
+    if (ref.kind === 'event') {
+        const snapshot = safe(() => agentWorldRuntime.snapshot());
+        const event = [...(snapshot?.nearEvents ?? []), ...(snapshot?.worldEvents ?? [])].find(item => String(item?.id) === ref.id);
+        if (!event) return null;
+        const today = safe(() => agentWorldRuntime.status()?.clock?.day) ?? 1;
+        return {
+            title: capDetailTitle(event.title || event.text),
+            sub: ref.scope === 'world' ? '世界大事' : '附近事件',
+            groups: [
+                { rows: [['内容', popText(event.text)], ['级别', event.weight === 'rumor' ? '传闻' : event.weight === 'major' ? '重大 ★' : '普通'], ['登记', `第 ${event.day} 天`], ['地点', popText(event.location)], ['期限', popDueLabel(event.endDay, today)], ['编号', String(event.id ?? '')]] },
+                { heading: '依据', rows: [['依据', popText(event.basis)]] },
+            ],
+        };
+    }
+    if (ref.kind === 'task') {
+        const snapshot = safe(() => agentWorldRuntime.snapshot());
+        const task = (snapshot?.tasks ?? []).find(item => String(item?.id) === ref.id);
+        if (!task) return null;
+        const today = safe(() => agentWorldRuntime.status()?.clock?.day) ?? 1;
+        const statusText = task.status === 'done'
+            ? `已完成${task.doneDay ? `于第 ${task.doneDay} 天` : ''}`
+            : (task.endDay !== null && task.endDay !== undefined ? (Number(task.endDay) < Number(today) ? `已逾期（限第 ${task.endDay} 天前）` : `进行中 · ${popDueLabel(task.endDay, today)}`) : '进行中 · 不限时');
+        return {
+            title: capDetailTitle(task.title),
+            sub: '任务',
+            groups: [
+                { rows: [['任务', popText(task.title)], ['状态', statusText], ['接取', `第 ${task.day} 天`], ['期限', task.endDay !== null && task.endDay !== undefined ? `第 ${task.endDay} 天` : '不限时'], ['编号', String(task.id ?? '')]] },
+                { heading: '详情与来源', rows: [['详情', popText(task.detail)], ['来源', popText(task.basis)]] },
+            ],
+        };
+    }
+    if (ref.kind === 'faction') {
+        const faction = (safe(() => agentWorldRuntime.snapshot())?.factions ?? []).find(item => item?.name === ref.id);
+        if (!faction) return null;
+        return {
+            title: faction.name,
+            sub: '势力动向',
+            groups: [
+                { rows: [['态度', ORB_POP_STANCE_LABELS[faction.stance] ?? '中立'], ['更新', faction.updatedDay ? `第 ${faction.updatedDay} 天` : '']] },
+                { heading: '动向与依据', rows: [['动向', popText(faction.dynamics)], ['依据', popText(faction.basis)]] },
+            ],
+        };
+    }
+    if (ref.kind === 'person') {
+        const person = (safe(() => agentWorldRuntime.snapshot())?.people ?? []).find(item => item?.name === ref.id);
+        if (!person) return null;
+        return {
+            title: person.name,
+            sub: '相关人物',
+            groups: [
+                { rows: [['态度', popText(person.attitude) || '态度未明'], ['更新', person.updatedDay ? `第 ${person.updatedDay} 天` : '']] },
+                { heading: '依据', rows: [['依据', popText(person.basis)]] },
+            ],
+        };
+    }
+    if (ref.kind === 'memory') {
+        const entry = (safe(() => agentMemoryRuntime.snapshot())?.entries ?? []).find(item => String(item?.id) === ref.id);
+        if (!entry) return null;
+        const tierLabel = agentMemoryRuntime.tierLabels?.[entry.tier] ?? entry.tier;
+        return {
+            title: capDetailTitle(entry.text),
+            sub: ref.tier === 'big' ? '大记忆' : '小记忆',
+            groups: [
+                { rows: [['内容', popText(entry.text)], ['层级', `${tierLabel}${entry.tag ? ` · ${agentMemoryRuntime.tagLabels?.[entry.tag] ?? entry.tag}` : ''}`], ['登记', `第 ${entry.day ?? '?'} 天`], ['强度', `强度 ${memoryStrength(entry)}`], ['想起', entry.recallCount ? `想起过 ${entry.recallCount} 次` : ''], ['状态', entry.done === true ? '旧事（已并入总结）' : ''], ['原文', popText(entry.quote)]] },
+                { heading: '关联与出处', rows: [['别名', Array.isArray(entry.aliases) ? entry.aliases.join('、') : ''], ['关联', Array.isArray(entry.related) ? entry.related.join('、') : ''], ['依据', popText(entry.basis)], ['备注', popText(entry.note)]] },
+            ],
+        };
+    }
+    if (ref.kind === 'impact') {
+        const record = (safe(() => agentImpactRuntime.list({ state: 'active' })) ?? []).find(item => String(item?.id ?? item?.title) === ref.id);
+        if (!record) return null;
+        return {
+            title: capDetailTitle(record.title),
+            sub: '世界影响',
+            groups: [
+                { rows: [['内容', popText(record.detail)], ['级别', ORB_POP_IMPACT_WEIGHT[record.weight] ?? '小事'], ['记账', `第 ${record.day} 天`], ['目标', popText(record.target)]] },
+            ],
+        };
+    }
+    if (ref.kind === 'cold') {
+        const preview = (safe(() => agentNpcColdRuntime.status())?.previews ?? []).find(item => String(item?.id) === ref.id);
+        if (!preview) return null;
+        return {
+            title: popText(preview.name) || '冷藏草稿',
+            sub: '冷藏推进',
+            groups: [
+                { rows: [['人物', popText(preview.name)], ['草稿编号', String(preview.id ?? '')], ['状态', '待确认']] },
+                { heading: '说明', rows: [['说明', popText(preview.note)]] },
+            ],
+        };
+    }
+    if (ref.kind === 'fact') {
+        const entry = safe(() => agentFactsIndex.get(ref.id));
+        if (!entry) return null;
+        return {
+            title: popText(entry.name) || `#${ref.id}`,
+            sub: '原著资料',
+            groups: [
+                { rows: [['编号', `#${entry.uid ?? ref.id}`], ['分类', popText(entry.category)], ['卷', Array.isArray(entry.volumes) && entry.volumes.length ? entry.volumes.map(volume => `第 ${volume} 卷`).join('、') : ''], ['别名', Array.isArray(entry.aliases) ? entry.aliases.join('、') : '']] },
+                { heading: '内容', rows: [['内容', popText(entry.content)]] },
+            ],
+        };
+    }
+    return null;
+}
+
+function positionOrbItemPopup() {
+    positionOrbPopElement(orbItemPopElement);
 }
 
 function disposeOrbHud() {
@@ -4229,6 +4442,8 @@ function disposeOrbHud() {
     orbElement = undefined;
     orbNpcPopElement = undefined;
     orbNpcPopName = null;
+    orbItemPopElement = undefined;
+    orbItemPopRef = null;
     orbState = createOrbState();
 }
 
@@ -4850,7 +5065,7 @@ function createSettingsPanel() {
                         <div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon">✎</span><span><b>启用记忆存储</b><small>关闭后不记账、不召回；已记下的内容仍留在聊天存档里。</small></span><input type="checkbox" data-setting="enableMemoryLedger"></div><label class="dai-setting-row dai-setting-toggle"><span><b>按需召回进正文提示词</b><small>生成前用最近四楼正文比对"关联"，命中的才注入，一场戏没勾到就不注。</small></span><input type="checkbox" data-setting="memory.inject"></label><label class="dai-setting-row"><span><b>召回字数上限</b><small>本场召回的记忆总字数上限；超了从优先级最低的往上丢；0 为默认 900。</small></span><input type="number" min="0" max="4000" step="100" data-setting="memory.injectBudget"></label><label class="dai-setting-row dai-setting-toggle"><span><b>自动决定（书记官）</b><small>每轮生成后由模型决定新记忆与了结；关掉后只认正文里的 memory 指令块。</small></span><input type="checkbox" data-setting="memory.decideAuto"></label><label class="dai-setting-row dai-setting-toggle"><span><b>启用记忆决定调用</b><small>关闭后不再发起书记官调用，只走降级指令。</small></span><input type="checkbox" data-setting="memory.decideEnabled"></label><label class="dai-setting-row"><span><b>小记忆攒几条自动总结成大记忆</b><small>书记官只记小记忆；攒够这个数，就自动调一次模型把这批小记忆提炼成一条大记忆，原条目退役。0 = 关闭自动总结；「现在就总结一次」不受阈值限制。</small></span><input type="number" min="0" max="30" step="1" data-setting="memory.consolidateAfter"></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-memory-consolidate>现在就总结一次</button><small role="status" data-memory-consolidate-status></small></div><details class="dai-settle-category"><summary><span class="dai-feature-icon">✎</span><span><b>指令指南（降级模式）</b><small>关闭自动决定时随召回结果注入的规则正文；保持"只输出 JSON"与操作字段名不变，清空恢复内置默认。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>指南正文</b></span><textarea data-setting="memory.guide" rows="9" spellcheck="false"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-memory-guide-default>填入默认指南</button></div></div></details></div>
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>模型决定（LLM 决定脚本执行）</b><small>生成结束后，书记官读最近聊天 + 相关世界书条目 + 本场召回的记忆做一次独立决定，输出严格 JSON，脚本逐条校验执行。</small></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button" data-memory-decide-run>手动决定一次</button><span data-memory-decide-status></span></div><div data-memory-decide-result></div><details class="dai-settle-category"><summary><span class="dai-feature-icon">✦</span><span><b>决定提示词</b><small>书记官的 system 指令；保持"只输出 JSON"与操作字段名不变，清空恢复内置默认。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>提示词正文</b></span><textarea data-setting="memory.decidePrompt" rows="9" spellcheck="false"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-memory-decide-default>填入默认提示词</button></div></div></details></div>
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>记忆指令流水</b><small>最近几批指令的执行结果；重 roll 一楼会先撤销它上一版指令。</small></div><div class="dai-world-journal" data-memory-journal></div></div>
-                    <div class="dai-modal-dock" data-modal-dock="memory-add" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>手动登记</b><small>书记官漏记时在这里补一笔，校验与模型指令完全一致。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>层级</b></span><select data-memory-new-tier><option value="small">小记忆</option><option value="big">大记忆</option></select></label><label class="dai-setting-row"><span><b>标签（大记忆可选）</b></span><select data-memory-new-tag><option value="">不标</option><option value="grudge">恩怨</option><option value="intel">情报</option><option value="thread">伏笔</option><option value="milestone">大事记</option></select></label><label class="dai-setting-row"><span><b>分量</b></span><select data-memory-new-weight><option value="minor">一般</option><option value="major">关键</option></select></label></div><label class="dai-setting-row"><span><b>内容</b><small>一句话说清记住了什么、为什么值得记。</small></span><input type="text" data-memory-new-text maxlength="300"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>依据</b><small>从哪来：哪楼/谁/什么事。</small></span><input type="text" data-memory-new-basis maxlength="80"></label><label class="dai-setting-row"><span><b>关联（必填）</b><small>人名/地名/物名，顿号分隔最多 4 个——这是日后按需召回的钥匙。</small></span><input type="text" data-memory-new-related maxlength="140"></label></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>别名（可选）</b><small>同一记忆的其余叫法（药老/药尘），也算召回钥匙。</small></span><input type="text" data-memory-new-aliases maxlength="140"></label><label class="dai-setting-row"><span><b>引文（可选）</b><small>当时的一句原话，召回时以「」带回正文。</small></span><input type="text" data-memory-new-quote maxlength="60"></label></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button" data-memory-add>登记这条记忆</button></div></div><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-agent-modal-close>取消</button></div></div></section>
+                    <div class="dai-modal-dock" data-modal-dock="memory-add" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>手动登记</b><small>书记官漏记时在这里补一笔，校验与模型指令完全一致。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>层级</b></span><select data-memory-new-tier><option value="small">小记忆</option><option value="big">大记忆</option></select></label><label class="dai-setting-row"><span><b>标签（大记忆可选）</b></span><select data-memory-new-tag><option value="">不标</option><option value="grudge">恩怨</option><option value="intel">情报</option><option value="thread">伏笔</option><option value="milestone">大事记</option></select></label><label class="dai-setting-row"><span><b>分量</b></span><select data-memory-new-weight><option value="minor">一般</option><option value="major">关键</option></select></label></div><label class="dai-setting-row"><span><b>内容</b><small>一句话说清记住了什么、为什么值得记。</small></span><input type="text" data-memory-new-text maxlength="300"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>依据</b><small>从哪来：哪楼/谁/什么事。</small></span><input type="text" data-memory-new-basis maxlength="80"></label><label class="dai-setting-row"><span><b>关联（必填）</b><small>人名/地名/物名，顿号分隔最多 4 个——这是日后按需召回的钥匙。</small></span><input type="text" data-memory-new-related maxlength="140"></label></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>别名（可选）</b><small>同一记忆的其余叫法（药老/药尘），也算召回钥匙。</small></span><input type="text" data-memory-new-aliases maxlength="140"></label><label class="dai-setting-row"><span><b>引文（可选）</b><small>当时的一句原话，召回时以「」带回正文。</small></span><input type="text" data-memory-new-quote maxlength="60"></label></div><label class="dai-setting-row"><span><b>备注（可选）</b><small>细节、背景、后续影响——列表行内只显示内容一句，这些都在详情弹窗里。</small></span><input type="text" data-memory-new-note maxlength="200"></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button" data-memory-add>登记这条记忆</button></div></div><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-agent-modal-close>取消</button></div></div></section>
                     <section class="dai-settings-page" data-settings-section="impact" role="tabpanel" hidden>
                         <div class="dai-page-heading"><h3>世界影响</h3><p>记录你把这局世界改成了什么样：烧掉的据点、得罪的势力、提前发生或没能发生的原著事件。库跟着这份聊天存档走，写进后续每一轮的正文提示词。账本在下面；添加和编辑都走弹窗。</p></div>
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>世界线最近变化</b><small data-impact-summary>加载中…</small></div><p class="dai-state-strip" data-impact-stats>本轮还没挑过注入；生成前会自动挑。</p><p class="dai-turn-result" data-impact-decide-status role="status">默认按上面的节奏自动记录；也可以点“现在记录一次”。</p><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-impact-open-ledger>打开世界账本</button><button type="button" class="dai-secondary-button" data-impact-add>＋ 记一条</button><button type="button" class="dai-secondary-button" data-impact-record>现在记录一次</button></div><ul class="dai-impact-list dai-impact-recent" data-impact-recent></ul></div><div class="dai-modal-dock" data-modal-dock="impact-ledger" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>世界账本</b><small>全部记录都在这里：筛选、搜索、编辑、收场、删除与档案恢复。</small></div><div class="dai-impact-toolbar"><select data-impact-filter aria-label="筛选影响"><option value="all">全部</option><option value="active">未了结</option><option value="ripened">已发酵</option><option value="closed">已了结</option></select><select data-impact-weight aria-label="按分量筛选"><option value="">分量</option><option value="world">世界级</option><option value="major">大事</option><option value="minor">小事</option></select><select data-impact-kind aria-label="按性质筛选"><option value="">性质</option><option value="direct">直接</option><option value="ripple">涟漪</option><option value="butterfly">蝴蝶</option></select><input type="search" data-impact-search placeholder="搜标题、对象或原著" aria-label="搜索影响"><button type="button" class="dai-button dai-button-ghost" data-impact-refresh>刷新</button></div><ul class="dai-impact-list" data-impact-library></ul><details class="dai-impact-archive" data-impact-archive><summary>档案 <small data-impact-archive-count>0 条</small></summary><p class="dai-impact-empty">被删除或因为库满挤出去的旧影响会留在这里，可以恢复。</p><ol class="dai-impact-list" data-impact-archive-list></ol></details><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-agent-modal-close>关闭</button></div></div></div>
@@ -6095,6 +6310,7 @@ function memoryAddFromPanel(panel) {
         op: tier === 'big' ? 'memorize' : 'remember',
         text: body,
         quote: typeof panel.querySelector('[data-memory-new-quote]')?.value === 'string' ? panel.querySelector('[data-memory-new-quote]').value.trim() : '',
+        note: typeof panel.querySelector('[data-memory-new-note]')?.value === 'string' ? panel.querySelector('[data-memory-new-note]').value.trim() : '',
         basis: typeof panel.querySelector('[data-memory-new-basis]')?.value === 'string' ? panel.querySelector('[data-memory-new-basis]').value.trim() : '',
         related: splitNames(panel.querySelector('[data-memory-new-related]')?.value),
         aliases: splitNames(panel.querySelector('[data-memory-new-aliases]')?.value),
@@ -6105,7 +6321,7 @@ function memoryAddFromPanel(panel) {
         const relatedInput = panel.querySelector('[data-memory-new-related]');
         if (relatedInput) relatedInput.placeholder = '关联不能空：它是日后按需召回的钥匙';
     }
-    for (const selector of ['[data-memory-new-text]', '[data-memory-new-basis]', '[data-memory-new-related]', '[data-memory-new-aliases]', '[data-memory-new-quote]']) {
+    for (const selector of ['[data-memory-new-text]', '[data-memory-new-basis]', '[data-memory-new-related]', '[data-memory-new-aliases]', '[data-memory-new-quote]', '[data-memory-new-note]']) {
         const input = panel.querySelector(selector);
         if (input) input.value = '';
     }
@@ -6136,7 +6352,8 @@ function renderMemoryEntryList(container, entries, { conflicts = null, tier = 's
         const tagLabel = entry.tag ? ` [${agentMemoryRuntime.tagLabels[entry.tag] ?? entry.tag}]` : '';
         const clash = conflicts?.get(entry.id);
         const head = makeElement('div', 'dai-world-event-head');
-        const title = makeElement('b', '', `${clash ? '⚠ ' : ''}${entry.weight === 'major' ? '★' : '·'} ${entry.text}`);
+        // 行内只放一句简介（长记忆截断），全文进详情弹窗。
+        const title = makeElement('b', '', `${clash ? '⚠ ' : ''}${entry.weight === 'major' ? '★' : '·'} ${introText(entry.text, 26)}`);
         const strength = makeElement('span', 'dai-memory-strength', `强度 ${memoryStrength(entry)}`);
         head.append(title, strength);
         row.append(head);
@@ -6170,7 +6387,7 @@ function renderMemoryEntryList(container, entries, { conflicts = null, tier = 's
         row.append(actions);
         wireRowDetail(row, panel => {
             openReadonlyDetailModal(panel, capDetailTitle(entry.text), [
-                { rows: [['层级', `${tierLabel}${entry.tag ? ` · ${agentMemoryRuntime.tagLabels[entry.tag] ?? entry.tag}` : ''}`], ['登记', `第 ${entry.day} 天`], ['强度', `强度 ${memoryStrength(entry)}`], ['想起', entry.recallCount ? `想起过 ${entry.recallCount} 次` : ''], ['状态', entry.done === true ? '旧事（已并入总结，召回靠后）' : ''], ['原文', typeof entry.quote === 'string' ? entry.quote.trim() : '']] },
+                { rows: [['内容', typeof entry.text === 'string' ? entry.text.trim() : ''], ['层级', `${tierLabel}${entry.tag ? ` · ${agentMemoryRuntime.tagLabels[entry.tag] ?? entry.tag}` : ''}`], ['登记', `第 ${entry.day} 天`], ['强度', `强度 ${memoryStrength(entry)}`], ['想起', entry.recallCount ? `想起过 ${entry.recallCount} 次` : ''], ['状态', entry.done === true ? '旧事（已并入总结，召回靠后）' : ''], ['原文', typeof entry.quote === 'string' ? entry.quote.trim() : '']] },
                 { title: '关联与出处', rows: [['别名', Array.isArray(entry.aliases) ? entry.aliases.join('、') : ''], ['关联', Array.isArray(entry.related) ? entry.related.join('、') : ''], ['依据', typeof entry.basis === 'string' ? entry.basis.trim() : ''], ['备注', typeof entry.note === 'string' ? entry.note.trim() : '']] },
             ]);
         });
@@ -6310,11 +6527,17 @@ function capDetailTitle(text) {
     return value.length > 30 ? `${value.slice(0, 30)}…` : value;
 }
 
-/** 行级点击 → 详情弹窗：行内操作按钮照常工作，点它们不弹窗。 */
-function wireRowDetail(row, build) {
+/** 行内简介：没有短标题的长内容在行里截断展示，全文只进详情弹窗。 */
+function introText(value, cap = 24) {
+    const body = String(value ?? '').trim();
+    return body.length > cap ? `${body.slice(0, cap)}…` : body;
+}
+
+/** 行级点击 → 详情弹窗：行内操作按钮/表单照常工作，点它们不弹窗。 */
+function wireRowDetail(row, build, { ignore = 'button' } = {}) {
     row.classList.add('is-clickable');
     row.addEventListener('click', clickEvent => {
-        if (clickEvent.target.closest('button')) return;
+        if (clickEvent.target.closest(ignore)) return;
         const panel = typeof document === 'undefined' ? null : document.getElementById(SETTINGS_PANEL_ID);
         if (!panel) return;
         build(panel);
@@ -6334,7 +6557,8 @@ function renderWorldEventList(container, events, { emptyNote, scope = 'near' } =
         row.dataset.weight = event.weight === 'major' ? 'major' : 'minor';
         if (event.pinned === true) row.dataset.pinned = 'true';
         const head = makeElement('div', 'dai-world-event-head');
-        head.append(makeElement('b', '', `${event.weight === 'major' ? '★' : '·'} ${event.text}`));
+        // 行里只放短标题/一句简介（模型没给 title 的旧数据截断兜底），完整内容点开弹窗看。
+        head.append(makeElement('b', '', `${event.weight === 'major' ? '★' : '·'} ${event.title || introText(event.text, 24)}`));
         const due = event.endDay !== null && event.endDay !== undefined ? ` · 剩 ${Math.max(1, event.endDay - today + 1)} 天` : '';
         const where = typeof event.location === 'string' && event.location.trim() ? ` · ${event.location.trim()}` : '';
         head.append(makeElement('small', '', `第 ${event.day} 天 · ${event.id}${where}${due}`));
@@ -6354,8 +6578,8 @@ function renderWorldEventList(container, events, { emptyNote, scope = 'near' } =
         row.append(actions);
         wireRowDetail(row, panel => {
             const due = event.endDay !== null && event.endDay !== undefined ? `剩 ${Math.max(1, event.endDay - today + 1)} 天` : '不限时';
-            openReadonlyDetailModal(panel, capDetailTitle(event.text), [
-                { rows: [['范围', scope === 'world' ? '大陆层面（世界大事）' : '主角身边（附近事件）'], ['级别', event.weight === 'major' ? '重大 ★（置顶不参与上限清理）' : '普通'], ['登记', `第 ${event.day} 天`], ['地点', typeof event.location === 'string' ? event.location.trim() : ''], ['期限', due], ['编号', event.id]] },
+            openReadonlyDetailModal(panel, capDetailTitle(event.title || event.text), [
+                { rows: [['范围', scope === 'world' ? '大陆层面（世界大事）' : '主角身边（附近事件）'], ['内容', typeof event.text === 'string' ? event.text.trim() : ''], ['级别', event.weight === 'major' ? '重大 ★（置顶不参与上限清理）' : '普通'], ['登记', `第 ${event.day} 天`], ['地点', typeof event.location === 'string' ? event.location.trim() : ''], ['期限', due], ['编号', event.id]] },
                 { title: '依据', rows: [['依据', typeof event.basis === 'string' ? event.basis.trim() : '']] },
             ]);
         });
@@ -6416,7 +6640,7 @@ function renderWorldFactionList(container, factions) {
         head.append(makeElement('b', '', faction.name));
         head.append(makeElement('span', 'dai-world-stance', labels[faction.stance] ?? '中立'));
         row.append(head);
-        if (typeof faction.dynamics === 'string' && faction.dynamics.trim()) row.append(makeElement('p', 'dai-world-task-detail', faction.dynamics.trim()));
+        if (typeof faction.dynamics === 'string' && faction.dynamics.trim()) row.append(makeElement('p', 'dai-world-task-detail', introText(faction.dynamics, 30)));
         const notes = [];
         if (typeof faction.basis === 'string' && faction.basis.trim()) notes.push(`依据：${faction.basis.trim()}`);
         if (faction.updatedDay) notes.push(`更新于第 ${faction.updatedDay} 天`);
@@ -6452,7 +6676,7 @@ function renderWorldPeopleList(container, people) {
         head.append(makeElement('b', '', person.name));
         head.append(makeElement('small', '', person.updatedDay ? `更新于第 ${person.updatedDay} 天` : ''));
         row.append(head);
-        row.append(makeElement('p', 'dai-world-task-detail', person.attitude || '态度未明'));
+        row.append(makeElement('p', 'dai-world-task-detail', introText(person.attitude, 30) || '态度未明'));
         if (typeof person.basis === 'string' && person.basis.trim()) row.append(makeElement('small', 'dai-world-event-basis', `依据：${person.basis.trim()}`));
         const actions = makeElement('div', 'dai-world-event-actions');
         const del = makeElement('button', 'dai-secondary-button', '删除');
@@ -6485,10 +6709,10 @@ function renderWorldTaskList(container, tasks) {
         const row = makeElement('div', 'dai-world-task');
         row.dataset.status = task.status === 'done' ? 'done' : (task.endDay !== null && task.endDay !== undefined && task.endDay < today ? 'overdue' : 'active');
         const head = makeElement('div', 'dai-world-event-head');
-        head.append(makeElement('b', '', `${task.status === 'done' ? '✔' : '◆'} ${task.title}`));
+        head.append(makeElement('b', '', `${task.status === 'done' ? '✔' : '◆'} ${introText(task.title, 30)}`));
         head.append(makeElement('small', '', `第 ${task.day} 天接 · ${task.id}`));
         row.append(head);
-        if (typeof task.detail === 'string' && task.detail.trim()) row.append(makeElement('p', 'dai-world-task-detail', task.detail.trim()));
+        // 详情只在弹窗里展开，行内保持一行简介。
         const notes = [];
         if (task.status === 'done') notes.push(`已完成${task.doneDay ? `于第 ${task.doneDay} 天` : ''}`);
         else if (task.endDay !== null && task.endDay !== undefined) notes.push(task.endDay < today ? '已逾期' : `剩 ${task.endDay - today + 1} 天`);
@@ -6511,7 +6735,7 @@ function renderWorldTaskList(container, tasks) {
                 ? `已完成${task.doneDay ? `于第 ${task.doneDay} 天` : ''}`
                 : (task.endDay !== null && task.endDay !== undefined ? (task.endDay < today ? `已逾期（限第 ${task.endDay} 天前）` : `进行中 · 剩 ${task.endDay - today + 1} 天`) : '进行中 · 不限时');
             openReadonlyDetailModal(panel, capDetailTitle(task.title), [
-                { rows: [['状态', statusText], ['接取', `第 ${task.day} 天`], ['期限', task.endDay !== null && task.endDay !== undefined ? `第 ${task.endDay} 天` : '不限时'], ['编号', task.id]] },
+                { rows: [['任务', typeof task.title === 'string' ? task.title.trim() : ''], ['状态', statusText], ['接取', `第 ${task.day} 天`], ['期限', task.endDay !== null && task.endDay !== undefined ? `第 ${task.endDay} 天` : '不限时'], ['编号', task.id]] },
                 { title: '详情与来源', rows: [['详情', typeof task.detail === 'string' ? task.detail.trim() : ''], ['来源', typeof task.basis === 'string' ? task.basis.trim() : '']] },
             ]);
         });
@@ -6745,6 +6969,17 @@ function renderImpactArchive(panel) {
         const meta = [WEIGHT_LABEL[record.weight] ?? '小事', reason];
         if (record.target) meta.push(record.target);
         item.append(makeElement('small', 'dai-impact-meta', meta.join(' · ')));
+        wireRowDetail(item, panel => {
+            openReadonlyDetailModal(panel, capDetailTitle(record.title), [
+                { rows: [
+                    ['内容', typeof record.detail === 'string' ? record.detail.trim() : ''],
+                    ['状态', `已归档 · ${reason}`],
+                    ['级别', WEIGHT_LABEL[record.weight] ?? '小事'],
+                    ['记账', Number.isInteger(record.day) ? `第 ${record.day} 天` : ''],
+                    ['对象', typeof record.target === 'string' ? record.target.trim() : ''],
+                ] },
+            ]);
+        });
         return item;
     }));
     if (items.length > impactArchiveShown) {
@@ -6763,7 +6998,7 @@ function buildImpactItem(record, { injected = false, children = null, chatLength
     if (record.edited) item.classList.add('is-edited');
     const top = makeElement('div', 'dai-impact-top');
     top.append(makeElement('span', 'dai-impact-mark', impactMark(record) || '·'));
-    top.append(makeElement('b', 'dai-impact-title', record.title));
+    top.append(makeElement('b', 'dai-impact-title', introText(record.title, 30)));
     if (!compact) {
         const actions = makeElement('span', 'dai-impact-actions');
         const edit = makeElement('button', 'dai-impact-edit', '编辑');
@@ -6803,7 +7038,26 @@ function buildImpactItem(record, { injected = false, children = null, chatLength
     }
     if (chips.childNodes.length) item.append(chips);
 
-    if (record.detail) item.append(makeElement('p', 'dai-impact-detail', record.detail));
+    // 行内只留一句截断简介，完整内容与全部元数据点开弹窗看。
+    if (record.detail) item.append(makeElement('p', 'dai-impact-detail', introText(record.detail, 40)));
+    wireRowDetail(item, panel => {
+        openReadonlyDetailModal(panel, capDetailTitle(record.title), [
+            { rows: [
+                ['内容', typeof record.detail === 'string' ? record.detail.trim() : ''],
+                ['级别', WEIGHT_LABEL[record.weight] ?? '小事'],
+                ['状态', STATE_LABEL[record.state] ?? '未了结'],
+                ['记账', Number.isInteger(record.day) ? `第 ${record.day} 天` : ''],
+                ['依据楼层', Number.isInteger(record.floor) ? `第 ${record.floor} 楼` : ''],
+                ['对象', typeof record.target === 'string' ? record.target.trim() : ''],
+                ['原著处理', record.canon ? (SHIFT_LABEL[record.shift] ?? '改写') : ''],
+                ['台账事件', record.eventId ? `#${record.eventId}` : ''],
+                ['承接', record.parent ? `#${record.parent}` : ''],
+                ['引出', children?.length ? children.map(id => `#${id}`).join('、') : ''],
+                ['结果', typeof record.resolution === 'string' ? record.resolution.trim() : ''],
+                ['备注', record.certainty === 'rumor' ? '传闻（未证实）' : ''],
+            ] },
+        ]);
+    }, { ignore: 'button, input, textarea, select, .dai-impact-form' });
     if (record.state === 'ripened') item.append(makeElement('small', 'dai-impact-fate', `已发酵${record.resolution ? ` · ${record.resolution}` : ''}`));
     else if (record.state === 'closed') item.append(makeElement('small', 'dai-impact-fate', `已了结${record.resolution ? ` · ${record.resolution}` : ''}`));
     else if (record.state === 'reverted') item.append(makeElement('small', 'dai-impact-fate', '已被修复/撤销'));

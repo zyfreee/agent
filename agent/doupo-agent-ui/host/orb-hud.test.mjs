@@ -77,7 +77,7 @@ assert.match(majorItem.meta, /大事/);
 assert.match(majorItem.meta, /置顶/);
 assert.equal(world.lists[2].items[0].head, '魔炎谷', '敌对势力排最前');
 assert.match(world.lists[2].items[0].meta, /敌对/);
-assert.equal(world.lists[2].items[0].detail, '扬言寻仇\n依据：上楼放话');
+assert.equal(world.lists[2].items[0].detail, '扬言寻仇', '行内只放动向一句，依据收进详情小卡');
 assert.match(world.lists[2].items[1].meta, /警惕/, '警惕排同盟前面，照注入的立场排序');
 assert.match(world.lists[2].items[2].meta, /同盟/);
 assert.equal(world.lists[3].items[0].meta, '亲近');
@@ -86,7 +86,7 @@ assert.equal(world.lists[4].items[0].head, '逾期任务', '逾期任务排最�
 assert.match(world.lists[4].items[0].meta, /已逾期/);
 assert.match(world.lists[4].items[1].meta, /剩 4 天/);
 assert.match(world.lists[4].items[2].meta, /已完成于第 3 天/);
-assert.match(world.lists[4].items[1].detail, /来源：药老托付/);
+assert.equal(world.lists[4].items[1].detail, undefined, '任务行内不再铺详情，来源与详情收进详情小卡');
 
 // —— 纳戒：计数行 + 功法斗技配方清单 + 行囊装备中排前 + 炼制超期 ——
 const self = buildSelfPanel({
@@ -159,7 +159,7 @@ const impact = buildImpactPanel({
 });
 assert.equal(impact.rows.find(row => row.label === '已对账到').value, '第 12 楼');
 assert.match(impact.lists[0].items[0].meta, /大事 · 乌坦城坊市/);
-assert.equal(impact.lists[0].items[0].detail, '药材供不应求');
+assert.equal(impact.lists[0].items[0].detail, undefined, '影响条目行内不铺详情，详情收进详情小卡');
 
 // —— 原著资料与沙盒 ——
 const facts = buildFactsPanel({
@@ -199,10 +199,10 @@ assert.match(memory.summary, /记着 8 条记忆，大记忆 2 条、小记忆 3
 assert.equal(memory.rows.find(row => row.label === '已了结').value, '3 条');
 assert.equal(memory.lists[0].items[0].head, '★ 药老藏在戒指里', '关键大记忆排最前');
 assert.match(memory.lists[0].items[0].meta, /第 3 天/);
-assert.match(memory.lists[0].items[0].meta, /关联：药老、戒指/);
-assert.equal(memory.lists[0].items[0].detail, '「你且叫我老师」');
+assert.doesNotMatch(memory.lists[0].items[0].meta, /关联/, '行内不放关联，关联收进详情小卡');
+assert.equal(memory.lists[0].items[0].detail, undefined, '引文与依据不再铺在行内');
 assert.equal(memory.lists[1].items[0].head, '★ 云岚宗的约', '关键小记忆排最前');
-assert.equal(memory.lists[1].items[0].detail, '三年之约', '没有引文就给依据');
+assert.equal(memory.lists[1].items[0].detail, undefined, '没有引文也不在行内给依据，依据进详情小卡');
 const memoryEmpty = buildMemoryPanel({});
 assert.equal(memoryEmpty.rows.length, 0);
 assert.match(memoryEmpty.summary, /还没有记下任何记忆/);

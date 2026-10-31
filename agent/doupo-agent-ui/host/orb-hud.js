@@ -62,12 +62,24 @@ function text(value) {
     return typeof value === 'string' && value.trim() ? value.trim() : '';
 }
 
+/** 行内简介：没有短标题的长内容截断展示，全文只在详情小卡里出现。 */
+function brief(value, cap) {
+    const body = text(value);
+    return body.length > cap ? `${body.slice(0, cap)}…` : body;
+}
+
 function row(label, value, tone) {
     return { label, value: text(value) || EMPTY, ...(tone ? { tone } : {}) };
 }
 
-function entry(head, meta, detail) {
-    return { head: text(head), ...(text(meta) ? { meta: text(meta) } : {}), ...(text(detail) ? { detail: text(detail) } : {}) };
+function entry(head, meta, detail, ref) {
+    return { head: text(head), ...(text(meta) ? { meta: text(meta) } : {}), ...(text(detail) ? { detail: text(detail) } : {}), ...(ref ? { ref } : {}) };
+}
+
+/** 条目引用：详情小卡按它回运行时里找活数据；拿不到 id 的条目不给引用（不可点）。 */
+function ref(kind, id, extra) {
+    if (id === undefined || id === null || id === '') return undefined;
+    return { kind, id: String(id), ...(extra ?? {}) };
 }
 
 function clip(items, cap = LIST_CAP) {
@@ -94,31 +106,35 @@ export function buildWorldPanel({ status, snapshot, clockText } = {}) {
     }
     if (snapshot?.tension) rows.push(row('世界氛围', TENSION_LABELS[snapshot.tension] ?? ''));
     const today = status?.clock?.day ?? 1;
-    const eventItem = event => entry(
-        event.text,
+    const eventItem = (event, scope) => entry(
+        event.title || brief(event.text, 20),
         [`第 ${event.day} 天`, event.weight === 'rumor' ? '传闻' : event.weight === 'major' ? '大事' : '',
             event.pinned ? '置顶' : '', remainingDays(event.endDay, today)].filter(Boolean).join(' · '),
         event.basis,
+        ref('event', event?.id, { scope }),
     );
     const near = clip((snapshot?.nearEvents ?? []).filter(event => !event.done));
     const world = clip((snapshot?.worldEvents ?? []).filter(event => !event.done));
     const factionItem = faction => entry(
         faction.name,
         [STANCE_LABELS[faction.stance] ?? '中立', `第 ${faction.updatedDay ?? faction.day ?? '?'} 天更新`].filter(Boolean).join(' · '),
-        [faction.dynamics, text(faction.basis) ? `依据：${faction.basis}` : ''].filter(Boolean).join('\n'),
+        brief(faction.dynamics, 30),
+        ref('faction', faction?.name),
     );
     const personItem = person => entry(
         person.name,
-        text(person.attitude) || '态度未明',
-        person.basis,
+        brief(person.attitude, 24) || '态度未明',
+        '',
+        ref('person', person?.name),
     );
     const taskItem = task => {
         const overdue = task.status !== 'done' && task.endDay !== null && task.endDay !== undefined && task.endDay < today;
         return entry(
-            task.title,
+            brief(task.title, 24),
             [task.status === 'done' ? `已完成${task.doneDay ? `于第 ${task.doneDay} 天` : ''}` : overdue ? '已逾期' : remainingDays(task.endDay, today),
                 `第 ${task.day} 天接`].filter(Boolean).join(' · '),
-            [task.detail, text(task.basis) ? `来源：${task.basis}` : ''].filter(Boolean).join('\n'),
+            '',
+            ref('task', task?.id),
         );
     };
     const tasks = clip([...(snapshot?.tasks ?? [])].sort((a, b) => rankTask(a, today) - rankTask(b, today)), 6);
@@ -129,8 +145,8 @@ export function buildWorldPanel({ status, snapshot, clockText } = {}) {
         summary: clockText || EMPTY,
         rows: capRows(rows),
         lists: [
-            list('附近事件', '附近没有进行中的事件。', near.map(eventItem)),
-            list('世界大事', '暂无进行中的世界大事。', world.map(eventItem)),
+            list('附近事件', '附近没有进行中的事件。', near.map(event => eventItem(event, 'near'))),
+            list('世界大事', '暂无进行中的世界大事。', world.map(event => eventItem(event, 'world'))),
             list('势力动向', '还没有剧情接触过的势力。', factions.map(factionItem)),
             list('相关人物', '还没有记过态度的人物。', people.map(personItem)),
             list('任务', '没有立下的任务。', tasks.map(taskItem)),
@@ -248,6 +264,7 @@ export function buildNpcPanel({ status, records } = {}) {
             record.name,
             [`${favorLabel(record.favor)}（${Number(record.favor) || 0}）`, record.presence, record.importance].filter(Boolean).join(' · '),
             record.identity,
+            ref('npc', record?.name),
         )))],
     };
 }
@@ -265,9 +282,11 @@ export function buildColdPanel({ status } = {}) {
         summary: selected.length ? `${selected.length} 人在后台生活，${pending.length} 份草稿待确认。` : '还没有勾选冷藏人物。',
         rows,
         lists: [
-            list('冷藏名单', '没有勾选冷藏人物。', clip(selected, 12).map(name => entry(name))),
+            list('冷藏名单', '没有勾选冷藏人物。', clip(selected, 12).map(name => entry(
+                name, '', '', ref('npc', name),
+            ))),
             list('待确认草稿', '没有待确认的草稿。', clip(pending).map(item => entry(
-                item.name, item.id, text(item.note),
+                item.name, item.id, '', ref('cold', item?.id, { name: item?.name }),
             ))),
         ],
     };
@@ -291,9 +310,10 @@ export function buildImpactPanel({ status, records } = {}) {
         summary: status?.total ? `账上 ${status.total} 条，进行中 ${status.active} 条。` : '影响账本是空的。',
         rows,
         lists: [list('进行中的影响', '没有进行中的影响。', active.map(record => entry(
-            record.title,
+            brief(record.title, 24),
             [`第 ${record.day} 天`, IMPACT_WEIGHT[record.weight] ?? '小事', record.target].filter(Boolean).join(' · '),
-            record.detail,
+            '',
+            ref('impact', record?.id ?? record?.title),
         )))],
     };
 }
@@ -330,6 +350,8 @@ export function buildFactsPanel({ stats, worldbook, volume, lastInjection, entry
         lists: [list('注入的原著条目', '最近一轮没有注入原著条目。', usedIds.map(uid => entry(
             `#${uid} ${typeof entryName === 'function' ? (entryName(uid) || `#${uid}`) : `#${uid}`}`,
             '本轮进入正文提示词',
+            '',
+            ref('fact', uid),
         )))],
     };
 }
@@ -340,9 +362,10 @@ export function buildMemoryPanel({ status, snapshot } = {}) {
     const open = clip([...(snapshot?.entries ?? [])].filter(entry => entry.done !== true), 60);
     const rank = (a, b) => (b.weight === 'major') - (a.weight === 'major') || (b.day ?? 0) - (a.day ?? 0);
     const memoryItem = item => entry(
-        `${item.weight === 'major' ? '★ ' : ''}${item.text}`,
-        [`第 ${item.day ?? '?'} 天`, TAG_LABELS[item.tag] ?? '', item.related?.length ? `关联：${item.related.join('、')}` : ''].filter(Boolean).join(' · '),
-        [text(item.quote) ? `「${item.quote}」` : '', item.basis].filter(Boolean).join('\n'),
+        `${item.weight === 'major' ? '★ ' : ''}${brief(item.text, 24)}`,
+        [`第 ${item.day ?? '?'} 天`, TAG_LABELS[item.tag] ?? ''].filter(Boolean).join(' · '),
+        '',
+        ref('memory', item?.id, { tier: item?.tier }),
     );
     const rows = capRows([
         row('记忆总数', status?.total !== undefined ? `${status.total} 条` : ''),

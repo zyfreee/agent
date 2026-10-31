@@ -45,7 +45,7 @@ export const IMPACT_DECIDE_PROMPT = [
     '7. 最后才写 detail：写"可观察的后果"，不写"玩家很生气""气氛紧张"这类没有后果的话。',
     '',
     '【可用操作，脚本逐条验票，坏条目单独丢弃，不连累其他条目】',
-    '- {"op":"record","title":"≤60字，世界哪块变了","detail":"≤240字，具体变化与可观察后果","target":"被影响的地方/势力/规矩","kind":"direct|ripple|butterfly","weight":"minor|major|world","certainty":"certain|rumor","evidence":"依据哪一楼、哪句话","canon":"牵动的原著节点，没牵动留空","shift":"none|accelerate|delay|avoid|alter","ripen":"仅当正文明确写了日子或倒计时才填（1-365 天），按写明的天数算；没写就留空","eventId":"若与世界台账里某条事件是同一件事，抄它的编号（如 e2），否则留空","parent":"由哪条旧影响引出，可空"}：登记一条新影响。',
+    '- {"op":"record","title":"≤20字短标题，一眼看懂世界哪块变了","detail":"≤240字，具体变化与可观察后果","target":"被影响的地方/势力/规矩","kind":"direct|ripple|butterfly","weight":"minor|major|world","certainty":"certain|rumor","evidence":"依据哪一楼、哪句话","canon":"牵动的原著节点，没牵动留空","shift":"none|accelerate|delay|avoid|alter","ripen":"仅当正文明确写了日子或倒计时才填（1-365 天），按写明的天数算；没写就留空","eventId":"若与世界台账里某条事件是同一件事，抄它的编号（如 e2），否则留空","parent":"由哪条旧影响引出，可空"}：登记一条新影响。title 只写短标题，具体内容全放 detail。',
     '- {"op":"adjust","ref":"i3","days":-3,"detail":"玩家怎么推动或拖延的"}：改一件旧影响的发酵时间。days 写负数=提前几天、正数=延后几天；提前到当天或更早就当场应验；已经应验或已收场的不许调。',
     '- {"op":"ripen","ref":"i3","detail":"世界怎么应验了"}：旧影响开始发酵、被世人看见。',
     '- {"op":"close","ref":"i3","detail":"怎么收的场"}：这件事已经消化完，以后不再提。',
