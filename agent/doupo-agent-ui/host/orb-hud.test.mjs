@@ -1,9 +1,27 @@
 import assert from 'node:assert/strict';
-import { ORB_ITEMS, createOrbState, buildOrbPanels, buildWorldPanel, buildSelfPanel, buildNpcPanel, buildColdPanel, buildImpactPanel, buildFactsPanel, buildSandboxPanel, buildOverviewPanel, buildMemoryPanel, buildMirrorPanel, buildJournalPanel } from './orb-hud.js';
+import { ORB_ITEMS, createOrbState, buildOrbPanels, buildWorldPanel, buildSelfPanel, buildNpcPanel, buildColdPanel, buildImpactPanel, buildFactsPanel, buildSandboxPanel, buildOverviewPanel, buildMemoryPanel, buildMirrorPanel, buildJournalPanel, buildSettlePanel } from './orb-hud.js';
+
+// OPT-098: truthful totals and bounded pages expose every record beyond 200.
+for (const count of [201, 1000]) {
+    const panel = buildWorldPanel({ snapshot: { nearEvents: Array.from({ length: count }, (_, i) => ({ id: `e${i}`, title: `事件${i}`, day: i + 1 })) } });
+    const section = panel.lists[0];
+    assert.equal(section.total, count);
+    assert.equal(section.items.length, 4);
+    assert.equal(section.all.length, 200);
+    assert.equal(section.truncated, true);
+    const ids = new Set();
+    for (let offset = 0; offset < count; offset += 200) {
+        const page = section.getPage(offset);
+        assert.ok(page.all.length <= 200);
+        assert.equal(page.total, count);
+        for (const row of page.all) ids.add(row.ref.id);
+    }
+    assert.equal(ids.size, count);
+}
 
 // —— 图标清单：顺序固定、id 唯一、不依赖外部输入 ——
-assert.equal(ORB_ITEMS.length, 11);
-assert.deepEqual(ORB_ITEMS.map(item => item.id), ['overview', 'world', 'self', 'memory', 'npcledger', 'cold', 'impact', 'facts', 'mirror', 'journal', 'sandbox']);
+assert.equal(ORB_ITEMS.length, 12);
+assert.deepEqual(ORB_ITEMS.map(item => item.id), ['overview', 'world', 'self', 'memory', 'npcledger', 'cold', 'impact', 'facts', 'settle', 'mirror', 'journal', 'sandbox']);
 assert.ok(ORB_ITEMS.every(item => item.icon && item.title && item.hint));
 for (const probe of [ORB_ITEMS, ORB_ITEMS[0]]) assert.equal(Object.isFrozen(probe), true);
 
@@ -36,6 +54,11 @@ assert.equal(empty.world.rows.find(row => row.label === '季节'), undefined, '�
 assert.equal(empty.npcledger.lists[0].items.length, 0);
 assert.match(empty.sandbox.summary, /还没有口径记录/);
 
+// —— 纳戒主角标签与账本九项对齐：空着也占行显示「暂无」（与纳戒面板的「—」一致）——
+for (const label of ['姓名', '性别', '年龄', '种族', '出身', '所属', '斗气属性', '天赋', '外貌']) {
+    assert.equal(empty.self.rows.find(row => row.label === label)?.value, '暂无', `${label} 空着也在信息窗占行`);
+}
+
 // —— 世界运转：时钟、信息字段、氛围、势力人物、事件与任务的剩余天数 ——
 const world = buildWorldPanel({
     clockText: '第 5 天 08:30',
@@ -47,9 +70,9 @@ const world = buildWorldPanel({
         clock: { day: 5, minute: 510 },
         tension: 'rising',
         nearEvents: [{ id: 'e1', text: '坊市集市开张', day: 4, weight: 'minor', basis: '酒馆传闻', endDay: 6, done: false, pinned: false }, { id: 'e2', text: '已了结的旧事', day: 2, done: true }],
-        worldEvents: [{ id: 'e3', text: '迦南学院招生', day: 3, weight: 'major', endDay: 9, done: false, pinned: true }, { id: 'e4', text: '魔炎谷寻仇的传闻', day: 4, weight: 'rumor', done: false }],
+        worldEvents: [{ id: 'e3', title: '迦南学院招生', text: '迦南学院招生队进了乌坦城，当街考校少年斗气', day: 3, weight: 'major', endDay: 9, done: false, pinned: true }, { id: 'e4', text: '魔炎谷寻仇的传闻', day: 4, weight: 'rumor', done: false }],
         factions: [
-            { name: '魔炎谷', stance: 'hostile', dynamics: '扬言寻仇', basis: '上楼放话', day: 3, updatedDay: 4 },
+            { name: '魔炎谷', stance: 'hostile', dynamics: '扬言寻仇', basis: '上楼放话', day: 3, updatedDay: 4, type: '宗门', leader: '魔炎谷主' },
             { name: '乌坦城萧家', stance: 'allied', dynamics: '', day: 2 },
             { name: '纳兰家', stance: 'wary', day: 1 },
         ],
@@ -71,12 +94,17 @@ assert.equal(world.rows.find(row => row.label === '名声'), undefined, '没填�
 assert.equal(world.rows.find(row => row.label === '世界氛围').value, '升温');
 const nearItem = world.lists[0].items[0];
 assert.match(nearItem.meta, /剩 2 天/);
-assert.equal(nearItem.detail, '酒馆传闻');
+assert.equal(nearItem.head, '坊市集市开张', '没有 title 的事件拿正文顶标题位');
+assert.equal(nearItem.detail, '酒馆传闻', '没标题时行内不重复铺正文，detail 留给依据');
 const majorItem = world.lists[1].items[0];
+assert.equal(majorItem.head, '迦南学院招生', '有 title 就用 title 当标题');
+assert.equal(majorItem.detail, '迦南学院招生队进了乌坦城，当街考校少年斗气', '有标题时行内补一句正文简介');
 assert.match(majorItem.meta, /大事/);
 assert.match(majorItem.meta, /置顶/);
 assert.equal(world.lists[2].items[0].head, '魔炎谷', '敌对势力排最前');
 assert.match(world.lists[2].items[0].meta, /敌对/);
+assert.match(world.lists[2].items[0].meta, /宗门/, '势力条目 meta 带类型');
+assert.match(world.lists[2].items[0].meta, /首领 魔炎谷主/, '势力条目 meta 带首领');
 assert.equal(world.lists[2].items[0].detail, '扬言寻仇', '行内只放动向一句，依据收进详情小卡');
 assert.match(world.lists[2].items[1].meta, /警惕/, '警惕排同盟前面，照注入的立场排序');
 assert.match(world.lists[2].items[2].meta, /同盟/);
@@ -88,13 +116,18 @@ assert.match(world.lists[4].items[1].meta, /剩 4 天/);
 assert.match(world.lists[4].items[2].meta, /已完成于第 3 天/);
 assert.equal(world.lists[4].items[1].detail, undefined, '任务行内不再铺详情，来源与详情收进详情小卡');
 
-// —— 纳戒：计数行 + 功法斗技配方清单 + 行囊装备中排前 + 炼制超期 ——
+// —— 纳戒：计数行 + 功法斗技装备清单 + 行囊装备中排前 + 炼制超期 ——
 const self = buildSelfPanel({
-    status: { day: 7, profile: { name: '萧炎', gender: '男', age: '15' }, realm: { realm: '斗者', stage: '三星' }, gold: 1200, titles: 1, techniques: 1, skills: 2, items: 5, equipped: 2, recipes: 1, crafting: 1, goals: 2 },
+    status: { day: 7, profile: { name: '萧炎', gender: '男', age: '15', race: '人族', origin: '乌坦城萧家', affiliation: '萧家', attribute: '火', talent: '过目成诵', appearance: '黑色短发，眼神倔强' }, realm: { realm: '斗者', stage: '三星' }, gold: 1200, titles: 1, techniques: 1, skills: 2, equipment: 2, treasures: 1, items: 5, equipped: 2, recipes: 1, crafting: 1, goals: 2 },
     snapshot: {
         titles: ['萧家废物'],
         techniques: [{ id: 't1', name: '焚诀', grade: '黄阶低级', type: '火属性', note: '药老所授' }],
         skills: [{ id: 's1', name: '八极崩', grade: '玄阶', type: '' }],
+        equipment: [
+            { id: 'e1', name: '复元甲', grade: '玄阶中品', type: '防具' },
+            { id: 'e2', name: '玄重尺', grade: '', type: '武器', note: '家传重尺' },
+        ],
+        treasures: [{ id: 'z1', name: '青莲地心火', grade: '异火榜第十九', type: '异火', note: '塔戈沙漠所得' }],
         recipes: [{ id: 'r1', name: '回气丹', grade: '一品', craft: '炼药', note: '药材三味' }],
         items: [
             { id: 'b2', name: '回气丹', count: 3, category: '丹药', equipped: false },
@@ -110,16 +143,41 @@ const self = buildSelfPanel({
 });
 assert.match(self.summary, /第 7 天/);
 assert.match(self.summary, /斗者三星/);
-assert.equal(self.rows.find(row => row.label === '行囊').value, '5 件（装备中 2）');
+// 主角标签九项照账本字段顺序全列，且排在境界/金币等计数行前面
+{
+    const labels = self.rows.map(row => row.label);
+    assert.deepEqual(labels.slice(0, 9), ['姓名', '性别', '年龄', '种族', '出身', '所属', '斗气属性', '天赋', '外貌'], '九项主角标签照账本顺序排在最前');
+    assert.equal(self.rows.find(row => row.label === '姓名').value, '萧炎');
+    assert.equal(self.rows.find(row => row.label === '性别').value, '男');
+    assert.equal(self.rows.find(row => row.label === '年龄').value, '15');
+    assert.equal(self.rows.find(row => row.label === '种族').value, '人族');
+    assert.equal(self.rows.find(row => row.label === '出身').value, '乌坦城萧家');
+    assert.equal(self.rows.find(row => row.label === '所属').value, '萧家');
+    assert.equal(self.rows.find(row => row.label === '斗气属性').value, '火');
+    assert.equal(self.rows.find(row => row.label === '天赋').value, '过目成诵');
+    assert.equal(self.rows.find(row => row.label === '外貌').value, '黑色短发，眼神倔强');
+}
+assert.equal(self.rows.find(row => row.label === '装备').value, '2 件', '装备栏独立计数行');
+assert.equal(self.rows.find(row => row.label === '天材地宝').value, '1 件', '天材地宝独立计数行');
+assert.equal(self.rows.find(row => row.label === '行囊').value, '5 件');
 assert.match(self.lists[1].items[0].head, /焚诀（黄阶低级）/);
 assert.equal(self.lists[1].items[0].detail, '药老所授');
 assert.match(self.lists[2].items[0].head, /八极崩（玄阶）/);
-assert.match(self.lists[3].items[0].head, /\[装备中\] 玄重尺/);
-assert.match(self.lists[4].items[0].head, /回气丹（一品）/);
-assert.match(self.lists[5].items[0].head, /炼药·回气丹×2/);
-assert.match(self.lists[5].items[0].meta, /已超期/, 'endDay 已过就是超期');
-assert.match(self.lists[6].items[0].head, /★ 三年之约/, '主线目标排最前');
-assert.match(self.lists[6].items[2].head, /\[已达成\]/);
+assert.match(self.lists[3].items[0].head, /复元甲（玄阶中品）/, '装备栏清单排在行囊前');
+assert.equal(self.lists[3].items[0].meta, '防具');
+assert.equal(self.lists[3].items[1].head, '玄重尺');
+assert.equal(self.lists[3].items[1].meta, '武器');
+assert.equal(self.lists[3].items[1].detail, '家传重尺');
+assert.equal(self.lists[4].heading, '天材地宝', '装备后天材地宝栏');
+assert.match(self.lists[4].items[0].head, /青莲地心火（异火榜第十九）/);
+assert.equal(self.lists[4].items[0].meta, '异火');
+assert.equal(self.lists[4].items[0].detail, '塔戈沙漠所得');
+assert.match(self.lists[5].items[0].head, /\[装备中\] 玄重尺/);
+assert.match(self.lists[6].items[0].head, /回气丹（一品）/);
+assert.match(self.lists[7].items[0].head, /炼药·回气丹×2/);
+assert.match(self.lists[7].items[0].meta, /已超期/, 'endDay 已过就是超期');
+assert.match(self.lists[8].items[0].head, /★ 三年之约/, '主线目标排最前');
+assert.match(self.lists[8].items[2].head, /\[已达成\]/);
 
 // —— 人物簿：好感刻度与四象限标签 ——
 const npc = buildNpcPanel({
@@ -146,8 +204,33 @@ const cold = buildColdPanel({
     },
 });
 assert.match(cold.summary, /2 人在后台生活，1 份草稿待确认/);
+assert.equal(cold.lists.length, 2, '冷藏面板只有冷藏名单与待确认草稿两列');
 assert.equal(cold.lists[1].items.length, 1);
 assert.equal(cold.lists[1].items[0].head, '萧薰儿');
+assert.equal(cold.lists[0].items[0].detail, undefined, '没传 records 也不炸，主栏目不铺详情');
+
+// —— 冷藏推进：冷藏名单行带自行活动标签、简况与「新」标 ——
+const coldWithRecords = buildColdPanel({
+    status: { selected: ['刀疤武者', '刘医师'], previews: [] },
+    records: [
+        {
+            name: '刀疤武者', presence: '不在场', location: '中街迎宾客栈收货点', doing: '守点验私货', identity: '加列家护卫头目',
+            coldTouch: { day: 1, floor: 19, fields: ['位置', '正在做什么', '流水'], at: '2026-11-01T10:51:37Z' },
+            log: [{ floor: 13, day: 1, text: '踩在木箱上挑散干地黄' }, { floor: 19, day: 1, src: '冷藏', text: '守在收货点验私货、断来路' }],
+        },
+        { name: '刘医师', presence: '在场', log: [] },
+    ],
+    lastFloor: 20,
+});
+assert.equal(coldWithRecords.lists[0].items.length, 2);
+const scarRow = coldWithRecords.lists[0].items[0];
+assert.match(scarRow.meta, /自行/, '有冷藏流水或 coldTouch 就打短标「自行」');
+assert.match(scarRow.meta, /新/, '最近一两楼的自行活动标「新」');
+assert.match(scarRow.meta, /@中街迎宾客栈收货点/);
+assert.equal(scarRow.detail, undefined, '主栏目不铺详情，一行放名字＋标签＋地点时间，长内容点行看小卡');
+const plainRow = coldWithRecords.lists[0].items[1];
+assert.equal((plainRow.meta || '').includes('自行'), false, '没有自行活动就不打标');
+assert.equal(plainRow.detail, undefined);
 
 // —— 世界影响：计数与进行中列表 ——
 const impact = buildImpactPanel({
@@ -185,27 +268,71 @@ assert.equal(buildSandboxPanel({ read: { status: 'empty' } }).rows.length, 0);
 
 // —— 主角记忆：两层计数 + 关键排前 + 引文与关联 ——
 const memory = buildMemoryPanel({
-    status: { byTier: { big: { open: 2, total: 3 }, small: { open: 3, total: 5 } }, open: 5, total: 8 },
+    status: { byTier: { big: { total: 3 }, small: { total: 5 } }, total: 8 },
     snapshot: {
         entries: [
-            { id: 'm1', tier: 'big', text: '药老藏在戒指里', weight: 'major', day: 3, quote: '你且叫我老师', related: ['药老', '戒指'], tag: 'secret', done: false },
-            { id: 'm2', tier: 'big', text: '旧事', weight: 'minor', day: 1, done: false },
-            { id: 'm3', tier: 'small', text: '云岚宗的约', weight: 'major', day: 2, basis: '三年之约', done: false },
-            { id: 'm4', tier: 'small', text: '了结的杂事', day: 1, done: true },
+            { id: 'm1', tier: 'big', text: '药老藏在戒指里', weight: 'major', day: 3, quote: '你且叫我老师', related: ['药老', '戒指'], tag: 'secret' },
+            { id: 'm2', tier: 'big', text: '旧事', weight: 'minor', day: 1 },
+            { id: 'm3', tier: 'small', title: '三年之约立誓', text: '云岚宗的约', weight: 'major', day: 2, basis: '三年之约' },
+            { id: 'm4', tier: 'small', text: '路边吃过一碗面', day: 1 },
+            { id: 'm5', tier: 'small', title: '加列家中街设卡', text: '正午过后车队在中街撞见加列家设卡盘查，绕羊角巷避开', weight: 'minor', day: 1 },
         ],
     },
 });
-assert.match(memory.summary, /记着 8 条记忆，大记忆 2 条、小记忆 3 条还没了结/);
-assert.equal(memory.rows.find(row => row.label === '已了结').value, '3 条');
-assert.equal(memory.lists[0].items[0].head, '★ 药老藏在戒指里', '关键大记忆排最前');
-assert.match(memory.lists[0].items[0].meta, /第 3 天/);
-assert.doesNotMatch(memory.lists[0].items[0].meta, /关联/, '行内不放关联，关联收进详情小卡');
-assert.equal(memory.lists[0].items[0].detail, undefined, '引文与依据不再铺在行内');
-assert.equal(memory.lists[1].items[0].head, '★ 云岚宗的约', '关键小记忆排最前');
-assert.equal(memory.lists[1].items[0].detail, undefined, '没有引文也不在行内给依据，依据进详情小卡');
+assert.match(memory.summary, /记着 8 条记忆，大记忆 3 条、小记忆 5 条。/);
+assert.equal(memory.rows.find(row => row.label === '大记忆').value, '3 条');
+assert.equal(memory.rows.find(row => row.label === '小记忆').value, '5 条');
+assert.ok(!memory.rows.some(row => row.label === '已了结'), '了结概念已删除');
+assert.equal(memory.lists[1].items[0].head, '★ 药老藏在戒指里', '关键大记忆排最前');
+assert.match(memory.lists[1].items[0].meta, /第 3 天/);
+assert.doesNotMatch(memory.lists[1].items[0].meta, /关联/, '行内不放关联，关联收进详情小卡');
+assert.equal(memory.lists[1].items[0].detail, undefined, '引文与依据不再铺在行内');
+assert.equal(memory.lists[2].items[0].head, '★ 三年之约立誓', '关键小记忆排最前，有 title 用 title');
+assert.equal(memory.lists[2].items[0].detail, undefined, '没有引文也不在行内给依据，依据进详情小卡');
+assert.equal(memory.lists[2].items[1].head, '路边吃过一碗面', '没有 title 用正文');
+assert.equal(memory.lists[2].items[2].head, '加列家中街设卡', '短标题优先，正文不进标题位');
+assert.ok(!memory.lists[2].items[2].head.includes('羊角巷'), '正文细节不进主页面标题');
+assert.equal(memory.lists[0].items.length, 0, '没有注入记录时已注入区为空');
 const memoryEmpty = buildMemoryPanel({});
 assert.equal(memoryEmpty.rows.length, 0);
 assert.match(memoryEmpty.summary, /还没有记下任何记忆/);
+
+// —— 记忆注入记录：本轮已注入区（仿原著资料） ——
+const memoryInjected = buildMemoryPanel({
+    status: { byTier: { big: { total: 2 }, small: { total: 1 } }, total: 3 },
+    snapshot: { entries: [
+        { id: 'm2', tier: 'big', title: '穆蛇坊市结怨', text: '穆蛇结怨', weight: 'major', day: 3 },
+        { id: 'm1', tier: 'small', title: '面摊吃饭', text: '吃过面', weight: 'minor', day: 5 },
+    ] },
+    lastInjection: {
+        status: 'injected', source: 'recall', note: '穆蛇再登场', ids: ['m2', 'm1'], cleared: false, chars: 704, at: Date.parse('2026-11-04T10:00:00'),
+        entries: [
+            { id: 'm2', tier: 'big', title: '穆蛇坊市结怨', text: '穆蛇结怨', weight: 'major', day: 3, tag: 'grudge' },
+            { id: 'm1', tier: 'small', title: '面摊吃饭', text: '吃过面', weight: 'minor', day: 5 },
+        ],
+    },
+});
+assert.match(memoryInjected.summary, /本轮注入了 2 条记忆（召回决定）/);
+assert.ok(!memoryInjected.summary.includes('已随生成结束清理'), '未清理时不带已清理措辞');
+assert.match(memoryInjected.rows.find(row => row.label === '上次注入').value, /召回决定 · 2 条 · 704 字/);
+assert.equal(memoryInjected.rows.find(row => row.label === '注入状态').value, '仍在提示词里');
+assert.equal(memoryInjected.lists[0].heading, '已注入的记忆');
+assert.equal(memoryInjected.lists[0].items.length, 2, '已注入列表跟随记录');
+assert.equal(memoryInjected.lists[0].items[0].head, '★ 穆蛇坊市结怨');
+assert.match(memoryInjected.lists[0].items[0].meta, /本轮已注入/);
+const memoryInjectedCleared = buildMemoryPanel({
+    status: { byTier: { big: { total: 1 }, small: { total: 0 } }, total: 1 },
+    snapshot: { entries: [{ id: 'm2', tier: 'big', title: '穆蛇坊市结怨', text: 'x', weight: 'major', day: 3 }] },
+    lastInjection: { status: 'injected', source: 'keyword', note: '', ids: ['m2'], cleared: true, chars: 200, at: Date.parse('2026-11-04T10:00:00'), entries: [{ id: 'm2', tier: 'big', title: '穆蛇坊市结怨', text: 'x', weight: 'major', day: 3 }] },
+});
+assert.match(memoryInjectedCleared.summary, /已随生成结束清理/);
+assert.equal(memoryInjectedCleared.rows.find(row => row.label === '注入状态').value, '已清理');
+const memoryInjectEmpty = buildMemoryPanel({
+    status: { byTier: { big: { total: 0 }, small: { total: 0 } }, total: 0 },
+    snapshot: { entries: [] },
+    lastInjection: { status: 'empty', source: 'recall', note: '', ids: [], cleared: true, chars: 0, at: Date.parse('2026-11-04T10:00:00'), entries: [] },
+});
+assert.match(memoryInjectEmpty.summary, /本轮没有记忆进入正文提示词/);
 
 // —— 数据镜像：桥接与 MVU 状态 ——
 const mirrorReady = buildMirrorPanel({
@@ -240,6 +367,27 @@ assert.match(journal.lists[0].items[1].meta, /任务 task-1/);
 assert.match(journal.lists[0].items[2].meta, /进行中/);
 assert.match(buildJournalPanel({}).summary, /还没有运行流水/);
 
+// —— 回合流水：现行管线七个里程碑都翻成中文标签，兜底标记与行动数照显 ——
+{
+    const turnJournal = buildJournalPanel({
+        records: [
+            { taskId: 'turn', event: 'turn_mvu_arbitrate', stage: 'inline', outcome: 'applied·帧未动兜底', timestamp: Date.UTC(2026, 10, 5, 8, 0) },
+            { taskId: 'turn', event: 'turn_memory_decide', outcome: 'ok', timestamp: Date.UTC(2026, 10, 5, 8, 1) },
+            { taskId: 'turn', event: 'turn_settle_adjudicate', outcome: 'recorded·4项', timestamp: Date.UTC(2026, 10, 5, 8, 2) },
+            { taskId: 'turn', event: 'turn_npc_record', outcome: 'not_due', timestamp: Date.UTC(2026, 10, 5, 8, 3) },
+            { taskId: 'turn', event: 'turn_world_decision', outcome: 'ok', timestamp: Date.UTC(2026, 10, 5, 8, 4) },
+            { taskId: 'turn', event: 'turn_impact_decide', outcome: 'ok', timestamp: Date.UTC(2026, 10, 5, 8, 5) },
+            { taskId: 'turn', event: 'turn_facts_inject', outcome: 'injected', timestamp: Date.UTC(2026, 10, 5, 8, 6) },
+        ],
+    });
+    const heads = turnJournal.lists[0].all.map(item => item.head);
+    assert.deepEqual(heads, ['原著注入', '影响记录', '世界推进', '人物记账', '行动结算', '记忆总结', '纳戒仲裁'], '七个回合里程碑全翻中文，最新在最上');
+    assert.equal(turnJournal.lists[0].total, 7, '总数如实上报');
+    assert.match(turnJournal.lists[0].all[6].meta, /帧未动兜底/, '仲裁兜底标记照显');
+    assert.match(turnJournal.lists[0].all[4].meta, /recorded·4项/, '结算行动数照显');
+    assert.match(turnJournal.lists[0].all[6].meta, /inline/, '申报通道进 stage 位');
+}
+
 // —— 总控：模块行照搬仪表盘视图 ——
 const overview = buildOverviewPanel({
     dashboard: {
@@ -253,11 +401,191 @@ const overview = buildOverviewPanel({
 assert.match(overview.summary, /总控已开启 · 最近任务：已完成并保存/);
 assert.equal(overview.rows[0].value, '已开启 · 已返回');
 
-// —— 上限：长列表裁到上限，不炸 ——
+// —— 主窗预览 / 副窗全量：items 只给几条，all 收全量，total 报总数 ——
 const many = Array.from({ length: 40 }, (_, i) => ({ id: `e${i}`, text: `事件${i}`, day: 1, done: false, weight: 'minor' }));
 const capped = buildWorldPanel({ snapshot: { nearEvents: many, worldEvents: [], tasks: [] } });
-assert.equal(capped.lists[0].items.length, 8);
+assert.equal(capped.lists[0].items.length, 4, '主信息窗每栏只铺最新 4 条');
+assert.equal(capped.lists[0].all.length, 40, '全量留在 all 里给「全部」副窗');
+assert.equal(capped.lists[0].total, 40, 'total 报总数，信息窗靠它决定挂不挂「全部」');
+assert.equal(capped.lists[0].items[0].head, '事件39', '最新的排最前');
+assert.equal(capped.lists[0].all.at(-1).head, '事件0', '副窗铺到最旧一条');
 const manyPeople = Array.from({ length: 40 }, (_, i) => ({ name: `人物${i}`, favor: 0, presence: '在场', importance: '不重要' }));
-assert.equal(buildNpcPanel({ status: { total: 40, present: 40, important: 0 }, records: manyPeople }).lists[0].items.length, 10);
+const npcCapped = buildNpcPanel({ status: { total: 40, present: 40, important: 0 }, records: manyPeople });
+assert.equal(npcCapped.lists[0].items.length, 4);
+assert.equal(npcCapped.lists[0].all.length, 40, '人物簿副窗能翻到全部 40 人');
+// 条数没超过预览上限的栏目不该挂「全部」
+const few = buildNpcPanel({ status: { total: 2, present: 2, important: 0 }, records: manyPeople.slice(0, 2) });
+assert.equal(few.lists[0].total, few.lists[0].items.length, '装得下就没有「全部」按钮');
+// 事件两栏：置顶最前，其余按日期倒序
+const ordered = buildWorldPanel({
+    status: { clock: { day: 9 } },
+    snapshot: {
+        nearEvents: [
+            { id: 'e1', text: '早的', day: 2, done: false },
+            { id: 'e9', text: '晚的', day: 8, done: false },
+            { id: 'e5', text: '钉住的', day: 1, done: false, pinned: true },
+        ],
+    },
+});
+assert.equal(ordered.lists[0].items[0].head, '钉住的', '置顶事件排最前');
+assert.equal(ordered.lists[0].items[1].head, '晚的', '其余按登记日期倒序');
 
-console.log('orb hud state machine, panels and caps tests passed');
+// —— 行动结算：判定记录折成信息窗（注入/无可结算/失败/空输入） ——
+{
+    const injected = buildSettlePanel({ lastAdjudication: {
+        status: 'injected', category: 'combat', outcome: '被拳劲扫中，倒退两步。', note: '同境界切磋，幅度中等',
+        effects: [{ targetId: 'player', field: 'hp', type: 'add', value: -120, allowNegative: true, reason: '拳劲' }],
+        rejected: [{ index: 1, reason: '战斗中 hp/douqi 只减不增，恢复归丹药判定' }],
+        at: Date.parse('2026-11-04T12:00:00'), cleared: false,
+    } });
+    assert.equal(injected.title, '行动结算');
+    assert.match(injected.summary, /伤害判定/);
+    assert.match(injected.summary, /仍在提示词里/);
+    assert.ok(injected.rows.some(rowItem => rowItem.label === '判定类别' && rowItem.value === '伤害判定'));
+    assert.ok(injected.rows.some(rowItem => rowItem.label === '数值变化' && rowItem.value.includes('1 条')));
+    assert.equal(injected.lists[0].heading, '本轮变化');
+    assert.equal(injected.lists[0].items[0].head, '生命 -120');
+    assert.equal(injected.lists[1].heading, '被脚本拦下');
+
+    const none = buildSettlePanel({ lastAdjudication: { status: 'none', category: 'none', outcome: '本轮无可结算', effects: [], rejected: [], at: 1 } });
+    assert.match(none.summary, /没有可结算/);
+    assert.equal(none.lists[0].items.length, 0);
+
+    const cleared = buildSettlePanel({ lastAdjudication: { status: 'injected', category: 'general', outcome: '买了两枚回气丹', effects: [{ targetId: 'player', field: 'gold', type: 'add', value: -50 }], rejected: [], at: 1, cleared: true } });
+    assert.match(cleared.summary, /已随生成结束清理/);
+    assert.equal(cleared.lists[0].items[0].head, '金币 -50');
+
+    const failed = buildSettlePanel({ lastAdjudication: { status: 'error', summary: '判定失败：接口超时', at: 1 } });
+    assert.match(failed.summary, /判定失败/);
+    assert.ok(failed.rows.some(rowItem => rowItem.tone === 'warn'));
+
+    const blank = buildSettlePanel({});
+    assert.match(blank.summary, /还没有判定过/);
+    assert.equal(blank.rows.length, 0, '空输入不占行');
+}
+// —— v2：只读审核后的多行动，逐项保留顺序；顶层旧汇总不能复活拒收事实 ——
+{
+    const record = {
+        status: 'injected', category: 'combat', outcome: '不安全顶层结果', note: '不安全模型理由', summary: '不安全模型摘要',
+        effects: [{ field: 'gold', type: 'add', value: 9999 }], rejected: [{ reason: '顶层重复拒收' }],
+        at: Date.parse('2026-11-04T12:00:00'), cleared: false,
+        actions: [
+            { id: 'a1', category: 'alchemy', label: '服用回气丹', evidence: '玩家确实服药', status: 'success', approved: true,
+                outcome: '药力化开，恢复少许斗气。', consequences: ['药瓶空了', '嘴里略苦'],
+                effects: [{ field: 'douqi', type: 'add', value: 20, reason: '回气丹药力' }], rejected: [] },
+            { id: 'a2', category: 'cultivation', label: '不安全宣称跨境突破成功', evidence: '不安全成功依据', status: 'not_executed', approved: false,
+                outcome: '突破条件不足，未执行境界变化。', consequences: [], effects: [],
+                rejected: [{ reason: '跨度超过允许范围' }], blockedReason: '当前未达九星圆满' },
+            { id: 'a3', category: 'general', label: '购药', status: 'partial', approved: true,
+                outcome: '只购得一枚药材。', consequences: [],
+                effects: [
+                    { field: 'gold', type: 'add', value: -50 },
+                    { field: 'items', type: 'add', itemId: 'herb-1', name: '凝血草', category: '药材', value: 1 },
+                    { field: 'items', type: 'remove', value: { itemId: 'bottle-1', name: '空药瓶', category: '杂物', count: 1 } },
+                    { field: 'location', type: 'set', value: '乌坦城·药铺' },
+                ], rejected: ['卖家没有第二枚药材'] },
+        ],
+        reconciliation: { status: 'pending', differences: [] },
+    };
+    const before = structuredClone(record);
+    const panel = buildSettlePanel({ lastAdjudication: record });
+    assert.deepEqual(record, before, '展示不能改写审核记录或触发落账');
+    assert.deepEqual(buildOrbPanels({ settle: { lastAdjudication: record } }).settle, panel, '保留现有 settle 入口');
+    assert.match(panel.summary, /判定已注入 · 3 项行动/);
+    assert.match(panel.summary, /仍在提示词里/);
+    assert.ok(panel.summary.length < 90, '球摘要只报总览，不拼接多行动正文');
+    assert.deepEqual(panel.lists.map(group => group.heading), ['1. 服用回气丹', '2. 修炼判定 · 未通过复核', '3. 购药']);
+    const first = panel.lists[0];
+    assert.deepEqual(first.all.map(item => item.head), ['行动状态', '结果', '文字后果', '文字后果', '斗气 +20']);
+    assert.match(first.all[0].meta, /成功 · 审核通过 · 丹药判定/);
+    assert.equal(first.all[0].detail, '玩家确实服药');
+    assert.equal(first.all[1].detail, '药力化开，恢复少许斗气。');
+    assert.equal(first.all[2].detail, '药瓶空了');
+    assert.equal(first.all[4].detail, '回气丹药力');
+    assert.match(first.all[4].meta, /判定候选，未确认落账/);
+    assert.equal(first.items.length, 4, '复用原有预览上限');
+    assert.equal(first.total, 5, '变化详情仍能由现有「全部」列表完整查看');
+    const blocked = panel.lists[1];
+    assert.match(blocked.all[0].meta, /未执行 · 审核拒收/);
+    assert.equal(blocked.all[1].detail, '突破条件不足，未执行境界变化。', '使用核心提供的拒收安全结果');
+    assert.equal(blocked.all[2].detail, '跨度超过允许范围');
+    assert.equal(blocked.all[3].head, '拒收原因');
+    assert.equal(blocked.all[3].detail, '当前未达九星圆满');
+    const bought = panel.lists[2].all;
+    assert.match(bought[0].meta, /部分成功/);
+    assert.deepEqual(bought.slice(2, 6).map(item => item.head), [
+        '金币 -50', '物品 · 凝血草 · 药材 · herb-1 +1',
+        '物品 移除 空药瓶 · 杂物 · bottle-1 · 数量 1', '位置 → 乌坦城·药铺',
+    ]);
+    assert.equal(bought.at(-1).detail, '卖家没有第二枚药材');
+    assert.match(panel.rows.find(item => item.label === '数值变化').value, /^5 条判定候选/);
+    assert.equal(panel.rows.find(item => item.label === '对账').value, '待对账，未确认落账');
+    assert.doesNotMatch(JSON.stringify(panel), /不安全|9999|顶层重复拒收|\[object Object\]|undefined|NaN/);
+    const cleared = buildSettlePanel({ lastAdjudication: { ...record, cleared: true } });
+    assert.equal(cleared.rows.find(item => item.label === '状态').value, '判定已注入');
+    assert.equal(cleared.rows.find(item => item.label === '注入通道').value, '已随生成结束清理');
+    assert.deepEqual(cleared.lists, panel.lists, '清理通道不能删除行动或改变判定事实');
+    const noActions = buildSettlePanel({ lastAdjudication: { ...record, actions: [] } });
+    assert.equal(noActions.lists[0].total, 0, '空的新记录绝不回退旧版顶层结果');
+    assert.doesNotMatch(JSON.stringify(noActions), /不安全|9999|顶层重复拒收/);
+}
+
+// —— 判定状态、注入通道、生成后对账是三个互不替代的维度 ——
+{
+    const states = {
+        pending: '等待判定', injected: '判定已注入', preview: '仅预览，未注入',
+        write_failed: '注入写入失败', error: '判定失败', stale: '判定已过期',
+        disabled: '行动结算已关闭', none: '本轮没有可结算的行动',
+        no_input: '没有行动输入', busy: '判定忙碌中', unsupported: '当前环境不支持结算',
+    };
+    for (const [status, label] of Object.entries(states)) {
+        for (const cleared of [false, true]) {
+            for (const actions of [undefined, []]) {
+                const panel = buildSettlePanel({ lastAdjudication: { status, cleared, actions } });
+                assert.equal(panel.rows.find(item => item.label === '状态').value, label);
+                assert.match(panel.summary, status === 'error' && !actions ? /判定失败/ : new RegExp(label));
+                const channel = panel.rows.find(item => item.label === '注入通道').value;
+                assert.equal(channel, cleared ? '已随生成结束清理' : status === 'injected' ? '仍在提示词里' : '未确认有有效注入');
+                if (['write_failed', 'error', 'stale', 'unsupported'].includes(status)) {
+                    assert.equal(panel.rows.find(item => item.label === '状态').tone, 'warn');
+                }
+                assert.doesNotMatch(JSON.stringify(panel), /已落账|已入账|结算已完成/);
+            }
+        }
+    }
+    for (const [status, label] of Object.entries({ success: '成功', partial: '部分成功', failure: '失败', insufficient: '依据不足', not_executed: '未执行' })) {
+        const panel = buildSettlePanel({ lastAdjudication: { status: 'preview', actions: [{ status, category: 'combat', outcome: '审核后的结果' }] } });
+        assert.match(panel.lists[0].all[0].meta, new RegExp(label));
+        assert.match(panel.lists[0].all[0].meta, /未记录审核状态/);
+        assert.equal(panel.lists[0].all[1].detail, '审核后的结果');
+    }
+    for (const [status, label] of Object.entries({ pending: '待对账，未确认落账', matched: '对账一致', mismatch: '对账不一致', not_applicable: '无需对账' })) {
+        const panel = buildSettlePanel({ lastAdjudication: { status: 'injected', actions: [], reconciliation: {
+            status, differences: ['缺少回气丹消耗记录', { field: 'gold', expected: -50, actual: 0, reason: '数值未匹配' },
+                { field: 'items', name: '凝血草', itemId: 'herb-1', expected: 1, actual: 0 }],
+        } } });
+        assert.equal(panel.rows.find(item => item.label === '对账').value, label);
+        assert.equal(panel.rows.find(item => item.label === '对账').tone, status === 'mismatch' ? 'warn' : undefined);
+        assert.deepEqual(panel.lists.at(-1).all.map(item => item.detail), [
+            '缺少回气丹消耗记录', '金币 · 预期 -50 · 实际 0 · 数值未匹配', '物品 · 凝血草 · herb-1 · 预期 1 · 实际 0',
+        ]);
+        assert.match(panel.rows.find(item => item.label === '注入通道').value, /仍在提示词里/, '对账不改变注入通道');
+    }
+    const coreDifferences = buildSettlePanel({ lastAdjudication: { status: 'injected', actions: [], reconciliation: {
+        status: 'mismatch', differences: [{ field: 'player.hp', expected: 80, actual: 100 },
+            { field: 'inventory.herb-1.count', itemId: 'herb-1', expected: 1, actual: null, label: '同名同类别匹配歧义，未擅自分配库存' },
+            { field: 'inventory.herb-1.name', itemId: 'herb-1', expected: '凝血草', actual: '回气草' }],
+    } } });
+    assert.deepEqual(coreDifferences.lists.at(-1).all.map(item => item.detail), [
+        '生命 · 预期 80 · 实际 100', '物品数量 · herb-1 · 预期 1 · 实际 未知 · 同名同类别匹配歧义，未擅自分配库存',
+        '物品名称 · herb-1 · 预期 凝血草 · 实际 回气草',
+    ], '兼容核心实际差异路径、未知数值与物品匹配歧义');
+    const unknown = buildSettlePanel({ lastAdjudication: { status: 'future', actions: [{ status: 'future' }] } });
+    assert.match(unknown.summary, /判定状态未明/);
+    assert.match(unknown.lists[0].all[0].meta, /行动状态未明/);
+    assert.equal(unknown.rows.find(item => item.label === '对账').value, '未记录对账，未确认落账');
+    for (const lastAdjudication of [null, [], false, '', { actions: [null, { effects: null, rejected: null, consequences: null }], reconciliation: { differences: null } }]) {
+        assert.doesNotThrow(() => buildSettlePanel({ lastAdjudication }));
+    }
+}
+console.log('orb hud state machine, panels, previews, caps and v2 settlement tests passed');

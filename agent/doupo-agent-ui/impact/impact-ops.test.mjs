@@ -83,4 +83,16 @@ assert.equal(isImpactDecideDue(chat, { every: 3, lastFloor: 99 }), true, '楼层
 assert.equal(isImpactDecideDue(null, { every: 1 }), false);
 assert.equal(isImpactDecideDue([{ is_user: true, mes: '只有玩家' }], { every: 1, lastFloor: -1 }), false);
 
+// OPT-076: importance never suppresses uncertainty, including future arrangements.
+for (const weight of ['world', 'major', 'minor']) {
+    for (const certainty of ['certain', 'rumor']) {
+        const row = { ...records[0], weight, certainty, canon: '' };
+        assert.equal(impactMark(row).includes('★'), weight === 'world');
+        assert.equal(impactMark(row).includes('？'), certainty === 'rumor');
+        assert.equal(buildImpactInjection([row]).includes('？'), certainty === 'rumor');
+        assert.match(buildImpactLedgerLines([row])[0], certainty === 'rumor' ? /传闻·未证实/ : /已证实/);
+        assert.equal(buildImpactInjection([{ ...row, ripenDay: 30 }]).includes('？'), certainty === 'rumor');
+    }
+}
+
 console.log('impact ops tests passed');

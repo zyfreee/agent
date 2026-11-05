@@ -20,9 +20,7 @@ export { WEIGHT_LABEL, STATE_LABEL, KIND_LABEL, SHIFT_LABEL };
 /** 分量标记：★=世界级，？=只是传闻，其余不标。 */
 export function impactMark(record) {
     if (!record) return '';
-    if (record.weight === 'world') return '★';
-    if (record.certainty === 'rumor') return '？';
-    return '';
+    return `${record.weight === 'world' ? '★' : ''}${record.certainty === 'rumor' ? '？' : ''}`;
 }
 
 /** 面板/日志用的一行完整摘要。 */
@@ -87,7 +85,7 @@ export function buildImpactInjectionDetail(records, { maxChars = 800, maxLines =
     if (pending.length) {
         const named = pending.slice(0, Math.max(1, maxLines - lines.length));
         const rest = pending.length > named.length ? ` 等 ${pending.length} 件` : '';
-        const names = named.map(record => `第 ${record.ripenDay} 天 ${record.title}`);
+        const names = named.map(record => `${impactMark(record)}第 ${record.ripenDay} 天 ${record.title}`);
         if (push(`· 还没发作${rest}：${names.join('；')}`)) usedIds.push(...named.map(record => record.id));
     }
     return { text: [IMPACT_HEADER, ...lines].join('\n'), usedIds };
@@ -100,6 +98,7 @@ function ledgerLine(record, day) {
         `第 ${record.day} 天`,
         WEIGHT_LABEL[record.weight] ?? '小事',
         STATE_LABEL[record.state] ?? '未了结',
+        record.certainty === 'rumor' ? '传闻·未证实' : '已证实',
         record.kind !== 'direct' ? KIND_LABEL[record.kind] : '',
         `${record.title}：${record.detail}`,
     ].filter(Boolean);

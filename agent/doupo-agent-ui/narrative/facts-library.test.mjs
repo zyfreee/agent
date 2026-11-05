@@ -37,6 +37,14 @@ missingStage.registerSource({ id: 'unknown-phase', title: '未核期材料', con
 missingStage.registerFact({ id: 'unknown', sourceId: 'unknown-phase', subject: '人', predicate: '能力', text: '有某能力' });
 assert.equal(missingStage.query({ query: '能力', sourceIds: ['unknown-phase'], asOf: 3 }).status, 'not_found');
 
+// OPT-061: actor scope precedes global rank/limit and source/conflict reporting.
+const knownBelowLimit = library.queryForActor({ actorId: 'npc-budget', knownFactIds: ['f-late'], query: '暗号', sourceIds: ['novel-a', 'comic-b'], limit: 1 });
+assert.deepEqual(knownBelowLimit.results.map(row => row.id), ['f-late']);
+assert.deepEqual(knownBelowLimit.sources.map(row => row.id), ['novel-a']);
+assert.deepEqual(knownBelowLimit.conflicts, []);
+const actorPartial = library.queryForActor({ actorId: 'npc-budget', knownFactIds: ['f-early', 'f-late'], query: '暗号', sourceIds: ['novel-a'], limit: 1 });
+assert.equal(actorPartial.status, 'partial');
+
 const beforeUpdate = library.query({ query: '暗号', sourceIds: ['novel-a'] });
 assert.equal(beforeUpdate.sources[0].revision, 1);
 assert.deepEqual(library.updateSource('novel-a', { coveredThrough: 14 }, { expectedRevision: 0, reason: 'stale update' }), { accepted: false, reason: 'revision_mismatch', currentRevision: 1 });
@@ -52,4 +60,14 @@ assert.equal(library.reviewFact('f-early', { expectedSourceRevision: 1, decision
 assert.equal(library.reviewFact('f-early', { expectedSourceRevision: 2, decision: 'confirmed', note: '回查新增来源版本' }).accepted, true);
 assert.equal(library.query({ query: '暗号', sourceIds: ['novel-a'] }).results.some(f => f.id === 'f-early'), true);
 assert.equal(library.listFactsNeedingReview().length, 1);
+// OPT-025: a reviewed rejection stays in history, never in supported lookup.
+assert.equal(library.reviewFact('f-early', { expectedSourceRevision: 2, decision: 'rejected' }).accepted, true);
+assert.equal(library.query({ query: '暗号', sourceIds: ['novel-a'] }).status, 'not_found');
+// OPT-060: source owns current metadata, historical source revisions stay intact.
+library.updateSource('comic-b', { continuity: 'revised-line', realm: 'reference', title: '修订材料', edition: 'C' }, { expectedRevision: 1, reason: 'metadata fixture' });
+library.reviewFact('f-comic', { expectedSourceRevision: 2, decision: 'confirmed' });
+const revised = library.query({ query: '暗号', sourceIds: ['comic-b'], continuity: 'revised-line', realm: 'reference' });
+assert.equal(revised.results.length, 1);
+assert.equal(revised.results[0].sourceLabel, '修订材料 · C');
+assert.equal(library.listSourceRevisions('comic-b')[0].source.realm, 'adaptation');
 console.log('facts library tests passed');

@@ -23,6 +23,17 @@ const SELECT_SYSTEM = [
     '宁可少选，不要多选。选错会让正文写出玩家当前不该知道的东西。',
 ].join('\n');
 
+const tavernSamplingQueues = new WeakMap();
+function abortableDelay(ms, signal) {
+    return new Promise((resolve, reject) => {
+        const finish = () => { signal?.removeEventListener('abort', abort); resolve(); };
+        const timer = setTimeout(finish, ms);
+        const abort = () => { clearTimeout(timer); signal?.removeEventListener('abort', abort); reject(new Error('模型请求已取消')); };
+        if (signal?.aborted) abort();
+        else signal?.addEventListener('abort', abort, { once: true });
+    });
+}
+
 function needText(value, name) {
     if (typeof value !== 'string' || !value.trim()) throw new TypeError(`${name} 必须是非空文本`);
     return value.trim();
@@ -252,10 +263,14 @@ export function buildSettingSelectPrompt({ input, recentTexts, candidates, budge
     ].join('\n');
 }
 
-function withTimeout(promise, timeoutMs, signal) {
+function withTimeout(promise, timeoutMs, signal, onTimeout) {
     return new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error(`模型请求超过 ${timeoutMs}ms 未返回`)), timeoutMs);
-        const onAbort = () => { clearTimeout(timer); reject(new Error('模型请求已取消')); };
+        const timer = setTimeout(() => {
+            signal?.removeEventListener('abort', onAbort);
+            reject(new Error(`模型请求超过 ${timeoutMs}ms 未返回`));
+            onTimeout?.();
+        }, timeoutMs);
+        const onAbort = () => { clearTimeout(timer); signal?.removeEventListener('abort', onAbort); reject(new Error('模型请求已取消')); };
         if (signal?.aborted) return onAbort();
         signal?.addEventListener('abort', onAbort, { once: true });
         Promise.resolve(promise).then(
@@ -265,8 +280,42 @@ function withTimeout(promise, timeoutMs, signal) {
     });
 }
 
-/** 拉取自定义接口的模型清单：面板上“拉取模型”用它列出可选模型，省得手抄模型名。 */
-export async function listModels({ baseUrl = '', apiKey = '', provider = '', fetchImpl, signal } = {}) {
+/**
+ * 附加参数（对齐酒馆「自定义接口 · 附加参数」三段语义，由 API设置方案带给单次调用）：
+ * extraBody 最后展开进请求体（可覆盖标准字段）、excludeBody 删顶层键（最后执行，可删掉附加进来的键）、
+ * headers 合并覆盖请求头（可以覆盖 authorization）。只在自定义接口路径生效——
+ * 跟随酒馆的静默生成走酒馆自己的管线，这些参数没有落点，忽略。
+ */
+function readRequestExtras(overrides = {}) {
+    const extraBody = overrides.extraBody && typeof overrides.extraBody === 'object' && !Array.isArray(overrides.extraBody)
+        ? { ...overrides.extraBody } : null;
+    const excludeBody = Array.isArray(overrides.excludeBody)
+        ? overrides.excludeBody.filter(key => typeof key === 'string' && key.trim()).map(key => key.trim()) : null;
+    const headers = overrides.headers && typeof overrides.headers === 'object' && !Array.isArray(overrides.headers)
+        ? Object.fromEntries(Object.entries(overrides.headers)
+            .filter(([key, value]) => typeof key === 'string' && key.trim() && value !== null && value !== undefined)
+            .map(([key, value]) => [key.trim(), String(value)]))
+        : null;
+    return { extraBody, excludeBody, headers };
+}
+
+function mergeHeaders(target, extra) {
+    for (const [name, value] of Object.entries(extra ?? {})) {
+        for (const previous of Object.keys(target)) if (previous.toLowerCase() === name.toLowerCase()) delete target[previous];
+        target[name] = value;
+    }
+    return target;
+}
+
+function applyRequestExtras(body, headers, extras) {
+    if (extras.extraBody) Object.assign(body, extras.extraBody);
+    if (extras.excludeBody) for (const key of extras.excludeBody) delete body[key];
+    if (extras.headers) mergeHeaders(headers, extras.headers);
+}
+
+/** 拉取自定义接口的模型清单：面板上“拉取模型”用它列出可选模型，省得手抄模型名。
+ *  headers：API设置方案里的「包含请求标头」（对象），拉模型同样要带上（网关按标头放行的站点不少见）。 */
+export async function listModels({ baseUrl = '', apiKey = '', provider = '', headers = null, fetchImpl, signal, timeoutMs = 15000 } = {}) {
     const base = String(baseUrl || '').trim().replace(/\/+$/, '');
     if (!base) return { status: 'no_endpoint', models: [], error: '先填接口地址' };
     const fetchFn = fetchImpl ?? globalThis.fetch;
@@ -276,20 +325,33 @@ export async function listModels({ baseUrl = '', apiKey = '', provider = '', fet
     const url = /\/v\d+$/.test(base)
         ? `${base}/models`
         : `${base}/v1/models`;
-    const headers = {};
+    const authHeaders = {};
     const key = String(apiKey || '').trim();
     if (key) {
         if (isAnthropic) {
-            headers['x-api-key'] = key;
-            headers['anthropic-version'] = '2023-06-01';
+            authHeaders['x-api-key'] = key;
+            authHeaders['anthropic-version'] = '2023-06-01';
         } else {
-            headers.authorization = `Bearer ${key}`;
+            authHeaders.authorization = `Bearer ${key}`;
         }
     }
+    const extraHeaders = headers && typeof headers === 'object' && !Array.isArray(headers)
+        ? Object.fromEntries(Object.entries(headers)
+            .filter(([name, value]) => typeof name === 'string' && name.trim() && value !== null && value !== undefined)
+            .map(([name, value]) => [name.trim(), String(value)]))
+        : {};
+    const requestHeaders = mergeHeaders(authHeaders, extraHeaders);
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    if (signal?.aborted) return { status: 'failed', models: [], error: '拉取模型已取消' };
+    signal?.addEventListener('abort', abort, { once: true });
+    const deadline = Number.isFinite(Number(timeoutMs)) ? Math.max(1, Math.min(600000, Number(timeoutMs))) : 15000;
     try {
-        const response = await fetchFn(url, { method: 'GET', headers, signal });
-        if (!response?.ok) return { status: 'failed', models: [], error: `接口返回 HTTP ${response?.status ?? '未知'}` };
-        const payload = await response.json();
+        const payload = await withTimeout((async () => {
+            const response = await fetchFn(url, { method: 'GET', headers: requestHeaders, signal: controller.signal });
+            if (!response?.ok) throw new Error(`接口返回 HTTP ${response?.status ?? '未知'}`);
+            return response.json();
+        })(), deadline, signal, abort);
         const rows = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload?.models) ? payload.models : [];
         const models = rows
             .map(row => (typeof row === 'string' ? row : row?.id || row?.name || ''))
@@ -298,11 +360,13 @@ export async function listModels({ baseUrl = '', apiKey = '', provider = '', fet
         return { status: models.length ? 'ok' : 'empty', models };
     } catch (error) {
         return { status: 'failed', models: [], error: `拉取模型失败：${error?.message ?? error}` };
+    } finally {
+        signal?.removeEventListener('abort', abort);
     }
 }
 
 /** Real model client: reuses the Tavern connection by default, or an OpenAI-compatible endpoint. */
-export function createLlmClient({ getSettings, getContext, fetchImpl } = {}) {
+export function createLlmClient({ getSettings, getContext, fetchImpl, capture = () => null, isCurrent = () => true } = {}) {
     if (typeof getSettings !== 'function') throw new TypeError('getSettings 必须是函数');
 
     // 调用体检：每个功能的每次模型调用都记一笔（成功/失败/报错/耗时/模型），
@@ -341,6 +405,17 @@ export function createLlmClient({ getSettings, getContext, fetchImpl } = {}) {
     // 酒馆的事件可能在 generateQuietPrompt 兑现之后才发出来，收尾后再压一小段缓冲。
     const QUIET_EVENT_GRACE_MS = 500;
     const isQuietBusy = () => quietGenerationDepth > 0;
+    const quietIdleListeners = new Set();
+    function onQuietIdle(listener) {
+        if (typeof listener !== 'function') throw new TypeError('listener 必须是函数');
+        quietIdleListeners.add(listener);
+        return () => { quietIdleListeners.delete(listener); };
+    }
+    function notifyQuietIdle() {
+        for (const listener of [...quietIdleListeners]) {
+            try { Promise.resolve(listener()).catch(() => {}); } catch { /* An observer cannot change completion behavior. */ }
+        }
+    }
 
     /**
      * 选连接：hint 是这一次调用自己的要求（记录员/场记可以各自选跟随酒馆或自定义），
@@ -360,7 +435,7 @@ export function createLlmClient({ getSettings, getContext, fetchImpl } = {}) {
         if (llm.governAll === true && llm.mode === 'custom'
             && typeof llm.baseUrl === 'string' && llm.baseUrl.trim()
             && typeof llm.model === 'string' && llm.model.trim()) {
-            return { kind: 'openai', llm, fetchImpl: fetchImpl ?? globalThis.fetch };
+            return { kind: 'openai', llm, governed: true, fetchImpl: fetchImpl ?? globalThis.fetch };
         }
         // 这一次调用自带的自定义接口：地址优先用它，密钥/服务商/模型缺哪项就沿用全局。
         const own = hint === 'custom' && custom && typeof custom === 'object' && typeof custom.baseUrl === 'string' && custom.baseUrl.trim()
@@ -399,7 +474,9 @@ export function createLlmClient({ getSettings, getContext, fetchImpl } = {}) {
         return resolveConnection(hint === 'custom' || hint === 'tavern' ? hint : null) !== null;
     }
 
-    async function completeInner({ system, user, jsonSchema, signal, overrides = {} } = {}) {
+    async function completeInner({ system, user, jsonSchema, signal, rawPrompt = false, overrides = {}, owner } = {}) {
+        const check = () => { if (signal?.aborted || getSettings()?.enabled === false || !isCurrent(owner)) throw new Error('模型请求已取消'); };
+        check();
         // overrides.connection 让单次调用自己选连接：'tavern' = 跟随酒馆，'custom' = 自定义接口。
         const requested = overrides.connection === 'custom' ? 'custom'
             : overrides.connection === 'tavern' ? 'tavern' : null;
@@ -413,6 +490,7 @@ export function createLlmClient({ getSettings, getContext, fetchImpl } = {}) {
             throw error;
         }
         const llm = connection.llm ?? {};
+        if (connection.governed) overrides = {};
         // 单次覆盖：世界决定等调用可以在设置里指定自己的模型与温度（酒馆连接模式下模型沿用当前选择）。
         const temperature = Number.isFinite(Number(overrides.temperature))
             ? Math.min(2, Math.max(0, Number(overrides.temperature)))
@@ -447,27 +525,40 @@ export function createLlmClient({ getSettings, getContext, fetchImpl } = {}) {
             // 酒馆文档里的签名是对象形式 generateQuietPrompt({ quietPrompt, jsonSchema })。
             // 早先这里传的是位置参数 (prompt, false, true)，第三个参数 quietToLoud=true
             // 会让静默生成的 JSON 直接落进聊天记录，必须用对象形式。
-            const options = { quietPrompt: `${system}\n\n${user}` };
+            // ST 1.19 generateRaw({prompt:messages}) 不拼角色/主聊天预设；仅裁判显式选择。
+            if (rawPrompt && typeof connection.context.generateRaw !== 'function') throw new Error('当前酒馆不支持独立提示词生成（generateRaw），本轮裁判未调用');
+            const options = rawPrompt
+                ? { prompt: [{ role: 'system', content: system }, { role: 'user', content: user }], quietToLoud: false, trimNames: false }
+                : { quietPrompt: `${system}\n\n${user}` };
             if (jsonSchema && typeof jsonSchema === 'object') options.jsonSchema = jsonSchema;
             // 输出长度是酒馆官方支持的覆盖项（responseLength）：生成期间临时换，结束自动还原。
             if (maxTokensSet) options.responseLength = maxTokens;
             // 温度/top_p/惩罚项没有单次参数，只能临时改酒馆“聊天补全”的采样设置，生成完立刻还原。
-            const restoreSampling = applyTavernSampling(connection.context, {
-                temperature: temperatureSet ? temperature : undefined,
-                topP,
-                presencePenalty,
-                frequencyPenalty,
+            const shared = connection.context.chatCompletionSettings ?? connection.context;
+            const previous = tavernSamplingQueues.get(shared) ?? Promise.resolve();
+            let expired = false;
+            const request = previous.catch(() => {}).then(async () => {
+                if (expired) throw new Error('模型请求已取消');
+                check(); // queued work may no longer own this chat/reply
+                const restoreSampling = applyTavernSampling(connection.context, {
+                    temperature: temperatureSet ? temperature : undefined, topP, presencePenalty, frequencyPenalty,
+                });
+                quietGenerationDepth += 1;
+                try {
+                    const reply = await (rawPrompt ? connection.context.generateRaw(options) : connection.context.generateQuietPrompt(options));
+                    check();
+                    return typeof reply === 'string' ? reply : String(reply?.text ?? '');
+                } finally {
+                    // Local cancellation cannot cancel an unowned host request. Keep event/sampling ownership until it settles.
+                    await abortableDelay(QUIET_EVENT_GRACE_MS);
+                    quietGenerationDepth -= 1;
+                    restoreSampling();
+                    if (quietGenerationDepth === 0) notifyQuietIdle();
+                }
             });
-            quietGenerationDepth += 1;
-            try {
-                const reply = await withTimeout(Promise.resolve(connection.context.generateQuietPrompt(options)), timeoutMs, signal);
-                // 压过酒馆收尾事件的发布时机：它可能在这句话兑现之后才到。
-                await new Promise(resolve => setTimeout(resolve, QUIET_EVENT_GRACE_MS));
-                return typeof reply === 'string' ? reply : String(reply?.text ?? '');
-            } finally {
-                quietGenerationDepth -= 1;
-                restoreSampling();
-            }
+            tavernSamplingQueues.set(shared, request.catch(() => {}));
+            try { return await withTimeout(request, timeoutMs, signal, () => { expired = true; }); }
+            catch (error) { expired = true; throw error; }
         }
 
         const fetchFn = connection.fetchImpl;
@@ -510,22 +601,26 @@ export function createLlmClient({ getSettings, getContext, fetchImpl } = {}) {
                 ...(Number.isFinite(effectiveFrequency) ? { frequency_penalty: effectiveFrequency } : {}),
                 messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
             };
-        let response;
+        // 方案带的附加参数最后套用（酒馆同序：先并进主体，再排除，再覆盖标头）。
+        applyRequestExtras(body, headers, readRequestExtras(overrides));
+        let payload;
         try {
-            response = await withTimeout(fetchFn(url, {
-                method: 'POST',
-                headers,
-                signal: controller.signal,
-                body: JSON.stringify(body),
-            }), timeoutMs, signal);
+            payload = await withTimeout((async () => {
+                const response = await fetchFn(url, {
+                    method: 'POST',
+                    headers,
+                    signal: controller.signal,
+                    body: JSON.stringify(body),
+                });
+                if (!response?.ok) throw new Error(`模型接口返回 HTTP ${response?.status ?? '未知'}`);
+                return response.json();
+            })(), timeoutMs, signal, () => controller.abort());
         } catch (error) {
             if (error?.name === 'AbortError') throw new Error('模型请求已取消');
             throw new Error(`模型接口请求失败：${error?.message ?? error}`);
         } finally {
             signal?.removeEventListener('abort', onAbort);
         }
-        if (!response?.ok) throw new Error(`模型接口返回 HTTP ${response?.status ?? '未知'}`);
-        const payload = await response.json();
         const content = isAnthropic
             ? (Array.isArray(payload?.content) ? payload.content.filter(part => part?.type === 'text' && typeof part.text === 'string').map(part => part.text).join('') : undefined)
             : payload?.choices?.[0]?.message?.content;
@@ -537,19 +632,50 @@ export function createLlmClient({ getSettings, getContext, fetchImpl } = {}) {
      * complete 的体检壳：记一笔"谁在什么时候调了模型、成功没、报错什么、多久、哪个模型"，
      * 然后原样转发给 completeInner。label 由各调用点自报（纳戒决定/世界决定/人物记录…），
      * 没报的记"未标注调用"。抛错原样上抛，调用方的失败处理一行不用改。
+     * 空返回重试：自定义接口偶发 HTTP 200 + 空 content、酒馆静默路径也可能带回空串
+     * （真机一天踩了三次）——只对"内容为空"重试，其余错误一律原样上抛。
+     * 次数与间隔每次调用现读设置（llm.emptyRetry / llm.emptyRetryWait）：
+     * 站点有 RPM 限制就把间隔调大，别让重试把额度烧光。
      */
+    const EMPTY_RETRY_DEFAULT_COUNT = 1;
+    const EMPTY_RETRY_DEFAULT_WAIT_MS = 600;
+    /** 空回重试参数现读：次数 0＝不重试、负数/非整数回落默认 1；间隔正数（秒）生效，其余回落默认 0.6 秒。 */
+    function emptyRetryPlan() {
+        const llm = getSettings()?.llm ?? {};
+        const count = Number(llm.emptyRetry);
+        const wait = Number(llm.emptyRetryWait);
+        return {
+            count: Number.isInteger(count) && count >= 0 ? count : EMPTY_RETRY_DEFAULT_COUNT,
+            waitMs: Number.isFinite(wait) && wait > 0 ? wait * 1000 : EMPTY_RETRY_DEFAULT_WAIT_MS,
+        };
+    }
     async function complete(args = {}) {
+        args = { ...args, owner: capture() };
         const label = typeof args?.label === 'string' && args.label.trim() ? args.label.trim() : '未标注调用';
         const model = describeConnection(args);
         const startedAt = Date.now();
-        try {
-            const reply = await completeInner(args);
-            recordCall({ at: new Date().toISOString(), label, ok: true, model, ms: Date.now() - startedAt, chars: typeof reply === 'string' ? reply.length : 0, error: '' });
-            return reply;
-        } catch (error) {
-            recordCall({ at: new Date().toISOString(), label, ok: false, model, ms: Date.now() - startedAt, chars: 0, error: String(error?.message ?? error).slice(0, 200) });
-            throw error;
+        let lastError = null;
+        const { count, waitMs } = emptyRetryPlan();
+        for (let attempt = 0; attempt <= count; attempt++) {
+            if (attempt > 0) await abortableDelay(waitMs, args.signal);
+            try {
+                const reply = await completeInner(args);
+                if (typeof reply === 'string' && reply.trim()) {
+                    recordCall({ at: new Date().toISOString(), label, ok: true, model, ms: Date.now() - startedAt, chars: reply.length, error: attempt > 0 ? `空回重试${attempt}次后成功` : '' });
+                    return reply;
+                }
+                lastError = new Error('模型返回内容为空');
+            } catch (error) {
+                lastError = error;
+                const message = String(error?.message ?? error);
+                if (!message.includes('内容为空')) {
+                    recordCall({ at: new Date().toISOString(), label, ok: false, model, ms: Date.now() - startedAt, chars: 0, error: message.slice(0, 200) });
+                    throw error;
+                }
+            }
         }
+        recordCall({ at: new Date().toISOString(), label, ok: false, model, ms: Date.now() - startedAt, chars: 0, error: String(lastError?.message ?? lastError).slice(0, 200) });
+        throw lastError;
     }
 
     /** 体检读数：每次调用一笔（副本，改不动原件）。 */
@@ -562,9 +688,15 @@ export function createLlmClient({ getSettings, getContext, fetchImpl } = {}) {
         callLogEntries.length = 0;
     }
 
-    async function interpret({ input, state, allowedFields, categories, signal }) {
+    async function interpret({ input, state, allowedFields, categories, signal, overrides }) {
         needText(input, 'input');
-        const raw = await complete({ system: INTERPRET_SYSTEM, user: buildInterpretPrompt({ input, state, allowedFields, categories }), signal, label: '意图解析' });
+        const raw = await complete({
+            system: INTERPRET_SYSTEM,
+            user: buildInterpretPrompt({ input, state, allowedFields, categories }),
+            signal,
+            label: '意图解析',
+            ...(overrides && typeof overrides === 'object' ? { overrides } : {}),
+        });
         return normalizeInterpretation(extractJson(raw), { allowedFields });
     }
 
@@ -587,7 +719,7 @@ export function createLlmClient({ getSettings, getContext, fetchImpl } = {}) {
      * Narrowing step: recall produced a wide candidate list, the model picks
      * from it. Ids outside the list are dropped, never trusted.
      */
-    async function selectSettings({ input, recentTexts, candidates, budget, maxItems, asOf, signal }) {
+    async function selectSettings({ input, recentTexts, candidates, budget, maxItems, asOf, signal, overrides }) {
         needText(input, 'input');
         const list = Array.isArray(candidates) ? candidates : [];
         if (!list.length) return { needs: [], gaps: [], dropped: 0 };
@@ -597,6 +729,7 @@ export function createLlmClient({ getSettings, getContext, fetchImpl } = {}) {
             user: buildSettingSelectPrompt({ input, recentTexts, candidates: list, budget, maxItems, asOf }),
             signal,
             label: '设定挑选',
+            ...(overrides && typeof overrides === 'object' ? { overrides } : {}),
         });
         let parsed;
         try {
@@ -620,9 +753,15 @@ export function createLlmClient({ getSettings, getContext, fetchImpl } = {}) {
         return { needs, gaps, dropped };
     }
 
-    async function compose({ input, facts, changes, state, outcome, taskType, signal }) {
+    async function compose({ input, facts, changes, state, outcome, taskType, signal, overrides }) {
         needText(input, 'input');
-        const raw = await complete({ system: COMPOSE_SYSTEM, user: buildComposePrompt({ input, facts, changes, state, outcome, taskType }), signal, label: '正文撰写' });
+        const raw = await complete({
+            system: COMPOSE_SYSTEM,
+            user: buildComposePrompt({ input, facts, changes, state, outcome, taskType }),
+            signal,
+            label: '正文撰写',
+            ...(overrides && typeof overrides === 'object' ? { overrides } : {}),
+        });
         let parsed;
         try {
             parsed = extractJson(raw);
@@ -633,5 +772,5 @@ export function createLlmClient({ getSettings, getContext, fetchImpl } = {}) {
         return { text, claims: Array.isArray(parsed?.claims) ? parsed.claims : [] };
     }
 
-    return Object.freeze({ configured, availableFor, interpret, adjudicateAction, selectSettings, compose, complete, callLog, clearCallLog, isQuietBusy });
+    return Object.freeze({ configured, availableFor, interpret, adjudicateAction, selectSettings, compose, complete, callLog, clearCallLog, isQuietBusy, onQuietIdle });
 }

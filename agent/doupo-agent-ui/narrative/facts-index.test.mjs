@@ -26,6 +26,12 @@ const book = {
 };
 
 const index = createFactsIndex({ volumeIndex: { 1041: [2], 217: [1], 42: [5] } });
+const cappedPrevIndex = createFactsIndex({ volumeIndex: { 1041: [1, 2], 217: [1, 2] } });
+cappedPrevIndex.load(book);
+const prevCapped = cappedPrevIndex.catalogFor(2, { maxPrev: 1, maxRows: 100 });
+assert.equal(prevCapped.lines.length, 1);
+assert.equal(prevCapped.truncated, true, 'OPT-105: prev cap is observable even below row cap');
+
 const loaded = index.load(book);
 assert.equal(loaded.total, 4, '空正文条目应被跳过');
 assert.equal(loaded.skipped, 1);

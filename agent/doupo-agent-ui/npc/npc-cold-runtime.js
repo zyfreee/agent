@@ -71,6 +71,8 @@ function normalizeState(raw) {
     }
     const previews = (Array.isArray(source.previews) ? source.previews : []).filter(item => item && typeof item === 'object').slice(-MAX_PREVIEWS).map(item => ({
         id: text(item.id, 80), name: cleanName(item.name), fromDay: dayOf(item.fromDay), toDay: dayOf(item.toDay), status: text(item.status, 20),
+        previousDay: dayOf(item.previousDay, dayOf(item.fromDay)),
+        ...(Number.isInteger(item.baseVersion) ? { baseVersion: item.baseVersion } : {}),
         patch: item.patch && typeof item.patch === 'object' ? structuredClone(item.patch) : { 人物: [] },
         eventIds: [...new Set((Array.isArray(item.eventIds) ? item.eventIds : []).map(value => text(value, 60)).filter(Boolean))].slice(0, MAX_EVENT_IDS),
     })).filter(item => item.id && item.name);
@@ -141,26 +143,44 @@ export function createNpcColdRuntime({ now = () => new Date().toISOString() } = 
 
     function rememberPreview(preview) {
         if (!preview?.id || !preview?.name) return;
+        sequence = Math.max(sequence, Number(/^cold-(\d+)$/.exec(preview.id)?.[1]) || 0);
         state.previews = [...state.previews.filter(item => item.id !== preview.id), {
             id: preview.id, name: preview.name, fromDay: dayOf(preview.fromDay), toDay: dayOf(preview.toDay), status: 'pending',
+            previousDay: dayOf(preview.previousDay, dayOf(preview.fromDay)),
+            ...(Number.isInteger(preview.baseVersion ?? preview.record?.version) ? { baseVersion: preview.baseVersion ?? preview.record.version } : {}),
             patch: preview.patch && typeof preview.patch === 'object' ? structuredClone(preview.patch) : { 人物: [] },
             eventIds: [...new Set((Array.isArray(preview.eventIds) ? preview.eventIds : []).map(value => text(value, 60)).filter(Boolean))].slice(0, MAX_EVENT_IDS),
         }].slice(-MAX_PREVIEWS);
         state.updatedAt = now();
     }
 
-    function mark(name, { day, eventIds = [], floor = -1, status = 'confirmed' } = {}) {
+    function validatePreview(previewId, { recordVersion } = {}) {
+        const preview = state.previews.find(item => item.id === previewId);
+        if (!preview || preview.status !== 'pending') return { status: 'stale', reason: 'preview_not_pending' };
+        const previous = state.sync[preview.name];
+        if (!previous || previous.lastDay !== (preview.previousDay ?? preview.fromDay) || preview.toDay < previous.lastDay) return { status: 'stale', reason: 'cursor_mismatch' };
+        if (preview.baseVersion !== undefined && preview.baseVersion !== recordVersion) return { status: 'stale', reason: 'record_version_mismatch' };
+        return { status: 'ready', preview: structuredClone(preview) };
+    }
+
+    function mark(name, { previewId, day, eventIds = [], floor = -1, status = 'confirmed' } = {}) {
         const clean = cleanName(name);
         if (!clean) return { status: 'rejected', reason: 'name_missing' };
-        const previous = state.sync[clean] || { lastDay: 0, eventIds: [], lastFloor: -1 };
+        const matches = state.previews.filter(item => item.name === clean && item.status === 'pending' && item.toDay === day && JSON.stringify(item.eventIds) === JSON.stringify(eventIds));
+        if (!previewId && matches.length !== 1) return { status: 'rejected', reason: 'ambiguous_preview' };
+        const preview = state.previews.find(item => item.id === (previewId ?? matches[0].id));
+        if (preview?.name !== clean || status !== 'confirmed') return { status: 'rejected', reason: 'preview_mismatch' };
+        const check = validatePreview(preview.id, { recordVersion: preview.baseVersion });
+        if (check.status !== 'ready') return { status: 'rejected', reason: check.reason };
+        const previous = state.sync[clean];
         state.sync[clean] = {
-            lastDay: Math.max(previous.lastDay, dayOf(day, previous.lastDay || 1)),
-            eventIds: [...new Set([...previous.eventIds, ...(Array.isArray(eventIds) ? eventIds : [])].map(value => text(value, 60)).filter(Boolean))].slice(-MAX_EVENT_IDS),
+            lastDay: preview.toDay,
+            eventIds: [...new Set([...previous.eventIds, ...preview.eventIds])].slice(-MAX_EVENT_IDS),
             lastFloor: Number.isInteger(Number(floor)) && Number(floor) >= 0 ? Number(floor) : previous.lastFloor,
         };
-        state.previews = state.previews.map(item => item.name === clean && item.status === 'pending' ? { ...item, status } : item);
+        state.previews = state.previews.map(item => item.id === preview.id ? { ...item, status: 'confirmed' } : item.name === clean && item.status === 'pending' ? { ...item, status: 'stale' } : item);
         state.updatedAt = now();
-        return { status: 'marked', value: structuredClone(state.sync[clean]) };
+        return { status: 'marked', previewId: preview.id, value: structuredClone(state.sync[clean]) };
     }
 
     function discard(id) {
@@ -180,10 +200,14 @@ export function createNpcColdRuntime({ now = () => new Date().toISOString() } = 
     }
 
     function snapshot() { return structuredClone(state); }
-    function restore(raw) { state = normalizeState(raw); return { status: 'restored', ...status() }; }
+    function restore(raw) {
+        state = normalizeState(raw);
+        sequence = Math.max(sequence, ...state.previews.map(item => Number(/^cold-(\d+)$/.exec(item.id)?.[1]) || 0));
+        return { status: 'restored', ...status() };
+    }
     function reset() { state = initialState(); return { status: 'reset', ...status() }; }
 
-    return Object.freeze({ select, deselect, clearSelection, candidates, rememberPreview, mark, discard, get, status, snapshot, restore, reset });
+    return Object.freeze({ select, deselect, clearSelection, candidates, rememberPreview, validatePreview, mark, discard, get, status, snapshot, restore, reset });
 }
 
 export const NPC_COLD_RUNTIME_VERSION = 1;

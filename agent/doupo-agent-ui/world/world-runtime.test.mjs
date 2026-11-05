@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createWorldRuntime, formatClock } from '../world/world-runtime.js';
+import { createWorldRuntime, deriveEventTitle, eventIntro, formatClock } from '../world/world-runtime.js';
 
 // —— 基础时钟 ——
 assert.equal(formatClock({ day: 1, minute: 480 }), '第 1 天 08:00');
@@ -26,8 +26,8 @@ assert.equal(runtime.status().clock.day, 4, '被拒绝的操作不能改动时�
 
 // —— addEvent 双域 + resolveEvent + pinEvent ——
 result = runtime.apply([
-    { op: 'addEvent', scope: 'near', text: '城东连着三家铺子夜里失窃', basis: '最近几楼提到的失窃传闻' },
-    { op: 'addEvent', scope: 'world', text: '皇室宣布炼药师大会提前', weight: 'major' },
+    { op: 'addEvent', scope: 'near', title: '城东连环失窃', text: '城东连着三家铺子夜里失窃', basis: '最近几楼提到的失窃传闻' },
+    { op: 'addEvent', scope: 'world', title: '炼药师大会提前', text: '皇室宣布炼药师大会提前', weight: 'major' },
 ]);
 assert.equal(result.status, 'applied');
 assert.equal(result.applied[0].summary.includes('依据：最近几楼提到的失窃传闻'), true, result.applied[0].summary);
@@ -55,8 +55,8 @@ assert.equal(runtime.status().clock.label, '三年之约倒计时');
 
 // —— 传闻档与名声/通缉字段 ——
 result = runtime.apply([
-    { op: 'addEvent', scope: 'near', text: '酒馆传闻：有人在收异火消息', weight: 'rumor' },
-    { op: 'addEvent', scope: 'near', text: '坏档位', weight: 'secret' },
+    { op: 'addEvent', scope: 'near', title: '酒馆异火传闻', text: '酒馆传闻：有人在收异火消息', weight: 'rumor' },
+    { op: 'addEvent', scope: 'near', title: '坏档位', text: '坏档位', weight: 'secret' },
     { op: 'setInfo', field: 'reputation', text: '乌坦城小有名气' },
     { op: 'setInfo', field: 'wanted', text: '被米特尔家族记恨' },
 ]);
@@ -89,6 +89,31 @@ assert.equal(result.applied.length, 1);
 assert.equal(runtime.snapshot().tasks.some(task => task.id === 't2'), false, '删除即从列表移除');
 assert.equal(runtime.apply([{ op: 'completeTask', id: 't2' }]).rejected[0].reason, 'task_not_found');
 
+// —— OPT-067：混合更新须先校验时限，拒绝不能留下详情或流水变化 ——
+{
+    let tick = 0;
+    const tasks = createWorldRuntime({ now: () => `task-${++tick}` });
+    tasks.apply([{ op: 'addTask', title: '校验任务', detail: '原详情', days: 7 }]);
+    const before = tasks.snapshot();
+    for (const days of [0, 91, 1.5, 'bad']) {
+        const rejected = tasks.apply([{ op: 'updateTask', id: 't1', detail: '不能落账', days }]);
+        assert.equal(rejected.status, 'rejected');
+        assert.equal(rejected.rejected[0].reason, 'bad_days');
+        assert.deepEqual(tasks.snapshot(), before, `坏时限 ${days} 不能修改任何快照字段`);
+    }
+    const changed = tasks.apply([{ op: 'updateTask', id: 't1', detail: '新详情', days: '3' }]);
+    const after = tasks.snapshot();
+    assert.equal(changed.applied.length, 1);
+    assert.equal(after.tasks[0].detail, '新详情');
+    assert.equal(after.tasks[0].endDay, 3, '沿用 intIn 数字字符串规则');
+    assert.equal(after.log.length, before.log.length + 1);
+    assert.notEqual(after.updatedAt, before.updatedAt);
+    for (const days of [undefined, null]) {
+        assert.equal(tasks.apply([{ op: 'updateTask', id: 't1', detail: '新详情', days }]).rejected[0].reason, 'task_nothing_to_update');
+        assert.deepEqual(tasks.snapshot(), after, '未提供时限与空时限不应清除旧期限');
+    }
+}
+
 // —— 任务随存档恢复：详情/来源/状态一字不丢 ——
 const taskSaved = JSON.parse(JSON.stringify(runtime.snapshot()));
 const taskReloaded = createWorldRuntime({ now: () => 'rt' });
@@ -116,6 +141,30 @@ assert.equal(runtime.apply([{ op: 'setFaction', name: '不存在', stance: 'bad'
 runtime.apply([{ op: "deleteFaction", name: "米特尔家族" }]);
 assert.equal(runtime.snapshot().factions.some(f => f.name === '米特尔家族'), false);
 
+// —— 势力档案：全档案登记 / 留空保旧 / 仅档案更新不再拒 / 超长截断 ——
+result = runtime.apply([{
+    op: 'setFaction', name: '云岚宗',
+    type: '宗门', level: '加玛帝国一流', leader: '云韵（宗主·斗王）',
+    elders: '老宗主云山、大长老云棱', members: '弟子千余，斗王三人',
+    location: '云岚宗山门', assets: '宗门产业与传承功法', relations: '世仇萧家；背靠皇室',
+}], { source: 'decide', floor: 32 });
+assert.equal(result.applied.length, 1);
+assert.ok(result.applied[0].summary.includes('首领 云韵（宗主·斗王）'), result.applied[0].summary);
+let faction = runtime.snapshot().factions.find(f => f.name === '云岚宗');
+assert.equal(faction.type, '宗门');
+assert.equal(faction.elders, '老宗主云山、大长老云棱');
+assert.equal(faction.relations, '世仇萧家；背靠皇室');
+result = runtime.apply([{ op: 'setFaction', name: '云岚宗', leader: '纳兰嫣然（代宗主）' }], { source: 'decide', floor: 33 });
+assert.equal(result.applied.length, 1, '仅档案更新不再被 faction_nothing_to_update 误拒');
+faction = runtime.snapshot().factions.find(f => f.name === '云岚宗');
+assert.equal(faction.leader, '纳兰嫣然（代宗主）');
+assert.equal(faction.elders, '老宗主云山、大长老云棱', '没提的字段保持旧值');
+assert.equal(faction.stance, 'hostile', '态度没动');
+assert.ok(result.applied[0].summary.includes('首领 纳兰嫣然'), result.applied[0].summary);
+runtime.apply([{ op: 'setFaction', name: '截断宗', assets: '长'.repeat(300) }]);
+assert.equal(runtime.snapshot().factions.find(f => f.name === '截断宗').assets.length, 160, '底蕴守 160 字上限');
+assert.equal(runtime.apply([{ op: 'setFaction', name: '截断宗', assets: '' }]).rejected[0].reason, 'faction_nothing_to_update', '空档案字段不算变化也不清旧值');
+
 // —— 人物：登记/更新态度，存档保留 ——
 result = runtime.apply([{ op: "setPerson", name: "药老", attitude: "严厉但护短，亦师亦父", basis: "第二楼药老出手相护" }]);
 assert.equal(result.applied.length, 1);
@@ -124,18 +173,81 @@ assert.equal(result.applied.length, 1);
 assert.equal(runtime.snapshot().people.find(p => p.name === '药老').attitude, '因萧炎隐瞒森林经历而起疑');
 assert.equal(runtime.apply([{ op: 'setPerson', name: '药老', attitude: '因萧炎隐瞒森林经历而起疑' }]).rejected[0].reason, 'person_nothing_to_update');
 
+// —— OPT-067：仅依据变化也落账；真无变化不改日期；raw undo 完整还原人物 ——
+{
+    let tick = 0;
+    const people = createWorldRuntime({ now: () => `person-${++tick}` });
+    const person = { op: 'setPerson', name: '药老', attitude: '护短', basis: '旧依据' };
+    people.apply([person]);
+    people.apply([{ op: 'advance', days: 2 }]);
+    const before = people.snapshot();
+    const changed = people.apply([{ ...person, basis: ' 新依据 ' }]);
+    const after = people.snapshot();
+    assert.equal(changed.applied.length, 1, '相同态度、不同依据应成功更新');
+    assert.equal(changed.rejected.length, 0);
+    assert.deepEqual(after.people[0], { ...before.people[0], basis: '新依据', updatedDay: 3 });
+    assert.equal(after.log.length, before.log.length + 1, '依据变化必须留下流水');
+    assert.deepEqual(after.log.at(-1).summaries, [changed.applied[0].summary]);
+    assert.notEqual(after.updatedAt, before.updatedAt);
+    assert.equal(changed.applied[0].undo.op, '_setPersonRaw');
+    people.apply([{ op: 'advance', days: 1 }]);
+    const beforeNoop = people.snapshot();
+    for (const basis of [undefined, '新依据', ' 新依据 ', '   ']) {
+        const noop = people.apply([{ ...person, basis }]);
+        assert.equal(noop.rejected[0].reason, 'person_nothing_to_update');
+        assert.deepEqual(people.snapshot(), beforeNoop, '跨天无变化也不能更新 updatedDay、流水或时间戳');
+    }
+    assert.equal(people.apply([{ op: 'setPerson', name: '药老', basis: '不能单独省略态度' }]).rejected[0].reason, 'attitude_missing');
+    assert.deepEqual(people.snapshot(), beforeNoop, '仍要求提供非空态度');
+    assert.equal(people.apply([changed.applied[0].undo], { source: 'revert' }).applied.length, 1);
+    assert.deepEqual(people.snapshot().people[0], before.people[0], '直接 raw undo 还原依据与原 updatedDay');
+    const normal = people.apply([{ ...person, attitude: '信任', basis: '   ' }]);
+    assert.equal(normal.applied.length, 1);
+    assert.deepEqual(people.snapshot().people[0], { ...before.people[0], attitude: '信任', updatedDay: 4 }, '正常态度更新仍保留非空旧依据');
+    assert.equal(people.apply([normal.applied[0].undo], { source: 'revert' }).applied.length, 1);
+    assert.deepEqual(people.snapshot().people[0], before.people[0], '态度变化也可 raw undo');
+}
+
 // —— 势力/人物随存档恢复 ——
 const socialSaved = JSON.parse(JSON.stringify(runtime.snapshot()));
 const socialReloaded = createWorldRuntime({ now: () => "sr" });
 socialReloaded.restore(socialSaved);
 assert.equal(socialReloaded.snapshot().factions.find(f => f.name === '云岚宗').stance, 'hostile');
+assert.equal(socialReloaded.snapshot().factions.find(f => f.name === '云岚宗').leader, '纳兰嫣然（代宗主）', '档案随存档恢复');
 assert.equal(socialReloaded.snapshot().people.find(p => p.name === '药老').basis, '本楼谎言被看穿');
 
 // —— 事件地点：登记/清洗/摘要 ——
-result = runtime.apply([{ op: "addEvent", scope: "world", text: "皇室武库失窃", location: "帝都" }], { source: "decide", floor: 40 });
+result = runtime.apply([{ op: "addEvent", scope: "world", title: "皇室武库失窃", text: "皇室武库失窃", location: "帝都" }], { source: "decide", floor: 40 });
 assert.equal(result.applied.length, 1);
 assert.ok(result.applied[0].summary.includes('地点：帝都'), result.applied[0].summary);
 assert.equal(runtime.snapshot().worldEvents.find(event => event.text === '皇室武库失窃').location, '帝都');
+
+// —— 事件短标题：title 必填（缺/超长整条拒绝），老存档仍按正文补；存档往返不许丢 ——
+result = runtime.apply([{ op: 'addEvent', scope: 'near', title: '城东连环失窃', text: '城东连着三家铺子夜里失窃，巡卫已经封了街口' }]);
+assert.equal(result.applied.length, 1);
+assert.ok(result.applied[0].summary.includes('「城东连环失窃」'), result.applied[0].summary);
+assert.equal(runtime.snapshot().nearEvents.find(event => event.text === '城东连着三家铺子夜里失窃，巡卫已经封了街口').text, '城东连着三家铺子夜里失窃，巡卫已经封了街口', '正文不受标题影响');
+result = runtime.apply([{ op: 'addEvent', scope: 'near', text: '加列家中街设卡盘查，过往行商都要交验货单' }]);
+assert.equal(result.rejected.length, 1);
+assert.equal(result.rejected[0].reason, 'title_missing', '没给 title 的 addEvent 整条拒绝');
+result = runtime.apply([{ op: 'addEvent', scope: 'near', title: '标题'.repeat(9), text: '超长标题的事件' }]);
+assert.equal(result.rejected[0].reason, 'title_too_long', '超过 16 字的标题整条拒绝');
+result = runtime.apply([{ op: 'addEvent', scope: 'near', title: '加列家中街设卡', text: '加列家中街设卡盘查，过往行商都要交验货单' }]);
+assert.equal(result.applied.length, 1);
+const titled = runtime.snapshot().nearEvents.find(event => event.text.startsWith('加列家中街'));
+assert.equal(titled.title, '加列家中街设卡', '模型给的标题原样保留');
+assert.equal(deriveEventTitle(''), '', '空正文不给标题');
+assert.equal(deriveEventTitle('没有标点的一长串内容'.repeat(4)).length, 16, '老存档兜底标题也守 16 字上限');
+assert.equal(eventIntro('城东连环失窃', '城东连着三家铺子夜里失窃'), '城东连着三家铺子夜里失窃', '标题与正文不同就整段当简介');
+assert.equal(eventIntro('坊市开张', '坊市开张，人挤得走不动'), '人挤得走不动', '标题正好是正文首句时简介只留后半句');
+assert.equal(eventIntro('迦南学院招生', '迦南学院招生队进了乌坦城，当街考校少年斗气'), '迦南学院招生队进了乌坦城，当街考校少年斗气', '标题只是开头几个字，不能从词中间切开');
+assert.equal(eventIntro('萧家护卫队在城外操练', '萧家护卫队在城外操练'), '', '标题就是整段正文时不重复铺');
+assert.equal(eventIntro('', '只有正文'), '', '没标题时标题位已经是正文截断，简介留空');
+assert.equal(eventIntro('坊市开张', ''), '', '没正文就没简介');
+const titleSaved = JSON.parse(JSON.stringify(runtime.snapshot()));
+const titleReloaded = createWorldRuntime({ now: () => 'title-time' });
+titleReloaded.restore(titleSaved);
+assert.equal(titleReloaded.snapshot().nearEvents.find(event => event.id === titled.id).title, '加列家中街设卡', '存档恢复不许丢 title');
 
 // —— 热度计：三档切换/非法档位/同档拒绝/存档保留 ——
 assert.equal(runtime.snapshot().tension, 'calm', '开局平静');
@@ -151,7 +263,7 @@ tensionReloaded.restore(tensionSaved);
 assert.equal(tensionReloaded.snapshot().tension, 'storm', '氛围随存档恢复');
 
 // —— opId 幂等：重放同一批指令不再二次记账 ——
-const batch = [{ op: 'addEvent', scope: 'near', text: '重放测试', opId: 'tick-1' }];
+const batch = [{ op: 'addEvent', scope: 'near', title: '重放测试', text: '重放测试', opId: 'tick-1' }];
 result = runtime.apply(batch, { source: 'llm' });
 assert.equal(result.applied.length, 1);
 result = runtime.apply(batch, { source: 'llm' });
@@ -160,7 +272,7 @@ assert.equal(result.duplicate.length, 1);
 assert.equal(runtime.snapshot().nearEvents.filter(event => event.text === '重放测试').length, 1);
 
 // —— 时限事件：days 生效、推进到线内仍有效、过线自动了结 ——
-result = runtime.apply([{ op: 'addEvent', scope: 'near', text: '限期三天的比武报名', days: 3 }]);
+result = runtime.apply([{ op: 'addEvent', scope: 'near', title: '比武报名', text: '限期三天的比武报名', days: 3 }]);
 assert.equal(result.status, 'applied');
 assert.ok(result.applied[0].summary.includes('有效至第'), result.applied[0].summary);
 const deadlineEvent = runtime.snapshot().nearEvents.find(event => event.text === '限期三天的比武报名');
@@ -170,16 +282,16 @@ assert.equal(runtime.snapshot().nearEvents.find(event => event.id === deadlineEv
 result = runtime.apply([{ op: 'advance', days: 1 }]);
 assert.deepEqual(result.applied[0].expired, [deadlineEvent.id], '过线即自动了结');
 assert.ok(result.applied[0].summary.includes('到期了结 1 件事'), result.applied[0].summary);
-assert.equal(runtime.apply([{ op: 'addEvent', scope: 'near', text: '坏时限', days: 91 }]).rejected[0].reason, 'bad_days');
+assert.equal(runtime.apply([{ op: 'addEvent', scope: 'near', title: '坏时限', text: '坏时限', days: 91 }]).rejected[0].reason, 'bad_days');
 // setClock 直接跳进未来也要清扫；没时限的事件不受影响
-runtime.apply([{ op: 'addEvent', scope: 'world', text: '短期悬赏', days: 2 }]);
+runtime.apply([{ op: 'addEvent', scope: 'world', title: '短期悬赏', text: '短期悬赏', days: 2 }]);
 const bounty = runtime.snapshot().worldEvents.find(event => event.text === '短期悬赏');
 runtime.apply([{ op: 'setClock', day: runtime.status().clock.day + 5 }]);
 assert.equal(runtime.snapshot().worldEvents.find(event => event.id === bounty.id).done, true, '跳钟后限时事件到期');
 assert.ok(runtime.snapshot().log.some(entry => entry.summaries.some(text => text.includes('到期了结'))), '清扫要留流水');
 
 // —— 重 roll 撤销连带到期：旧批次的推进撤销时，被它到期了结的事件复活 ——
-runtime.apply([{ op: 'addEvent', scope: 'near', text: '将到期的悬案', days: 2 }]);
+runtime.apply([{ op: 'addEvent', scope: 'near', title: '将到期的悬案', text: '将到期的悬案', days: 2 }]);
 const coldCase = runtime.snapshot().nearEvents.find(event => event.text === '将到期的悬案');
 runtime.apply([{ op: 'advance', days: 5 }], { source: 'llm', floor: 30 });
 assert.equal(runtime.snapshot().nearEvents.find(event => event.id === coldCase.id).done, true);
@@ -190,14 +302,14 @@ assert.equal(runtime.snapshot().nearEvents.find(event => event.id === coldCase.i
 const clockBeforeSwipe = { ...runtime.snapshot().clock };
 runtime.apply([
     { op: 'advance', days: 3 },
-    { op: 'addEvent', scope: 'near', text: '旧版本事件' },
+    { op: 'addEvent', scope: 'near', title: '旧版本事件', text: '旧版本事件' },
     { op: 'setInfo', field: 'weather', text: '晴' },
 ], { source: 'llm', floor: 7 });
 const afterFirst = runtime.snapshot();
 assert.equal(afterFirst.nearEvents.some(event => event.text === '旧版本事件'), true);
 runtime.apply([
     { op: 'advance', days: 1 },
-    { op: 'addEvent', scope: 'world', text: '新版本大事' },
+    { op: 'addEvent', scope: 'world', title: '新版本大事', text: '新版本大事' },
     { op: 'setInfo', field: 'weather', text: '阴' },
 ], { source: 'llm', floor: 7 });
 const afterSwipe = runtime.snapshot();
@@ -229,6 +341,7 @@ assert.equal(runtime.snapshot().info.weather, '', '非字符串信息应被清�
 assert.equal(runtime.snapshot().nearEvents.length, 1);
 assert.equal(runtime.snapshot().nearEvents[0].text, '存档事件');
 assert.equal(runtime.snapshot().nearEvents[0].basis.length, 80, '超长依据截到 80 字');
+assert.equal(runtime.snapshot().nearEvents[0].title, '存档事件', '老存档没有 title 时按正文补短标题');
 
 // —— 存档 roundtrip：名声/通缉度与时间戳不许在恢复时丢失 ——
 runtime.apply([{ op: 'setInfo', field: 'reputation', text: '乌坦城小有名气' }, { op: 'setInfo', field: 'wanted', text: '被米特尔家族记恨' }]);
@@ -239,7 +352,7 @@ const back = reloaded.snapshot();
 assert.equal(back.info.reputation, '乌坦城小有名气', '名声要随存档恢复');
 assert.equal(back.info.wanted, '被米特尔家族记恨', '通缉度要随存档恢复');
 assert.equal(back.updatedAt, saved.updatedAt, '存档时间戳要保留，不能被恢复时刻覆盖');
-result = runtime.apply([{ op: 'addEvent', scope: 'near', text: '新事件' }]);
+result = runtime.apply([{ op: 'addEvent', scope: 'near', title: '新事件', text: '新事件' }]);
 const ids = runtime.snapshot().nearEvents.map(event => event.id);
 assert.ok(ids.some(id => Number(id.slice(1)) > 9), `恢复后编号应接续最大值：${ids.join(',')}`);
 assert.equal(runtime.apply([{ op: 'resolveEvent', id: 'e9' }]).applied.length, 1, '已了结事件仍可再次定位');
@@ -247,12 +360,12 @@ assert.equal(runtime.apply([{ op: 'resolveEvent', id: 'e9' }]).applied.length, 1
 // —— 上限清理：先清已了结的，再清未置顶最老的，置顶永不丢 ——
 const bounded = createWorldRuntime({ maxEvents: 10 });
 for (let index = 1; index <= 10; index += 1) {
-    bounded.apply([{ op: 'addEvent', scope: 'near', text: `事件${index}`, day: index }]);
+    bounded.apply([{ op: 'addEvent', scope: 'near', title: `事件${index}`, text: `事件${index}`, day: index }]);
 }
 assert.equal(bounded.apply([{ op: 'resolveEvent', id: 'e1' }, { op: 'pinEvent', id: 'e2', pinned: true }]).applied.length, 2);
 // 再塞 4 条触发清理：应依次丢掉 e1（已了结）→ e3 → e4 → e5（未置顶最老）。
 for (let index = 11; index <= 14; index += 1) {
-    bounded.apply([{ op: 'addEvent', scope: 'near', text: `事件${index}`, day: index }]);
+    bounded.apply([{ op: 'addEvent', scope: 'near', title: `事件${index}`, text: `事件${index}`, day: index }]);
 }
 assert.equal(bounded.snapshot().nearEvents.length, 10);
 const keptIds = bounded.snapshot().nearEvents.map(event => event.id);
@@ -265,5 +378,28 @@ assert.ok(keptIds.includes('e14'), '最新事件保留');
 assert.equal(bounded.reset().status, 'reset');
 assert.equal(bounded.status().total, 0);
 assert.equal(bounded.status().clock.day, 1);
+
+// OPT-068: undo uses the original absolute deadline, including no deadline.
+for (const days of [undefined, 2]) {
+    const r = createWorldRuntime();
+    r.apply([{ op: 'addTask', title: '旧任务', detail: '原详情', days }], { source: 'panel' });
+    const before = r.snapshot().tasks[0];
+    r.apply([{ op: 'advance', days: 3 }, { op: 'updateTask', id: before.id, detail: '新详情', days: 10 }], { floor: 9 });
+    r.apply([], { floor: 9 });
+    assert.deepEqual(r.snapshot().tasks[0], before);
+}
+
+// OPT-069: stable optional opIds survive same-floor replacement, not cross-floor replay.
+{
+    const r = createWorldRuntime();
+    const op = { op: 'addEvent', title: '旧事件', text: '旧正文', opId: 'stable' };
+    r.apply([op], { floor: 3 });
+    assert.equal(r.apply([op], { floor: 3 }).status, 'applied');
+    assert.equal(r.snapshot().nearEvents.length, 1);
+    r.apply([{ ...op, title: '新事件', text: '新正文' }], { floor: 3 });
+    assert.equal(r.snapshot().nearEvents[0].text, '新正文');
+    assert.deepEqual(r.apply([op], { floor: 4 }).duplicate, ['stable']);
+    assert.equal(r.snapshot().nearEvents.length, 1);
+}
 
 console.log('world runtime tests passed');

@@ -37,7 +37,7 @@ export function createRequestRouter({ classifier, runner, getEnabledModuleIds, o
         const reason = plan.status === 'completed' || plan.status === 'cancelled' ? 'npc_plan_terminal' : 'npc_plan_changed';
         const expectedVersion = Number.isInteger(change.previousVersion) ? change.previousVersion : (Number.isInteger(plan.version) ? plan.version : null);
         for (const [requestId, pending] of pendingCandidates) {
-            const npcCandidates = pending.execution?.results?.flatMap(item => item?.value?.result?.npcCandidates ?? item?.value?.npcCandidates ?? []) ?? [];
+            const npcCandidates = canonicalCandidate(pending.execution)?.npcCandidates ?? pending.execution?.results?.flatMap(item => item?.value?.result?.npcCandidates ?? item?.value?.npcCandidates ?? []) ?? [];
             const affected = npcCandidates.some(candidate => candidate.npcId === plan.npcId && candidate.planId === plan.planId && candidate.sessionId === plan.sessionId && candidate.branchId === plan.branchId && candidate.stateVersion === plan.stateVersion && (expectedVersion === null || candidate.planVersion === expectedVersion));
             if (affected) {
                 const result = invalidateCandidate({ requestId, reason, planId: plan.planId, npcId: plan.npcId, planVersion: expectedVersion, currentPlanVersion: plan.version ?? change.currentVersion ?? null });
@@ -73,6 +73,13 @@ export function createRequestRouter({ classifier, runner, getEnabledModuleIds, o
     function invalidateCandidate({ requestId, reason = 'history_changed', planId, npcId, planVersion, currentPlanVersion } = {}) {
         const pending = pendingCandidates.get(requestId);
         if (!pending) return { status: 'missing_candidate' };
+        if (pending.prepared) {
+            const cancelled = commitRecovery?.cancel?.({ sessionId: pending.authorization.sessionId, branchId: pending.authorization.branchId, commitId: requestId });
+            if (cancelled?.status !== 'cancelled') {
+                pending.invalidated = true;
+                return { status: 'save_uncertain', requestId, reason: 'message_already_observed' };
+            }
+        }
         pendingCandidates.delete(requestId);
         const operation = operationLedger?.get?.(requestId);
         if (operation && operation.status !== 'failed_unapplied') operationLedger.update(requestId, 'history_invalidated', { sessionId: operation.sessionId, branchId: operation.branchId, stateVersion: operation.stateVersion, reason });
@@ -90,7 +97,7 @@ export function createRequestRouter({ classifier, runner, getEnabledModuleIds, o
             if (operation.status !== 'waiting_input') return { status: 'needs_review', reason: 'operation_not_waiting_input', operation };
             if (operation.stateVersion !== pending.authorization.stateVersion || operation.sessionId !== pending.authorization.sessionId || operation.branchId !== pending.authorization.branchId) return { status: 'needs_review', reason: 'operation_context_changed', operation };
         }
-        return { status: 'revalidated', requestId, authorization: pending.authorization, execution: pending.execution };
+        return structuredClone({ status: 'revalidated', requestId, authorization: pending.authorization, execution: pending.execution });
     }
 
     function prepareCommit({ requestId, messageId, candidate } = {}) {
@@ -110,8 +117,8 @@ export function createRequestRouter({ classifier, runner, getEnabledModuleIds, o
             const gate = npcCommitGate.check({ sessionId: pending.authorization.sessionId, branchId: pending.authorization.branchId, stateVersion: pending.authorization.stateVersion, candidates: candidate.npcCandidates });
             if (gate.status !== 'ready') return { status: gate.status, reason: 'npc_commit_gate_blocked', gate };
         }
-        const result = commitRecovery.prepare({ sessionId: pending.authorization.sessionId, branchId: pending.authorization.branchId, baseVersion: pending.authorization.stateVersion, commitId: requestId, candidate, messageId });
-        if (result.status === 'prepared') pendingCandidates.delete(requestId);
+        const result = commitRecovery.prepare({ sessionId: pending.authorization.sessionId, branchId: pending.authorization.branchId, baseVersion: pending.authorization.stateVersion, commitId: requestId, candidate: structuredClone(expectedCandidate), messageId });
+        if (result.status === 'prepared') pending.prepared = true;
         return result;
     }
 
@@ -130,7 +137,17 @@ export function createRequestRouter({ classifier, runner, getEnabledModuleIds, o
         if (!commitRecovery) return { status: 'unavailable', reason: 'commit_recovery_not_configured' };
         const pending = operationLedger?.get?.(requestId);
         if (!pending) return { status: 'missing_operation' };
+        const tracked = pendingCandidates.get(requestId);
+        const candidate = canonicalCandidate(tracked?.execution);
+        if (tracked?.invalidated || (npcCommitGate && Array.isArray(candidate?.npcCandidates)
+            && npcCommitGate.check({ sessionId: pending.sessionId, branchId: pending.branchId, stateVersion: pending.stateVersion, candidates: candidate.npcCandidates }).status !== 'ready')) {
+            const cancelled = commitRecovery.cancel?.({ sessionId: pending.sessionId, branchId: pending.branchId, commitId: requestId });
+            if (cancelled?.status === 'cancelled') pendingCandidates.delete(requestId);
+            else if (tracked) tracked.invalidated = true;
+            return { status: cancelled?.status === 'cancelled' ? 'invalidated' : 'save_uncertain', reason: 'npc_commit_gate_blocked' };
+        }
         const result = commitRecovery.commit({ sessionId: pending.sessionId, branchId: pending.branchId, commitId: requestId });
+        if (result.status === 'committed' || result.status === 'duplicate_commit') pendingCandidates.delete(requestId);
         if (result.status === 'committed') operationLedger?.update(requestId, 'completed_saved', { sessionId: pending.sessionId, branchId: pending.branchId, stateVersion: pending.stateVersion, reason: 'candidate_committed' });
         return result;
     }
@@ -153,8 +170,8 @@ export function createRequestRouter({ classifier, runner, getEnabledModuleIds, o
         const updateLedger = (status, reason) => operationLedger?.update(prepared.authorization.requestId, status, { sessionId: prepared.authorization.sessionId, branchId: prepared.authorization.branchId, stateVersion: prepared.authorization.stateVersion, timestamp, reason });
         const execution = await runner.execute({ taskId, taskType: prepared.taskType, moduleIds: validation.moduleIds, plan: prepared.plan, enabledModuleIds: prepared.enabledModuleIds, input, signal });
         updateLedger(execution.ok ? 'waiting_input' : 'failed_unapplied', execution.ok ? 'candidate_ready_for_commit' : execution.reason ?? 'module_execution_failed');
-        if (execution.ok) pendingCandidates.set(prepared.authorization.requestId, { authorization: prepared.authorization, execution });
-        return { status: execution.ok ? 'executed' : 'failed', classified: prepared.classified, plan: prepared.plan, operation, execution };
+        if (execution.ok) pendingCandidates.set(prepared.authorization.requestId, structuredClone({ authorization: prepared.authorization, execution }));
+        return structuredClone({ status: execution.ok ? 'executed' : 'failed', classified: prepared.classified, plan: prepared.plan, operation, execution });
     }
 
     return Object.freeze({ prepare, run, invalidateCandidate, revalidateCandidate, prepareCommit, confirmMessage, commitCandidate, invalidateNpcPlanCandidates });

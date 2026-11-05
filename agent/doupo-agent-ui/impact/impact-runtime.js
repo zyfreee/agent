@@ -16,7 +16,9 @@ const SHIFTS = Object.freeze(['none', 'accelerate', 'delay', 'avoid', 'alter']);
 const STATES = Object.freeze(['active', 'ripened', 'closed', 'reverted']);
 const SOURCES = Object.freeze(['decide', 'reply', 'manual']);
 
-const MAX_TITLE_TEXT = 60;
+/** 新记影响的短标题上限；老存档可能存着更长的标题，恢复走 RESTORE_TITLE_TEXT 不硬截。 */
+const MAX_TITLE_TEXT = 20;
+const RESTORE_TITLE_TEXT = 60;
 const MAX_DETAIL_TEXT = 240;
 const MAX_TARGET_TEXT = 40;
 const MAX_EVIDENCE_TEXT = 120;
@@ -97,7 +99,7 @@ function initialState(now) {
 /** 只保留认识的字段并逐条清洗；坏记录丢弃，不让整份存档作废。 */
 function cleanRecord(raw, index) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
-    const title = text(raw.title).slice(0, MAX_TITLE_TEXT);
+    const title = text(raw.title).slice(0, RESTORE_TITLE_TEXT);
     if (!title) return null;
     return {
         id: text(raw.id) || `i${index + 1}`,
@@ -160,7 +162,6 @@ export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchi
     let seq = 0;
     let opIdMemory = [];
     let lastFloor = null; // 最近一次由模型回复落账的楼层：{ floor, undo }，同楼重 roll 时用来回滚
-    let sweptDay = state.day;
 
     function find(id) {
         const key = text(id);
@@ -198,17 +199,18 @@ export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchi
     }
 
     /** 到了发酵日就自动翻牌：模型定"几天后发作"，脚本到点执行，不需要人再点一次。 */
-    function sweepDue(day) {
-        if (!Number.isInteger(day) || day <= sweptDay) return [];
+    function sweepDue(day, undoSteps) {
+        if (!Number.isInteger(day)) return [];
         const ripened = [];
         for (const record of state.records) {
             if (record.state !== 'active' || record.ripenDay === null) continue;
             if (record.ripenDay > day) continue;
+            undoSteps.push({ op: '_restoreRecord', id: record.id, state: record.state,
+                ripenedDay: record.ripenedDay, resolution: record.resolution, resolvedDay: record.resolvedDay });
             record.state = 'ripened';
             record.ripenedDay = record.ripenDay;
             ripened.push(record);
         }
-        sweptDay = day;
         if (ripened.length) {
             logEntry('sweep', ripened.map(record => `到期发酵 ${record.id}：${record.title}`));
         }
@@ -466,6 +468,7 @@ export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchi
             const id = text(op.ref);
             const at = state.archive.findIndex(record => record.id === id);
             if (at < 0) return { ok: false, reason: 'archive_not_found' };
+            if (find(id)) return { ok: false, reason: 'duplicate_id' };
             if (maxRecords && state.records.length >= maxRecords) return { ok: false, reason: 'library_full' };
             const [record] = state.archive.splice(at, 1);
             const cleaned = cleanRecord({ ...record, archivedReason: '' }, state.records.length);
@@ -535,14 +538,16 @@ export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchi
         // 同一楼重新生成（重 roll/换 swipe）：先把上一版影响处理原样撤销，再执行新版，避免重复记账。
         if (fromModel && floorKey !== null && lastFloor && lastFloor.floor === floorKey) {
             for (const undo of [...lastFloor.undo].reverse()) runOne(undo, { gameDay, floorKey, source: 'revert' });
+            opIdMemory = opIdMemory.filter(id => !lastFloor.opIds.includes(id));
             logEntry('revert', [`第 ${floorKey + 1} 楼重新生成：已撤销上一版世界影响`]);
         }
         state.day = gameDay;
-        const dueIds = sweepDue(gameDay);
+        const undoSteps = [];
+        const dueIds = sweepDue(gameDay, undoSteps);
         const list = Array.isArray(operations) ? operations.slice(0, maxOps) : [];
         const applied = [];
         const rejected = [];
-        const undoSteps = [];
+        const opIds = [];
         const duplicate = [];
         for (const op of list) {
             const opId = text(op?.opId);
@@ -553,6 +558,7 @@ export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchi
             const result = runOne(op, { gameDay, floorKey, source });
             if (result.ok) {
                 rememberOpId(opId);
+                if (opId) opIds.push(opId);
                 applied.push(result);
                 if (result.undo) {
                     if (Array.isArray(result.undo)) undoSteps.push(...result.undo);
@@ -562,7 +568,9 @@ export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchi
                 rejected.push({ op: text(op?.op), reason: result.reason });
             }
         }
-        if (fromModel && floorKey !== null) lastFloor = { floor: floorKey, undo: undoSteps };
+        // Restoring an archived overdue record must mature in this same call, not on the next turn.
+        dueIds.push(...sweepDue(gameDay, undoSteps));
+        if (fromModel && floorKey !== null) lastFloor = { floor: floorKey, undo: undoSteps, opIds };
         // “记录节奏”要按“上次叫过记录员之后又生成了几楼”算，没记到东西也算叫过一次。
         if (fromModel && floorKey !== null) state.decidedFloor = floorKey;
         if (applied.length) {
@@ -675,11 +683,17 @@ export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchi
     }
 
     function restore(raw) {
-        state = normalizeState(raw, now);
-        seq = Math.max(0, ...state.records.map(record => Number(String(record.id).replace(/\D/g, '')) || 0));
+        const next = normalizeState(raw, now);
+        const all = [...next.records, ...next.archive];
+        if (new Set(all.map(record => record.id)).size !== all.length) return { status: 'rejected', reason: 'duplicate_id' };
+        state = next;
+        seq = all.reduce((max, record) => Math.max(max, Number(String(record.id).replace(/\D/g, '')) || 0), 0);
         opIdMemory = [];
         lastFloor = null;
-        sweptDay = state.day;
+        if (sweepDue(state.day, []).length) {
+            state.version += 1;
+            state.updatedAt = now();
+        }
         return { status: 'restored', ...status() };
     }
 
@@ -688,7 +702,6 @@ export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchi
         seq = 0;
         opIdMemory = [];
         lastFloor = null;
-        sweptDay = state.day;
         return { status: 'reset', ...status() };
     }
 

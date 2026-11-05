@@ -1,0 +1,302 @@
+# core/request 只读审查（2026-11-04）
+
+## Routing Decision
+AUDIT -> SWEEP -> REPORT；只读。仅写用户授权的两报告，不进入CHANGE。
+C:\Users\86158\Desktop\异界转生录\doupo
+HEAD 1dee86edb89a8f6efc4b8bbd8192a3a9c1017748
+dirty；审当前工作树，非HEAD。agent-modules.js、facts-pipeline.test.mjs、settle-categories.js、turn-stages.js已有用户修改；未覆盖。未锁定并发写入。
+覆盖39文件：生产19全读；20测试执行通过，其中2全读、18源码partial。无范围内unread/excluded，不声称测试源码全审。
+index仅具体调用点；未审UI及其他模块内部。无联网/浏览器/模型/自动修复。
+
+## Findings
+确认P1两项、P2八项，无P0。P3空分支仅为尚未过删除门的瘦身候选。
+
+### CR-01 P1 持久化失败仍宣告已保存
+C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\core\orchestrator.js:199
+- behavior：legacy回合提交与保存
+- trigger：内存提交成功，persistence.save返回失败状态。
+- evidence：L199只记录save结果，L211-225无条件completed_saved/completed。内存repro save=>{status:'failed'}，result.status='completed'、persisted='failed'、coordinator='completed_saved'；rollback L243-251同样不核验。
+- risk：用户按已保存继续操作，刷新后可能失去这一轮状态；内存提交与持久化成功混淆。
+- recommendation：核验现有save结果；失败进入save_uncertain并保留重试线索，禁止盲目重复行动。
+- verification：覆盖save返回failed/blocked、抛错、成功；失败不得completed_saved，重复保存不得重复行动或版本推进。
+- reachability：legacyTurn面板和公开runTurn；非默认酒馆正文路径。
+- certainty：高；源代码与纯内存复现一致。
+
+### CR-02 P1 正文先交付再准备提交导致可见消息与状态分裂
+C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\core\orchestrator.js:182
+- behavior：legacy两段提交并发窗口
+- trigger：同分支并发runTurn，或生成期间其他写入推进版本。
+- evidence：L182先deliver，L191才commitCandidate。两runTurn屏障repro delivered=2/history=1；一个completed，另一个prepare_commit/stale_state。L192-194直接failed返回且未撤销已显示消息。
+- risk：聊天存在描述未落地结果的正文，后续请求可能将其当成已发生事实。
+- recommendation：在现有边界串行化同分支回合，交付前检查/准备版本，并定义交付后失败的待核对或补偿策略；不能仅依赖按钮禁用。
+- verification：同分支两次runTurn同时完成compose，最多一个可执行交付/提交；否则失败正文必须可识别且明确待核对，不得作为已执行事实。
+- reachability：公开runTurn可并发；面板禁按钮仅缓解，不能保护公共API或外部状态写入。
+- certainty：高；内存屏障并发复现。
+
+### CR-03 P2 快照恢复丢失初始基线导致无法回滚首版
+C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\core\orchestrator.js:84
+- behavior：restore/readScope与历史回放
+- trigger：v1提交到v2，存储完整stateStore快照后重新restore，再rollback v1。
+- evidence：readScope L57-63与restore L84-90忽略snapshot.baseVersion/baseState；state-store L33把v2设为新基线且history不含v1。完整快照内存repro得到unknown_version。
+- risk：刷新后无法回滚到原始状态，回滚能力比刷新前缩小。
+- recommendation：恢复时传入并验证baseVersion/baseState；旧快照缺基线时显式说明能力不足。
+- verification：v1→v2→保存→新实例restore→rollback v1应生成v3且状态等于原v1；缺基线旧快照另测。
+- reachability：legacy/public restore及runTurn的readScope；不推断其他模块自身存档合同。
+- certainty：高；完整快照内存复现。
+
+### CR-04 P2 解析失败与路由早退不会清理占位消息
+C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\core\orchestrator.js:112
+- behavior：legacy占位生命周期
+- trigger：ui.placeholder=true并创建占位，随后interpret拒绝或router返回澄清/审核。
+- evidence：L112-117创建占位，L128/L139返回；清理finally始于L142，仅覆盖流水线后。interpret抛错repro discarded=0。
+- risk：聊天残留省略号，重试可继续积累。
+- recommendation：把现有finally扩大到占位创建后的完整生命周期。
+- verification：interpret抛错、needs_clarification、needs_review、router抛错均清理一次；正常替换后不删除正文。
+- reachability：仅legacy/public runTurn开启placeholder时。
+- certainty：高；内存复现。
+
+### CR-05 P2 流水线超时未中止阶段信号
+C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\core\turn-pipeline.js:150
+- behavior：阶段预算与取消
+- trigger：阶段Promise超时，阶段或下游服务监听ctx.signal。
+- evidence：L150-155返回failed但未controller.abort；10ms内存repro error=total_budget_exhausted而signal.aborted=false。module-runner L146-148主动abort；turn-stages L372-378裁定调用还未传signal。
+- risk：本地已报失败但合作式工作仍继续占用资源，晚到阶段也可能继续执行回调；不能保证远程调用取消。
+- recommendation：超时分支先abort阶段控制器，再停止采用候选；沿现有裁定调用链显式传signal，保留远程取消不可保证的提示。
+- verification：超时后signal必须aborted，晚到结果不进入候选；裁定stub应收到signal，覆盖外部abort和总预算。
+- reachability：legacy/public六阶段流水线；默认resolveInjection不经过此预算。
+- certainty：高；内存复现，不声称已取消远端。
+
+### CR-06 P2 已完成或取消提交永久占满恢复日志
+C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\core\commit-recovery.js:19
+- behavior：有界日志长期可用性
+- trigger：同实例累计达到maxEntries次prepare，包含已cancel或commit的任务。
+- evidence：journal只set不delete，默认500，无clear接口；cancel L45仅改phase。maxEntries=1 repro prepare→cancel→新prepare返回journal_full。
+- risk：长期使用后全部新提交被拒绝，legacy交付发生在prepare前，会进一步产生孤立正文。
+- recommendation：先定义保留/恢复合同，再回收安全终结且持久确认的记录并保留必要幂等墓碑；待核对日志不可直接逐出。
+- verification：小上限连续成功/取消超过限额仍安全继续；重复commit不重复写入；save_uncertain不得静默回收。
+- reachability：legacy/public recovery实例，默认注入本身不使用该提交日志。
+- certainty：高；小上限内存复现及默认常量可证。
+
+### CR-07 P2 手动卷号与自动进度失去来源信息
+C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\core\turn-stages.js:101
+- behavior：默认设定注入的进度边界
+- trigger：面板进度锁定2，目录选择建议10或标题猜中10。
+- evidence：index L615-618声称手动锁定但仅返回数字2；resolveVolume L112-116仍advance到3，L105回调保存auto。内存repro volume={current:2,next:3,source:'auto'}，onVolumeInferred=3。
+- risk：手动锁定时仍产生自动推进元数据与保存回调；若下游使用next则可能扩大卷号可见范围。具体剧透未审assemble内部，未证实。
+- recommendation：进度入参保留manual/auto来源，手动时禁止推进与onVolumeInferred；保留自动单卷推进护栏。
+- verification：manual=2/suggested=10必须next=2且无保存回调；auto=2最多推进3；未知进度策略另测。
+- reachability：默认index L3336 resolveInjection与legacy gather均可达；实际组装内部未审。
+- certainty：手动锁定合同冲突高确定；剧透影响仅潜在。
+
+### CR-08 P2 候选快照与返回对象共享引用使防篡改比较失效
+C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\request\request-router.js:156
+- behavior：公开router候选完整性
+- trigger：已登记模块返回commit-shaped candidate，调用方修改run.execution或revalidateCandidate.execution。
+- evidence：pendingCandidates保存execution原引用且L157直接返回；L93也返回引用；L102-107比较两边同一对象。repro nextState.hp从9改999后prepare成功、commit成功且state.hp=999。
+- risk：候选可在总控审核后改写，candidate_tampered比较无法保护该API路径。
+- recommendation：内部保存独立structuredClone快照，所有返回也克隆；commit使用内部快照。
+- verification：分别修改run.execution和revalidated.execution，prepare必须拒绝或提交最初候选；原始候选测试继续通过。
+- reachability：导出的runRequest/prepareCommit/revalidateCandidate；生产内置action/world通常返回changes/proposals而非nextState，不冒称默认可利用或安全漏洞。
+- certainty：自定义commit-shaped模块API高确定；默认生产模块提交可达性有限。
+
+### CR-09 P2 prepare之后丢失NPC候选失效追踪
+C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\request\request-router.js:114
+- behavior：公开router两段提交与NPC计划版本
+- trigger：候选通过NPC gate并prepare后、confirm/commit前NPC计划变化。
+- evidence：prepare成功即删除pending；失效函数只遍历此Map，L127-134 commit不重查NPC gate。repro prepare后计划变更no_matching_candidate，gate仅调用一次，仍committed。L40还未覆盖canonicalCandidate所认的value.candidate.npcCandidates形状。
+- risk：已失效NPC计划候选仍可提交；嵌套候选在prepare前也可能漏失效通知。
+- recommendation：prepared阶段保留内部候选与版本，commit前重查现有NPC gate，复用canonicalCandidate形状提取；消息已观察时转待核对。
+- verification：覆盖prepare前后计划调整/完成/取消及嵌套candidate；无消息可取消，有消息须save_uncertain，不提交旧计划。
+- reachability：公开router自定义commit-shaped模块API；默认酒馆主链与内置无nextState结果不走该提交面。
+- certainty：高；内存复现。
+
+### CR-10 P2 设定偏离审计事件不在白名单导致静默丢失
+C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\core\audit-log.js:2
+- behavior：legacy设定正文审计
+- trigger：settings.audit返回ok=false并触发onSettingDrift。
+- evidence：turn-stages L511-513调用回调；index L657-664发setting_drift；audit EVENTS无该值，L12抛错；turn-stages L513吞异常。内存record(setting_drift)复现不允许的审计事件。
+- risk：检测到的设定偏离没有可查询的审计记录。
+- recommendation：登记setting_drift并保存必要无敏感元数据，或改用现有受支持事件；不扩大审计到提示词正文。
+- verification：audit.ok=false的compose应生成可检索偏离事件；非法事件仍拒绝，密钥和正文不得进入审计。
+- reachability：legacy compose；默认resolveInjection不调用compose审计。
+- certainty：高；明确合同冲突与内存复现。
+
+## 功能逐项状态
+
+- feature：输入与请求分类
+- status：部分可靠
+- evidence：bounded labels、type/task一致、read_only/clarification/history_review保守分流已读。orchestrator的playerConfirmed来自模型explicitAction，不是独立用户确认；未做自然语言正确性证明。
+
+- feature：行动授权
+- status：部分可靠
+- evidence：router白名单路由及intent目标/方法匹配；resolver explicit及可选authorizedActions。stage规范化changes未携origin/playerAction，质量门对应分支不能当独立授权证明；仍依赖上层。
+
+- feature：计划与依赖
+- status：现有测试通过
+- evidence：runner核对登记/启用/task/stateChanging/依赖顺序；stage.plan只记录核准计划。adjudicate直接调用actions/world，不经runner.execute，单模块预算不覆盖。
+
+- feature：默认原著设定注入
+- status：有缺陷/部分验证
+- evidence：index3336→resolveInjection→gatherSettings；目录点选、人物簿过滤、关键词回退、maxItems和assemble预算已追踪；CR-07。resolveInjection接收recentTexts但gatherSettings使用getRecentTexts(ctx)，API入参不是实际事实来源。
+
+- feature：资料查询
+- status：静态与现有测试通过
+- evidence：gather fallback检查sourceIds，runner facts-query，提取visibleFactIds。includeUnverified条件两边均空对象，待确认空分支；不推断事实库内部过滤缺陷。
+
+- feature：行动规则与分类复核
+- status：部分可靠
+- evidence：getRules、类别二次裁定/失败回退、四类别字段与幅度、境界推进、resolver条件效果已读；未知类别兼容放行。质量门拒绝同字段多写。未验证模型或自定义规则合理性。
+
+- feature：时间推进与世界提案
+- status：局部通过
+- evidence：stage.resolveTime仅推进world.day，processes固定[]，不执行现实世界runtime；world-simulator独立API有范围/版本/条件阻断、幂等与冲突。未审world其他模块内部。
+
+- feature：预算与取消
+- status：有缺陷
+- evidence：pipeline总/阶段时限及输出字节上限、runner单模块/总预算已读；CR-05。interpret/deliver/persistence在流水线计时之外，默认resolveInjection也不受pipeline预算。
+
+- feature：质量门与正文声明
+- status：部分可靠
+- evidence：合同字段/type/writer(提供时)/多写者/claim引用可审；hidden fact为警告非阻断。sanitizeClaims删除不可信claim但不删正文，不等于任意正文事实证明；narrativeGuard内部越界未审。
+
+- feature：候选完整性
+- status：混合
+- evidence：pipeline内部clone并比较stageResults/quality/narrative；router有CR-08。quality不验证nextState与acceptedChanges重放相等，属于受信任stage接口合同，未证明默认可利用漏洞。
+
+- feature：两段提交与消息证据
+- status：有缺陷
+- evidence：prepare/markMessage/commit/reconcile拒绝无证据、错message/stale和重复；CR-02/06/09。orchestrator observed !==false把缺失值当观察成立，真实宿主证据契约未审。
+
+- feature：持久化、恢复与回滚
+- status：有缺陷
+- evidence：CR-01/03。state-store回滚新版本不改写历史、read clone、分支版本冲突及幂等已读；自定义非vN版本、超大版本和fork容量未深入repro。
+
+- feature：操作台账与协调状态
+- status：部分可靠
+- evidence：ledger有界去重/重试/上下文与版本校验；coordinator仅active任务可更新。runTurn不使用operationLedger，仅taskId去重，不承诺同trigger幂等。
+
+- feature：审计与关联
+- status：有缺陷
+- evidence：白名单、无正文投影、容量与查询已读；CR-10。runner多条stage事件缺session参数退化unknown，router.run execute不传scope；列后续关联性验证，不与CR-10合并修。
+
+- feature：影响提案
+- status：静态/现有测试通过，生产可达性未证明
+- evidence：impact-engine确定/条件/推测、归因/版本/深度/容量/清分支已读；index使用impact-runtime而未发现agentImpactEngine调用，不可仅凭缺index引用删库。
+
+## Refactor Signals
+
+- module：core/orchestrator.js
+- threshold：多个失败、清理和保存分支共享回合生命周期边界
+- evidence：CR-01/02/03/04；先修单一保存分支，再按失败矩阵收束边界，不授权重写。
+
+- module：core/turn-stages.js
+- threshold：默认注入与legacy阶段共用进度接口，但来源/取消/副作用语义不一致
+- evidence：CR-05/07；应明确进度来源与signal，不按533行长度拆分。
+
+- module：request/request-router.js
+- threshold：候选所有权与prepared生命周期不一致
+- evidence：CR-08/09；先把内部快照和prepared失效责任写成测试合同。
+
+## Slimming Opportunities
+
+- pattern：Compatibility Path
+- occurrences：2
+- suggested_handling：默认resolveInjection与legacy六阶段/API并存；legacy仍有面板开关和公开调用，不能删。
+
+- pattern：Duplicate Logic
+- occurrences：2
+- suggested_handling：pipeline与runner均含预算/取消/进度，但输入和状态合同不同；先补CR-05再判断小型公用逻辑，禁止整体合并。
+
+- pattern：Over-layering
+- occurrences：1
+- suggested_handling：turn-stages gather L293 includeUnverified两分支均{}，可列P3瘦身候选；先确认配置承诺与facts.query默认行为，未过删除安全检查，不出删除建议。
+
+## Verification Gates
+
+- check：已执行：Node v24.12.0，node --input-type=module逐个import core/*.test.mjs 与 request/*.test.mjs，fetch强制抛错。
+- scope：20/20测试文件通过，0失败；不是断言数、覆盖率或真实宿主验收。首次--experimental-default-type=module参数被拒绝，去掉后成功重跑。
+
+- check：已执行十项纯内存repro，不写存档、不接网络/模型。
+- scope：保存误报、并发交付、恢复基线、占位早退、timeout signal、日志容量、手动卷号、可变候选、prepared NPC失效、审计白名单。
+
+- check：后续补各finding.verification所列失败矩阵。
+- scope：本轮未写新测试文件；仅执行现有测试与内存复现。
+
+## Optimization Handoff
+
+- module：core/orchestrator.js
+- evidence：CR-01：save failed仍completed_saved，已复现。
+- threshold：Local Fix
+- suggested_gate_mode：Local Fix Only
+- behavior_contract_hints：提交和持久化均成功才宣告已保存；保存失败保留版本和待核对结果，禁止重复行动。
+- patch_budget：未来获授权后：一个保存状态分支，生产/测试1-2文件，目标小于80变更行。
+- pre_change_baseline：现有20测试通过；save=>failed内存repro仍completed。
+- verification_gate：保存成功、返回失败、抛错、不配置保存的明确契约；不得重复提交。
+- deletion_safety：本候选无需删除；其他兼容路径删除安全未证明。
+- forbidden_scope：本轮禁止源码修改；未来也不改host、UI、配置、存档或其他业务模块。
+
+## Do Not Touch Yet
+- state-store复制、同分支baseVersion CAS和rollback追加版本不重写历史。
+- runner显式登记白名单/依赖校验，agent-modules注册失败反向撤销。
+- quality-gate合同字段/type/多写者拒绝，recovery消息证据与重复提交守卫。
+- 四类别脚本护栏、人物簿过滤、未知类别兼容合同；未证明可删。
+- impact-engine未见index调用不足以证明死代码；外部导入/动态引用/文档合同未全搜。
+
+## 未验证边界 / Residual Risk
+- 39范围文件中19生产已读，20测试已执行，其中18测试源码partial；无范围内unread或excluded，不能据此称测试源码全审。
+- index仅构造、公开API、默认注入、legacy开关具体调用点；未审UI及host/narrative/npc/settle/world等内部。
+- 无浏览器、联网或模型生成，未验证真实消息持久化、SillyTavern版本API、远端取消、模型解释/生成准确性。
+- 默认酒馆路径不经过legacy流水线质量门/两段提交；其他生命周期归入口报告，不重复enabled=false问题。
+- source review不等于并发宿主验收；现有测试通过不覆盖本报告新增失败矩阵。
+- 未全面搜动态导出、文档/迁移/插件合同，不能批准删除legacy、impact-engine或单调用包装。
+
+## Gate Recommendation / Optimization Eligibility
+- core/orchestrator Local Fix；request/router Refactor Backlog；其他No Refactor（保留局部缺陷待授权）。
+- Local Fix Only，仅建议不实施。
+- Eligible for Gate Review，选CR-01单一候选；拒绝批量优化/重写。
+
+## 文件 Coverage
+reviewed=完整源码已读；partial=相关片段和断言。执行测试与阅读覆盖独立。
+- `C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\core\agent-modules.js` **reviewed**； 完整读取34行；显式适配器白名单、注册失败撤销、dispose。
+- `C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\core\agent-modules.test.mjs` **partial**；仅imports、关键断言和相关片段，未逐行审完整fixture。 离线完整执行通过；抽查注册/计划/撤销断言。
+- `C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\core\audit-log.js` **reviewed**； 完整读取24行；白名单/字段投影/容量/过滤；setting_drift内存复现。
+- `C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\core\audit-log.test.mjs` **partial**；仅关键断言与imports，未完整读测试体。 完整执行通过；抽查上限、事件和清空断言。
+- `C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\core\commit-recovery.js` **reviewed**； 完整读取82行；prepare/证据/取消/commit/reconcile/容量，内存复现。
+- `C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\core\commit-recovery.test.mjs` **reviewed**； 完整读取44行并离线执行；错误消息、取消、证据丢失和版本冲突。
+- `C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\core\coordinator.js` **reviewed**； 完整读取79行；activeTask、终态与会话/分支/版本隔离。
+- `C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\core\coordinator.test.mjs` **partial**；抽查imports和断言，未逐行读fixture。 完整执行通过；抽查状态/事件/非法输入。
+- `C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\core\data-contract.js` **reviewed**； 完整读取81行；字段唯一/type/writer/readers、显式迁移注册与候选输出。
+- `C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\core\data-contract.test.mjs` **partial**；抽查imports和关键断言，未完整读测试体。 完整执行通过；抽查writer/type/迁移断言。
+- `C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\core\facts-pipeline.test.mjs` **partial**；完整读取145-212及其他关键断言，前半fixture未完整审。 完整执行通过；人物簿过滤、目录注入、全过滤和兼容路径断言。
+- `C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\core\impact-engine.js` **reviewed**； 完整读取94行；条件/推测/归因/版本/容量/清分支；未证明生产调用可达性。
+- `C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\core\impact-engine.test.mjs` **partial**；抽查imports和断言，未完整读fixture。 完整执行通过；事件去重、容量、清分支断言。
+- `C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\core\module-runner.js` **reviewed**； 完整读取187行；登记、计划、启用、依赖、状态权限、预算与取消。
+- `C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\core\module-runner.test.mjs` **partial**；抽查imports、关键断言，未逐行审107行测试体。 完整执行通过；计划/依赖/超时/取消等断言存在。
+- `C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\core\operation-ledger.js` **reviewed**； 完整读取55行；去重、重试、终态、关联身份、容量和查询。
+- `C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\core\operation-ledger.test.mjs` **partial**；抽查关键断言与imports，未逐行读测试体。 完整执行通过；操作去重/状态和输入断言。
+- `C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\core\orchestrator.js` **reviewed**； 完整读取256行；解释→授权→流水线→交付→准备→提交→保存及恢复回滚，内存复现。
+- `C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\core\orchestrator.test.mjs` **partial**；完整读取1-32、120-164及关键断言，剩余fixture未全读。 完整执行通过；现有测试未捕获保存失败、占位早退或并发交付。
+- `C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\core\quality-gate.js` **reviewed**； 完整读取63行；字段合同/type/writer、双写、授权和claims处理。
+- `C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\core\quality-gate.test.mjs` **partial**；抽查imports和关键断言，未逐行读fixture。 完整执行通过；合同类型/未注册字段和candidate断言。
+- `C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\core\settle-categories.js` **reviewed**； 完整读取236行，含四类提示词、境界解析/阶梯、效果字段及幅度复核。
+- `C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\core\settle-categories.test.mjs` **partial**；抽查imports及关键断言，未完整读97行测试体。 完整执行通过；类别完整性、效果过滤和非数组断言。
+- `C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\core\state-store.js` **reviewed**； 完整读取99行；seed/CAS/幂等/分支/追加式回滚/read复制。
+- `C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\core\state-store.test.mjs` **partial**；抽查imports和断言，未完整审fixture。 完整执行通过；版本/提交/缺分支/参数边界断言。
+- `C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\core\turn-pipeline.js` **reviewed**； 完整读取263行；六阶段、输出限额、预算、候选防篡改、提交/取消/计划失效。
+- `C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\core\turn-pipeline.test.mjs` **partial**；读取1-20及关键断言，未完整审151行测试体。 完整执行通过；候选提交/失效/质量拒绝/防篡改断言。
+- `C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\core\turn-stages.js` **reviewed**； 完整读取533行；设定注入、资料、规则裁定、时间、正文与汇总；对照index具体接线。
+- `C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\core\turn-state.js` **reviewed**； 完整读取112行；默认合同、初始状态、字段提示、复制应用变化和摘要。
+- `C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\core\turn-state.test.mjs` **partial**；抽查imports和关键断言，未完整读测试体。 完整执行通过；默认合同/初始状态/复制变更断言。
+- `C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\request\action-resolver.js` **reviewed**； 完整读取77行；explicit、授权列表、规则/条件/效果、资源边界和幂等缓存。
+- `C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\request\action-resolver.test.mjs` **partial**；抽查imports和断言，未完整读fixture。 完整执行通过；规则版本/数量、候选与边界断言。
+- `C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\request\request-classifier.js` **reviewed**； 完整读取42行；类别/任务一致性、澄清、历史与系统操作、确认分流。
+- `C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\request\request-classifier.test.mjs` **partial**；抽查imports和关键断言，未完整审fixture。 完整执行通过；read_only、置信度和空输入断言。
+- `C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\request\request-router.js` **reviewed**； 完整读取161行；prepare/计划/去重、候选归属与提交、能力/NPC失效；内存复现。
+- `C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\request\request-router.npc-invalidation.test.mjs` **reviewed**； 完整读取24行并完整执行；计划版本失效和候选移除。
+- `C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\request\request-router.test.mjs` **partial**；完整读取1-28及关键断言，未逐行审124行测试体。 完整执行通过；候选篡改、计划版本、能力降级及禁用行动降级断言。
+- `C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\request\world-simulator.js` **reviewed**； 完整读取61行；范围/版本/时间/过程、冲突、幂等与提案输出。
+- `C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\request\world-simulator.test.mjs` **partial**；抽查imports和关键断言，未完整审fixture。 完整执行通过；partial提案、过程去重和冲突断言。
+
+## A0 receipt
+route=code-quality-workflow；loaded=ST-A0；snapshot=2026-08-18；候选=[]。目标/红线/验收沿用用户授权。
+报告不代表仓库全量或真实酒馆验收。

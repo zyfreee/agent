@@ -80,8 +80,10 @@ export function createNpcAutonomyPlanner({ maxNpcs = DEFAULT_MAX_NPCS, maxFacts 
         const key = [requiredText(sessionId, 'sessionId'), requiredText(branchId, 'branchId'), requiredText(stateVersion, 'stateVersion'), requiredText(npcId, 'npcId'), requiredText(planId, 'planId')].join('\u0000');
         if (typeof goal !== 'string' || !goal.trim()) throw new TypeError('goal 必须是非空文本');
         if (!Number.isInteger(version) || version < 1) throw new TypeError('version 必须是正整数');
+        if (!['active', 'paused', 'needs_redecision', 'completed', 'cancelled'].includes(status)) throw new TypeError('status 不是受支持的计划状态');
         const existing = plans.get(key);
         if (existing && version !== existing.version) return { status: 'needs_review', reason: 'plan_version_conflict', planId, currentVersion: existing.version };
+        if (existing?.status === 'completed' || existing?.status === 'cancelled') return { status: 'needs_review', reason: 'plan_terminal', currentStatus: existing.status };
         const next = { sessionId, branchId, stateVersion, npcId, planId, goal: goal.trim(), status, version: existing ? existing.version + 1 : version, formal: false, executed: false, lastChange: null };
         plans.set(key, next);
         notifyPlanChange({ type: existing ? 'updated' : 'registered', plan: next, previousVersion: existing?.version ?? null, currentVersion: next.version });
@@ -95,6 +97,8 @@ export function createNpcAutonomyPlanner({ maxNpcs = DEFAULT_MAX_NPCS, maxFacts 
         if (baseVersion !== existing.version) return { status: 'needs_review', reason: 'plan_version_conflict', currentVersion: existing.version };
         if (typeof reason !== 'string' || !reason.trim()) throw new TypeError('reason 必须是非空文本');
         if (typeof goal !== 'string' || !goal.trim()) throw new TypeError('goal 必须是非空文本');
+        if (!['active', 'paused', 'needs_redecision', 'completed', 'cancelled'].includes(status)) throw new TypeError('status 不是受支持的计划状态');
+        if (existing.status === 'completed' || existing.status === 'cancelled') return { status: 'needs_review', reason: 'plan_terminal', currentStatus: existing.status };
         if (!evidence || typeof evidence !== 'object' || Array.isArray(evidence)) return { status: 'needs_review', reason: 'adjustment_evidence_required', planId, npcId };
         const evidenceIds = boundedTextList(evidence.factIds, 'evidence.factIds', maxFacts);
         const evidenceSummary = requiredText(evidence.summary, 'evidence.summary');

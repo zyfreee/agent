@@ -1,0 +1,447 @@
+{
+  "target": "C:/Users/86158/Desktop/异界转生录/doupo [index.js UI detail supplement]",
+  "mode": "focused-scan",
+  "focus": "general",
+  "routing_decision": "AUDIT -> focused read-only REPORT；不进入CHANGE；仅写用户指定两报告。",
+  "snapshot": {
+    "head": "1dee86edb89a8f6efc4b8bbd8192a3a9c1017748",
+    "index_sha256": "76ed8e8b1f0cdb56141d0b1859ff9be54c039d4c23f26640509063ca29fa481a",
+    "worktree": "既有dirty工作树；index开始/探针结束哈希相同，并与ui-dashboard快照一致。"
+  },
+  "coverage": [
+    {
+      "path": "agent/doupo-agent-ui/index.js",
+      "status": "partial",
+      "reason": "四段已逐行读完，但文件其余部分未全读，不能升级为整文件reviewed。",
+      "evidence": "本次完整新增闭区间：1450-1935、2530-3104、6299-6506、6705-6839，共1404行。必要调用点完整摘读：1-110、115-153、216-263、840-866、918-929、1140-1194、1240-1264、1295-1319、1330-1372、1400-1449、2163-2270、2290-2316、2418-2448、2524-2529、3105-3173、3965-3983、4670-4755、6018、6025、6140-6198、6840-6905、6950-6973、7330-7415、7440-7478。6060-6066仅抽查input/select/option属性，不计为长markup整行已读。全文件符号搜索不是全文审查。"
+    },
+    {
+      "path": "agent/doupo-agent-ui/self/self-runtime.js",
+      "status": "partial",
+      "reason": "只核实UI调用合同，业务分片不复审。",
+      "evidence": "1-88、170-188、304-350、393-410、491-532、570-588；实际内存实例用于UI穿戴数量与失败路径探针。"
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-ledger.js",
+      "status": "partial",
+      "reason": "仅字段元数据和UI写入API，非业务复审。",
+      "evidence": "20-105、596-613、634-692；导入NPC_FIELDS核对bundle覆盖；setFields实际内存探针。"
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/host-storage.js",
+      "status": "partial",
+      "reason": "仅保存合同；迁移/内部一致性留既有storage分片。",
+      "evidence": "1-12、536-604完整读；saveMetadata及unavailable/changed_not_saved/rejected分支。"
+    },
+    {
+      "path": "agent/doupo-agent-ui/memory/memory-runtime.js",
+      "status": "partial",
+      "reason": "只追删除与内部undo，不复审业务runtime。",
+      "evidence": "213-265；内部_restoreEntry不等于可见的手动撤销。"
+    },
+    {
+      "path": "agent/doupo-agent-ui/self/self-ops.js",
+      "status": "partial",
+      "reason": "仅搜索装备合同，未全文读。",
+      "evidence": "搜索命中24-25、66-74；装备type武器/防具/饰品/其他。"
+    },
+    {
+      "path": "agent/review-2026-11-04/ui-dashboard.json",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "全文174行读取，用于精确补齐及去重。"
+    },
+    {
+      "path": "agent/review-2026-11-04/{self-storage,npc,entry-lifecycle,memory-unified,world-impact-sandbox}.json",
+      "status": "partial",
+      "reason": "只解析并读取全部findings，不把其他字段算已审。",
+      "evidence": "提取severity/file/line/title/behavior/evidence，用于业务问题去重。"
+    },
+    {
+      "path": "dev/shots",
+      "status": "excluded",
+      "reason": "用户禁止图片/浏览器。",
+      "evidence": "未读取或打开。"
+    }
+  ],
+  "findings": [
+    {
+      "id": "UID-01",
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 1747,
+      "title": "非空装备槽渲染调用未定义函数而中断纳戒页刷新",
+      "behavior": "纳戒装备槽位图与整页刷新",
+      "trigger": "装备栏已有至少一件，或行囊残留equipped=true条目。",
+      "evidence": "1747调用bodyFigureSlotOf；全index仅此一次符号命中，1-74无该导入，仓库JS/MJS搜索无定义。1842调用renderEquipmentFigure，1914在流水刷新前无catch调用。U1提取原renderEquipmentFigure传一条武器，抛ReferenceError: bodyFigureSlotOf is not defined。",
+      "risk": "空装备可绕过；非空装备使纳戒页刷新中途停止。applySelfOps先在1147提交保存，再在1148刷新时抛出，按钮后续状态反馈/关闭不执行，可出现已落账却无完成提示。",
+      "recommendation": "补齐或正确接入槽位解析函数，验证空/非空、未识别类型及穿脱后的刷新。",
+      "verification": "0/1/多装备渲染不抛；穿上后状态反馈、关闭和流水继续执行。",
+      "evidence_kind": "原函数提取探针及全符号搜索；非浏览器复现。"
+    },
+    {
+      "id": "UID-02",
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 6387,
+      "title": "穿戴转移整栈删除且第二步失败也当成成功",
+      "behavior": "行囊穿上装备的数量守恒与失败原子性",
+      "trigger": "行囊同名武器有3件，或装备栏已经有同名装备。",
+      "evidence": "6387-6390先removeItem(id，无count)再addEquipment(无count)，6391仅判断applied.length。runtime.removeItem:393-405无count整条删除；add:328-338同名装备duplicate；apply:506-519按条提交不回滚。U2-stack：行囊Sword×3变空，装备Sword×1，applied=2。U2-duplicate：行囊Sword×3变空，已有装备保留1，applied=1、rejected=duplicate，反馈仍为Sword已穿上。",
+      "risk": "正常堆叠穿戴损失余量；重复穿戴可能损失整栈且报告成功，persistSelf保存部分成功状态。此处限UI命令构造，不重复业务分片的重生成撤销问题。",
+      "recommendation": "UI转移约定数量守恒及全成或全不成：只移一件、预检目标冲突、失败保留源物，不能以applied非空表示转移成功。",
+      "verification": "3件穿1件、同名冲突、卸回合并、目标容量边界；失败源目标均不变，成功总数守恒。",
+      "evidence_kind": "原点击分支加真实self runtime内存实例。"
+    },
+    {
+      "id": "UID-03",
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 3049,
+      "title": "切聊天保留旧人物弹窗，保存与删除可作用于新聊天同名档案",
+      "behavior": "动态人物表单及旧模态操作的聊天归属",
+      "trigger": "A打开人物Same的编辑/经历弹窗，切到也有Same的B，再保存旧表单、删经历或删档案。",
+      "evidence": "CHAT_CHANGED:228-253失效continuation、恢复共享ledger并刷新页面，但不closeAgentModal或重建动态profile。2766仅存姓名无scope/version；3049-3076取旧DOM全部字段却向当前全局agentNpcLedger.setFields(name,fields)。6789-6812以姓名/下标写当前账，6852-6858以姓名删除当前账。U4用A控件、将真实ledger换成B后调用原saveNpcProfileFields：B.identity从B identity变A stale edit，persist调用1次。",
+      "risk": "无需悬挂模型请求也可跨聊天覆盖同名人物；旧经历下标也可能删掉B的不同条目。事件链来自源码，未在真实宿主切聊；与既有文件导入、经历精简异步请求问题是不同入口。",
+      "recommendation": "变更弹窗绑定chat/branch与epoch、记录版本；切聊关闭并失效旧操作能力，提交前复查。静态停靠草稿也应明确归属。",
+      "verification": "A→B和A→B→A旧控件保存/删除，B零变化；同聊后台版本变更不得整表覆盖新字段。",
+      "evidence_kind": "聊天生命周期源码链加原保存函数/真实NPC账本探针；宿主表现待验。"
+    },
+    {
+      "id": "UID-04",
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 6364,
+      "title": "天材地宝的移除按钮没有对应操作映射",
+      "behavior": "纳戒天材地宝详情删除",
+      "trigger": "打开treasures条目详情点击移除。",
+      "evidence": "1583-1586为treasures生成selfRemove=treasures:id；6364的opOf缺treasures，虽runtime已有removeTreasure；6366不调用applySelfOps，6370仍关闭弹窗。U3原分支输入treasures:z1：apply调用0、modal关闭true。",
+      "risk": "按钮看似完成但条目未删，也没有失败状态。",
+      "recommendation": "补齐现有removeTreasure操作的UI映射；未知list/id应明确失败而非静默关闭。",
+      "verification": "有效treasure删除一次并保存；未知list/id显示失败且不关闭，其他清单删除不回归。",
+      "evidence_kind": "renderer到handler完整追踪及原分支探针。"
+    },
+    {
+      "id": "UID-05",
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 3079,
+      "title": "手动账本操作未等待保存结果，失败后仍结束编辑或宣告完成",
+      "behavior": "纳戒、人物档案/经历/补丁、冷藏勾选、记忆手填的持久反馈",
+      "trigger": "保存接口不可用、返回changed_not_saved或saveMetadata拒绝。",
+      "evidence": "848-855、921-927、2290-2306只catch吞拒绝；1144-1152和1243-1247不await保存。3078-3082调用persistNpcLedger后立即显示已保存并重开弹窗，2739记账完成，6725-6727勾选完成；host-storage:542-603明确存在unavailable/changed_not_saved。U5用原persistNpcLedger+saveNpcProfileFields：unavailable和reject均返回updated并重建编辑页，无保存失败信息。",
+      "risk": "内存已变不等于持久完成，重载可丢账而无可见提示。本项针对新增核对的账本路径，不重复ui-dashboard的API方案保存。",
+      "recommendation": "区分已落内存/正在保存/已保存/保存不可用或失败；完成反馈基于保存结果，失败保留可恢复编辑上下文。",
+      "verification": "各入口mock saved/unavailable/changed_not_saved/reject；失败不宣称持久成功且可重试；延迟保存切聊不污染新聊天反馈。",
+      "evidence_kind": "保存API合同及unavailable/reject原函数探针；未证明真实硬盘丢失。"
+    },
+    {
+      "id": "UID-06",
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 6854,
+      "title": "人物档案等破坏性删除一击提交，缺少确认或可见撤销",
+      "behavior": "人物整档/经历、纳戒条目/称号、记忆删除的交互保护",
+      "trigger": "误点档案删除或经历×；同类纳戒移除和记忆删除按钮。",
+      "evidence": "2968-2971只标is-danger；6852-6860无confirm直接remove并persist。npc-ledger:599-606从records.delete，不归档。6805-6813直接按下标删经历；6361-6371、6345-6350、6504-6505直接写删除；7363-7371无确认。4741-4751只开关modal。已读实际事件链没有可见undo；runtime内部undo不等于玩家手动删除的UI撤销。",
+      "risk": "整档含经历/流水的误删立即进入保存，不能靠模态关闭恢复。此处为数据保护缺口，不是审美要求。",
+      "recommendation": "至少对整档和不可恢复内容做具名确认或提供可靠撤销；取消零写入。称号/数量归零等较轻操作按明确策略分级，不强求统一弹确认。",
+      "verification": "取消时remove/save均为0；确认只删目标；若采用撤销，在约定窗口可恢复完整内容。",
+      "evidence_kind": "破坏性点击路径及ledger删除合同；无真实交互。"
+    },
+    {
+      "id": "UID-07",
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 7407,
+      "title": "记忆手动登记被拒绝后仍清空全部文本草稿",
+      "behavior": "记忆手动表单的输入保留与失败恢复",
+      "trigger": "名称/内容有值但关联为空，或runtime因其他字段拒绝登记。",
+      "evidence": "6506调memoryAddFromPanel；7391-7402提交，7403-7405仅提示related_missing；7407-7410无条件清空标题/正文/依据/关联/别名/原文/备注。仅7411关闭弹窗受rejected限制。U6原函数+related_missing拒绝结果：rejected仍有1条，全部七个文本字段置空。",
+      "risk": "未保存任何记忆时已输入长文也丢失；弹窗虽保留，用户无法只补漏字段重试。",
+      "recommendation": "仅成功后清空草稿；拒绝时保留所有输入并定位缺失字段，不改变现有运行时校验。",
+      "verification": "关联缺失/正文超长/其他拒绝：原值不变、错误可见；成功清空一次并关闭。",
+      "evidence_kind": "原表单函数与拒绝返回值探针。"
+    }
+  ],
+  "feature_status": [
+    {
+      "feature": "纳戒身份/境界/金币/称号与初始化",
+      "status": "static_bindings_reviewed_with_defects",
+      "field_source": "1854-1891 runtime.snapshot/status；profile字符串、realm/stage、gold、titles；初始化读data-self-init。",
+      "input_validation_and_write_api": "6312-6349 setProfile/setRealm/setGold/addTitle/removeTitle→applySelfOps；金币整数>=0；6450-6458初始化仅提交非空，金币>0向下取整。",
+      "save": "1144-1148→persistSelf→saveSelfState，并发DB/MVU镜像；不等保存，UID-05。",
+      "ui_feedback": "applied/rejected状态，成功称号清输入；刷新回写身份/境界/金币输入，没有dirty标记。",
+      "chat_switch_and_async": "同步读取当前runtime，252刷新当前页；初始化停靠表单切聊未清；宿主保存时序未验。",
+      "deletion_confirmation": "称号×无确认；身份清空由显式设置按钮提交。",
+      "limits": "长度/上限校验属既有业务分片，不逐项复审。"
+    },
+    {
+      "feature": "功法/斗技/装备/天材地宝/行囊/丹方/目标清单与详情",
+      "status": "defects",
+      "field_source": "1592-1713取snapshot八类清单；固定字段、目标title/text；items按equipped/count排序，goals按done/priority排序。",
+      "input_validation_and_write_api": "1423-1447各类手填op；名称/目标规则委托runtime；新增数量仅正整数才传，否则省略走默认；6410-6419改数量整数>=0，0表示移除。",
+      "save": "applySelfOps→persistSelf；删除成功即时提交保存，UID-05。",
+      "ui_feedback": "固定标签、缺值—、失效id提示；天材地宝删除无反馈UID-04。",
+      "chat_switch_and_async": "详情持list/id而无scope，切聊不关modal；相同id可指向新聊天条目，是UID-03同类入口。",
+      "deletion_confirmation": "remove/title/count0无确认；craft无移除按钮，不把不存在功能当缺陷。",
+      "limits": "6060-6066长markup只抽输入/选项属性。目标详情标题1589取name，头部1516取title/text，低影响文案未另列finding。"
+    },
+    {
+      "feature": "装备槽位/空槽挑选/穿上卸下",
+      "status": "defects",
+      "field_source": "1838-1840合并equipment与旧items.equipped；1719-1727七槽；1812-1813只匹配武器/防具/饰品到weapon/body/accessory。",
+      "input_validation_and_write_api": "穿上removeItem+addEquipment；卸下removeEquipment+addItem(count1)；旧equipped只翻标记。UID-01/02。",
+      "save": "applySelfOps提交保存；无转移事务成功判断。",
+      "ui_feedback": "applied非空便报穿上/卸下；源不存在有提示。",
+      "chat_switch_and_async": "按钮闭包/详情id未绑定聊天，动态模态切聊保持。",
+      "deletion_confirmation": "穿脱应保障不丢源数据；不是要求额外删除确认。",
+      "limits": "头/手/腰/足空槽picker没有匹配类别；记录能力边界，不以完整度或美观新增finding。"
+    },
+    {
+      "feature": "炼制开工/成丹/炸炉与目标达成",
+      "status": "static_bindings_reviewed_with_defects",
+      "field_source": "snapshot.crafts/status/startDay/endDay/count；goals.done/title/text。",
+      "input_validation_and_write_api": "1451-1473名称必填，count/days正整数才传；6421-6435 finishCraft/finishGoal；出炉不自动addItem且文案提醒。",
+      "save": "applySelfOps→persistSelf，UID-05。",
+      "ui_feedback": "成功清输入关闭，拒绝显示reason；炼成/炸炉来自status。",
+      "chat_switch_and_async": "入口无await；旧模态无scope绑定，异步决定另有continuation。",
+      "deletion_confirmation": "完工/达成即时提交；craft不提供删除，目标移除无确认。",
+      "limits": "负数/小数开工参数被省略而非表单错误；超上限取决于runtime，未新造业务问题。"
+    },
+    {
+      "feature": "纳戒手动决定/默认提示词恢复",
+      "status": "static_bindings_reviewed",
+      "field_source": "6437-6442触发runSelfDecision或unifiedActive路径；1295-1371读取当前chat、世界书与self快照。",
+      "input_validation_and_write_api": "开关/连接/busy预检；解析invalid/empty/applied。6472-6487默认提示词派发input。",
+      "save": "决定persistSelf不等待；默认设置6957 await saveSettings且sequence防旧文案。",
+      "ui_feedback": "按钮disabled至finally；决定失败状态可见。",
+      "chat_switch_and_async": "1308 capture、1341与1365验current；不重复业务决定内部审查；settings保存非聊天数据。",
+      "deletion_confirmation": "不适用，不删除账本。",
+      "limits": "未运行模型或完整决定链；unified退役语义属既有分片。"
+    },
+    {
+      "feature": "记忆分页/分量/晋升/删除/手填",
+      "status": "defects",
+      "field_source": "6490-6506 dataset给tier/delta/id/nextWeight；7374-7402来自七个文本字段及tier/tag/weight。",
+      "input_validation_and_write_api": "页码>=0；setWeight/promote/forgetMemory→applyMemoryOps；title/text为空早退，关联等委托runtime。",
+      "save": "1243-1247→persistMemory→saveMemoryState，保存失败反馈UID-05。",
+      "ui_feedback": "拒绝追加流水错误；related_missing改placeholder但草稿仍清空UID-07。",
+      "chat_switch_and_async": "本入口无await；跨聊天镜像属既有分片；全量分页renderer非本次完整审查范围。",
+      "deletion_confirmation": "6504-6505无确认，UID-06。",
+      "limits": "只追必要memoryApply/Add与删除按钮，不宣称记忆整页完整审查。"
+    },
+    {
+      "feature": "人物列表/总簿筛选搜索/最近活动",
+      "status": "static_projection_and_bindings_reviewed",
+      "field_source": "2528-2618 list/status；aliases/titles/identity/name搜索；重要优先、好感排序，recent按log最大floor。",
+      "input_validation_and_write_api": "filter present/absent/important；6897 input重置shown60；6716每次+80。",
+      "save": "只读查询无需保存；行尾状态切换另列。",
+      "ui_feedback": "空簿/无匹配分别提示，更多显示真实剩余条数。",
+      "chat_switch_and_async": "切聊refreshNpcLedgerPage重绘列表；last injection来源未复审。",
+      "deletion_confirmation": "列表不直接删除，开详情后UID-06。",
+      "limits": "shown计数跨聊保留不作缺陷；未做性能或真实DOM事件验收。"
+    },
+    {
+      "feature": "人物完整档案三页/编辑所有字段",
+      "status": "defects",
+      "field_source": "2762-2870按NPC_FIELDS+bundle绘固定字段；别名/称号在抬头，presence/location/importance在chips或按钮。importance的索引组不在表单但有单独切换。",
+      "input_validation_and_write_api": "2977-3075 enum/list/text/things/triples/secret序列化解析；setFields规范化所有控件含隐藏页，空值可清。",
+      "save": "3079 persistNpcLedger→saveNpcLedgerState，UID-05。",
+      "ui_feedback": "updated即重开basic；unchanged局部提示、not_found提示；先写的已保存status随重建被移除。",
+      "chat_switch_and_async": "UID-03未绑定聊天及记录版本，切聊保持旧表单。",
+      "deletion_confirmation": "整档删除无确认，UID-06。",
+      "limits": "竖线分隔无转义；含|字段可逆性未探测，列为未知，不报证实问题。"
+    },
+    {
+      "feature": "人物经历添加/删除/精简与流水",
+      "status": "defects",
+      "field_source": "2881-2946读取exp逆序、day及原index；流水逆序最多30；新楼标取当前chat末回复。",
+      "input_validation_and_write_api": "body trim必填，day正整数否则worldDay；addExp/removeExp；精简→parse→预览→replaceExp。",
+      "save": "add/remove/confirm后persistNpcLedger，不await。",
+      "ui_feedback": "成功重开exp；空输入placeholder；失败not_found/invalid_index没有明确反馈。",
+      "chat_switch_and_async": "手动旧表单/原下标UID-03；精简旧请求跨聊已在npc.json记录，去重不新增。",
+      "deletion_confirmation": "经历×无确认；精简有明确确认替换和放弃。",
+      "limits": "流水30条有明确注释，不宣称全部；同聊并发append/裁剪后旧下标删除目标待专测。"
+    },
+    {
+      "feature": "人物JSON补丁/在场重要切换/世界书重抽",
+      "status": "static_bindings_reviewed_with_known_defects",
+      "field_source": "2720-2743 textarea JSON、record.name；6816-6837当前ledger record；2163-2236世界书条目。",
+      "input_validation_and_write_api": "JSON语法/空payload校验→applyNpcLedgerPayload；切换从当前record算值；重抽names/overwrite，最多8人。",
+      "save": "created/changed才persistNpcLedger；重抽filled后保存。",
+      "ui_feedback": "语法/空/忽略字段消息，完成清空关闭；重抽禁用按钮并改文案、finally恢复。",
+      "chat_switch_and_async": "重抽2181 capture、2205/2223复验；部分更新后第二人切聊提早返回保存问题未另复现。",
+      "deletion_confirmation": "单人6770-6777有覆盖确认；tooltip2963却说只补空，真实语义以确认及overwrite:true为准。",
+      "limits": "英文键/嵌套保护绕过已由npc.json报告，不重复finding。"
+    },
+    {
+      "feature": "冷藏名单/勾选/草稿投影",
+      "status": "static_bindings_reviewed",
+      "field_source": "2620-2671 pending预览、patch JSON、世界日；2679-2717 selected、最近冷藏log及自行/新标签。",
+      "input_validation_and_write_api": "6719-6728 select/deselect当前name；默认prompt6705-6713派input；确认/放弃按钮dataset=preview.id，处理函数由旧分片覆盖。",
+      "save": "persistNpcCold→saveNpcColdState，UID-05。",
+      "ui_feedback": "6726更新勾选消息，6727仅重绘人物list；本handler未直接刷新bench/冷藏summary，后续refreshNpcLedgerPage才同步。",
+      "chat_switch_and_async": "切聊恢复runtime后刷新；模型扫描提交由npc分片覆盖。",
+      "deletion_confirmation": "deselect仅取消选择不是删人物；草稿有确认/放弃。",
+      "limits": "未复审冷藏业务runtime；summary即时刷新缺口仅作静态观察未另报finding。"
+    },
+    {
+      "feature": "模态停靠与事件/设置持久绑定",
+      "status": "static_bindings_reviewed_with_defects",
+      "field_source": "4677-4751单一modal、dock.__dockHome；panel click、input/change委托。",
+      "input_validation_and_write_api": "开modal搬节点，关闭恢复隐藏；普通button不触发form原生提交校验，业务按handler校验。",
+      "save": "默认提示词派发input，6953-6960等待保存并区分unavailable/reject。",
+      "ui_feedback": "关闭/背板/Escape可分层关闭；焦点/语义问题在ui-dashboard已列。",
+      "chat_switch_and_async": "切聊无关闭动态模态，UID-03；保存延迟反馈的实际宿主作用域待验。",
+      "deletion_confirmation": "关闭只关UI，不撤销已提交数据；与业务删除确认不同。",
+      "limits": "不重复已有焦点、键盘、列表刷新问题；无浏览器、图片、辅助技术验收。"
+    }
+  ],
+  "deduplication": [
+    {
+      "report": "agent/review-2026-11-04/ui-dashboard.json",
+      "not_repeated": "人物文件导入跨聊、API方案保存、结算跟随默认缺保存、对话框/键盘/刷新、世界书索引异步覆盖等全部既有finding。"
+    },
+    {
+      "report": "agent/review-2026-11-04/npc.json",
+      "not_repeated": "经历精简跨聊、世界书英文键/嵌套保护绕过、人物重生成不撤销、日期null和冷藏runtime等。"
+    },
+    {
+      "report": "agent/review-2026-11-04/self-storage.json",
+      "not_repeated": "runtime逐字段非原子校验、撤销、MVU/DB时序与恢复镜像；UID-02只报UI转移命令构造。"
+    },
+    {
+      "report": "agent/review-2026-11-04/entry-lifecycle.json",
+      "not_repeated": "总控关闭仍运行、quiet漏记、HMR清理、自动链时序。"
+    },
+    {
+      "report": "agent/review-2026-11-04/memory-unified.json",
+      "not_repeated": "召回/退役ID/数据库收养/合并版本；UID-07只报手填拒绝后丢草稿。"
+    }
+  ],
+  "tests": {
+    "kind": "离线原函数提取探针及真实self/NPC模块内存实例",
+    "probes": [
+      {
+        "id": "U1",
+        "result": "pass",
+        "observed": "非空装备renderEquipmentFigure抛未定义bodyFigureSlotOf；符号全文件1次命中。"
+      },
+      {
+        "id": "U2-stack",
+        "result": "pass",
+        "observed": "bag Sword×3→空；equipment Sword×1；2 applied。"
+      },
+      {
+        "id": "U2-duplicate",
+        "result": "pass",
+        "observed": "bag Sword×3→空；已有装备不变；1 applied、1 duplicate rejected；仍显示已穿上。"
+      },
+      {
+        "id": "U3",
+        "result": "pass",
+        "observed": "treasures:z1点击移除：apply 0次，close modal true。"
+      },
+      {
+        "id": "U4",
+        "result": "pass",
+        "observed": "A旧控件+当前B真实ledger：B同名identity被覆盖，persist调用1。"
+      },
+      {
+        "id": "U5-unavailable/reject",
+        "result": "pass",
+        "observed": "两种保存失败均返回updated并重建表单，无失败反馈。"
+      },
+      {
+        "id": "U6",
+        "result": "pass",
+        "observed": "related_missing拒绝后7个文本控件仍清空。"
+      }
+    ],
+    "harness_errors": "首轮U4探针使用只读getter却尝试赋值，探针自身TypeError；改可写context属性重跑成功，不是产品错误。一次Python规范输出遇GBK编码错误，改显式UTF-8后补读。首次报告生成命令被截断而SyntaxError，在执行前失败、未产生文件，随后改专用Write写两报告。",
+    "limits": "不调用模型/宿主，不保存数据、不添加测试文件；未运行浏览器、图片、真实SillyTavern、DOM布局/焦点、网络、全仓测试或持久恢复实测。"
+  },
+  "refactor_signals": [
+    {
+      "module": "agent/doupo-agent-ui/index.js",
+      "threshold": "多个UI变更入口重复缺聊天作用域和保存结果处理",
+      "evidence": "3049/6373/6789/6852依赖全局共享runtime；1144/3079/6725不等保存。分别门控局部修复，不建议重写入口。"
+    }
+  ],
+  "slimming_themes": [],
+  "do_not_touch_yet": [
+    "不改实现、配置、存档、测试或既有报告，不删模块。",
+    "静态投影支持或按钮存在不等于真实宿主功能验收。",
+    "不把详细身体槽位品类不足、视觉风格、图标选择升格为缺陷。",
+    "业务runtime已有独立分片，不重复其发现，只核对必要UI调用合同。"
+  ],
+  "verification_gates": [
+    {
+      "check": "装备渲染及转移专项回归",
+      "scope": "空/非空槽位、重复同名、堆叠数量、失败不丢源、卸下保真。"
+    },
+    {
+      "check": "动态模态聊天与版本隔离回归",
+      "scope": "A→B、A→B→A、同名人物、同id条目、旧经历下标，保存/删除零跨作用域写入。"
+    },
+    {
+      "check": "保存结果与拒绝草稿回归",
+      "scope": "saved/unavailable/changed_not_saved/reject；失败不误报成功，表单拒绝不清草稿。"
+    },
+    {
+      "check": "真实SillyTavern人工验收（本次未执行）",
+      "scope": "切聊模态保留、宿主saveMetadata时序、button与委托事件、删除取消/恢复。"
+    }
+  ],
+  "gate_recommendation": {
+    "structural": "Local Fix",
+    "execution": "Local Fix Only",
+    "optimization_eligibility": "Needs Gate",
+    "authorization": "仅报告，不修复。建议首先处理UID-03跨聊天变更边界，装备渲染/转移独立另门控。"
+  },
+  "optimization_handoffs": [
+    {
+      "module": "agent/doupo-agent-ui/index.js",
+      "evidence": "UID-03：旧模态只持姓名/id，切聊不关闭，U4跨当前ledger写入已证。",
+      "threshold": "Local Fix",
+      "suggested_gate_mode": "Local Fix Only",
+      "behavior_contract_hints": "变更表单绑定发起聊天分支与epoch；切聊后旧控件不能写当前账，同聊有效操作保留。",
+      "patch_budget": "一条聊天模态隔离路径，1-2文件，目标小于80行；另需用户授权。",
+      "pre_change_baseline": "U4同名跨账覆盖探针成功；本任务未修复、未运行真实宿主。",
+      "verification_gate": "A→B和A→B→A旧控件保存/删除零写入，同聊成功。",
+      "deletion_safety": "不删模块或存档，仅模态能力失效。",
+      "forbidden_scope": "不顺手修业务runtime、迁移配置或重写index。"
+    }
+  ],
+  "a0_receipt": {
+    "primary_skill": "code-quality-workflow",
+    "route": "consult-tavernweave-library deterministic router --skill code-quality-workflow --write --limit 1",
+    "loaded_document_ids": [
+      "ST-A0",
+      "audit-and-sweep",
+      "plugin-runtime"
+    ],
+    "snapshot_version": "2026-08-18",
+    "goal": "指定index范围只读补审，两份证据报告。",
+    "red_lines": "不浏览器不图片，不修实现/配置/存档，不重复已有报告。",
+    "acceptance": "四段逐行读、必要调用点追踪、coverage/findings/feature_status、已证与未知分离，index仍partial。",
+    "design_candidates": []
+  },
+  "verification_gaps": [
+    "index其余代码仍partial；本次只补指定四段1404行及必要调用点。",
+    "6060-6066长markup只抽输入/选项属性，不计为整行全文审查。",
+    "U4直接替换真实内存ledger模拟切聊，事件链不关闭模态来自源码；真实宿主是否自动关闭扩展模态仍需核对。",
+    "保存失败探针只证明UI不等待/不反映失败，不证明真实硬盘丢失。",
+    "NPC竖线格式可逆性、同聊后台改动后整表保存、经历裁剪后旧下标删除未专门动态探测，不并入已证finding。",
+    "头/手/腰/足空槽无picker候选，行囊表单无饰品选项是现有静态能力边界，不以审美新增问题。"
+  ],
+  "residual_risk": "固定范围UI补审，不是全UI/全仓验收或修复。已有脏工作树原样保留，仅写授权的两报告。"
+}

@@ -1,0 +1,3890 @@
+{
+  "report_count": 9,
+  "focuses": [
+    "general"
+  ],
+  "coverage": [
+    {
+      "path": ".gitignore",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Inspected source release exclusions: .env/.env.*, original-work folders, dependencies/generated/local temporary artifacts. Ignore rules alone do not prove tracked contents or release payload are private-data-free.",
+      "reports": [
+        4
+      ]
+    },
+    {
+      "path": ".tmp/ 与 agent/doupo-agent-ui/.tmp/",
+      "status": "excluded",
+      "reason": "安装备份/quality-baseline不是当前生产目标",
+      "evidence": "",
+      "reports": [
+        5
+      ]
+    },
+    {
+      "path": "INSTALL.md",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 34 lines; Git clone installation, template fallback and outdated current manifest references.",
+      "reports": [
+        4
+      ]
+    },
+    {
+      "path": "README.md",
+      "status": "partial",
+      "reason": "Only connection, privacy, testing and version/release-relevant portions inspected.",
+      "evidence": "Reviewed 11, 19, 47, 51-53, 67-69; docs distinguish offline from runtime acceptance and claim API key is confined to extension settings.",
+      "reports": [
+        4
+      ]
+    },
+    {
+      "path": "agent/09-沙盒模式功能方案.md",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整274行；明确是建议且未冻结（4、215、217-229、255-259行）；不把全部建议当已承诺实现",
+      "reports": [
+        8
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/.tmp-hub.txt",
+      "status": "partial",
+      "reason": "Legacy UI fragment; first 20 lines inspected and excluded from active runtime audit pending reference/deletion checks.",
+      "evidence": "Old per-feature connection markup, unlike current named preset UI; no removal recommendation without full reference search.",
+      "reports": [
+        2
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/README.md",
+      "status": "partial",
+      "reason": "252 lines; reviewed connection/package-related portions, not unrelated gameplay documentation.",
+      "evidence": "Reviewed 74, 86, 170, 184-205, 226, 245-248; named preset contracts, overwrite order, stale createChatMessages description and explicit unexecuted runtime scenarios.",
+      "reports": [
+        4
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/README.md",
+      "status": "partial",
+      "reason": "Read lines 1-240 for functionality and architecture contracts; remaining cold-runtime acceptance rows not yet read.",
+      "evidence": "Compared shutdown promise, two turn paths, DB ownership and inactive unified documentation to runtime entry.",
+      "reports": [
+        2
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/README.md",
+      "status": "partial",
+      "reason": "仅旧合并兼容合同相关段落",
+      "evidence": "162-173与190互相矛盾",
+      "reports": [
+        5
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/agent-modules.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整读取34行；显式适配器白名单、注册失败撤销、dispose。",
+      "reports": [
+        1
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/agent-modules.test.mjs",
+      "status": "partial",
+      "reason": "仅imports、关键断言和相关片段，未逐行审完整fixture。",
+      "evidence": "离线完整执行通过；抽查注册/计划/撤销断言。",
+      "reports": [
+        1
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/audit-log.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整读取24行；白名单/字段投影/容量/过滤；setting_drift内存复现。",
+      "reports": [
+        1
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/audit-log.test.mjs",
+      "status": "partial",
+      "reason": "仅关键断言与imports，未完整读测试体。",
+      "evidence": "完整执行通过；抽查上限、事件和清空断言。",
+      "reports": [
+        1
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/commit-recovery.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 82 lines solely to trace observed evidence contract: markMessage advances journal on observed=true; commit refuses unverified message.",
+      "reports": [
+        4
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/commit-recovery.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整读取82行；prepare/证据/取消/commit/reconcile/容量，内存复现。",
+      "reports": [
+        1
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/commit-recovery.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整读取44行并离线执行；错误消息、取消、证据丢失和版本冲突。",
+      "reports": [
+        1
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/coordinator.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整读取79行；activeTask、终态与会话/分支/版本隔离。",
+      "reports": [
+        1
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/coordinator.test.mjs",
+      "status": "partial",
+      "reason": "抽查imports和断言，未逐行读fixture。",
+      "evidence": "完整执行通过；抽查状态/事件/非法输入。",
+      "reports": [
+        1
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/data-contract.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整读取81行；字段唯一/type/writer/readers、显式迁移注册与候选输出。",
+      "reports": [
+        1
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/data-contract.test.mjs",
+      "status": "partial",
+      "reason": "抽查imports和关键断言，未完整读测试体。",
+      "evidence": "完整执行通过；抽查writer/type/迁移断言。",
+      "reports": [
+        1
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/facts-pipeline.test.mjs",
+      "status": "partial",
+      "reason": "完整读取145-212及其他关键断言，前半fixture未完整审。",
+      "evidence": "完整执行通过；人物簿过滤、目录注入、全过滤和兼容路径断言。",
+      "reports": [
+        1
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/impact-engine.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整读取94行；条件/推测/归因/版本/容量/清分支；未证明生产调用可达性。",
+      "reports": [
+        1
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/impact-engine.test.mjs",
+      "status": "partial",
+      "reason": "抽查imports和断言，未完整读fixture。",
+      "evidence": "完整执行通过；事件去重、容量、清分支断言。",
+      "reports": [
+        1
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/module-runner.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整读取187行；登记、计划、启用、依赖、状态权限、预算与取消。",
+      "reports": [
+        1
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/module-runner.test.mjs",
+      "status": "partial",
+      "reason": "抽查imports、关键断言，未逐行审107行测试体。",
+      "evidence": "完整执行通过；计划/依赖/超时/取消等断言存在。",
+      "reports": [
+        1
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/operation-ledger.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整读取55行；去重、重试、终态、关联身份、容量和查询。",
+      "reports": [
+        1
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/operation-ledger.test.mjs",
+      "status": "partial",
+      "reason": "抽查关键断言与imports，未逐行读测试体。",
+      "evidence": "完整执行通过；操作去重/状态和输入断言。",
+      "reports": [
+        1
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/orchestrator.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整读取256行；解释→授权→流水线→交付→准备→提交→保存及恢复回滚，内存复现。",
+      "reports": [
+        1
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/orchestrator.test.mjs",
+      "status": "partial",
+      "reason": "完整读取1-32、120-164及关键断言，剩余fixture未全读。",
+      "evidence": "完整执行通过；现有测试未捕获保存失败、占位早退或并发交付。",
+      "reports": [
+        1
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/quality-gate.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整读取63行；字段合同/type/writer、双写、授权和claims处理。",
+      "reports": [
+        1
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/quality-gate.test.mjs",
+      "status": "partial",
+      "reason": "抽查imports和关键断言，未逐行读fixture。",
+      "evidence": "完整执行通过；合同类型/未注册字段和candidate断言。",
+      "reports": [
+        1
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/settle-categories.js",
+      "status": "partial",
+      "reason": "依分工仅协作接线，core 主体由其他审查者负责",
+      "evidence": "读取 1-236；追踪 reviewEffect→checkEffects/realmStep、未知类别处理与 settle 本地 fail-closed 覆盖；未重复登记 core 主体缺陷。",
+      "reports": [
+        3
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/settle-categories.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整读取236行，含四类提示词、境界解析/阶梯、效果字段及幅度复核。",
+      "reports": [
+        1
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/settle-categories.test.mjs",
+      "status": "partial",
+      "reason": "抽查imports及关键断言，未完整读97行测试体。",
+      "evidence": "完整执行通过；类别完整性、效果过滤和非数组断言。",
+      "reports": [
+        1
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/state-store.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整读取99行；seed/CAS/幂等/分支/追加式回滚/read复制。",
+      "reports": [
+        1
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/state-store.test.mjs",
+      "status": "partial",
+      "reason": "抽查imports和断言，未完整审fixture。",
+      "evidence": "完整执行通过；版本/提交/缺分支/参数边界断言。",
+      "reports": [
+        1
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/turn-pipeline.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整读取263行；六阶段、输出限额、预算、候选防篡改、提交/取消/计划失效。",
+      "reports": [
+        1
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/turn-pipeline.test.mjs",
+      "status": "partial",
+      "reason": "读取1-20及关键断言，未完整审151行测试体。",
+      "evidence": "完整执行通过；候选提交/失效/质量拒绝/防篡改断言。",
+      "reports": [
+        1
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/turn-stages.js",
+      "status": "partial",
+      "reason": "只看 narrative 消费者与 fallback 卷号透传；core 主体/手动卷锁写回由 core 审查者报告",
+      "evidence": "120-269；catalog→assemble 透传 volume，fallback assemble 226 未传 volume；此处作为跨模块 verification handoff，不占 core 归属。",
+      "reports": [
+        3
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/turn-stages.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整读取533行；设定注入、资料、规则裁定、时间、正文与汇总；对照index具体接线。",
+      "reports": [
+        1
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/turn-state.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整读取112行；默认合同、初始状态、字段提示、复制应用变化和摘要。",
+      "reports": [
+        1
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/turn-state.test.mjs",
+      "status": "partial",
+      "reason": "抽查imports和关键断言，未完整读测试体。",
+      "evidence": "完整执行通过；默认合同/初始状态/复制变更断言。",
+      "reports": [
+        1
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/demo-turn.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 173 lines; static interpreter/composer and in-memory persistence; deliver acknowledgement is a synthetic stub. Not executed; does not validate live adapters.",
+      "reports": [
+        4
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/extension-package.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 23 lines and ran successfully; referenced files, textual hooks and root/nested style equality only, not host import/runtime or private-data packaging.",
+      "reports": [
+        4
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/api-presets.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 310 lines; traced preset normalization, YAML/scalars/blocks/flow parsing, header and override conversion; reproduced malformed/flow YAML cases in memory.",
+      "reports": [
+        4
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/api-presets.js",
+      "status": "unread",
+      "reason": "Preset normalization internals not re-reviewed; index UI management functions only.",
+      "evidence": "",
+      "reports": [
+        9
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/api-presets.test.mjs",
+      "status": "partial",
+      "reason": "Selected/excerpted long assertion lines rather than every assertion in full.",
+      "evidence": "Inspected tests across 1-121 and ran module successfully; current tests cover simple YAML/JSON, IDs/limits, normalization, positive overrides and malformed first-line handling, not complete-consumption/flow-nested cases.",
+      "reports": [
+        4
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/capability-preflight.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 29 lines; required event surface, semver parsing and ready/degraded semantics. Version is descriptive, not compatibility enforcement.",
+      "reports": [
+        4
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/capability-preflight.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 17 lines and ran successfully; missing host and malformed-version behavior intentionally tested.",
+      "reports": [
+        4
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/control-dashboard.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Full text 1-81; scope filtering, themes, module configuration and navigation consumer traced.",
+      "reports": [
+        9
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/control-dashboard.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Full text 1-68 read; executed successfully.",
+      "reports": [
+        9
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/db-bridge.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "全 297 行；ensure/模板整包、CRUD/fallback、adopt、callback debounce、onChatChanged；R6/R8/R12。",
+      "reports": [
+        7
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/db-bridge.test.mjs",
+      "status": "partial",
+      "reason": "读过内存假 API、开头及断言/安全性结构，未逐行审完 288 行。",
+      "evidence": "离线完整执行通过；预检拒绝为测试日志，非测试失败；新增 R6/R8/R12 未落测试文件。",
+      "reports": [
+        7
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/db-tables.js",
+      "status": "partial",
+      "reason": "只读记忆回读/比较边界，host分片另审",
+      "evidence": "922-964；回读state无retiredIds，updatedAt现场生成；title列问题留给host所有者，不重复独立发现",
+      "reports": [
+        5
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/db-tables.js",
+      "status": "partial",
+      "reason": "核心编解码/协调/迁移已逐段阅读；部分表定义 DDL、常量与辅助段未完整阅读（尤其 91-334）。",
+      "evidence": "重点 335-545、589-964 及关键前部；R5/R8/R9/R13 比较/往返；源生成视图 12 表与初始化 JSON 全对象比较。",
+      "reports": [
+        7
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/db-tables.test.mjs",
+      "status": "partial",
+      "reason": "仅 import/断言定位和安全性检查，未逐行审完 563 行。",
+      "evidence": "离线完整执行通过；未运行会写初始化件的 build-db-template。",
+      "reports": [
+        7
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/display-regex.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Full text 1-133; four definitions, registration ownership, display-only flags and transform helper.",
+      "reports": [
+        9
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/display-regex.test.mjs",
+      "status": "partial",
+      "reason": "Read 1-112; 113-129 not individually reviewed.",
+      "evidence": "Fixtures, display flags, CSS contract and beginning of idempotent-registration assertions read; whole file executed successfully.",
+      "reports": [
+        9
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/host-storage.js",
+      "status": "partial",
+      "reason": "Storage belongs to another slice; only NPC interfaces inspected.",
+      "evidence": "535-568: ledger/cold read and save via separate per-chat metadata keys, clone and saveMetadata.",
+      "reports": [
+        6
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/host-storage.js",
+      "status": "partial",
+      "reason": "仅旧合并开关及配置引用搜索",
+      "evidence": "225-242、336-337：decideMerged退役键；未读真实配置",
+      "reports": [
+        5
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/host-storage.js",
+      "status": "partial",
+      "reason": "已读 436-626 的聊天存储实现；大部分默认设置及 mergeSettings 未逐行读完。",
+      "evidence": "重点 selfState/saveSelfState/chatState/clean，按当前 context 读写并 await saveMetadata。",
+      "reports": [
+        7
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/host-storage.js",
+      "status": "unread",
+      "reason": "Migration and persistence internals belong to storage slice. DEFAULT_SETTINGS paths were indirectly exercised by settings-template test, not independently reviewed here.",
+      "evidence": "",
+      "reports": [
+        9
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/host-storage.js",
+      "status": "unread",
+      "reason": "Owned by other slice; did not inspect actual settings, secrets, migration implementation or setting export/persistence consumers.",
+      "evidence": "",
+      "reports": [
+        4
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/host-storage.test.mjs",
+      "status": "partial",
+      "reason": "仅部分断言/安全性定位，未逐行审完 234 行。",
+      "evidence": "离线完整执行通过；真实 saveMetadata 的写盘/报错不在本次权限范围。",
+      "reports": [
+        7
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/host-storage.test.mjs",
+      "status": "unread",
+      "reason": "Not separately read or run in this resumed slice.",
+      "evidence": "",
+      "reports": [
+        9
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/llm-client.js",
+      "status": "partial",
+      "reason": "Bounded continuation after provider interruptions; prompt/normalization section 111-189 not completely inspected.",
+      "evidence": "Inspected 1-110 and 190-726 including all connection, request, timeout, retry, sampling, model-list and logging paths; ran llm-client.test.mjs. Two cancellation/concurrency reproductions supplied as coordinator-reverified evidence, not rerun here.",
+      "reports": [
+        4
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/llm-client.js",
+      "status": "unread",
+      "reason": "extractJson依赖被离线导入，但未源码review；模型客户端归其他分片",
+      "evidence": "",
+      "reports": [
+        5
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/llm-client.test.mjs",
+      "status": "partial",
+      "reason": "678 lines; selected source ranges and test labels inspected, not every assertion body.",
+      "evidence": "Executed successfully offline; inspected quiet lifecycle, raw generation, custom body timeout/cancel, parameter tests, extras and retry cases including intentionally uncapped retry contract at 560.",
+      "reports": [
+        4
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/message-adapter.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 99 lines; inspected deliver/update/discard/canDeliver and fabricated acknowledgement paths; pure-memory send/update repros. No dedicated *message*test.mjs found under module tree.",
+      "reports": [
+        4
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/mvu-arbiter.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "全 502 行；JSONPatch/旧 _.set 仅审计、时间戳、各链解析和差分、异步落账；R4/R7/R14。",
+      "reports": [
+        7
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/mvu-arbiter.test.mjs",
+      "status": "partial",
+      "reason": "仅定位 import、部分测试/断言，未逐行审完 531 行。",
+      "evidence": "离线完整执行通过；R4/R7/R14 为额外内存复现，不在原通过结论之内。",
+      "reports": [
+        7
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/orb-hud.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Full text 1-716; all 12 current panel projections, refs, caps, ordering and settlement wording.",
+      "reports": [
+        9
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/orb-hud.test.mjs",
+      "status": "partial",
+      "reason": "Read assertion/comment inventory, not every fixture and control-flow line of the 533-line file.",
+      "evidence": "All assertion/comment matches inspected; whole file executed successfully.",
+      "reports": [
+        9
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/prompt-injection.js",
+      "status": "partial",
+      "reason": "全文作为依赖读取，但未独立审查/执行该模块专有测试",
+      "evidence": "1-119；80-113最终字符串截断/失败返回合同",
+      "reports": [
+        5
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/prompt-injection.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 119 lines; channel/inspect/restore/clear/write, stable prompt key, depth/budget/scan flags; reproduced failed clear followed by falsely cleared metadata.",
+      "reports": [
+        4
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/prompt-injection.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 73 lines and ran successfully; absence, flags, depth, truncation, clear and throwing-host tests. Missing empty-write clear-failure assertion.",
+      "reports": [
+        4
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/self-mvu.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "全 199 行；完整中文字段载荷、get/replace 整帧写、fallback、latest 目标及状态接口。",
+      "reports": [
+        7
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/self-mvu.test.mjs",
+      "status": "partial",
+      "reason": "读过测试安全性及部分断言，未逐行审完 196 行。",
+      "evidence": "离线完整执行通过；未执行宿主 MVU，fallback 落盘及整帧并发仍缺运行时证据。",
+      "reports": [
+        7
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/state-persistence.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "全 56 行；按 session|branch 保存 orchestrator 快照，history 截 40；不保存 selfRuntime 私有 lastFloor/opIdMemory；saveMetadata 未 await。",
+      "reports": [
+        7
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/state-persistence.test.mjs",
+      "status": "excluded",
+      "reason": "目录清单未发现该同名测试文件；关联 orchestrator/commit recovery 测试未纳入执行。",
+      "evidence": "没有将不存在的直接测试计为通过。",
+      "reports": [
+        7
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/style.css",
+      "status": "partial",
+      "reason": "Interaction/accessibility/veil/motion selectors sampled; not all 1003 lines read; no browser or images.",
+      "evidence": "131,176-177,318-320,490-496,574-578,623-625,809-818,935-937 inspected; byte-identical to root style.css.",
+      "reports": [
+        9
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/ui-state.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Full text 1-78; projection/version/action transitions and limits; JS caller search found import/export but no live UI use.",
+      "reports": [
+        9
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/ui-state.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Full text 1-36 read; executed successfully; stale readState missing from assertions.",
+      "reports": [
+        9
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/impact-flow.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整170行；假generateQuietPrompt、两轮记录与选条、顺序缓存与手改失效；离线通过",
+      "reports": [
+        8
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/impact-live.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整83行；纯getContext内存冒烟，不是真酒馆；注入/修改/元数据恢复通过",
+      "reports": [
+        8
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/impact/impact-decide.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整176行；记录/adjust/ripen/close/revert、传闻与因果层数提示、schema和喂料",
+      "reports": [
+        8
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/impact/impact-decide.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整72行；离线执行通过；输入数量/每楼裁剪、坏JSON、操作过滤",
+      "reports": [
+        8
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/impact/impact-ops.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整155行；影响摘要、注入/台账排序与预算、记录节奏",
+      "reports": [
+        8
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/impact/impact-ops.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整86行；离线执行通过；现有预算允许保留超长首行，未测试world级rumor",
+      "reports": [
+        8
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/impact/impact-runtime.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整732行；登记去重/链深、成熟、编辑/调期、归档恢复、删楼、恢复与版本；复现ID碰撞/恢复过期条未成熟/成熟不可回滚",
+      "reports": [
+        8
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/impact/impact-runtime.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整284行；离线执行通过；正常登记/成熟/同楼/归档/删楼；缺归档最高号恢复和成熟撤销",
+      "reports": [
+        8
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/impact/impact-select.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整218行；选条输入、存在性/收场/去重校验、未成熟标记、输入输出预算；1000待发酵条输入测量",
+      "reports": [
+        8
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/impact/impact-select.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整136行；离线执行通过；假JSON选条、数量与输出预算、依赖方向",
+      "reports": [
+        8
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/index-chat-lifecycle.test.mjs",
+      "status": "partial",
+      "reason": "仅开头/结构定位并执行，不是逐行审查全部 145 行。",
+      "evidence": "离线完整执行通过；不证明 DB/MVU 异步支线已隔离。",
+      "reports": [
+        7
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/index-chat-lifecycle.test.mjs",
+      "status": "partial",
+      "reason": "只做开头/符号检查，未完整阅读或执行",
+      "evidence": "无法由现有扫描证明cache作用域或总结并发已有覆盖",
+      "reports": [
+        5
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/index-chat-lifecycle.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read complete 145-line behavioral regression; covers delayed stale responses and event barrier but not busy next-turn compensation or dependent module completion.",
+      "reports": [
+        2
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/index-chat-lifecycle.test.mjs",
+      "status": "unread",
+      "reason": "Lifecycle belongs to entry slice; not read/run here.",
+      "evidence": "",
+      "reports": [
+        9
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/index-lifecycle.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read complete test; checks absent-host lifecycle but no enabled=false generation behavior.",
+      "reports": [
+        2
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/index.js",
+      "status": "partial",
+      "reason": "8826 行超出本切片可全读量；只审关联恢复、落账、持久、生命周期和 continuation。面板各入口未穷尽。",
+      "evidence": "120-146、186-258、315-365、711-855、1135-1151、1285-1360；R13 提取实际 dbStateAdoptable 纯函数在内存验证。",
+      "reports": [
+        7
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/index.js",
+      "status": "partial",
+      "reason": "8826-line integration entry outside full-file budget; only related callsites and lifecycle ranges inspected.",
+      "evidence": "Inspected getHostContext/continuations, event handling 245-320 and 379-399, adapter wiring 677-687, presetOverrides 559-566, interceptor 3589-3602, listModels UI 3845-3886, probe 4499-4520, disable lifecycle 7093-7136; keyword-located other injection callsites.",
+      "reports": [
+        4
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/index.js",
+      "status": "partial",
+      "reason": "8826行入口只读必要接线，不声称全文件审查",
+      "evidence": "读取90-155、210-242、285-345、365-384、470-490、730-770、1930-2085、3180-3335、3345-3357、3580-3630、3920-4055、4375-4485、5680-5778、7100-7140、7230-7250；搜索sandbox/impact/world引用与设置6090-6094；未读其余入口",
+      "reports": [
+        8
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/index.js",
+      "status": "partial",
+      "reason": "Coordinator directly reviewed lines 1-714, 735-855 and 7060-7240 plus symbol searches; domain/UI sections assigned separately. Not a complete line-by-line entry review.",
+      "evidence": "Traced lifecycle registration, generation barrier, afterWorld fan-out, global bindings, disable/hot cleanup and exported bridge; three isolated mocked-host reproductions.",
+      "reports": [
+        2
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/index.js",
+      "status": "partial",
+      "reason": "UI slice only. Remaining lines, long markup and all handlers not listed here were not fully read. No runtime-internal re-review.",
+      "evidence": "Read/targeted excerpts:127-146,174-185,2290-2295,3730-3855,3870-3909,4677-4753,4982-5135,5182-5259,5595-5888,5912-5928,6100-6218,6222-6298,6507-6536,6650-6704,6840-6973,7291-7315,8647-8672,8701-8730,8778-8825. Separately inspected all handler selector/await/confirm matches in 6147-6865 and function locations after 4489. Other symbols only located, not reviewed.",
+      "reports": [
+        9
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/index.js",
+      "status": "partial",
+      "reason": "User requested necessary NPC wiring symbols only, not a full line-by-line index review.",
+      "evidence": "Read 127-145,215-242,280-399,480-500,2110-2530,3100-3173,4538-4586,6660-6702,6728-6748,7096-7125; searched all agentNpc/write/restore references; VM extracted original functions for exp/extract/reroll repro.",
+      "reports": [
+        6
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/index.js",
+      "status": "partial",
+      "reason": "仅符号定位记忆/合并相关接线，非全文件审查；公共入口三项由总控负责",
+      "evidence": "127-145 continuation依赖；724-733、834-839、859-945、973-1037、1083-1141、1218-1248、4090-4235、4362-4380及namespace/按钮引用",
+      "reports": [
+        5
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/index.js",
+      "status": "partial",
+      "reason": "只审 facts injection/settle/history 所需接线，不代表 8800+ 行入口全量覆盖",
+      "evidence": "149-168,226-250,270-407,450-480,535-630,848-855,3303-3648,3890-3919,4508-4530,4620/4637-4638,7180-7233,8364-8392,8479-8502,8673-8728；源函数提取 vm 内存复现 facts stale 和 worldbook race。",
+      "reports": [
+        3
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/memory/memory-consolidate.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "全文1-104；输入title/note/quote/keys保全、输出字段与失败分支",
+      "reports": [
+        5
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/memory/memory-consolidate.test.mjs",
+      "status": "partial",
+      "reason": "全部执行并读断言/分组，未全读fixture",
+      "evidence": "68行；输入备注/标题已测试，未覆盖异步提交输入变化与9把钥匙",
+      "reports": [
+        5
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/memory/memory-decide.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "全文1-116；提示词/schema/user/解析12条合同与runtime对照",
+      "reports": [
+        5
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/memory/memory-decide.test.mjs",
+      "status": "partial",
+      "reason": "全部执行并读断言/分组，未全读fixture",
+      "evidence": "80行；parser12条测试未联合runtime8条上限",
+      "reports": [
+        5
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/memory/memory-ops.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "全文1-203；召回/渲染预算、矛盾提醒、解析剥离；真实注入边界追踪",
+      "reports": [
+        5
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/memory/memory-ops.test.mjs",
+      "status": "partial",
+      "reason": "全部执行并读断言/分组，未全读fixture",
+      "evidence": "132行；预算断言只验证裁尾/至少首条，不验证最终宿主字符串与诊断记录",
+      "reports": [
+        5
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/memory/memory-recall.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "全文1-140；目录、用户输入、ID过滤与空/坏返回合同",
+      "reports": [
+        5
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/memory/memory-recall.test.mjs",
+      "status": "partial",
+      "reason": "全部执行并读断言/分组，未全读fixture",
+      "evidence": "87行；72行明确固化缺ids当empty；无跨聊天cache测试",
+      "reports": [
+        5
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/memory/memory-runtime.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "全文1-417；操作、清洗、恢复、退休、同楼撤销、总结与调用侧；离线边界复现",
+      "reports": [
+        5
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/memory/memory-runtime.test.mjs",
+      "status": "partial",
+      "reason": "全部执行并读断言/分组，但fixture与辅助代码未全部逐行复核",
+      "evidence": "213行；现有测试通过，缺ID复用、同楼opId、退休窗口及账本版本边界",
+      "reports": [
+        5
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/facts-index.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "通读 1-362；索引、嵌套注释、别名、卷归属、catalog/search/matchTokens；catalog 截断内存复现。",
+      "reports": [
+        3
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/facts-index.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "读取 1-66；离线执行通过；覆盖嵌套名、卷回退、重载清空。",
+      "reports": [
+        3
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/facts-library.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "通读 1-175；来源登记/修订、复核、范围查询、角色已知限制；3 个独立内存复现。",
+      "reports": [
+        3
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/facts-library.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "读取 1-55；离线通过；未覆盖 rejected 排除、修订来源元数据刷新、过滤前 limit。",
+      "reports": [
+        3
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/facts-select.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "通读 1-292；规则/schema/解析/目录调用/二次 lookup/预算；未展示 UID 内存复现。",
+      "reports": [
+        3
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/facts-select.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "审查断言与场景并离线执行 247 行测试文件通过；动态 picks、目录外白名单和 malformed 防御。",
+      "reports": [
+        3
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/history-events.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "通读 1-125；载荷、失效、已提交分支、scope 刷新、解绑；旧 scope 内存复现。",
+      "reports": [
+        3
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/history-events.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "读取 1-86 并离线通过；事件 mock、候选失效、切分支、提交后 unresolved。",
+      "reports": [
+        3
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/history-operation.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "通读 1-41；显式 rewrite/reevaluate 与 mappingEvidence；未知事件拒绝。",
+      "reports": [
+        3
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/history-operation.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "读取 1-23 并离线通过；显式分类与 payload/context 拒绝。",
+      "reports": [
+        3
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/history-restore.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "通读 1-64；分支隔离、版本门、克隆、checkpoint 上限、恢复日志阻挡；确认仅内存候选恢复。",
+      "reports": [
+        3
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/history-restore.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "读取 1-31 并离线通过；实际 createStateStore 内存 capture/restore/stale/recovery gate。",
+      "reports": [
+        3
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/narrative-guard.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "通读 1-78；claims 引用范围、任务/状态缓存、NPC计划版本失效；明确非自然语言语义证明。",
+      "reports": [
+        3
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/narrative-guard.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整读取 35 行并离线通过；缓存重放为测试明确契约、隐藏事实拒绝、清理。",
+      "reports": [
+        3
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/setting-supply.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "通读 1-344；召回、按卷裁剪、逐层预算、整句裁剪、audit；预算测试与消费者接线核查。",
+      "reports": [
+        3
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/setting-supply.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "审查测试场景与断言并离线执行通过；含 5 个 node:test 用例，非线性 counter、separator、ellipsis、未来卷摘要与无限预算。",
+      "reports": [
+        3
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/volume-index.generated.js",
+      "status": "reviewed",
+      "reason": "按用户限定仅格式、来源、消费者，不审资料正文或逐条归卷真实性",
+      "evidence": "读生成头；1111 个 uid→卷数组，整数卷 1-21、升序无重复、格式坏行 0；来源世界书/tools/build-volume-index.mjs；消费者 facts-index.js。",
+      "reports": [
+        3
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/worldbook-source.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "通读 1-97；loader.call(context)、异常/空名/不存在降级、MAX_ENTRIES、native/disabled 分流；无独立同名测试。",
+      "reports": [
+        3
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-autonomy.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 131 lines; planning budgets/dedup, guard handoff, plan register/adjust/transition/listeners; terminal-plan revival repro.",
+      "reports": [
+        6
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-autonomy.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 51 lines and executed node successfully; planning, review, plan updates, transition terminal check and observer events.",
+      "reports": [
+        6
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-cold-recorder.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 47 lines; target/time/event/floor prompt construction; tested indirectly by cold-runtime test.",
+      "reports": [
+        6
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-cold-runtime.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 189 lines; selected/sync/event IDs, first baseline, previews, mark/discard/restore; collision and bulk-confirm memory repros.",
+      "reports": [
+        6
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-cold-runtime.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 36 lines and executed node successfully; baseline/events/mark/restore and prompt assertions.",
+      "reports": [
+        6
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-commit-gate.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 45 lines; state/branch/candidate/plan version and active-status checks; no commit/persistence inside gate.",
+      "reports": [
+        6
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-commit-gate.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 17 lines and executed node successfully; state/plan version rejection and ready path.",
+      "reports": [
+        6
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-conflict.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 62 lines; authority/rank/represents/intent grouping; traced output into actual outcome bridge.",
+      "reports": [
+        6
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-conflict.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 20 lines and executed node successfully; override, equal authority, missing/stale authority.",
+      "reports": [
+        6
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-decision-guard.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 90 lines; authority, knowledge IDs, allowed intent/action, pause, replay, plan maps and clearBranch; cross-state replay repro.",
+      "reports": [
+        6
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-decision-guard.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 43 lines and executed node successfully; hidden knowledge, authority, plan conflicts, action permission and clearBranch.",
+      "reports": [
+        6
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-ledger.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 868 lines; traced normalize/apply/manual/load/exp/injection and favor bounds; in-memory null-date, injection-drop and unchanged-version repros.",
+      "reports": [
+        6
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-ledger.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 282 lines and executed node successfully; asserts grouped patches, alias, favor, fillEmpty, source stamps, load and injection.",
+      "reports": [
+        6
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-outcome-bridge.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 69 lines; coordinated action/world candidates, missing metadata and synthesized world process ID; in-memory bridge probes.",
+      "reports": [
+        6
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-outcome-bridge.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 18 lines and executed node successfully; test supplies actionDefaults and manually restores process rather than actual direct chain.",
+      "reports": [
+        6
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-plan-reassessment.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 72 lines; evidence shape, plan versions, pending/cleared scopes, request/adjust/transition and audit hook.",
+      "reports": [
+        6
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-plan-reassessment.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 39 lines and executed node successfully; duplicate/version/evidence/terminal/clear paths.",
+      "reports": [
+        6
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-recorder.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 283 lines; prompt/schema, extract/record user builders, JSON parsing, exp condensation.",
+      "reports": [
+        6
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-recorder.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 166 lines and executed node successfully; parser, prompt and request construction; no exp async lifecycle coverage.",
+      "reports": [
+        6
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/request/action-resolver.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整读取77行；explicit、授权列表、规则/条件/效果、资源边界和幂等缓存。",
+      "reports": [
+        1
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/request/action-resolver.test.mjs",
+      "status": "partial",
+      "reason": "抽查imports和断言，未完整读fixture。",
+      "evidence": "完整执行通过；规则版本/数量、候选与边界断言。",
+      "reports": [
+        1
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/request/request-classifier.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整读取42行；类别/任务一致性、澄清、历史与系统操作、确认分流。",
+      "reports": [
+        1
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/request/request-classifier.test.mjs",
+      "status": "partial",
+      "reason": "抽查imports和关键断言，未完整审fixture。",
+      "evidence": "完整执行通过；read_only、置信度和空输入断言。",
+      "reports": [
+        1
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/request/request-router.js",
+      "status": "partial",
+      "reason": "Router belongs to another slice; only conditional NPC commit gate inspected.",
+      "evidence": "99-115: gate.check only when candidate.npcCandidates is an array, before commitRecovery.prepare.",
+      "reports": [
+        6
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/request/request-router.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整读取161行；prepare/计划/去重、候选归属与提交、能力/NPC失效；内存复现。",
+      "reports": [
+        1
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/request/request-router.npc-invalidation.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 24 lines; NOT executed. Plan-change invalidation only; not evidence of default autonomy execution.",
+      "reports": [
+        6
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/request/request-router.npc-invalidation.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整读取24行并完整执行；计划版本失效和候选移除。",
+      "reports": [
+        1
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/request/request-router.test.mjs",
+      "status": "partial",
+      "reason": "完整读取1-28及关键断言，未逐行审124行测试体。",
+      "evidence": "完整执行通过；候选篡改、计划版本、能力降级及禁用行动降级断言。",
+      "reports": [
+        1
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/request/world-simulator.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整读取61行；范围/版本/时间/过程、冲突、幂等与提案输出。",
+      "reports": [
+        1
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/request/world-simulator.test.mjs",
+      "status": "partial",
+      "reason": "抽查imports和关键断言，未完整审fixture。",
+      "evidence": "完整执行通过；partial提案、过程去重和冲突断言。",
+      "reports": [
+        1
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/run-tests.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 32 lines; recursive sorted .test.mjs discovery, skips .tmp/node_modules, sequential dynamic imports, counts failures and sets exitCode. Whole runner not executed because unreviewed suites are outside this bounded slice.",
+      "reports": [
+        4
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/run-tests.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "全 32 行；发现实际测试为 import 执行。未运行全仓 runner，仅同方式导入本切片 9 个测试。",
+      "reports": [
+        7
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/sandbox/sandbox-engine.js",
+      "status": "unread",
+      "reason": "当前工作树已删除；未读取HEAD旧实现",
+      "evidence": "git status D",
+      "reports": [
+        8
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/sandbox/sandbox-engine.test.mjs",
+      "status": "unread",
+      "reason": "当前工作树已删除；未读取HEAD旧测试",
+      "evidence": "git status D",
+      "reports": [
+        8
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/sandbox/sandbox-goals.js",
+      "status": "unread",
+      "reason": "当前工作树已删除；未读取HEAD旧实现",
+      "evidence": "git status D",
+      "reports": [
+        8
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/sandbox/sandbox-goals.test.mjs",
+      "status": "unread",
+      "reason": "当前工作树已删除；未读取HEAD旧测试",
+      "evidence": "git status D",
+      "reports": [
+        8
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/sandbox/sandbox-leads.js",
+      "status": "unread",
+      "reason": "当前工作树已删除；未读取HEAD旧实现",
+      "evidence": "git status D",
+      "reports": [
+        8
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/sandbox/sandbox-leads.test.mjs",
+      "status": "unread",
+      "reason": "当前工作树已删除；未读取HEAD旧测试",
+      "evidence": "git status D",
+      "reports": [
+        8
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/sandbox/sandbox-mode.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整97行；Map记录、sync/confirm/cancel、模式口径与历史；确认无版本复验、无持久化接口",
+      "reports": [
+        8
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/sandbox/sandbox-mode.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整71行；离线执行通过；同一实例分支隔离/确认取消/副本/历史上限；不覆盖重载",
+      "reports": [
+        8
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/sandbox/sandbox-nodes.js",
+      "status": "unread",
+      "reason": "当前工作树已删除；未读取HEAD旧实现",
+      "evidence": "git status D",
+      "reports": [
+        8
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/sandbox/sandbox-nodes.test.mjs",
+      "status": "unread",
+      "reason": "当前工作树已删除；未读取HEAD旧测试",
+      "evidence": "git status D",
+      "reports": [
+        8
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/sandbox/sandbox-world.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整55行；静态基线与动态惯性/人物自主提示；未按真实来源核验世界设定",
+      "reports": [
+        8
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/sandbox/sandbox-world.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整54行；离线执行通过；关键词和4000字上限，不证明剧情行为或原著正确性",
+      "reports": [
+        8
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/self/goal-data.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "全 57 行；追踪 addGoal、恢复、数据库 decode 共用 normalizeGoal，明确 title/text 分离与截断边界。",
+      "reports": [
+        7
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/self/self-decide.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "全 127 行；决定提示、JSON schema、输入截断及 12 条操作限制、解析状态。",
+      "reports": [
+        7
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/self/self-decide.test.mjs",
+      "status": "partial",
+      "reason": "命令输出被裁剪，未逐行审完全部 63 行。",
+      "evidence": "离线完整执行通过；提示/schema/解析路径已对应源码。",
+      "reports": [
+        7
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/self/self-ops.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "全 159 行；注入预算、条目编号、行囊上限、fence/裸 JSON 提取、解析/剥离。",
+      "reports": [
+        7
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/self/self-ops.test.mjs",
+      "status": "partial",
+      "reason": "命令输出被裁剪，未逐行审完全部 92 行。",
+      "evidence": "离线完整执行通过；输出提取/预算测试已定位。",
+      "reports": [
+        7
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/self/self-runtime.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "全 588 行；逐类操作、去重、容量、ID、撤销、同楼重生成、restore/reset、流水；R1-R5/R10-R11/R15 内存证据。",
+      "reports": [
+        7
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/self/self-runtime.test.mjs",
+      "status": "partial",
+      "reason": "读过开头和断言/测试结构，并非逐行审完全部 240 行。",
+      "evidence": "离线完整执行通过；现有断言不能排除本报告新复现边界。",
+      "reports": [
+        7
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/settings-template.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Full text 1-179 read; whole file executed successfully. Primarily textual assertions, not DOM interaction tests.",
+      "reports": [
+        9
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/settings-template.test.mjs",
+      "status": "unread",
+      "reason": "Not executed/read in this bounded slice; package test does not check template equality.",
+      "evidence": "",
+      "reports": [
+        4
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/settings.html",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "All 15 lines read; inline entry and status; root/fallback equality asserted by executed test.",
+      "reports": [
+        9
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/settings.html",
+      "status": "unread",
+      "reason": "Nested template consistency test and full model UI validation deferred; only root settings template was inspected.",
+      "evidence": "",
+      "reports": [
+        4
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/settle/settle-adjudicate.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "通读 1-597；输入/上下文预算、JSON抽取、v1/v2、结构诊断、行动原子审核、物品身份、累计资源/境界、渲染、reconcile；重复/重叠 evidence 内存复现。",
+      "reports": [
+        3
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/settle/settle-adjudicate.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "审查测试用例与断言并离线执行，44 cases 全通过；缺 evidence 区间/重复动作场景。",
+      "reports": [
+        3
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/settle/settle-integration.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "读取实际入口 fixture 与完整集成断言 1-381，内存宿主测试通过；显式 fetch 拒绝且 networkCalls=0；preview/cache/scope/live state/STOPPED/reconcile。",
+      "reports": [
+        3
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/settle/settle-session.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "通读 1-53；epoch/sequence/token 引用、busy/cache/force/fail、quiet end helper；不承担事实注入所有权。",
+      "reports": [
+        3
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/settle/settle-session.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "审查场景与断言并离线通过；同长度 fingerprint、A晚于B、force、失败释放、调用方 fresh guard。",
+      "reports": [
+        3
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/tools/build-db-template.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "全 63 行；只静态读结构自检与 writeFileSync 输出位置；未执行。当前注释 10 表与实际 12 表不一致，但不是本报告核心缺陷。",
+      "reports": [
+        7
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/unified/unified-decide.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "全文1-204；旧三桶合同、schema与纯函数解析，生产引用搜索",
+      "reports": [
+        5
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/unified/unified-decide.test.mjs",
+      "status": "partial",
+      "reason": "全部执行并读断言/分组，未全读fixture",
+      "evidence": "125行；只验证旧纯函数，不证明生产仍使用合并决定",
+      "reports": [
+        5
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/world/world-decide.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整144行；提示词、schema、喂料、解析和12操作上限；发现level重复定义",
+      "reports": [
+        8
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/world/world-decide.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整71行；离线执行通过；schema测试只检查字段存在，未检查level语义",
+      "reports": [
+        8
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/world/world-ops.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整217行；时钟/季节、事件传闻、势力人物任务注入、整块预算和指令提取",
+      "reports": [
+        8
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/world/world-ops.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整154行；离线执行通过；预算、任务/势力/传闻展示、裸行和fenced解析",
+      "reports": [
+        8
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/world/world-runtime.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整699行；时钟、事件/到期、任务、势力/人物、恢复、撤销、opId、容量；内存复现3种失败",
+      "reports": [
+        8
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/world/world-runtime.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整322行；离线执行通过；现有到期/重roll/恢复/容量正常路径；缺任务期限撤销及同楼opId组合",
+      "reports": [
+        8
+      ]
+    },
+    {
+      "path": "agent/mvu/README.md",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "全 22 行；作为声明而非线上安装事实；旧初始化件已标废弃。",
+      "reports": [
+        7
+      ]
+    },
+    {
+      "path": "agent/mvu/纳戒MVU套件.json",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "五条全部字段静态遍历，规则和输出格式正文完整阅读；初始化禁用，YAML/字符串整表和 JSONPatch 通道。未导入。",
+      "reports": [
+        7
+      ]
+    },
+    {
+      "path": "agent/mvu/纳戒变量结构脚本.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "全 64 行静态阅读；命名空间、字段类型、预填、clamp、注册入口；远程 import 不加载不执行。",
+      "reports": [
+        7
+      ]
+    },
+    {
+      "path": "agent/斗破Agent数据库桥接表.json",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "427 行 JSON 结构全对象解析及与 buildBridgeSheets() 内存结果深比较；12 表；定位旧记忆列/导出开关差异，不执行脚本不重新生成。",
+      "reports": [
+        7
+      ]
+    },
+    {
+      "path": "agent/斗破纳戒MVU初始化.json",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "全 48 行静态结构审查；旧版平键 [值,说明] 形式、disable=true，README 已标归档；不把它当当前命名空间初始化执行。",
+      "reports": [
+        7
+      ]
+    },
+    {
+      "path": "dev/ and real user settings/secrets/archive contents",
+      "status": "excluded",
+      "reason": "User explicitly forbids private settings/secrets and archive changes; dev fixtures and tracked-log contents not inspected and no private-data findings inferred.",
+      "evidence": "",
+      "reports": [
+        4
+      ]
+    },
+    {
+      "path": "dev/shots",
+      "status": "excluded",
+      "reason": "User forbids images/browser; no visual acceptance attempted.",
+      "evidence": "",
+      "reports": [
+        9
+      ]
+    },
+    {
+      "path": "dev/、真实存档、真实配置、浏览器/模型运行",
+      "status": "excluded",
+      "reason": "用户明确禁止或不在本分片",
+      "evidence": "",
+      "reports": [
+        5
+      ]
+    },
+    {
+      "path": "index.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 12 lines; lifecycle named exports and modular re-export.",
+      "reports": [
+        4
+      ]
+    },
+    {
+      "path": "manifest.json",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 22 lines; v0.2.1, minimum_client_version 1.18.0, root entry/style, interceptor global, hooks and empty dependencies.",
+      "reports": [
+        4
+      ]
+    },
+    {
+      "path": "settings.html",
+      "status": "partial",
+      "reason": "Equality tested, not independently line-reviewed.",
+      "evidence": "settings-template.test.mjs compares root and fallback text byte-for-text.",
+      "reports": [
+        9
+      ]
+    },
+    {
+      "path": "settings.html",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 15 lines; static root template and declared extension-settings storage; no actual user settings read.",
+      "reports": [
+        4
+      ]
+    },
+    {
+      "path": "style.css",
+      "status": "partial",
+      "reason": "Byte consistency and corresponding selectors only; no full style or visual review.",
+      "evidence": "Exact byte equality with host/style.css verified.",
+      "reports": [
+        9
+      ]
+    },
+    {
+      "path": "世界书/tools/build-volume-index.mjs",
+      "status": "reviewed",
+      "reason": "只审生成来源和格式，不执行读资料/写回生成器",
+      "evidence": "读取生成脚本 1-169；输入斗破世界书.json/分卷标题，--write 才写产物；仅 format/provenance contract。",
+      "reports": [
+        3
+      ]
+    },
+    {
+      "path": "世界书/卷NN-世界书.md",
+      "status": "excluded",
+      "reason": "原著/世界书资料正文排除；不人工全文审资料",
+      "evidence": "仅定位生成器标题匹配输入模式。",
+      "reports": [
+        3
+      ]
+    },
+    {
+      "path": "世界书/斗破世界书.json",
+      "status": "excluded",
+      "reason": "用户明确资料正文不属于完整审计；未人工审查条目真实性、归卷、版本来源",
+      "evidence": "仅由生成头/生成器引用识别为来源，没有读取资料正文。",
+      "reports": [
+        3
+      ]
+    },
+    {
+      "path": "原著及其他资料正文、真实存档、配置、.tmp备份及发布副本",
+      "status": "excluded",
+      "reason": "不属于当前所有权范围，禁止改动；备份不计当前源码 coverage",
+      "evidence": "未纳入此 slice 的完整审计或运行验收。",
+      "reports": [
+        3
+      ]
+    }
+  ],
+  "coverage_status": "partial",
+  "coverage_unrecorded_reports": [],
+  "coverage_conflicts": [
+    {
+      "path": "agent/doupo-agent-ui/core/settle-categories.js",
+      "statuses": [
+        "partial",
+        "reviewed"
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/turn-stages.js",
+      "statuses": [
+        "partial",
+        "reviewed"
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/api-presets.js",
+      "statuses": [
+        "reviewed",
+        "unread"
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/host-storage.js",
+      "statuses": [
+        "partial",
+        "unread"
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/host-storage.test.mjs",
+      "statuses": [
+        "partial",
+        "unread"
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/llm-client.js",
+      "statuses": [
+        "partial",
+        "unread"
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/prompt-injection.js",
+      "statuses": [
+        "partial",
+        "reviewed"
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/index-chat-lifecycle.test.mjs",
+      "statuses": [
+        "partial",
+        "reviewed",
+        "unread"
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/request/request-router.js",
+      "statuses": [
+        "partial",
+        "reviewed"
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/settings-template.test.mjs",
+      "statuses": [
+        "reviewed",
+        "unread"
+      ]
+    },
+    {
+      "path": "agent/doupo-agent-ui/settings.html",
+      "statuses": [
+        "reviewed",
+        "unread"
+      ]
+    },
+    {
+      "path": "settings.html",
+      "statuses": [
+        "partial",
+        "reviewed"
+      ]
+    }
+  ],
+  "modes": [
+    "full-scan"
+  ],
+  "targets": [
+    "C:/Users/86158/Desktop/异界转生录/doupo/agent/doupo-agent-ui/core/ + request/",
+    "agent/doupo-agent-ui/index.js lifecycle and composition",
+    "C:/Users/86158/Desktop/异界转生录/doupo",
+    "agent/doupo-agent-ui/npc (all source and tests) + index NPC wiring symbols",
+    "C:/Users/86158/Desktop/异界转生录/doupo/agent/doupo-agent-ui/{world,impact,sandbox}; impact-flow.test.mjs; impact-live.test.mjs; agent/09-沙盒模式功能方案.md; index.js必要接线",
+    "C:/Users/86158/Desktop/异界转生录/doupo [UI/dashboard/settings/display slice]"
+  ],
+  "findings": [
+    {
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "C:/Users/86158/Desktop/异界转生录/doupo/agent/doupo-agent-ui/host/llm-client.js",
+      "line": 65,
+      "title": "Concurrent sampling overrides restore another call's temporary settings",
+      "behavior": "Overlapping Tavern quiet calls mutating shared chatCompletionSettings",
+      "evidence": "53-69 saves current global settings independently and unconditionally restores each saved value. 496-511 applies this around an awaited generation without ownership/serialization. Coordinator-reverified pure-memory repro: initial temperature .7, A overrides .2, B overrides .9; A finishes first, then B, final temperature becomes .2 instead of .7. This continuation checked source; it did not rerun that supplied repro.",
+      "risk": "Overlapping module calls contaminate each other's sampling and leave the host's session settings changed after completion; later main generation may use unintended values. No settings-file persistence claimed.",
+      "recommendation": "Give temporary sampling one owner and serialize the full mutation/generation/restoration window, or use a verified host-supported per-call override without shared mutation.",
+      "verification": "Regression both completion orders, partial-overlap parameter sets, rejection/timeout/cancel and a main-generation overlap; original values must be restored exactly and other calls must not inherit temporary values."
+    },
+    {
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "C:/Users/86158/Desktop/异界转生录/doupo/agent/doupo-agent-ui/host/message-adapter.js",
+      "line": 81,
+      "title": "Fallback delivery claims message observation without observing it",
+      "behavior": "Host narration delivery acknowledgement and downstream commit gate",
+      "evidence": "sendMessage and slash branches at 79-86 always return observed:true, even when result is undefined and no message is added; they synthesize IDs. Memory repro with chat:[], sendMessage:async()=>undefined returned ok:true/observed:true/local-ID while chat.length stayed 0. update at 37-44 also returns observed:true after render and save failures because it compares only its own array mutation. index.js 685 wires this adapter into orchestration; commit-recovery.js 35 and 55-56 permit commit based on observed.",
+      "risk": "A host no-op/failed render can be reported as delivered, bypassing the project's explicit no-message/no-state-commit contract. Update repro proves weak evidence, not actual persisted loss in a real host.",
+      "recommendation": "Require a stable host message identity and read-back confirmation; return unconfirmed/observed:false for unknown API results. Separate array mutation, display confirmation and save result rather than treating them as one acknowledgement.",
+      "verification": "Add dedicated adapter tests for no-op/undefined send and slash, render/save failure, missing API, successful append/update and concurrent appends. Verify commit gate rejects absent/unconfirmed messages; then separately accept supported host APIs at runtime."
+    },
+    {
+      "id": "CR-02",
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/core/orchestrator.js",
+      "line": 182,
+      "title": "正文先交付再准备提交导致可见消息与状态分裂",
+      "behavior": "legacy两段提交并发窗口",
+      "trigger": "同分支并发runTurn，或生成期间其他写入推进版本。",
+      "evidence": "L182先deliver，L191才commitCandidate。两runTurn屏障repro delivered=2/history=1；一个completed，另一个prepare_commit/stale_state。L192-194直接failed返回且未撤销已显示消息。",
+      "risk": "聊天存在描述未落地结果的正文，后续请求可能将其当成已发生事实。",
+      "recommendation": "在现有边界串行化同分支回合，交付前检查/准备版本，并定义交付后失败的待核对或补偿策略；不能仅依赖按钮禁用。",
+      "verification": "同分支两次runTurn同时完成compose，最多一个可执行交付/提交；否则失败正文必须可识别且明确待核对，不得作为已执行事实。",
+      "reachability": "公开runTurn可并发；面板禁按钮仅缓解，不能保护公共API或外部状态写入。",
+      "certainty": "高；内存屏障并发复现。"
+    },
+    {
+      "id": "CR-01",
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/core/orchestrator.js",
+      "line": 199,
+      "title": "持久化失败仍宣告已保存",
+      "behavior": "legacy回合提交与保存",
+      "trigger": "内存提交成功，persistence.save返回失败状态。",
+      "evidence": "L199只记录save结果，L211-225无条件completed_saved/completed。内存repro save=>{status:'failed'}，result.status='completed'、persisted='failed'、coordinator='completed_saved'；rollback L243-251同样不核验。",
+      "risk": "用户按已保存继续操作，刷新后可能失去这一轮状态；内存提交与持久化成功混淆。",
+      "recommendation": "核验现有save结果；失败进入save_uncertain并保留重试线索，禁止盲目重复行动。",
+      "verification": "覆盖save返回failed/blocked、抛错、成功；失败不得completed_saved，重复保存不得重复行动或版本推进。",
+      "reachability": "legacyTurn面板和公开runTurn；非默认酒馆正文路径。",
+      "certainty": "高；源代码与纯内存复现一致。"
+    },
+    {
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/host/db-bridge.js",
+      "line": 171,
+      "title": "多个镜像同时协调同一旧视图，产生重号行或旧快照覆盖新账",
+      "behavior": "DB 并发镜像与写者屏蔽",
+      "evidence": "171-208 mirror 没有串行队列或版本，ensure 的 single-flight 只保护建表；每次 persistSelf:853 都 fire-and-forget。R8：旧快照首 insert 挂起，较新镜像执行完，再释放旧写入，DB 出现两条 b1，数量分别2和1。finally 214-215 的无条件释放也可能在另一个 writer 未完成时解除屏蔽。",
+      "risk": "镜像数据重复、版本回退；后续按 id 的收养/协调不再可靠。",
+      "recommendation": "在现有 bridge 按聊天串行化/合并最新待写快照，操作前校验版本，回调屏蔽按活动写者生命周期管理；不增加第二份账本。",
+      "verification": "旧/新两次 persist 在每个 CRUD await 交错；最终每 id 恰一行且值为最新快照；失败 fallback 与 self/memory 同时镜像也覆盖。",
+      "determinism": "受控调度下确定性；R8。",
+      "trigger": "连续手动操作、恢复对账与落账重叠，或多个异步 persistSelf 未完成。"
+    },
+    {
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/host/db-bridge.js",
+      "line": 260,
+      "title": "数据库异步写入及延迟回拉没有聊天身份护栏",
+      "behavior": "DB 跨聊天、恢复 continuation 与外部表格事件",
+      "evidence": "mirror 每笔 await 后继续通过全局 API 写当前聊天，onChatChanged:271-277 仅重置标志，不取消进行中任务/500ms externalDebounce。index adoptSelfFromDb:805 await 后也没有 captureAgentContinuation 检查。R6：A mirror 首笔挂起->切B/onChatChanged->释放，B 表出现 A物。R12：A 的 callback 排队->切B，handler 在 B 执行并收到 A view（输出 B:A）。",
+      "risk": "旧聊天的物品、金币和回拉状态进入新聊天并持久化；现有独立 LLM continuation 防护没有覆盖此链。",
+      "recommendation": "bridge 捕获聊天 epoch，在 ensure/CRUD/fallback/adopt 每个 await 后拒绝过期任务；换聊天清理 debounce；回调携带并验证源聊天；index 收养同样核验 continuation。",
+      "verification": "A->B、A->B->A；分别在 ensure、每笔 CRUD、fallback、adopt、debounce 挂起再切换，断言新聊天及旧帧均不被过期提交。",
+      "determinism": "受控调度下确定性；R6/R12 已复现，adopt 支线为静态证据。",
+      "trigger": "数据库操作未完成或外部回调在500ms防抖等待期间切换聊天。"
+    },
+    {
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/host/db-tables.js",
+      "line": 607,
+      "title": "数据库镜像不是完整快照，但收养会整份替换并丢掉未入表字段",
+      "behavior": "DB adoption 中制作数量、斗技进度及附注保真",
+      "evidence": "desiredSelfRows:606-621 没映射 skill.progress、craft.count、多类 note 和 goal.source/note；decode:683/698-701 也没有；index:809/825 restore({...state,log}) 仅保留旧 log。R5 数据库往返 craftCount/skillProgress/itemNote 全为 undefined；restore 后制作数量默认为1。sameSelfState 也只比较这个有损投影，不能证明完整账一致。",
+      "risk": "用户只改 DB 某个可见字段就可连带丢掉本地其他制作数量、修炼进度和备注。",
+      "recommendation": "明确 DB 的字段所有权：未入表字段按稳定 id 合并保留；或另行批准可逆表结构迁移。不得直接把投影当全量母账替换。",
+      "verification": "每类非空字段的 snapshot->DB->adopt 无损；DB 只改金币时其他条目隐藏字段不变；craft.count>1、skill.progress、各 note/source 必测。",
+      "determinism": "确定性；R5。",
+      "trigger": "数据库与本地有任一投影字段差异且通过 adoption 时间戳条件。"
+    },
+    {
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/host/mvu-arbiter.js",
+      "line": 476,
+      "title": "仲裁等待后仍使用旧聊天楼号，能向新聊天落账",
+      "behavior": "MVU 输入仲裁跨聊天隔离",
+      "evidence": "464-475 捕获 context/chat/index；476 等待1200ms；477 起读取 latest、取当前共享 runtime、493 apply，但没有聊天/回复身份复核。index 外层 continuation 只用于清 pending，不阻止仲裁器写。R7 sleep 中切换 context并 reset，恢复后新聊天金币变123，status=applied。self-mvu.sync:161/166 也在 await 两端各用 latest，存在同类目标漂移待门禁。",
+      "risk": "上一聊天或上一回复触发的 MVU 账写入下一聊天，错误随后进入 DB/chatMetadata。",
+      "recommendation": "给仲裁传入并校验 continuation，捕获确切聊天和 message id，等待、读帧和写入之后都核验；self-mvu 同步也固定目标而不是动态 latest。",
+      "verification": "等待中切聊天、删楼/换 swipe、追加新回复、离开再回同聊天；所有旧仲裁均 stale，无任何 runtime/persist 写入。",
+      "determinism": "受控调度下确定性；R7。",
+      "trigger": "1200ms 等待或宿主读帧期间聊天/回复发生变化。"
+    },
+    {
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/host/mvu-arbiter.js",
+      "line": 479,
+      "title": "MVU 重生成先按旧版结果做差分，runtime 随后撤销导致引用失效",
+      "behavior": "同楼 MVU 清单更新与撤销的基线一致性",
+      "evidence": "479-493 用当前已落账 ledger 生成 update/remove id 操作，再交给 selfRuntime.apply；后者 496-497 先撤销上一版本。R4：floor=1 第一版新增 b1 丹×3，第二版帧丹×2 -> 差分 updateItem b1；apply 先删 b1，再拒绝 update(id_not_found)，最终行囊为空。",
+      "risk": "正常重新生成可把已有物品直接清空；不只是重复记账。",
+      "recommendation": "仲裁和落账使用同一份重生成前基线：先恢复该楼基线再做帧差分，或把整帧提交作为一个带明确基线的事务。",
+      "verification": "同楼第一版新增/第二版改数量、删、新增混合；最终严格等于第二版清单，重复处理同帧不改变状态。",
+      "determinism": "确定性；R4 直接组合实际纯函数及 runtime。",
+      "trigger": "同一 AI 楼重新生成，第二版 MVU 差分引用第一版新建条目。"
+    },
+    {
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/impact/impact-runtime.js",
+      "line": 681,
+      "title": "存档恢复忽略归档最大编号导致影响ID碰撞",
+      "behavior": "影响归档、续聊登记与恢复",
+      "evidence": "restore的seq只扫描state.records；467-475 unarchive不检查活跃库已有同ID。内存：登记i1→forget→snapshot/restore→登记新条→unarchive i1，list得到两个id=i1的不同记录。",
+      "risk": "后续ref、parent、Map选条定位歧义；forget按ID和其他ID集合逻辑可能误操作多条。",
+      "recommendation": "编号接续同时扫描records与archive；恢复和unarchive明确处理重复ID，避免静默改写既有引用。",
+      "verification": "最高ID仅在archive、records为空/非空、反复保存恢复再新增/找回，全部ID唯一且旧parent/ref指向不变。"
+    },
+    {
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 277,
+      "title": "后台静默调用期间下一轮可能永久漏记",
+      "behavior": "New player/AI reply arrives while prior background request remains pending",
+      "evidence": "started/rendered/ended ignore while isQuietBusy. Prior continuation also invalidates when chat tail changes. Isolated host: append next user+reply before resolving prior world call → replyCount2, requests1, persistedWorld=false; no queued retry. Source comments lines301-302 acknowledge omission but no compensation exists.",
+      "risk": "Both old and new replies may remain unaccounted; world/self/memory state diverges from chat.",
+      "recommendation": "Maintain a bounded per-chat pending latest reply at the existing lifecycle owner, drain after background chain ends; use reply/version identity and explicit skipped reason. Do not silently drop overlapping normal generations.",
+      "verification": "Delay first bookkeeping, produce second normal reply, then release first: current reply must be processed exactly once, stale result discarded, no infinite quiet recursion; switch chat cancels old queue.",
+      "confidence": "reproduced_offline"
+    },
+    {
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 317,
+      "title": "关闭Agent总控后自动链仍调用模型并写账",
+      "behavior": "settings.enabled=false / normal generated reply",
+      "evidence": "Generation-end branch checks quiet/world subfeature flags but never global enabled. Mock host with enabled:false and full started→ended→rendered sequence produced llmCalls=1 and persistedWorld=true. UI line5957 promises关闭后不会运行回合也不会写入状态.",
+      "risk": "User cannot rely on master stop control; unexpected quota use and state mutation.",
+      "recommendation": "At the existing lifecycle owner gate both task start and late commit on the master enabled contract; invalidate in-flight work when switched off. Keep safe injection cleanup.",
+      "verification": "enabled=false must produce zero calls and no metadata writes; disabling during delayed LLM/MVU/DB operation must prevent late mutation; re-enable restores one listener/chain.",
+      "confidence": "reproduced_offline"
+    },
+    {
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 792,
+      "title": "没有本地存档时新空戒时间戳阻止数据库恢复，随后反向覆盖数据库",
+      "behavior": "DB-only adoption / 冷恢复",
+      "evidence": "792 无 selfState 时 reset()，initialState/ reset 把 updatedAt 设为当前时间；805-808 仅采纳 DB 时间>=本地，714-719 对旧 DB 拒绝；796-797 无论是否收养都 mirrorSelf 当前状态。R13 提取实际 dbStateAdoptable：DB=11月3日、本地新空戒=11月4日，返回 false。后续 mirror 是明确可达源码路径，未对真实数据执行。",
+      "risk": "仅存于 DB 的原账无法被收回，并可能被新空戒镜像删掉。权限内未对真实数据验证，不能说真实存档已受损。",
+      "recommendation": "区分无本地存档与有本地新账；空壳初始化不应拿 now() 凌驾持久数据库；只有收养决策明确完成后才允许反向镜像。",
+      "verification": "本地元数据缺失+DB 非空旧时间，恢复完整 DB 且不先清表；本地确有较新账时仍拒绝冻结旧 DB；DB 无时间戳单独给恢复政策。",
+      "determinism": "时间顺序满足条件时确定性；guard 已内存验证，覆盖链为静态可达证据。",
+      "trigger": "缺少 doupo_agent_self 元数据，但当前聊天 DB 仍有更早有效账本。"
+    },
+    {
+      "id": "MU-01",
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 913,
+      "title": "收养布尔护栏放行后整账覆盖，退役项与本地新账不受保护",
+      "behavior": "触发：数据库混有一条新增/改文条目和退役旧行，或缺少本地独有新条目",
+      "evidence": "724-733的some只决定整批是否收养；907-914与834-839使用整份state restore且只保留log。host/db-tables.js:953-958不带retiredIds。真实guard内存抽取：incoming=[m1退役,m9外来]、local=[m2新账]、retired=[m1]返回true。",
+      "risk": "m1复活，m2丢失，退休登记清空，persist固化错误；纯旧子集仍被挡住，不是每次回拉都失败。",
+      "recommendation": "按ID对账过滤退役项、保留本地独有条目及退休登记；先明确表格手删与镜像冻结优先合同，不把some当整表权威。",
+      "verification": "离线混合旧/新增/缺项回拉覆盖两个restore调用，断言不复活、不丢本地新账、不丢retiredIds。"
+    },
+    {
+      "id": "NPC-02",
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 2208,
+      "title": "世界书补全的目标绑定及重抽保护可被英文键和嵌套字段绕过",
+      "behavior": "目标人物及关系字段保护",
+      "trigger": "抽A，模型返回name:B和嵌套设定态度/在场，或favor英文键，overwrite=true。",
+      "evidence": "2208-2215只追加姓名:A并过滤顶层中文黑名单；ledger414首个名字键胜出，402-410展开组键且支持英文别名。VM原runNpcLedgerExtract收到{name:B,设定:{态度:unexpected,在场:true},favor:10}：A未改，B attitude=unexpected、favor=10、presence=在场。",
+      "risk": "重抽A却改到B；承诺好感/态度/在场不动失效。fillEmpty同样可能填错人。",
+      "recommendation": "先规范化patch，再强制规范name=目标，并在规范字段层过滤关系/在场/流水/经历与好感；不要继续扩充顶层字符串黑名单。",
+      "verification": "中英姓名键先后顺序、分组/fields嵌套、别名人物、多patch、overwrite开关矩阵；只能改目标允许的静态字段。",
+      "unverified": "仅原函数+模型stub内存复现，真实模型输出分布未验证。"
+    },
+    {
+      "id": "NPC-01",
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 3124,
+      "title": "旧聊天的经历精简回答可以覆盖当前聊天的同名人物",
+      "behavior": "经历精简异步请求与确认的聊天归属",
+      "trigger": "聊天A请求精简；回答前切B；B有同名人物；A回答回来后确认。",
+      "evidence": "3105-3129没有captureAgentContinuation，切聊天140-145虽清pending，旧await回来3129又填全局pending；3156-3162直接replaceExp当前全局账本。VM提取原函数+延迟Promise，切ledger后确认，B经历从other-chat-original变为from-old-chat。",
+      "risk": "跨聊天整单覆盖人物经历；同聊天期间新增或手改经历也能被旧草稿覆盖。",
+      "recommendation": "复用continuation；草稿记录聊天scope和经历版本/指纹；回答到达及确认时各校验一次；不匹配过期，取消清草稿。",
+      "verification": "延迟回答A→B、A→B→A、同名人物、请求中新增经历、取消、停用、双请求交错；旧结果不提供可确认草稿且不写账。",
+      "unverified": "No real host/browser/LLM/save; VM proves original function control flow with memory dependencies."
+    },
+    {
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 3258,
+      "title": "挂起的场记结果可在换聊天后写入新会话",
+      "behavior": "影响选条异步注入的会话隔离",
+      "evidence": "3228-3288捕获旧snapshot并await选条，恢复后没有captureAgentContinuation或scope/version复验；233-239即使清通道并恢复新账也不能取消旧promise。内存：A发起impactInjection，切chatId/chat/chatMetadata到B，释放固定picks，返回injected且doupo_impact实际为A会话私有事实写入B。world/impact记录员4032/4450已有continuation，不涵盖场记。",
+      "risk": "新会话正文携带上一会话世界事实；停用/编辑/手动改账的旧结果同样可能覆盖当前注入。",
+      "recommendation": "复用现有continuation门控并加入账本版本与模式代次校验；同一signature挂起请求合并，陈旧结果不得写缓存或通道。",
+      "verification": "延迟假场记，CHAT_CHANGED清空并恢复B后释放A；A应stale，B通道保持空/自己的文本；再测停用、改账、重roll和两个并发调用。"
+    },
+    {
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 3336,
+      "title": "事实检索等待结束后可把旧会话资料写入新会话",
+      "behavior": "facts 注入的异步所有权",
+      "evidence": "3336 await resolveInjection 后 3337-3340 无 session/branch/chat/epoch 检查，直接写全局 agentPromptInjection；226-244 切聊天只清通道，不能取消旧 continuation。将真实 prepareInjectionForPrompt 源函数提取到 vm，A 请求挂起后 scope 改 B，再 resolve A，writes=[[B,A专属资料]]。settle 路径已有 token+fresh guard，facts 没有。",
+      "trigger": "检索未返回时切聊天/分支、禁用功能或启动另一轮；旧请求稍后完成。",
+      "risk": "新会话提示词被旧聊天资料污染；后到旧响应覆盖新响应；旧结果还会保存到当下聊天的 last injection。",
+      "recommendation": "复用现有 continuation/epoch 机制，在开始时捕获 scope/chat/开关和请求 token；await 后及持久化前只允许当前请求写入。旧请求不能 clear 新通道。",
+      "verification": "延迟 A→切B→B完成→A返回，B 的 prompts/metadata 不变；禁用与 stopped 后 A 也不写；同 scope 后发请求胜出。",
+      "certainty": "高；真实源函数+内存宿主确定性复现，无浏览器或模型。"
+    },
+    {
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 3507,
+      "title": "结算上下文直接携带未来卷增补，绕开设定注入防剧透",
+      "behavior": "锁卷下行动结算读世界书",
+      "evidence": "3505 matchTokens 按 entry.volumes 包含当前卷过滤，但 3507 取 entry.content 全文；settle-adjudicate 183-188 只 clip 不裁卷。setting-supply 15-26/273 的 trimToVolume 仅用于主 facts 注入。合成条目 volumes=[1,9]、〔卷01〕当前事实/〔卷09 增补〕未来秘密，锁1后沿相同 matchTokens→buildSettleResultUser 路径，最终 user 仍 includes(未来秘密)=true。",
+      "trigger": "早卷可见的跨卷条目正文带后卷增补，并在结算相关词中命中。",
+      "risk": "主 facts 通道虽裁过卷，结算模型仍看见后续剧情/能力，并可能提前据此批准行动、透露结果。",
+      "recommendation": "结算资料取正文前使用与 facts 同一可测的卷裁剪策略；不要把按条目卷归属过滤误当作正文段落已裁剪。未知卷策略须明确。",
+      "verification": "锁1的完整结算 system/user 不含卷9秘密；锁9才含；lookup条目、摘要和六路注入均保持相同边界。",
+      "certainty": "高；本地合成资料确定性复现；未审真实资料内容。"
+    },
+    {
+      "id": "MU-03",
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 4217,
+      "title": "总结提交未核对输入版本，可把等待期间删除的事实重新写回",
+      "behavior": "触发：总结await期间玩家删除/改动源小记忆，聊天正文不变",
+      "evidence": "4185捕获smalls，4209只验聊天continuation（127-137无记忆版本），4217提交旧IDs与旧摘要；runtime:325-327取仍存活交集。复现捕获m1承诺+m2→删除m1→提交旧摘要，ok且consumed仅m2，大记忆仍写m1承诺。",
+      "risk": "主动忘记的内容复活，摘要来源与实际consumed不一致。",
+      "recommendation": "提交前比对整批源ID及内容版本，删除/修改/转层则拒绝整批重试；只新增其他条目可按明确合同允许。",
+      "verification": "延迟Promise测试总结期间删除/恢复/改写源，必须stale/rejected且账本不受旧结果污染；保留聊天续接保护。"
+    },
+    {
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 6678,
+      "title": "人物簿文件导入可覆盖切换后的聊天",
+      "behavior": "手动导入人物簿的聊天授权与异步续接",
+      "trigger": "聊天A点击导入并确认，文件选择器或file.text等待期间切到B，再完成读取。",
+      "evidence": "6667-6690 在打开文件选择器前确认；6678 await file.text后6681直接agentNpcLedger.load，6683 persistNpcLedger，没有聊天/分支/epoch复查。2290-2294持久化当前ledger；127-137已有captureAgentContinuation但本入口未使用。",
+      "risk": "A的授权可能用于替换B的当前人物簿并进入当前保存路径。可达数据覆盖路径，未进行真实聊天复现。",
+      "recommendation": "打开文件选择器前绑定聊天/分支和续接令牌，在change及await之后复查；过期中止，不能写当前聊天。覆盖确认与目标聊天绑定。",
+      "verification": "延迟file.text模拟A到B；断言B ledger及保存调用零变更；同聊导入仍成功；读文件期间同聊历史变化按约定拒绝。"
+    },
+    {
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 8686,
+      "title": "世界书异步重载没有提交所有权，旧书可覆盖新书索引",
+      "behavior": "世界书读取与索引生命周期",
+      "evidence": "syncWorldbookIndex 8683 捕获名字，8686 await 后 8688-8692 无名字/序号校验即 clear/register/load。scheduleWorldbookSync 8484/8486 的 sequence 检查在 sync 内部副作用之前/之后，不能保护其提交。真实源函数 vm：A慢→设置B并载入B→A返回，索引写入顺序 B(uid2),A(uid1)，当前名字仍B。另 8684 unset/8687非ok 直接返回，既有A索引不会清掉。",
+      "trigger": "快速更改世界书、启动同步并行，或从已有A切到空名/不存在/空世界书。",
+      "risk": "设置显示B但实际检索A，卷号、人物和剧情均可能串库；失败后陈旧数据无明确失效。",
+      "recommendation": "在唯一索引拥有者上校验 request epoch+请求书名后再原子替换 supply/index/native count；empty/unset/failed 应明确绑定旧数据来源并停止新检索，或清空成不可用，避免静默复用。",
+      "verification": "A慢B快、A失败B成功、A→空名、A→空书测试；两份索引始终同一来源且最后有效请求胜出。",
+      "certainty": "高；竞争已用真实函数内存复现；空/失败保留是直接可达分支。"
+    },
+    {
+      "id": "MU-04",
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/memory/memory-runtime.js",
+      "line": 276,
+      "title": "决定承诺12条，runtime默认只执行8条，余项静默消失",
+      "behavior": "触发：独立决定输出9至12条合法操作",
+      "evidence": "memory-decide.js:16,31,112-115允许12；runtime:35,113-115默认maxOps8，276 slice；index:4147未调整。内存parsed12、applied8、rejected0、total8。",
+      "risk": "最多4条新事实不落账且不报拒绝；该楼已决定，后续不会自动补回。",
+      "recommendation": "统一prompt/schema/parser/runtime限额，超限显式报告，不静默截断。",
+      "verification": "9/12/13条合法操作：合同内全落账，合同外明确拒绝，面板条数与实际一致。"
+    },
+    {
+      "id": "MU-02",
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/memory/memory-runtime.js",
+      "line": 395,
+      "title": "restore只按存活条目续号，复用退役ID",
+      "behavior": "触发：删除最高编号后恢复快照，再登记",
+      "evidence": "131-133只增seq，393-397只从entries恢复seq，不看retiredIds。复现新增m1→删除→restore→新增，entries出现新m1同时retiredIds含m1。",
+      "risk": "同ID代表不同事实，退役守卫误拦新记忆；旧帧/召回cache可能新旧串号。",
+      "recommendation": "至少联合存活与退役编号恢复序号；长期高水位另定合同，不通过清空退休登记绕过。",
+      "verification": "删最高号/删空→restore→新增不得复用退役ID；覆盖大小记忆、总结后删除大记忆与存档往返。"
+    },
+    {
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/narrative/facts-library.js",
+      "line": 129,
+      "title": "人工复核拒绝的事实仍以 supported 返回",
+      "behavior": "结构化资料库复核后查询",
+      "evidence": "reviewFact 85-87 接受 decision=rejected 并保存；query 129 只排 needs-review，不排 rejected。内存注册 f 后 reviewFact(rejected)，query 仍返回 f，status=supported、reviewStatus=rejected。index453/476/4537及core模块登记暴露该库；它是显式结构化资料库，不是默认世界书选条通道。",
+      "trigger": "调用结构化资料库 API 复核事实为 rejected 后再次查询或 facts-query模块使用该来源。",
+      "risk": "已判不可信的事实再次进入事实结果，甚至形成冲突或被当作支持证据。",
+      "recommendation": "将可检索复核状态改成显式允许集合，至少排除 rejected 和 needs-review；拒绝记录保留审计历史，不删除资料。",
+      "verification": "current/confirmed/corrected 按既定契约可检索；rejected 在普通和角色查询中均不返回，不产生 supported/conflict。",
+      "certainty": "高；直接 API 内存复现。"
+    },
+    {
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/sandbox/sandbox-mode.js",
+      "line": 24,
+      "title": "正式沙盒口径仅存在内存且无记录时直接采用全局开关",
+      "behavior": "模式跨重载与老存档授权",
+      "evidence": "24-25仅Map，返回API93-94没有snapshot/restore；index对agentSandboxMode引用搜索无宿主保存/恢复接线，sync只由设置变更6947触发。index7237-7245无记录直接读enableSandboxMode。内存新建实例read旧scope为空；全局开关与该分支已确认模式不一致时重载会改变实际口径。方案60-70要求正式状态/老档主线。",
+      "risk": "续聊丢失确认结果、惯性与历史；老主线存档在全局开关开启时可无确认进入开放世界。",
+      "recommendation": "通过现有会话存储持久化并恢复模式/惯性/历史；区分新开局与旧档缺字段，旧档默认mainline，不将设置等同正式授权。",
+      "verification": "主线A和沙盒B分别确认，重建模块与重开聊天后保持各自模式；旧档缺字段且全局开关开启仍主线；确认前后事实不回退。"
+    },
+    {
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/self/self-runtime.js",
+      "line": 357,
+      "title": "update 校验失败前已改字段，拒绝结果不代表账本未变",
+      "behavior": "所有 updateTechnique/Skill/Equipment/Treasure/Item 的原子性",
+      "evidence": "357-372 先改 name/grade/type/等字段，373-375 才检查 count。R2：已有 b1，updateItem {name:'已变',count:-1} 返回 rejected/bad_count，但快照名字已变。此路径没有 undo、updatedAt 或成功流水。",
+      "risk": "面板显示拒绝却落下部分修改，时间戳和镜像的新旧判断失真，重生成也无法回退这次副作用。",
+      "recommendation": "对副本验证全部字段后一次提交，或在所有可能拒绝点之前完成校验。",
+      "verification": "每种 update 带一个合法字段和非法 count，断言被拒绝前后快照逐字相等；包含日志和 updatedAt。",
+      "determinism": "确定性；R2 已复现。",
+      "trigger": "一个 update 操作同时包含可修改字段和非法 count。"
+    },
+    {
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/self/self-runtime.js",
+      "line": 398,
+      "title": "整栈消耗保留零数量，重载或数据库往返复活一件",
+      "behavior": "物品数量与归零恢复",
+      "evidence": "removeItem 仅在 entry.count>1 时校验 count，扣到 0 后直接返回，不移除。cleanEntry:96/108 把不合法的 0 变成 1；db-tables:693 也 Math.max(1,...)。R1：addItem count=3 -> removeItem count=3，快照仍有 count=0；restore 后 count=1。count=1 时带 0/负数/超额 count 也直接走整条移除而不校验。",
+      "risk": "消耗完的丹药/材料在刷新、恢复或 DB 收养后凭空回来；错误数量请求还可能删除最后一件。",
+      "recommendation": "数量参数先统一校验，再扣减；扣到 0 删除条目，并保存完整可逆原条目。不要只在恢复时改成 1。",
+      "verification": "3-3、1-1、非法 0/负/超额；快照/restore/DB 往返都无零数量残留；撤销恢复原 ID 和原数量。",
+      "determinism": "确定性；无需浏览器。",
+      "trigger": "removeItem 的 count 等于整个大于 1 的栈；或单件条目携带非法 count。"
+    },
+    {
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/self/self-runtime.js",
+      "line": 496,
+      "title": "撤销不是完整逆操作，且失败被当成已撤销",
+      "behavior": "重生成撤销的境界、条目 ID 与 opId",
+      "evidence": "setRealm:271 的 undo 可能 realm=''，但 265 禁止空境界；同楼撤销 497 不检查结果。update count=0:382-383 删除原 id，使恢复变成 b2。opIdMemory:508 在撤销后仍保留原 opId。R3 首次设斗者后同楼 apply([]) 仍为斗者；R10 count=0 后撤销恢复成 b2；R11 相同 opId 重生成先撤回金币又被 duplicate 跳过，10 变 0。",
+      "risk": "换 swipe/重新生成不能恢复原账，后续引用旧 ID 失败；流水却写着已撤销。",
+      "recommendation": "引入仅内部可用的完整状态/条目恢复语义；撤销保留 ID 并处理 opId 归属，失败不能继续报成功。不必重写公开业务 API。",
+      "verification": "首次境界从空到非空再撤销；数量零删除再撤销 ID 不变；同 opId 同楼重放结果相同；撤销失败显式阻断提交。",
+      "determinism": "确定性；R3/R10/R11。",
+      "trigger": "同楼重生成包含初次 setRealm、数量零删除或复用 opId。"
+    },
+    {
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/self/self-runtime.js",
+      "line": 553,
+      "title": "恢复丢掉同楼撤销基线，刷新后重新生成重复累计",
+      "behavior": "持久化后的重生成/撤销",
+      "evidence": "snapshot 只返回 state；lastFloor/opIdMemory 在闭包中，restore:560-561 清空。host-storage 保存的只是 snapshot；state-persistence 另存 orchestrator，不含这些 self 私有数据。R15：floor1 addGold 10 -> snapshot/restore -> floor1 addGold 10，金币为20。",
+      "risk": "刷新或重新载入后再 roll 同一楼，金币、堆叠物品等重复累计，无法恢复上一版。",
+      "recommendation": "按聊天/楼/回复版本持久化 self 的可回退基线及去重元数据，或能从受控操作账重建；旧档缺基线时不要宣称支持无损重生成。",
+      "verification": "save/load 后同楼重生成与未刷新的结果相等；包含 addGold、addItem、finishGoal、手工操作穿插；不同聊天基线不得共享。",
+      "determinism": "确定性；R15。",
+      "trigger": "已有模型落账的楼在 restore/reset 后再次记账。"
+    },
+    {
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/settle/settle-adjudicate.js",
+      "line": 464,
+      "title": "行动依据未绑定原文区间，重叠片段可重复收益且重复动作被误拒",
+      "behavior": "多行动拆分与禁止重复结算",
+      "evidence": "451 使用 indexOf 首次位置；464-465 只按去标点后的 evidence 字符串 Set 去重。输入“我打工获得报酬”，a1 evidence=我打工、a2 evidence=打工获得报酬，两行动均批准，gold 0→20；实际只有一次动作。反向输入“打工；打工”，两行动 evidence=打工，第二次被拒，gold仅10。现有44 cases只验证同一字符串复用，没有区间/重复出现定位。",
+      "trigger": "模型给同一行动的不同重叠摘录，或玩家一轮重复执行同文字动作。",
+      "risk": "同一动作能重复发放收益/扣费；合法重复行动又会被误阻断，依赖链随之错误。",
+      "recommendation": "保留连续原文证据但绑定明确出现位置/区间；按顺序消耗匹配区间，禁止重叠区间重复结算；允许同文本在后续位置的独立出现。不要扩展成自然语言关键词猜测。",
+      "verification": "重叠/包含区间最多一次授权；“打工；打工”两处可分别处理；逆序、前向依赖、相同区间复用仍拒绝；成本/收益保持行动级原子。",
+      "certainty": "高；直接调用真实 parse/review 两组确定性复现。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "C:/Users/86158/Desktop/异界转生录/doupo/agent/doupo-agent-ui/host/api-presets.js",
+      "line": 197,
+      "title": "YAML parsing accepts partial documents and silently changes flow values",
+      "behavior": "Additional body/header parameter parsing",
+      "evidence": "parseYamlBlock discards parseBlock's consumed index at 197. Memory results: '{top_k: 20, top_p: 0.9}' => {top_k:'20, top_p: 0.9'}; 'stop: [a, b]' => {stop:'[a, b]'}; 'top_k: 20\njunk\ntop_p: 0.9' => {top_k:20}. Thus unsupported or malformed tails are not rejected even though parse failure is documented to return null. Root flow object fallback at 179-181 recurses into a one-line scalar value instead of parsing commas.",
+      "risk": "UI shows configured values but requests silently omit parameters or send strings where numbers/arrays are intended; especially misleading under advertised Tavern-style YAML semantics.",
+      "recommendation": "Require full input consumption, reject unsupported shapes explicitly and surface a validation error, or use a maintained parser after an approved dependency gate. Do not silently interpret unsupported flow syntax as another type.",
+      "verification": "Fixtures for multi-key flow maps, nested flow arrays/maps, malformed trailing lines, continuation list-map items, escaped quotes/comments, scientific numeric notation and accepted documented subset; invalid inputs must never partially apply."
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "C:/Users/86158/Desktop/异界转生录/doupo/agent/doupo-agent-ui/host/llm-client.js",
+      "line": 294,
+      "title": "Case-sensitive object merge does not override HTTP header names",
+      "behavior": "Preset Authorization header overriding generated authentication",
+      "evidence": "Generated OpenAI header is lowercase authorization at 534 (and 316 for model lists); extras use Object.assign at 294 or spread at 324. YAML/parser test explicitly accepts Authorization capitalization (api-presets.test.mjs 34-37). Actual createLlmClient with stub fetch and Authorization extra produced new Headers(options.headers).get('authorization') = 'Bearer default-test, Bearer override-test', not the override alone. Current override test only covers lowercase authorization at llm-client.test.mjs 625/633.",
+      "risk": "Common capitalized authorization override becomes a duplicate/comma-combined credential value and may be rejected by gateways. This is a correctness finding; no real key exposure or network request was observed.",
+      "recommendation": "Merge headers with case-insensitive semantics, e.g. Headers.set for extras, both completion and model-list paths; preserve documented last-writer-wins behavior.",
+      "verification": "Test Authorization/authorization/AUTHORIZATION plus mixed-case x-api-key and listModels; serialized wire-equivalent Headers must contain one effective value per logical header."
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "C:/Users/86158/Desktop/异界转生录/doupo/agent/doupo-agent-ui/host/llm-client.js",
+      "line": 326,
+      "title": "Model-list request has no deadline and its UI supplies no cancellation",
+      "behavior": "API preset model discovery",
+      "evidence": "listModels awaits fetch and response.json at 326-328 with only an optional caller signal; no timer/controller/deadline. index.js 3852 disables the button, calls listModels without a signal at 3855-3860 and only re-enables it in finally at 3884-3885. A never-settling fetch stub remained pending; the 25ms observation is not itself a timeout proof, missing deadline is source-proven.",
+      "risk": "A stalled gateway or body read leaves the model-discovery button disabled and status stuck indefinitely until the panel/page is recreated.",
+      "recommendation": "Apply a bounded configurable discovery deadline across headers and body; allow disposal/new-request cancellation and reset the UI deterministically.",
+      "verification": "Never-resolving fetch and json stubs must return a timeout status; cancellation/disposal must restore UI state and late responses must not update a replacement card."
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "C:/Users/86158/Desktop/异界转生录/doupo/agent/doupo-agent-ui/host/llm-client.js",
+      "line": 504,
+      "title": "Quiet cancellation ends local bookkeeping but not the underlying generation",
+      "behavior": "Pre-aborted request and timeout/cancel quiet lifecycle",
+      "evidence": "generateQuietPrompt/generateRaw is invoked at 504 before withTimeout checks signal.aborted at 263. Quiet withTimeout call at 505 has no underlying cancellation callback; finally decrements busy and restores sampling at 509-511 even if generation remains unresolved. Coordinator-reverified pre-aborted repro observed generateQuietPrompt still started. Normal grace at 507 is skipped on rejection. index.js 277, 282 and 303 use isQuietBusy to classify host events. Retry sleep at 610 also does not subscribe to abort.",
+      "risk": "A cancelled request may still spend model work; late generation events can arrive after quiet busy becomes false and be treated as ordinary events. Actual late-event misclassification in installed SillyTavern is not runtime-reproduced here. Retry cancellation can wait until sleep ends.",
+      "recommendation": "Check abort before touching sampling or starting generation; bind supported cancellation to the actual quiet operation and retain ownership until it really settles. Make retry sleep abort-aware and distinguish request cancellation from underlying completion.",
+      "verification": "Pre-aborted input must launch zero generations; cancel/timeout a deferred quiet stub, deliver late events, and verify no ordinary-turn work/early sampling restore. Abort a long retry wait and require prompt rejection."
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "C:/Users/86158/Desktop/异界转生录/doupo/agent/doupo-agent-ui/host/prompt-injection.js",
+      "line": 85,
+      "title": "Empty write reports cleared even when clearing failed",
+      "behavior": "Idempotent injection cleanup and settings status",
+      "evidence": "clear at 75-76 returns status:failed on host failure. Empty write ignores that result at 85 and overwrites last with cleared:true at 86. Memory host accepted 'old' then threw on empty text: write({text:' '}) returned status:empty and inspect().last.cleared=true while host container still held 'old'. Existing tests separately check clear failure but not this composition.",
+      "risk": "Stale prompt text can survive while the UI reports successful cleanup, hiding that later generations may reuse old injection.",
+      "recommendation": "Propagate failed/unsupported clear and preserve uncleared metadata until the host clear succeeds; do not overwrite failure with an empty-success record.",
+      "verification": "Write nonempty text, fail the empty clear, assert failure/cleared:false and retained diagnostic; retry successful clear, then assert empty/cleared:true. Also test repeated clear idempotency."
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/README.md",
+      "line": 101,
+      "title": "文档同时宣称数据库与扩展各自为真账本",
+      "behavior": "State ownership documentation and retired paths",
+      "evidence": "README101 says表=账本/表优先;120 sayschatMetadata真账本、DB仅镜像;159-172 still document merged mode while189 declares it retired. These contracts give incompatible implementation/repair guidance.",
+      "risk": "Maintenance can reintroduce authority inversion, unsafe restore or resurrect retired settings.",
+      "recommendation": "After deciding actual write ownership, document default runtime vs legacy API separately; mark archival behavior explicitly, update acceptance numbers without treating docs as code proof.",
+      "verification": "Map each documented setting/API to consumer and real path, examples and contract tests agree.",
+      "confidence": "source_contract_contradiction"
+    },
+    {
+      "id": "CR-10",
+      "severity": "P2",
+      "category": "Verification Gates",
+      "file": "agent/doupo-agent-ui/core/audit-log.js",
+      "line": 2,
+      "title": "设定偏离审计事件不在白名单导致静默丢失",
+      "behavior": "legacy设定正文审计",
+      "trigger": "settings.audit返回ok=false并触发onSettingDrift。",
+      "evidence": "turn-stages L511-513调用回调；index L657-664发setting_drift；audit EVENTS无该值，L12抛错；turn-stages L513吞异常。内存record(setting_drift)复现不允许的审计事件。",
+      "risk": "检测到的设定偏离没有可查询的审计记录。",
+      "recommendation": "登记setting_drift并保存必要无敏感元数据，或改用现有受支持事件；不扩大审计到提示词正文。",
+      "verification": "audit.ok=false的compose应生成可检索偏离事件；非法事件仍拒绝，密钥和正文不得进入审计。",
+      "reachability": "legacy compose；默认resolveInjection不调用compose审计。",
+      "certainty": "高；明确合同冲突与内存复现。"
+    },
+    {
+      "id": "CR-06",
+      "severity": "P2",
+      "category": "Verification Gates",
+      "file": "agent/doupo-agent-ui/core/commit-recovery.js",
+      "line": 19,
+      "title": "已完成或取消提交永久占满恢复日志",
+      "behavior": "有界日志长期可用性",
+      "trigger": "同实例累计达到maxEntries次prepare，包含已cancel或commit的任务。",
+      "evidence": "journal只set不delete，默认500，无clear接口；cancel L45仅改phase。maxEntries=1 repro prepare→cancel→新prepare返回journal_full。",
+      "risk": "长期使用后全部新提交被拒绝，legacy交付发生在prepare前，会进一步产生孤立正文。",
+      "recommendation": "先定义保留/恢复合同，再回收安全终结且持久确认的记录并保留必要幂等墓碑；待核对日志不可直接逐出。",
+      "verification": "小上限连续成功/取消超过限额仍安全继续；重复commit不重复写入；save_uncertain不得静默回收。",
+      "reachability": "legacy/public recovery实例，默认注入本身不使用该提交日志。",
+      "certainty": "高；小上限内存复现及默认常量可证。"
+    },
+    {
+      "id": "CR-03",
+      "severity": "P2",
+      "category": "Verification Gates",
+      "file": "agent/doupo-agent-ui/core/orchestrator.js",
+      "line": 84,
+      "title": "快照恢复丢失初始基线导致无法回滚首版",
+      "behavior": "restore/readScope与历史回放",
+      "trigger": "v1提交到v2，存储完整stateStore快照后重新restore，再rollback v1。",
+      "evidence": "readScope L57-63与restore L84-90忽略snapshot.baseVersion/baseState；state-store L33把v2设为新基线且history不含v1。完整快照内存repro得到unknown_version。",
+      "risk": "刷新后无法回滚到原始状态，回滚能力比刷新前缩小。",
+      "recommendation": "恢复时传入并验证baseVersion/baseState；旧快照缺基线时显式说明能力不足。",
+      "verification": "v1→v2→保存→新实例restore→rollback v1应生成v3且状态等于原v1；缺基线旧快照另测。",
+      "reachability": "legacy/public restore及runTurn的readScope；不推断其他模块自身存档合同。",
+      "certainty": "高；完整快照内存复现。"
+    },
+    {
+      "id": "CR-04",
+      "severity": "P2",
+      "category": "Verification Gates",
+      "file": "agent/doupo-agent-ui/core/orchestrator.js",
+      "line": 112,
+      "title": "解析失败与路由早退不会清理占位消息",
+      "behavior": "legacy占位生命周期",
+      "trigger": "ui.placeholder=true并创建占位，随后interpret拒绝或router返回澄清/审核。",
+      "evidence": "L112-117创建占位，L128/L139返回；清理finally始于L142，仅覆盖流水线后。interpret抛错repro discarded=0。",
+      "risk": "聊天残留省略号，重试可继续积累。",
+      "recommendation": "把现有finally扩大到占位创建后的完整生命周期。",
+      "verification": "interpret抛错、needs_clarification、needs_review、router抛错均清理一次；正常替换后不删除正文。",
+      "reachability": "仅legacy/public runTurn开启placeholder时。",
+      "certainty": "高；内存复现。"
+    },
+    {
+      "id": "CR-05",
+      "severity": "P2",
+      "category": "Verification Gates",
+      "file": "agent/doupo-agent-ui/core/turn-pipeline.js",
+      "line": 150,
+      "title": "流水线超时未中止阶段信号",
+      "behavior": "阶段预算与取消",
+      "trigger": "阶段Promise超时，阶段或下游服务监听ctx.signal。",
+      "evidence": "L150-155返回failed但未controller.abort；10ms内存repro error=total_budget_exhausted而signal.aborted=false。module-runner L146-148主动abort；turn-stages L372-378裁定调用还未传signal。",
+      "risk": "本地已报失败但合作式工作仍继续占用资源，晚到阶段也可能继续执行回调；不能保证远程调用取消。",
+      "recommendation": "超时分支先abort阶段控制器，再停止采用候选；沿现有裁定调用链显式传signal，保留远程取消不可保证的提示。",
+      "verification": "超时后signal必须aborted，晚到结果不进入候选；裁定stub应收到signal，覆盖外部abort和总预算。",
+      "reachability": "legacy/public六阶段流水线；默认resolveInjection不经过此预算。",
+      "certainty": "高；内存复现，不声称已取消远端。"
+    },
+    {
+      "id": "CR-07",
+      "severity": "P2",
+      "category": "Verification Gates",
+      "file": "agent/doupo-agent-ui/core/turn-stages.js",
+      "line": 101,
+      "title": "手动卷号与自动进度失去来源信息",
+      "behavior": "默认设定注入的进度边界",
+      "trigger": "面板进度锁定2，目录选择建议10或标题猜中10。",
+      "evidence": "index L615-618声称手动锁定但仅返回数字2；resolveVolume L112-116仍advance到3，L105回调保存auto。内存repro volume={current:2,next:3,source:'auto'}，onVolumeInferred=3。",
+      "risk": "手动锁定时仍产生自动推进元数据与保存回调；若下游使用next则可能扩大卷号可见范围。具体剧透未审assemble内部，未证实。",
+      "recommendation": "进度入参保留manual/auto来源，手动时禁止推进与onVolumeInferred；保留自动单卷推进护栏。",
+      "verification": "manual=2/suggested=10必须next=2且无保存回调；auto=2最多推进3；未知进度策略另测。",
+      "reachability": "默认index L3336 resolveInjection与legacy gather均可达；实际组装内部未审。",
+      "certainty": "手动锁定合同冲突高确定；剧透影响仅潜在。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/host/control-dashboard.js",
+      "line": 54,
+      "title": "原著摘要忽略嵌套开关",
+      "behavior": "总控原著设定启停摘要",
+      "trigger": "setting.enabled=false，enableFactsLibrary=true或默认开启。",
+      "evidence": "MODULES:3 setting为setting.enabled；54读取settings[key]而非分段路径。纯函数反例输出nested facts disabled: 已开启。当前测试58-64只用新字段true，不能发现误读。",
+      "risk": "关闭原著注入后摘要仍显示开启，误导控制和排查。",
+      "recommendation": "按路径读取新字段，仅真正缺省时回退旧字段。",
+      "verification": "增加新旧字段相反值及新字段false且旧字段缺省测试，断言新字段优先。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/host/mvu-arbiter.js",
+      "line": 358,
+      "title": "合法同名目标内容/期限和配方品级更新被静默忽略",
+      "behavior": "MVU 目标、配方、现有制作条目的更新语义",
+      "evidence": "opsForGoals 按标题判断是否已存在，仅新建/完成，不改已有目标 body/priority/due；opsForRecipes 仅新增/删除不改 grade；opsForCrafts 对同名已有作业不改 count/days。R14 修改旧目标为主线、新内容/后天并把旧丹方一品改二品，返回 status=clean，但 diffs 长度2、ops=[]、reverts=[]；runArbitration:489 不重同步。",
+      "risk": "帧显示的新目标与实际注入/DB 旧目标不一致，用户误以为申报已被采纳。",
+      "recommendation": "明确各字段是否可更新；支持的转换为有校验操作；不支持的返回 revert 并重同步，不能叫 clean。",
+      "verification": "同标题目标仅改正文/期限/优先级、同名配方改品级、同名制作改数量/期限；结果要么完整采纳，要么显式回滚且帧与账一致。",
+      "determinism": "确定性；R14（目标/配方），制作同名支线为静态证据。",
+      "trigger": "整表字符串保留原条目名称/标题，仅更新其他属性。"
+    },
+    {
+      "severity": "P2",
+      "category": "Verification Gates",
+      "file": "agent/doupo-agent-ui/host/mvu-arbiter.js",
+      "line": 493,
+      "title": "整表申报容量高于 runtime 单批上限，尾部变化会被丢弃",
+      "behavior": "大量物品/技能/目标变化的批处理完整性",
+      "evidence": "arbitrateFrame 能从一帧生成超过12条（行囊上限60、功法40等）；runtime.apply:501 默认 operations.slice(0,12)，丢掉尾部不报告 dropped；仲裁器只统计已执行项并 persistSelf，把不曾执行的尾部字段重新写回旧值。此条为确定可达静态边界，未另跑>12的内存实例。",
+      "risk": "模型写了合法整表，但一轮超过12项的后半部分变化消失，用户只能看到部分成功。",
+      "recommendation": "在仲裁事务边界整体限流并显式拒绝，或用同一楼基线下的受控完整批处理；不能简单多次 apply 同 floor，那会互相撤销。",
+      "verification": "13/32/60项增删改，核对无静默丢项；整体拒绝也必须有可见原因且帧恢复一致。",
+      "determinism": "静态确定边界；未单独动态复现。",
+      "trigger": "一次帧差分累计生成13条或更多操作。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/host/orb-hud.js",
+      "line": 98,
+      "title": "全部列表把截断后的200条当成总数",
+      "behavior": "超过200条的悬浮栏目",
+      "trigger": "栏目原始记录超过FULL_CAP=200。",
+      "evidence": "65上限200；97-99先slice再令total=rows.length；index:5234显示该total，5255只铺all，没有分页或截断提示。",
+      "risk": "全部显示200且无法访问第201条以后，用户误认为没有更多；限制DOM有益，但总数语义错误。",
+      "recommendation": "保留原始total，增加truncated/hasMore和分页或完整设置页入口，保留渲染上限。",
+      "verification": "201及1000条：总数真实、预览仍4条、DOM有界且后续记录有入口。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/host/ui-state.js",
+      "line": 46,
+      "title": "失效或失败投影仍接受动作请求",
+      "behavior": "尚未接入实际UI的投影动作意图接口",
+      "trigger": "readState=stale/failed/loading但stateVersion仍匹配。",
+      "evidence": "35-49只验证projection存在和版本相等，未检查readState；纯函数反例stale+use_item返回accepted=true。JS调用检索只见index:27 import/469 export和本模块定义，未见实际UI调用。",
+      "risk": "未来消费者可能把不可用投影当可操作；当前UI不走该接口，不是已证明的实际执行漏洞。",
+      "recommendation": "接入前定义只读/变更动作允许的readState，至少变更意图要求ready，保留accepted不等于executed。",
+      "verification": "逐readState测试use_item/start_action，stale/failed/loading拒绝变更；ready正常，重复请求和版本保护不回归。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/impact/impact-ops.js",
+      "line": 23,
+      "title": "世界级传闻失去未证实标记且台账未传certainty",
+      "behavior": "世界影响的传闻与事实边界",
+      "evidence": "impactMark23先判weight=world返回★，24的rumor分支因此不可达；injectionLine46只用impactMark，ledgerLine97-117从未输出certainty。故同一条world+rumor在脚本注入仅有★，在场记/记录员台账不带未证实字段。runtime允许此组合，select提示要求传闻不能写成事实。",
+      "risk": "高影响传闻被下游作为既成事实使用的硬信息边界缺失；不能依赖title/detail恰好含传闻字样。",
+      "recommendation": "权重与可信度独立呈现（如★？或明确传闻·未证实），台账无论权重均携带certainty；不自动将rumor升级certain。",
+      "verification": "world/major/minor × certain/rumor矩阵，脚本注入、台账和picks路径都保留未证实语义，普通世界级certain仍有★。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/impact/impact-runtime.js",
+      "line": 203,
+      "title": "当日恢复的逾期归档条被成熟扫描水位跳过",
+      "behavior": "归档找回及存档恢复后的自动成熟",
+      "evidence": "203 day<=sweptDay直接返回；apply543先扫再执行unarchive，474随后才加入records。内存第1天记ripen2后归档，第5天unarchive再同日apply([])，状态active,due=1,ripened=0,dueIds=[]。restore684同样把水位设为存档日而不扫到期条。",
+      "risk": "已经到日子的影响需额外过一天或手动处理，面板成熟状态与正文到期判断不一致。",
+      "recommendation": "让新增/恢复的待扫描条使扫描失效，或按需扫描到期active，不用仅日期假定库内容没变；恢复时与世界时钟对齐。",
+      "verification": "当天找回过期条与恢复包含当日到期active的存档，无需再推进游戏日即可成熟且只记一次流水。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/impact/impact-runtime.js",
+      "line": 543,
+      "title": "自动成熟不在同楼撤销日志内导致时钟回滚后仍已发酵",
+      "behavior": "影响成熟与世界时钟重生成一致性",
+      "evidence": "sweepDue203-216直接改状态，apply543调用结果只返回dueIds，未加入undoSteps；538只回滚操作undo。内存第1天记ripen2，floor3/day5空apply成熟，再floor3/day1空apply，state仍ripened且ripenedDay=3。",
+      "risk": "正文改成没有跨日，影响仍提前应验；与世界runtime已有到期事件恢复形成不一致。",
+      "recommendation": "自动成熟纳入对应楼层的可逆状态变更，区分既有已提交成熟与本次时钟导致的成熟；协调世界→影响顺序。",
+      "verification": "世界推进触发影响成熟后同楼改为不推进，记录回active且成熟日清空；不回滚其他楼已确认的成熟。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/impact/impact-select.js",
+      "line": 127,
+      "title": "待发酵安排绕过台账预算全量送入场记",
+      "behavior": "不限账本规模下输入预算",
+      "evidence": "104台账有1800字/30行限制，但110取全部pending，127-128直接map/join无数量或字符上限。内存buildImpactInjectUser：1待发酵条339字符，1000条29243字符。index1972账本固定不限条数，因此可达。",
+      "risk": "场记输入随待发酵库存线性增长，增加接口成本、上下文超限与延迟；不是已测真实模型耗时。",
+      "recommendation": "对待发酵区共用总字符/条数预算，优先关联当前场景且最近到期的安排，并明确省略数量；账本本身保持完整。",
+      "verification": "0/1/1000/10000条时输入满足明确总上限，最近应关注条保留，省略有计数，不丢库中记录。"
+    },
+    {
+      "severity": "P2",
+      "category": "Verification Gates",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 369,
+      "title": "记忆决定没有等待纳戒记账完成",
+      "behavior": "afterWorld launches self and memory concurrently despite dependency comment",
+      "evidence": "self run assigned at342-356 then not awaited. memory launch at369 starts immediately. Mock world resolution started self and memory requests while self unresolved (3 total). Comment line366 and README132 promise later consumers see newly posted account.",
+      "risk": "Memory decision can observe state before self/MVU commit; chronological dependency is not enforced. Actual prompt/state impact requires each consumer contract audit.",
+      "recommendation": "State explicit dependency graph; await only true prerequisites, keep independent NPC work parallel. Do not add blanket global serialization.",
+      "verification": "Delayed self completion test should prove memory reads intended committed state and failed self produces explicit partial result rather than assumed success.",
+      "confidence": "reproduced_offline"
+    },
+    {
+      "id": "MU-06",
+      "severity": "P2",
+      "category": "Correctness Backlog",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 936,
+      "title": "召回缓存缺聊天作用域和输入版本，跨聊天/同长编辑可误命中",
+      "behavior": "触发：分支/复制聊天有相同updatedAt、楼数、最新玩家输入；或同楼数AI编辑/改召回设置",
+      "evidence": "936-945 key仅length|latestUser|ledgerAt，979-980直接返回cache；搜索cache赋值只有932/1024，140-145失效与882-889恢复不清cache。真实key内存函数对不同chat对象返回相同key。",
+      "risk": "复用旧聊天选条或空选结果；最终按新账本ID取条，不直接泄漏旧正文，但ID相同可选错内容，空cache整轮漏召回。",
+      "recommendation": "key纳入scope/epoch、实际喂料楼层指纹及设置版本；换聊天清cache，不只依赖毫秒updatedAt。",
+      "verification": "A→B→A、复制存档、同长AI编辑/swipe、相同时间戳不同记忆及prompt/方案改变不得复用错误cache。"
+    },
+    {
+      "id": "MU-10",
+      "severity": "P2",
+      "category": "Correctness Backlog",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 1125,
+      "title": "预算装满正文再加抬头，最终写入从条目中间截断",
+      "behavior": "触发：正文接近预算、单条很长，或召回说明很长",
+      "evidence": "ops:91剩1条就停，即使超cap；index:1124-1125追加header/note后仍同一预算；host/prompt-injection.js:90-94整串slice并追加原著设定截断标记。内存render max200输出201。",
+      "risk": "note/引文/依据尾部可半截，期限/限制不完整；实际总字数可超过预算。",
+      "recommendation": "统一header/note/guide/条目总预算，按完整条目裁剪，明确单条过长合同。",
+      "verification": "预算200/800，最长正文+note+keys+basis与300字召回note组合：总字符受控、完整条目不半截、截断记录真实。"
+    },
+    {
+      "id": "MU-09",
+      "severity": "P2",
+      "category": "Correctness Backlog",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 1130,
+      "title": "注入记录保存裁剪前全集，写入失败也标成功",
+      "behavior": "触发：多条记忆超预算，或setExtensionPrompt抛错",
+      "evidence": "ops:88 filter复制数组，91-94只裁内部picked；index:1105错误假定外部picked变短，1130-1135保存外部全集。1125 write后1127无条件injected。复现picked仍[m1,m2]，正文仅m1。",
+      "risk": "面板/悬浮球声称带回实际未注入的记忆，失败显示成功，误导验收。",
+      "recommendation": "渲染返回实际IDs/条目并据此记录；检查writeResult.status，失败不得记成功。",
+      "verification": "裁到1条后记录也仅1条；宿主写入抛错记录failed；与实际提示词比对。"
+    },
+    {
+      "id": "NPC-03",
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 2445,
+      "title": "人物记账只记楼层号，重生成后的旧人物变化不会撤回",
+      "behavior": "重生成/编辑/删楼后人物账本一致性",
+      "trigger": "floor1已记账，再于同floor重生成；或手动重记同一正文。",
+      "evidence": "2445-2446只比较index与lastNpcLedgerFloor；VM原runNpcLedgerRecord同floor新正文返回not_due。ledger562-577累加好感和追加流水，无按回复贡献替换；manual绕过not_due。",
+      "risk": "自动保留旧分支好感/流水/在场信息；手动补救会重复累加。continuation只能挡飞行中旧回复，不能撤销已提交账。",
+      "recommendation": "先明确NPC重roll契约；按回复身份作幂等键，并存可替换的楼层贡献或基线；不能仅重置游标后重新累加。",
+      "verification": "回复A记账后同floor改B、重roll、删楼续写、手动重复、重新加载；仅当前有效回复贡献一次。",
+      "unverified": "宿主历史适配及完整回滚未验；本分片未逐行审history目录。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 3241,
+      "title": "场记缓存签名不能区分多轮相同开头和世界变化",
+      "behavior": "影响选条缓存失效",
+      "evidence": "3241-3245仅version/条数/day/预算/模型/draft前80字/floors.length；缺正文内容、真实楼号、地点、world版本及prompt等设置。impactConversation限制最近楼数，长聊达到固定floors.length且账本无变化时重复输入，签名可相同；3246直接复用旧文本。",
+      "risk": "下一幕地点/上下文变化仍复用上幕挑选；原两轮测试因账本version变化而绕过此边界。",
+      "recommendation": "签名纳入scope/回复与草稿身份、相关世界版本及决定参数；与飞行请求共享准确键，不全量序列化无限账本。",
+      "verification": "固定账本版本与day，足量最近楼后连发相同前80字但不同后文/地点/回复的两幕，必须重新挑选；同一幕重复拦截仍只挑一次。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 3328,
+      "title": "事实输入定位被最近两条角色消息提前终止",
+      "behavior": "多回复或续写时的 facts 上下文提取",
+      "evidence": "3328 for 条件 recent.length<2；只有3331遇到玩家楼才赋input。若最近一次玩家楼之后已有两条AI/角色消息，循环收满两条即退出，3335认为no_input并清facts通道。collectSettleMaterials3489独立findLastIndex玩家，反而仍能读取同输入。",
+      "trigger": "同一玩家输入后两次续写/多角色回复，再重新生成或继续生成。",
+      "risk": "明明有玩家输入却静默停用本轮原著检索；facts和settle使用不同本轮定义。",
+      "recommendation": "先单独定位最近玩家楼，再明确选择它之前/之后的最近对话；不要用recent条数控制是否找到玩家输入。",
+      "verification": "0/1/2/3条AI在最近玩家楼之后都能得到预定输入；system跳过；正常末尾玩家输入无回归；对重新生成的旧答案是否允许入上下文须给明确契约。",
+      "certainty": "高；直接循环可达性，不涉及模型质量。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 3754,
+      "title": "API方案保存失败被吞但界面宣称已保存",
+      "behavior": "API方案字段、新建复制删除及清除绑定的持久反馈",
+      "trigger": "saveSettings拒绝或返回未保存状态。",
+      "evidence": "3752-3755 fire-and-forget且catch为空；3835-3837仅返回updateSettings结果；6922、6933依据ready显示方案已保存；3789清绑定同样吞失败。",
+      "risk": "密钥/地址/绑定仅内存修改也被宣称成功，重启丢失且无排查信号；不据此宣称密钥泄露。",
+      "recommendation": "以保存完成结果驱动反馈，处理非saved和reject，区分内存更新与持久完成。",
+      "verification": "模拟saved/unavailable/reject及连续编辑乱序，仅最后一次真实保存成功可显示成功。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 4518,
+      "title": "历史事件适配器使用任务缓存 scope，宿主换聊天不会使旧任务失效",
+      "behavior": "legacy 候选的历史失效接线",
+      "evidence": "initializeHistoryEvents getScope只返回agentActiveScope；7202-7215仅beginAgentTask/setAgentHistoryScope更新它；CHAT_CHANGED 228-246只清dashboardScope等，未更新agentActiveScope。adapter59-79只有getScope前后变化才失效。内存真实adapter：scope固定A，emit CHAT_CHANGED→invalidations=[]；新聊天随后edit(1)却 invalidate A的t。默认doupoFactsInterceptor/settleAdjudicate未注册该任务，因此不能宣称默认主链历史恢复或失效已覆盖。",
+      "trigger": "显式任务API运行中的legacy候选从A切到B，但调用者没有同步setAgentHistoryScope。",
+      "risk": "A候选仍可存活；B同楼号编辑可能反向作废A任务。默认运行链与内存候选链边界易被误解。",
+      "recommendation": "由宿主scope作为唯一真值驱动adapter，换聊天时刷新/清空活动scope并失效previous任务；解绑再注册不能丢previous scope；显式说明legacy API与默认主链分界。",
+      "verification": "真实入口mock：begin A候选→宿主切B并emit CHAT_CHANGED，A立即invalidated；B编辑不触A；已提交只报recovery_required、不伪回滚；默认主链不声称有legacy checkpoint。",
+      "certainty": "高：接线可达路径+真实adapter复现；未在真实酒馆验证事件载荷。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 4677,
+      "title": "弹窗缺少完整焦点与对话框语义",
+      "behavior": "设置主对话框和子弹窗焦点管理",
+      "trigger": "打开设置或只读/表单弹窗后Tab或关闭弹窗。",
+      "evidence": "5917-5919主设置声明aria-modal；4677-4697子dialog普通div无role/关联标题；4720只聚焦input/textarea/select，纯只读内容不迁焦；4723-4737关闭不恢复焦点；6963-6967仅Escape无Tab圈定。",
+      "risk": "焦点留在遮挡内容或逃到聊天区，子对话框无法被正确识别；Esc也依赖当前焦点所在。",
+      "recommendation": "补子dialog语义与标题关联，打开聚焦可交互项/容器，圈定当前模态焦点并恢复触发器；背景inert策略须宿主验收。",
+      "verification": "DOM测试只读与表单的初始焦点、Tab/Shift+Tab、Esc、关闭返回；真实辅助技术另验，不作视觉声明。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 5087,
+      "title": "刷新全部列表会连带关闭已打开详情",
+      "behavior": "悬浮球全部列表与详情组合刷新",
+      "trigger": "全部列表内打开详情后，状态刷新触发refreshOpenOrbPanel。",
+      "evidence": "5087先openOrbListPopup；5220无条件closeOrbItemPopup；5089随后才检查已被关闭的orbItemPopElement/ref，无法更新详情。",
+      "risk": "后台刷新令详情突然消失，违背5086同时更新副窗和详情的意图。",
+      "recommendation": "刷新前保留详情ref，再刷新列表和有效详情；仅切栏目或目标失效才关闭。",
+      "verification": "全部->详情->状态事件组合测试，详情保持且反映新值；目标删除时明确关闭或提示。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 5183,
+      "title": "悬浮详情条目不能用键盘激活",
+      "behavior": "事件/人物/记忆/影响/原著等详情入口",
+      "trigger": "Tab浏览悬浮球带ref条目及全部列表。",
+      "evidence": "5183使用div，5192只设role=button，5193仅click，没有tabIndex及Enter/Space处理；5255副窗复用同组件。",
+      "risk": "指针可打开的信息详情对纯键盘用户不可达，角色声明与行为不符。",
+      "recommendation": "优先原生button和合规子结构，或补tabIndex与Enter/Space语义；关闭后恢复触发器焦点。",
+      "verification": "DOM测试Tab顺序、Enter/Space与click各只激活一次；辅助技术留真实验收。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 5655,
+      "title": "总控模型设置按钮跳到不存在页面",
+      "behavior": "总控卡片到设置页面导航",
+      "trigger": "点击总控模型与连接卡的设置按钮。",
+      "evidence": "control-dashboard.js:10 id=llm；5655直接以module.id生成data-settings-page；6104-6106未校验页面便隐藏所有不匹配section。实际13个section无llm，模型页为hub；settings-template.test:22明确禁止llm页。",
+      "risk": "所有功能section隐藏，出现空白页；侧栏可恢复。",
+      "recommendation": "显式映射llm到hub，并使未知页面回退overview。",
+      "verification": "逐一触发8张总控卡，均恰好显示一个存在的section；未知id不得产生空白。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 6094,
+      "title": "界面保留对象预算与节点宽限设置但现行链没有消费者",
+      "behavior": "沙盒预算及节点时间窗口",
+      "evidence": "6094显示sandbox.maxNewObjectsPerTurn和nodeWindowSlackDays；生产代码搜索这两字段只命中该界面（设置默认等宿主文件未全读）；现存sandbox仅mode/world提示，节点/线索引擎工作树已删除。runWorldDecision4038直接apply最多12操作，没有沙盒新增对象预算；world-runtime417-432仍可多次addTask。6093窗口起止自动发生说明也与sandbox-world47-49世界惯性文本不同。",
+      "risk": "用户设置0仍可能新增任务/事件；界面暗示存在节点窗口调度但当前范围没有其实现，不能把方案SB03-05/SB10/SB12当通过。",
+      "recommendation": "先诚实标注未实现或隐藏无效设置/旧窗口说明；只有另行批准完整节点/预算功能时再实现，勿在审查中恢复已删除模块。",
+      "verification": "设新增预算0/1时新增对象不越界且超额明确排队/拒绝；若不提供该功能，界面不得声称可调。节点窗口需独立验收，不用关键词测试代替。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 6245,
+      "title": "恢复跟随默认按钮没有提交持久保存",
+      "behavior": "行动结算结果提示词恢复默认",
+      "trigger": "已有自定义settle.resultPrompt时点击data-settle-follow-default，再重载扩展。",
+      "evidence": "6244-6248仅updateSetting、syncSettingsForm、renderSettleResultCard；5789-5815不调用saveSettings；通用input路径6957才await保存，该按钮不派发input也不直接保存。",
+      "risk": "内存看似已恢复，但本路径未主动交给宿主保存；重载可能恢复旧值，后续其他保存可能偶然掩盖。",
+      "recommendation": "复用统一异步保存路径并展示结果，仍保存空字符串表示跟随默认，不冻结默认全文。",
+      "verification": "mock保存接口，点击后要求保存且值为空；重建storage后仍跟随默认；保存拒绝有反馈。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 7166,
+      "title": "热重载清理与正式停用清理不一致",
+      "behavior": "import.meta.hot dispose",
+      "evidence": "onDisable removes lifecycle handlers and invalidates continuations at7102-7124; HMR dispose instead drops hostLifecycleBindings=[] at7189 without removing registered listeners, does not invalidate epoch or disposeOrbHud.",
+      "risk": "Development hot reload can leave old listeners/singletons and late callbacks; HMR applicability not proven for production deployment.",
+      "recommendation": "Have hot disposal reuse the existing symmetric cleanup contract; no production rewrite or new framework.",
+      "verification": "Fake HMR/load-dispose-load should show listener and singleton counts return to baseline; no stale request commit.",
+      "confidence": "source_path_development_only"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 8707,
+      "title": "旧世界书导入结果可以覆盖新选择的索引",
+      "behavior": "手动世界书导入的异步新鲜度",
+      "trigger": "A导入等待时改选B或再导入B，A最后返回。",
+      "evidence": "8703捕获name；8707 await读取；8712-8715无选书名/请求序号/聊天续接复查便clear/register/load全局供应与索引；6868-6873允许期间改选。",
+      "risk": "界面设置为B，实际索引被后到的A替换，后续检索和显示不一致。",
+      "recommendation": "所有选书导入共享提交序号，提交前核对当前选书与续接身份；过期请求不得清空当前索引。",
+      "verification": "延迟A/B使A后到，最终索引只能为B；切聊或取消后旧请求不得提交。"
+    },
+    {
+      "id": "MU-11",
+      "severity": "P2",
+      "category": "Correctness Backlog",
+      "file": "agent/doupo-agent-ui/memory/memory-recall.js",
+      "line": 65,
+      "title": "大记忆优先截尾目录，长期账本可让新小记忆不可见",
+      "behavior": "触发：大记忆目录占满4000字，本轮唯一相关项为新small",
+      "evidence": "54-67先所有big再small、超额丢尾；index1009默认目录无场景预筛/分页。300big+1相关small复现3989字133行，无small；成功召回不走关键词兜底。",
+      "risk": "永久存储不等于永久可召回，小记忆可持续被目录饿死。",
+      "recommendation": "按场景可解释预筛并给两层配额，或分页检索；不按全局层级盲截。",
+      "verification": "big填满目录时，唯一相关新small与唯一相关旧big均进候选，仍保持预算。"
+    },
+    {
+      "id": "MU-07",
+      "severity": "P2",
+      "category": "Correctness Backlog",
+      "file": "agent/doupo-agent-ui/memory/memory-recall.js",
+      "line": 131,
+      "title": "缺失/坏类型ids误判明确空召回，绕过失败降级",
+      "behavior": "触发：合法JSON缺ids、ids非数组，或非空数组全是未知号",
+      "evidence": "schema:38-44要求ids；131非数组置[]、138返回empty。index:1018-1029只拒invalid；1101-1107把empty/ok当已决定，1109不再兜底。复现ids:42返回empty；test:72固化缺ids当empty。",
+      "risk": "格式失败时关键词能命中的记忆也不注入。",
+      "recommendation": "区分显式合法ids:[]与缺字段/坏类型；全未知号制定失败合同；同步修改固化旧宽容行为测试。",
+      "verification": "显式[]保持不兜底；缺ids/坏类型invalid并降级；全未知及混合编号各有确定结果。"
+    },
+    {
+      "id": "MU-12",
+      "severity": "P2",
+      "category": "Correctness Backlog",
+      "file": "agent/doupo-agent-ui/memory/memory-runtime.js",
+      "line": 262,
+      "title": "退休登记仅200个，超过窗口旧帧可复活最早删除的事实",
+      "behavior": "触发：累计超过200个不同ID退休，数据库重放更老存储帧",
+      "evidence": "91/108/255-262封顶200；index724-733只认当前retired集合。201次新增/删除复现length200且m1已不在集合。",
+      "risk": "长期聊天重新收养已经忘记或已总结的小记忆；宿主老帧可重放范围未实测。",
+      "recommendation": "明确退休版本/高水位或受支持帧保留范围，不只扩大魔数；与MU-02分别设验收。",
+      "verification": "201次以上退休跨reload后重放最早帧不得复活；有界窗口必须证明宿主重放上界。"
+    },
+    {
+      "id": "MU-08",
+      "severity": "P2",
+      "category": "Correctness Backlog",
+      "file": "agent/doupo-agent-ui/memory/memory-runtime.js",
+      "line": 271,
+      "title": "同楼撤销未撤销opId去重记录，相同操作重试后账变空",
+      "behavior": "触发：公开runtime调用者为同楼模型操作使用稳定opId并重试/重roll",
+      "evidence": "271-275先撤销上一版，283-285旧opId仍在而跳过新操作。复现floor1/opId one连续apply：第二次noop duplicate one、entries=[]。",
+      "risk": "原记忆被撤销、新版未记；默认prompt不公开opId，主要影响集成调用，故P2。",
+      "recommendation": "按楼保存已提交opId，撤销同步移除去重记录；或先区分幂等重试与真正替换。",
+      "verification": "稳定opId同楼重放保一条；不同opId替换恰好一版；跨楼幂等不退化。"
+    },
+    {
+      "id": "MU-05",
+      "severity": "P2",
+      "category": "Correctness Backlog",
+      "file": "agent/doupo-agent-ui/memory/memory-runtime.js",
+      "line": 353,
+      "title": "总结只保留八把召回钥匙且忽略模型aliases",
+      "behavior": "触发：源批次超过8个独立钥匙，或模型提供有价值的新别名",
+      "evidence": "337-353 union后related4/aliases4且不用big.aliases；371-373原项删除退休。consolidate parser:98确实解析aliases。内存九钥匙只余1-8，钥匙9 hits=[]，新别名也丢失。",
+      "risk": "原记录退休后部分事实失去召回入口，内容可读不等于召回保真。",
+      "recommendation": "制定不丢入口的分组/拆批或可扩展别名策略，处理big.aliases；超容不应悄悄退休整批。",
+      "verification": "9个以上独立钥匙及模型别名都能定位记忆，或明确拆批保留原项。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/narrative/facts-library.js",
+      "line": 75,
+      "title": "来源修订并确认事实后，检索仍使用旧的作品线与原作等级",
+      "behavior": "来源元数据传播与限定查询",
+      "evidence": "normalizeFact 32-33 把 sourceLabel/continuity/realm 复制进 fact；updateSource 75 和 reviewFact 86 只改 reviewStatus/sourceRevision，不重建这些派生字段。将 source canon/canon/edition1 改 other/fanon/edition2 并 confirmed 后，query realm=canon continuity=canon 仍命中，results旧元数据与sources新元数据同响应矛盾。",
+      "trigger": "修订已登记来源的 realm、continuity、title 或 edition，并重新确认既有事实。",
+      "risk": "改编/同人来源继续冒充原著，范围查询错误，来源版本证据相互矛盾。",
+      "recommendation": "明确来源作为唯一元数据拥有者，在查询或复核提交时从当前来源派生这些字段；保留历史来源快照用于审计但不能混成当前标签。",
+      "verification": "canon→fanon、continuity变更、edition改名后复核，旧范围不命中、新范围命中，result/source元数据一致。",
+      "certainty": "高；直接 API 内存复现。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/narrative/facts-library.js",
+      "line": 158,
+      "title": "角色已知事实在全局 limit 之后过滤，可误报角色不知情",
+      "behavior": "queryForActor 的排序与数量预算",
+      "evidence": "queryForActor 158 先 query(scope)，query 145 已 slice(0,limit)，160 才 filter knownFactIds。两条同分事实 f1/f2，角色仅知 f2、limit=1，返回 not_known_to_actor/results=[]，而 f2 真实存在且应符合查询。sources/status也来自过滤前结果。",
+      "trigger": "更高排序的未知事实占满 limit，角色实际已知的匹配事实排在 limit 后。",
+      "risk": "无法取到角色已知资料，把结果截断误解释成角色不知情；状态/来源说明不准确。",
+      "recommendation": "在同一查询过程里先施加角色 knowledge 范围再排序/limit，并由允许结果计算 conflicts、sources 和 partial。",
+      "verification": "已知 f2 排在未知 f1 后仍能在 limit1 返回；超过limit的已知结果为partial；未知事实不泄露。",
+      "certainty": "高；直接 API 内存复现。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/narrative/facts-select.js",
+      "line": 139,
+      "title": "第一次选条校验整库而非本次已展示目录白名单",
+      "behavior": "目录截断后的 UID 授权",
+      "evidence": "SELECT_RULES 21 说只能从目录挑，parseSelection 139-141 只检查 index.get 和卷包含。maxRows=1 时目录只展示uid1，mock回答need:[2]（uid2也属卷1）仍 picked=[2]。二次 lookup 177-191 已有 allowedUids 白名单，第一次没有。",
+      "trigger": "目录受 maxRows 截断或 catalogFor 不展示某条，模型却返回整库内的该 UID。",
+      "risk": "脚本接受未展示候选，绕开目录范围/预算和只认目录的契约；不能靠提示词阻止模型猜编号。",
+      "recommendation": "select 持有 built.lines 对应 UID 集合并交给 parseSelection，先校验本次目录白名单，再校验索引/卷；lookup维持其独立白名单。",
+      "verification": "同卷但未展示uid被标 not_in_catalog；展示uid正常；二次lookup可显式加入其候选；截断统计不改变授权范围。",
+      "certainty": "高；真实 selector + mock complete 内存复现。"
+    },
+    {
+      "id": "NPC-07",
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/npc/npc-autonomy.js",
+      "line": 95,
+      "title": "adjustPlan可以复活已取消或已完成计划",
+      "behavior": "autonomy终态约束",
+      "trigger": "transition为cancelled/completed后以当前baseVersion调用adjustPlan(status:active)。",
+      "evidence": "transitionPlan114拒绝终态；adjustPlan93-105只校验版本/原因/证据，不检查终态或状态集合。内存cancelled版本2，经adjustPlan(status:active,证据factIds:[f])成为active。",
+      "risk": "绕过终态契约和候选失效边界；也可写任意status。仅公开API。",
+      "recommendation": "adjustPlan复用终态/合法状态约束；重开需新planId或显式重开契约，不暗中复活。",
+      "verification": "completed/cancelled后adjust与transition均拒绝，非法status拒绝，活动计划正常修改与通知不变。",
+      "unverified": "No default planner execution or persistent plan path established."
+    },
+    {
+      "id": "NPC-04",
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/npc/npc-cold-runtime.js",
+      "line": 82,
+      "title": "冷藏序号不持久化，恢复后新草稿覆盖旧草稿",
+      "behavior": "预览ID跨恢复唯一性",
+      "trigger": "有pending cold-1/cold-2的快照，新建runtime恢复再生成。",
+      "evidence": "82 sequence=0；127产生cold-${++sequence}；183 restore不恢复序号；144按id删旧项。内存restore后新B草稿用cold-1，旧A/cold-1消失。",
+      "risk": "刷新或恢复聊天后待确认草稿被无提示覆盖。",
+      "recommendation": "从恢复ID推导递增值或采用作用域唯一ID，旧草稿不得因无关人物新草稿碰撞删除。",
+      "verification": "两个pending保存→新runtime恢复→新候选，旧ID保留且新ID唯一；切聊天恢复同样验证。",
+      "unverified": "No real host restore; deterministic pure-library memory repro."
+    },
+    {
+      "id": "NPC-05",
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/npc/npc-cold-runtime.js",
+      "line": 161,
+      "title": "确认一份冷藏草稿把同人物其他草稿一并标为已确认",
+      "behavior": "单草稿确认范围",
+      "trigger": "同人物两个不同时段或patch的pending，仅确认一份。",
+      "evidence": "index2394-2402只按id应用一份patch，mark(name)却在runtime161将同名全部pending改confirmed。内存B/day2和B/day3，mark day2后两份都confirmed，游标仅2。",
+      "risk": "未应用草稿从待确认列表消失，确认历史与实际账本不符。",
+      "recommendation": "按previewId确认单份；其他草稿显式标superseded/stale而非confirmed，并校验基准游标/档案版本。",
+      "verification": "同人物双草稿按正序/倒序确认、放弃其一；只有实际应用ID可为confirmed。",
+      "unverified": "No browser confirmation; library state and index call path inspected."
+    },
+    {
+      "id": "NPC-08",
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/npc/npc-conflict.js",
+      "line": 38,
+      "title": "协调器丢动作和过程字段，outcome直接串联失败",
+      "behavior": "conflict到outcome数据契约",
+      "trigger": "含method/process的decision经coordinate后直接传outcome。",
+      "evidence": "38仅保留npcId/intent/targetId/rank/represents，丢method/actionId/attemptId/authorizedActions/process；outcome37需要method，52需要process。真实coordinator+bridge内存直连返回missing_action_method；测试第10行用actionDefaults、第15行手工补process掩盖断链。",
+      "risk": "动作方法丢失，世界过程原ID无法匹配；默认method可能把不同NPC动作折成同一种。当前非默认生成链。",
+      "recommendation": "定义最小共同决定形状，保留已审查action/process及来源版本，避免下游猜回字段。",
+      "verification": "guard/autonomy→conflict→outcome直连，多NPC不同method/process，不用actionDefaults或手补字段；只产生原授权动作。",
+      "unverified": "Resolver/simulator in repro were memory stubs; no real commit tested."
+    },
+    {
+      "id": "NPC-06",
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/npc/npc-decision-guard.js",
+      "line": 31,
+      "title": "NPC决定重放键缺状态版本，v2可能返回v1决定",
+      "behavior": "decision-guard跨stateVersion重放",
+      "trigger": "相同session/branch/task/npc在v1审查后以v2再审。",
+      "evidence": "key31不含stateVersion，33直接重放；23只检查本次permission/envelope版本。内存v2提出refuse却收到stateVersion:v1、intent:wait、replayed:true。",
+      "risk": "调用者误以为新版本已审查，实际取得旧决定；目前仅公开API，非默认人物记录链。",
+      "recommendation": "把stateVersion纳入重放键，或重放前比较旧版本并返回stale_state；保持同版本幂等。",
+      "verification": "同task v1→v2、授权/知情版本变化、分支切换；不得重放跨版本决定。",
+      "unverified": "Default runtime caller not found; no actual commit effect claimed."
+    },
+    {
+      "id": "NPC-10",
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/npc/npc-ledger.js",
+      "line": 282,
+      "title": "未知日期null规范化后变为第0天",
+      "behavior": "经历及流水空日期往返",
+      "trigger": "精简回答按提示返回day:null，或带null日期记录导出再载入。",
+      "evidence": "282 Number.isFinite(Number(item.day))将null转0；normalizeRecord354/363和coldTouch345同模式。内存apply经历{day:null,text:unknown day}后day=0；recorder251明确无日期写null。",
+      "risk": "未知时间伪装成第0天，影响排序和精简材料。",
+      "recommendation": "数字转换前排除null/undefined/空串，并按世界日契约验证合法天数；复用一个小日期规范化器。",
+      "verification": "null/缺失/空串/0/负数/合法天数的apply、精简、export→load、coldTouch矩阵；未知保持null。",
+      "unverified": "No actual timeline UI or model condensation checked."
+    },
+    {
+      "id": "NPC-11",
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/npc/npc-ledger.js",
+      "line": 760,
+      "title": "注入超预算的降级实际整个人物消失",
+      "behavior": "人物提示注入预算退化",
+      "trigger": "两名以上在场重要人物，全档总长度超budget。",
+      "evidence": "760-763 full.pop仅把名字放degraded，不放brief，与759降级成一行注释相反。内存A/B均重要在场、各200字符身份、budget300：degraded:[B],used:[A]，文本无B。测试只检查degraded非空。",
+      "risk": "重要在场人物从提示完全丢失；Map顺序也不等于最不重要/最久未出现顺序。",
+      "recommendation": "降级后放简档队列；不足以容纳时显式记录omitted而非degraded；used/counts与文本一致。",
+      "verification": "双重要人物应先都留简档；混合四象限、极小预算、maxFull/maxBrief边界；used反映实际可见人物。",
+      "unverified": "No real assembled prompt or model behavior measured."
+    },
+    {
+      "id": "NPC-09",
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/npc/npc-outcome-bridge.js",
+      "line": 52,
+      "title": "未显式提出process的决定仍可凭合成ID进入世界候选",
+      "behavior": "world候选显式过程边界",
+      "trigger": "决定无process，但processes有decisionKey:npcId形式的ID。",
+      "evidence": "52-61无条件生成默认id；注释58说只有明确附带process才可进入；62仅比较id。内存无decision.process且processes:[{id:d:A}]仍调用worldSimulator.advance并返回candidate。",
+      "risk": "ID巧合批准未显式提出过程，来源不一致；未证明默认运行或正式提交。",
+      "recommendation": "先筛显式有效process，绑定session/branch/stateVersion与主体；无process返回missing_world_process。",
+      "verification": "无process+同名合成ID必须拒绝；显式正确scope可候选；错scope/重复ID拒绝。",
+      "unverified": "Only bridge selection logic reproduced with simulator stub."
+    },
+    {
+      "id": "CR-09",
+      "severity": "P2",
+      "category": "Verification Gates",
+      "file": "agent/doupo-agent-ui/request/request-router.js",
+      "line": 114,
+      "title": "prepare之后丢失NPC候选失效追踪",
+      "behavior": "公开router两段提交与NPC计划版本",
+      "trigger": "候选通过NPC gate并prepare后、confirm/commit前NPC计划变化。",
+      "evidence": "prepare成功即删除pending；失效函数只遍历此Map，L127-134 commit不重查NPC gate。repro prepare后计划变更no_matching_candidate，gate仅调用一次，仍committed。L40还未覆盖canonicalCandidate所认的value.candidate.npcCandidates形状。",
+      "risk": "已失效NPC计划候选仍可提交；嵌套候选在prepare前也可能漏失效通知。",
+      "recommendation": "prepared阶段保留内部候选与版本，commit前重查现有NPC gate，复用canonicalCandidate形状提取；消息已观察时转待核对。",
+      "verification": "覆盖prepare前后计划调整/完成/取消及嵌套candidate；无消息可取消，有消息须save_uncertain，不提交旧计划。",
+      "reachability": "公开router自定义commit-shaped模块API；默认酒馆主链与内置无nextState结果不走该提交面。",
+      "certainty": "高；内存复现。"
+    },
+    {
+      "id": "CR-08",
+      "severity": "P2",
+      "category": "Verification Gates",
+      "file": "agent/doupo-agent-ui/request/request-router.js",
+      "line": 156,
+      "title": "候选快照与返回对象共享引用使防篡改比较失效",
+      "behavior": "公开router候选完整性",
+      "trigger": "已登记模块返回commit-shaped candidate，调用方修改run.execution或revalidateCandidate.execution。",
+      "evidence": "pendingCandidates保存execution原引用且L157直接返回；L93也返回引用；L102-107比较两边同一对象。repro nextState.hp从9改999后prepare成功、commit成功且state.hp=999。",
+      "risk": "候选可在总控审核后改写，candidate_tampered比较无法保护该API路径。",
+      "recommendation": "内部保存独立structuredClone快照，所有返回也克隆；commit使用内部快照。",
+      "verification": "分别修改run.execution和revalidated.execution，prepare必须拒绝或提交最初候选；原始候选测试继续通过。",
+      "reachability": "导出的runRequest/prepareCommit/revalidateCandidate；生产内置action/world通常返回changes/proposals而非nextState，不冒称默认可利用或安全漏洞。",
+      "certainty": "自定义commit-shaped模块API高确定；默认生产模块提交可达性有限。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/sandbox/sandbox-mode.js",
+      "line": 55,
+      "title": "模式确认只记录任务版本而不复验也不使飞行候选失效",
+      "behavior": "模式切换授权与跨模式候选提交",
+      "evidence": "sync50存taskId/stateVersion；confirm55-67只按scope读取pending并写mode，未接收或比对当前版本。index5703-5709确认后仅更新显示，未invalidateAgentContinuations；127-137 continuation不含模式，4032/4450可让旧模式请求继续提交。内存旧task/v1 pending无任何当前版本参数即可confirm switched。",
+      "risk": "跨回合迟到确认及旧口径决定能在模式切换后生效；纸面绑定并不是提交门控。",
+      "recommendation": "确认时比对当前任务/分支/状态版本，模式切换产生代次并废弃此前未提交决定/选条；复用现有门控，不新建另一套总控。",
+      "verification": "v1申请后推进v2再确认应拒绝或重确认；旧模式假请求挂起，切换后释放不得落账；新模式请求正常提交。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/world/world-decide.js",
+      "line": 67,
+      "title": "schema同名level覆盖势力实力档次为世界氛围枚举",
+      "behavior": "结构化世界决定的势力档案",
+      "evidence": "64定义level自由string，67再次定义同名level枚举calm/rising/storm；对象实际只保留后者。内存打印DECIDE_JSON_SCHEMA...level为该枚举；index4029把schema传出。world-decide.test18只验证键存在。",
+      "risk": "启用严格结构化输出的连接无法按提示生成加玛帝国一流等势力档次，或模型被迫输出错误档次；未调用真实提供商，不断言所有连接必现。",
+      "recommendation": "按op分别收紧setFaction.level和setTension.level，保留各自语义；消除对象重复键。",
+      "verification": "在离线JSON schema校验器中，setFaction level=加玛帝国一流有效，setTension level=rising有效且bad无效；真实接口仅后续授权验证。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/world/world-runtime.js",
+      "line": 455,
+      "title": "updateTask拒绝非法期限前已经修改详情",
+      "behavior": "单条操作拒绝必须无副作用",
+      "evidence": "455先写task.detail，456-458才校验days。内存旧detail=旧，updateTask detail=不应写入,days=0返回rejected/bad_days，但snapshot.detail已变。525-528人物相同态度/新basis亦有先写后判无变化的结构。",
+      "risk": "面板显示未生效却改了正式状态，缺少成功流水/撤销与一致保存语义。",
+      "recommendation": "在临时候选对象完成所有校验和变化检测后一次写入；同类setPerson路径一起列为后续验证，不无边界重写。",
+      "verification": "非法days混合有效detail后完整snapshot不变（允许明确日志例外）；重复态度但basis变化必须明确成功或完全无副作用。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/world/world-runtime.js",
+      "line": 463,
+      "title": "同楼重生成撤销任务更新时遗漏原期限",
+      "behavior": "任务期限重roll恢复",
+      "evidence": "453-454保存beforeDetail/beforeEndDay，但463 undo仅detail。内存任务第2天到期，同楼更新days10后同楼apply([])，detail恢复旧值而endDay仍10。",
+      "risk": "新正文没有延期，任务却继续获得旧版本额外期限。",
+      "recommendation": "撤销保存并恢复完整可变任务字段，支持原endDay=null，避免用相对days反推绝对截止日。",
+      "verification": "同楼更新detail+days后重roll空操作，detail/endDay精确等于更新前；跨天及null期限同测。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/world/world-runtime.js",
+      "line": 620,
+      "title": "同楼先撤销再按旧opId去重使重放结果消失",
+      "behavior": "幂等与重生成组合",
+      "evidence": "620-621撤销lastFloor，但opIdMemory不删除旧批次ID，632-634跳过新版同opId；impact-runtime538-539/550-552有同结构。内存同floor=3两次相同addEvent/opId=x，第二次noop duplicate[x]且事件列表为空。",
+      "risk": "重试/同楼重放从一次生效退化为没有记录，幂等合同破坏。",
+      "recommendation": "先识别相同批次纯重试，或为撤销批次同步撤回相应去重记忆；两个runtime用同一行为测试矩阵，不贸然抽大公共基类。",
+      "verification": "world和impact分别测同floor同opId重复、同floor不同内容、跨floor同opId，预期保留一次或明确替换，不能变成零次。"
+    },
+    {
+      "severity": "P2",
+      "category": "Verification Gates",
+      "file": "agent/斗破Agent数据库桥接表.json",
+      "line": 327,
+      "title": "数据库初始化导入件落后于源码，仍启用旧记忆导出和废弃列",
+      "behavior": "初始化 JSON 与表定义结构契约",
+      "evidence": "R9 全对象比较 buildBridgeSheets() 与 JSON 不同；JSON:317/376 保留已了结/了结日列，327/386 exportConfig.enabled=true；源 memoryExportConfig:69 为 false，当前 memory 表定义不含旧列。实际均12表，并非构建脚本注释所说10表。",
+      "risk": "手动导入件在 extension ensure 修复之前具有旧表形态及额外召回开关，不能当作当前源码的可重现初始化交付。运行时能否重复注入还需宿主验证，未作实锤。",
+      "recommendation": "后续获授权后从唯一表源重新生成并审查 diff；添加只比较内存生成对象与提交 JSON 的只读一致性测试，本次不生成。",
+      "verification": "buildBridgeSheets 与初始化 JSON 深相等；表数/每列 DDL/导出默认开关一致；旧聊天迁移保行另测。",
+      "determinism": "确定性结构差异；未导入、未执行。",
+      "trigger": "使用仓库中该 JSON 而非当前源生成物初始化。"
+    },
+    {
+      "severity": "P3",
+      "category": "Slimming Opportunities",
+      "file": "C:/Users/86158/Desktop/异界转生录/doupo/INSTALL.md",
+      "line": 19,
+      "title": "Installation guide names nested paths as current manifest targets",
+      "behavior": "Root extension package installation contract",
+      "evidence": "INSTALL.md 17-22 says current manifest references nested index.js and host/style.css. Actual manifest.json 8 and 19 reference root index.js and style.css; root index is a forwarding module and package test verifies root/nested style equality.",
+      "risk": "Troubleshooting and release packaging can target the wrong files, though existing forwarding keeps installation layout functional.",
+      "recommendation": "Describe the actual root entry/style and separately document their modular implementation/backup relationship; preserve root templates and public loading paths.",
+      "verification": "Compare guide targets against parsed manifest and run extension-package.test.mjs plus settings-template test after any separately authorized documentation correction."
+    },
+    {
+      "id": "MU-13",
+      "severity": "P3",
+      "category": "Slimming Opportunities",
+      "file": "agent/doupo-agent-ui/README.md",
+      "line": 162,
+      "title": "旧文档仍宣称可启用合并模式，与退役兼容合同相反",
+      "behavior": "触发：维护者按self.decideMerged/省调用说明配置或改三处字典",
+      "evidence": "README162-173描述可启用/delegated；同文件190已写退役。index4368恒false，4376-4379只retired；host-storage336-337清旧开关。",
+      "risk": "误判旧模块仍在生产调用，尝试开启已删除开关。",
+      "recommendation": "收敛文档为已退役及兼容返回值，不为满足旧文档恢复合并调用。",
+      "verification": "文档不再称旧开关可启用；公开unifiedDecide仍retired且不调用模型。"
+    },
+    {
+      "severity": "P3",
+      "category": "Slimming Opportunities",
+      "file": "agent/doupo-agent-ui/narrative/facts-index.js",
+      "line": 348,
+      "title": "前情上限已经丢行时目录仍报告未截断",
+      "behavior": "catalogFor 的预算可观测性",
+      "evidence": "348先prev.slice(0,maxPrev)，355仅比较rows与lines，遗漏prev裁剪。两条前情、maxPrev=1/maxRows=100时 lines1、total2、truncated=false。当前实测前情是否超过默认60未通过资料审计确认；缺陷可由公开选项稳定触发。",
+      "trigger": "前情行数超过maxPrev，且最终rows没有再超过maxRows。",
+      "risk": "调用方看不到第一次裁剪，目录预算诊断不可信；不是已证明当前资料默认必触发。",
+      "recommendation": "truncated同时计入prev.length>maxPrev，必要时分开报告省略来源；无需重写目录策略。",
+      "verification": "maxPrev截断、maxRows截断、两者均不截断分别断言truncated；firstCount/prevCount/total说明一致。",
+      "certainty": "高；直接内存复现，默认生产触发率未验证。"
+    },
+    {
+      "id": "NPC-12",
+      "severity": "P3",
+      "category": "Slimming Opportunities",
+      "file": "agent/doupo-agent-ui/npc/npc-ledger.js",
+      "line": 623,
+      "title": "等条数替换经历不更新版本和修改时间",
+      "behavior": "replaceExp变更元数据",
+      "trigger": "一条经历改为另一条，条数不变。",
+      "evidence": "622已替换record.exp，623只在before!==clean.length时更新version/updatedAt/changes；内存1→1不同内容version仍2。",
+      "risk": "元数据不反映实际修改，妨碍版本守卫/刷新/排查；UI确认仍persist，未证明该路径丢持久化。",
+      "recommendation": "用内容差异决定版本变化；完全相同内容保持不变。",
+      "verification": "等条数不同内容/相同内容/减少/空替换检查version、time、changes及UI保存。",
+      "unverified": "No downstream cache consumer failure reproduced."
+    }
+  ],
+  "refactor_signals": [
+    {
+      "module": "core/orchestrator.js",
+      "threshold": "多个失败、清理和保存分支共享回合生命周期边界",
+      "evidence": "CR-01/02/03/04；先修单一保存分支，再按失败矩阵收束边界，不授权重写。"
+    },
+    {
+      "module": "core/turn-stages.js",
+      "threshold": "默认注入与legacy阶段共用进度接口，但来源/取消/副作用语义不一致",
+      "evidence": "CR-05/07；应明确进度来源与signal，不按533行长度拆分。"
+    },
+    {
+      "module": "request/request-router.js",
+      "threshold": "候选所有权与prepared生命周期不一致",
+      "evidence": "CR-08/09；先把内部快照和prepared失效责任写成测试合同。"
+    },
+    {
+      "module": "index lifecycle",
+      "threshold": "Multiple ordering/stop/queue defects share the same default-runtime boundary",
+      "evidence": "The legacy coordinator/version pipeline is not the owner of the default after-generation fan-out; shared boundaries need staged local ownership, not a whole-system rewrite."
+    },
+    {
+      "module": "agent/doupo-agent-ui/index.js facts/worldbook 边界",
+      "threshold": "两个独立异步拥有者缺少提交前scope/source验证",
+      "evidence": "事实注入和世界书索引均能晚回覆盖；settle session已有可借鉴guard。先局部修一个路径，不建议入口整文件重写。"
+    },
+    {
+      "module": "agent/doupo-agent-ui/narrative/facts-library.js",
+      "threshold": "当前元数据/事实复核/已知范围在查询链顺序上可分离验证",
+      "evidence": "三项已复现缺陷集中在可检索集合的构造；先修rejected过滤，再单独gate来源元数据与actor预算。"
+    },
+    {
+      "module": "agent/doupo-agent-ui/settle/settle-adjudicate.js",
+      "threshold": "行动身份契约缺少区间，叠加字符串补丁无法保证一次动作一次结算",
+      "evidence": "重叠片段漏拦与重复出现误拒同根；应补证据位置契约，而非增加更多关键词。"
+    },
+    {
+      "module": "host/llm-client.js",
+      "threshold": "Multiple lifecycle/parameter findings share mutable cross-call ownership",
+      "evidence": "Temporary host settings, quiet busy lifetime and cancellation are not owned by one settled underlying operation. Recommend Local Fix decisions per behavior, not a rewrite or broad new abstraction."
+    },
+    {
+      "module": "host/message-adapter.js",
+      "threshold": "Core acknowledgement contract fails pure-memory boundary test",
+      "evidence": "Delivery observation is asserted rather than measured on fallback branches; prioritize before cosmetic slimming."
+    },
+    {
+      "module": "agent/doupo-agent-ui/memory/memory-runtime.js",
+      "threshold": "多个一致性缺陷共用ID/账本版本所有权",
+      "evidence": "MU-02/03/08/12；先局部修复，再分阶段整理版本与退休合同，不重写。"
+    },
+    {
+      "module": "agent/doupo-agent-ui/index.js",
+      "threshold": "三个异步流程与镜像回拉各维护有效性",
+      "evidence": "cache key、continuation、smalls快照、整账回拉互不统一；MU-01/03/06。先离线测试门，不先大拆index。"
+    },
+    {
+      "module": "NPC async draft lifecycle",
+      "threshold": "One P1 lifecycle gap plus two independent cold-preview P2 defects",
+      "evidence": "精简全局槽与冷藏runtime分持草稿，scope/version校验不一致；NPC-01/04/05。"
+    },
+    {
+      "module": "NPC decision contract",
+      "threshold": "Cross-module I/O mismatch and duplicated plan ownership",
+      "evidence": "guard plans与autonomy plans各自Map；coordinator丢字段；outcome测试需手工修补输入。先补直接串联测试，无重写证据。"
+    },
+    {
+      "module": "self/self-runtime.js + host/mvu-arbiter.js",
+      "threshold": "多个P1共同指向撤销基线/变更提交边界，但不构成重写授权",
+      "evidence": "仲裁按当前结果算差分，runtime再撤旧版本；撤销不可逆及不持久。应先确认每楼原子提交契约，再选一个局部修复。"
+    },
+    {
+      "module": "host/db-bridge.js + index.js",
+      "threshold": "并发与跨聊天数据正确性门禁未通过",
+      "evidence": "镜像/收养任务未绑定聊天身份或版本；LLM已有 continuation，但 DB/MVU支线没有同等护栏。"
+    },
+    {
+      "module": "world/world-runtime.js",
+      "threshold": "同一状态所有权下拒绝副作用、任务撤销缺字段和幂等/撤销顺序三项有证据P2",
+      "evidence": "建议Refactor Backlog，仅在单条原子校验与可逆操作边界分阶段整理；现在不重写runtime"
+    },
+    {
+      "module": "impact/impact-runtime.js",
+      "threshold": "ID分配、归档恢复与成熟水位共享生命周期但缺统一不变量",
+      "evidence": "先分别Local Fix：ID唯一与到期扫描；有回归后再决定是否统一生命周期，不从缺陷数直接推导重写"
+    },
+    {
+      "module": "sandbox/sandbox-mode.js + index mode接线",
+      "threshold": "正式模式的存储、确认版本和异步候选代次不在同一提交合同",
+      "evidence": "Refactor Backlog：通过既有hostStorage/continuation建立单一模式真相，不另加平行总控"
+    },
+    {
+      "module": "agent/doupo-agent-ui/index.js",
+      "threshold": "Multiple independent UI save/async-commit boundary gaps",
+      "evidence": "3752-3755,6244-6248,6678-6683,8707-8715 show missing completion or freshness checks; staged local fixes, not an entry rewrite."
+    }
+  ],
+  "slimming_themes": [
+    {
+      "pattern": "Compatibility Path",
+      "occurrences": 2,
+      "suggested_handling": "默认resolveInjection与legacy六阶段/API并存；legacy仍有面板开关和公开调用，不能删。"
+    },
+    {
+      "pattern": "Duplicate Logic",
+      "occurrences": 2,
+      "suggested_handling": "pipeline与runner均含预算/取消/进度，但输入和状态合同不同；先补CR-05再判断小型公用逻辑，禁止整体合并。"
+    },
+    {
+      "pattern": "Over-layering",
+      "occurrences": 1,
+      "suggested_handling": "turn-stages gather L293 includeUnverified两分支均{}，可列P3瘦身候选；先确认配置承诺与facts.query默认行为，未过删除安全检查，不出删除建议。"
+    },
+    {
+      "pattern": "Compatibility Path",
+      "occurrences": 2,
+      "suggested_handling": "Separate default prompt/background path from legacy runTurn and retired unified API before recommending any deletion; public/global consumers may still exist."
+    },
+    {
+      "pattern": "Dead Code",
+      "occurrences": 5,
+      "suggested_handling": "facts-index CATALOG_SUMMARY_CHARS、catalogFor maxSummaryChars；setting-supply DEFAULT_BUDGET/SUMMARY_FALLBACK/EXCERPT_CHARS为未使用常量/选项信号。常量可单独低风险gate；公开maxSummaryChars参数不要假定可删，先搜索外部调用/契约。当前不改。"
+    },
+    {
+      "pattern": "Duplicate Logic",
+      "occurrences": 2,
+      "suggested_handling": "facts-index和生成器parseComment相似，但生成器独立运行是合理边界；未完成外部消费者删除安全核查，不合并或删除。"
+    },
+    {
+      "pattern": "Duplicate Logic",
+      "occurrences": 2,
+      "suggested_handling": "facts-index与setting-supply的摘要标签表重复，且目录摘要与注入正文有不同目的。可用共同fixtures防漂移，不能直接把两个摘要函数替换成同一实现。"
+    },
+    {
+      "pattern": "Compatibility Path",
+      "occurrences": 3,
+      "suggested_handling": "v1单行动、显式history API、setting keyword fallback均有测试或公开导出，Do Not Touch Yet；不因当前默认主链不使用而删。"
+    },
+    {
+      "pattern": "Generated Noise",
+      "occurrences": 1,
+      "suggested_handling": "volume-index.generated.js仅审格式/来源/消费者，不手改、不人工复审资料、不复制到维护代码。"
+    },
+    {
+      "pattern": "Duplicate Logic",
+      "occurrences": 2,
+      "suggested_handling": "Header normalization/merge duplicated between listModels and request extras, with case-insensitive merge bug in both. Gate a small shared case-insensitive merge only after focused fixtures; do not broaden provider abstraction."
+    },
+    {
+      "pattern": "Compatibility Path",
+      "occurrences": 3,
+      "suggested_handling": "Root forwarding entry, mirrored styles/templates, legacy connection fallbacks have active manifest/docs/test contracts. Do not delete based on duplication alone; no deletion safety proof in this slice."
+    },
+    {
+      "pattern": "Compatibility Path",
+      "occurrences": 1,
+      "suggested_handling": "保留公开unifiedDecide退休壳4604；旧模块/测试/文档可进入删除安全门，未证明仓库外直接import不存在。"
+    },
+    {
+      "pattern": "Dead Code",
+      "occurrences": 1,
+      "suggested_handling": "index4364 unifiedDecideRunning仅声明；4368恒false使6441/6508一侧不可达。仅候选，动态/公开合同与安装包引用未完成全仓删除审查。"
+    },
+    {
+      "pattern": "Duplicate Logic",
+      "occurrences": 3,
+      "suggested_handling": "退役unified仍复制self/memory字典与schema；先定外部兼容合同再归档，不新增抽象层补旧架构。"
+    },
+    {
+      "pattern": "State Duplication",
+      "occurrences": 2,
+      "suggested_handling": "guard提案计划与autonomy活动计划暂不合并/删除；先定义提升契约和外部消费者。"
+    },
+    {
+      "pattern": "Patch Stacking",
+      "occurrences": 2,
+      "suggested_handling": "先修草稿scope/version/单份确认，不新增第三套编排框架。"
+    },
+    {
+      "pattern": "State Duplication",
+      "occurrences": 3,
+      "suggested_handling": "chatMetadata 母账、DB有损投影、MVU有损投影；不是删掉镜像，而是明确哪些字段允许回拉及其事务边界；Needs Gate。"
+    },
+    {
+      "pattern": "Compatibility Path",
+      "occurrences": 3,
+      "suggested_handling": "旧 equipped 迁移、旧目标表、旧 InitVar归档均 Do Not Touch Yet；未完成动态/外部引用安全审查，不建议删除。"
+    },
+    {
+      "pattern": "Compatibility Path",
+      "occurrences": 2,
+      "suggested_handling": "world正文world代码块与独立decide两通道各有运行配置和测试，不能删其一；先确认用户配置迁移与真实宿主行为。"
+    },
+    {
+      "pattern": "Duplicate Logic",
+      "occurrences": 2,
+      "suggested_handling": "world/impact均有lastFloor undo+opIdMemory并呈现同一缺陷；先共享测试矩阵，未证明值得建立抽象基类。"
+    },
+    {
+      "pattern": "Compatibility Path",
+      "occurrences": 1,
+      "suggested_handling": "沙盒节点宽限/旧窗口文案无生产消费者，适合经授权移除或标注未实现；删除安全尚需设置迁移/README/发布引用检查，当前不判Dead Code。"
+    },
+    {
+      "pattern": "Duplicate Logic",
+      "occurrences": 2,
+      "suggested_handling": "P3 candidate: identical host/style.css:176-177 focus-visible rules. Only deduplicate after authorization, keeping mirrored CSS identical."
+    },
+    {
+      "pattern": "Duplicate Logic",
+      "occurrences": 2,
+      "suggested_handling": "host and root CSS are byte-identical. Treat deployment mirror as contractual until packaging ownership is confirmed; do not delete one."
+    },
+    {
+      "pattern": "Compatibility Path",
+      "occurrences": 1,
+      "suggested_handling": "ui-state exported but not connected to current UI; possible external consumer. Do not claim dead code or delete it."
+    }
+  ],
+  "verification_gates": [
+    {
+      "check": "已执行：Node v24.12.0，node --input-type=module逐个import core/*.test.mjs 与 request/*.test.mjs，fetch强制抛错。",
+      "scope": "20/20测试文件通过，0失败；不是断言数、覆盖率或真实宿主验收。首次--experimental-default-type=module参数被拒绝，去掉后成功重跑。"
+    },
+    {
+      "check": "已执行十项纯内存repro，不写存档、不接网络/模型。",
+      "scope": "保存误报、并发交付、恢复基线、占位早退、timeout signal、日志容量、手动卷号、可变候选、prepared NPC失效、审计白名单。"
+    },
+    {
+      "check": "后续补各finding.verification所列失败矩阵。",
+      "scope": "本轮未写新测试文件；仅执行现有测试与内存复现。"
+    },
+    {
+      "check": "node agent/doupo-agent-ui/run-tests.mjs",
+      "scope": "Existing baseline only; currently77/77 does not cover new failure reproductions."
+    },
+    {
+      "check": "Add isolated complete-host-event tests for disabled/overlap/dependencies",
+      "scope": "Default lifecycle; no live generation required during audit."
+    },
+    {
+      "check": "已执行：按文件名动态import narrative/*.test.mjs 与 settle/*.test.mjs，全部11文件通过",
+      "scope": "8 narrative测试文件+3 settle测试文件；settle adjudicate44cases；node:test6 tests通过；integration网络替身拒绝网络且断言0调用。未执行全仓测试。"
+    },
+    {
+      "check": "已执行：真实源函数vm + 直接ESM API内存对抗复现",
+      "scope": "facts跨scope、worldbook A/B race、settle未来段、重叠/重复行动、rejected/source metadata/actor limit、未展示UID、history旧scope、前情truncated。无真实存档/模型调用。"
+    },
+    {
+      "check": "已执行：VOLUME_INDEX1111行结构检查，invalid0",
+      "scope": "仅格式与来源消费者；不证明1111行资料归卷正确，不替代原著审查。"
+    },
+    {
+      "check": "后续修复必须补：facts/source延迟竞态、证据区间、rejected/来源修订、actor budget、catalog whitelist与history scope接线回归",
+      "scope": "优先离线确定性fixture，不通过浏览器或真实模型弥补可离线验证的缺口。"
+    },
+    {
+      "check": "未执行：真实酒馆事件载荷/版本、提示词实际插入顺序、模型遵循、存档落盘/reconcile时序与人工验收",
+      "scope": "用户禁止浏览器/发模型；不得将本次离线通过称为真实运行或发布验收。"
+    },
+    {
+      "check": "Five targeted ESM test modules executed successfully with only fixture/stub model calls",
+      "scope": "llm-client, api-presets, prompt-injection, capability-preflight, extension-package; 5/5 module files passed, not full repository suite."
+    },
+    {
+      "check": "Pure-memory reproductions performed in this slice",
+      "scope": "YAML flow/partial consumption, send/update false observation, failed empty-clear metadata, actual client case-folded Headers output; no network or private settings."
+    },
+    {
+      "check": "Coordinator-reverified reproductions accepted as external evidence",
+      "scope": "Pre-aborted quiet still launches; overlapping temperature overrides .7/.2/.9 restore final .2. Source cross-checked, not rerun here."
+    },
+    {
+      "check": "Add dedicated acknowledgement/commit integration regression",
+      "scope": "Unconfirmed send/slash/update must not open state commit gate."
+    },
+    {
+      "check": "Request lifetime regression",
+      "scope": "Underlying quiet settlement, pre-abort, late events, both overlap orders, retry wait abort; independent listModels fetch/body deadline and UI disposal."
+    },
+    {
+      "check": "Package acceptance in supported SillyTavern versions after separate authorization",
+      "scope": "Actual hook/interceptor registration, rendered message APIs, optional generateRaw, 1.18 minimum, event payloads, template fallbacks and disable/chat-switch cleanup. Prohibited in this task, therefore not run."
+    },
+    {
+      "check": "Release allowlist/private-data boundary validation without reading real secrets",
+      "scope": "Inspect intended tracked/published file inventory and source-only synthetic fixtures; package test currently has no release private-data assertion. No publish performed."
+    },
+    {
+      "check": "已执行node --test六个memory/unified测试文件（显式列文件）",
+      "scope": "文件级tests6、pass6、fail0；非覆盖率证明，全部fixture源码未逐行审。"
+    },
+    {
+      "check": "已执行纯内存repro，不写fixture、不访问存档、不调用complete",
+      "scope": "ID复用、opId回滚、12→8丢操作、9钥匙丢失、旧总结提交、裁剪记录、坏ids、跨chat key、目录饥饿、201退休、真实混合回拉guard。"
+    },
+    {
+      "check": "待增延迟Promise/stub宿主离线回归",
+      "scope": "总结期间改账、cache跨聊天、注入写入失败/最终字数、DB两个整表收养入口、公开retired返回值。"
+    },
+    {
+      "check": "真实宿主手动验收未执行（用户禁止）",
+      "scope": "聊天切换/数据库旧帧重放/宿主最终提示词；先完成stub测试，再另获运行授权。"
+    },
+    {
+      "check": "Individually node-execute all nine npc/*.test.mjs using Python subprocess and absolute paths",
+      "scope": "All nine passed; top-level assert scripts, no host/browser/network/LLM/save."
+    },
+    {
+      "check": "Node memory probes and vm-extracted original index functions with memory stubs",
+      "scope": "Cross-chat exp overwrite, extract bypass, same-floor reroll; cold ID/mark, state replay, terminal revival, conflict/outcome mismatch, null day, injection omission, version metadata."
+    },
+    {
+      "check": "针对 R1 的只读回归测试：消耗全栈及 restore/DB往返",
+      "scope": "首个最小 Local Fix 候选；禁止复活任何零数量物品。"
+    },
+    {
+      "check": "R2-R5/R10-R11/R15 回归：原子拒绝、精确撤销、同楼/恢复幂等",
+      "scope": "self状态正确性；测试必须比较完整快照及ID，不只数量。"
+    },
+    {
+      "check": "受控调度注入暂停点：A->B->A及旧/新镜像交错",
+      "scope": "R6-R8/R12；ensure/CRUD/fallback/adopt/MVU read-write每个await。"
+    },
+    {
+      "check": "冷恢复矩阵及全字段DB roundtrip",
+      "scope": "R5/R13；缺本地/缺时间戳/冻结DB/较新本地/只有DB，未入表字段不得被整份覆盖。"
+    },
+    {
+      "check": "内存生成模板与提交JSON深比较，不写输出文件",
+      "scope": "R9及所有初始化字段/DDL/exportConfig。"
+    },
+    {
+      "check": "后续另获授权的真实 ST 集成验收",
+      "scope": "实际MVU事件时序、message latest定位、setMvuVariable fallback是否落盘、异步 saveMetadata、DB CRUD失败/存储帧回放；本次明确未执行。"
+    },
+    {
+      "check": "复跑11个现存范围离线测试",
+      "scope": "基线11/11，不代表边界验收完成"
+    },
+    {
+      "check": "归档ID唯一与同日成熟恢复新增回归",
+      "scope": "impact/impact-runtime"
+    },
+    {
+      "check": "拒绝无副作用、期限精确撤销、opId同楼组合回归",
+      "scope": "world/impact运行时"
+    },
+    {
+      "check": "延迟假场记跨聊天/停用/切模式/改账不得写通道",
+      "scope": "index影响选条生命周期"
+    },
+    {
+      "check": "模块重载分支恢复、旧档缺字段、陈旧确认与跨模式候选拒绝",
+      "scope": "sandbox模式合同"
+    },
+    {
+      "check": "输入预算随1/1000/10000条增长仍有界，可信度与权重矩阵",
+      "scope": "impact喂料和传闻输出"
+    },
+    {
+      "check": "Focused pure-function/DOM/delayed-Promise regressions for findings",
+      "scope": "Scope-bound import, outdated worldbook completion, page navigation, persistence errors, focus/keyboard, combined popup refresh, real list totals"
+    },
+    {
+      "check": "Real SillyTavern manual acceptance; NOT RUN in this slice",
+      "scope": "12 info windows, 13 settings sections, regex toggle/reload, focus, scroll and freshness; no visual claim"
+    },
+    {
+      "check": "Storage slice reconciliation",
+      "scope": "schema migration, API binding defaults and actual persistence contract; no duplicate internal audit"
+    }
+  ],
+  "optimization_handoffs": [
+    {
+      "module": "core/orchestrator.js",
+      "evidence": "CR-01：save failed仍completed_saved，已复现。",
+      "threshold": "Local Fix",
+      "suggested_gate_mode": "Local Fix Only",
+      "behavior_contract_hints": "提交和持久化均成功才宣告已保存；保存失败保留版本和待核对结果，禁止重复行动。",
+      "patch_budget": "未来获授权后：一个保存状态分支，生产/测试1-2文件，目标小于80变更行。",
+      "pre_change_baseline": "现有20测试通过；save=>failed内存repro仍completed。",
+      "verification_gate": "保存成功、返回失败、抛错、不配置保存的明确契约；不得重复提交。",
+      "deletion_safety": "本候选无需删除；其他兼容路径删除安全未证明。",
+      "forbidden_scope": "本轮禁止源码修改；未来也不改host、UI、配置、存档或其他业务模块。"
+    },
+    {
+      "module": "index master stop control",
+      "evidence": "enabled=false full event sequence still calls and saves",
+      "threshold": "Local Fix",
+      "suggested_gate_mode": "Local Fix Only",
+      "behavior_contract_hints": "Master off prevents model calls and writes; clear transient prompts safely",
+      "patch_budget": "index.js + one lifecycle test, target <80 touched lines",
+      "pre_change_baseline": "77/77 plus failing disabled-host repro",
+      "verification_gate": "off-before/off-during/re-enable tests",
+      "deletion_safety": "No deletion",
+      "forbidden_scope": "No save migration, inventory restoration, API switching or frontend redesign"
+    },
+    {
+      "module": "agent/doupo-agent-ui/index.js prepareInjectionForPrompt",
+      "evidence": "A检索晚回写入B全局提示词，真实函数内存复现",
+      "threshold": "Local Fix",
+      "suggested_gate_mode": "Local Fix Only",
+      "behavior_contract_hints": "当前scope/epoch/chat/feature仍匹配且请求未被后发替代才可写/清/保存facts；旧任务不碰新会话，quiet调用不误使正式任务失效。",
+      "patch_budget": "一个行为路径，1-2文件，目标小于80改动行；仅建议，未授权实施",
+      "pre_change_baseline": "当前11文件离线测试全通过，跨scope对抗repro失败",
+      "verification_gate": "新增真实入口延迟facts fixture，切scope/禁用/stop/同scope后发均断言旧响应零副作用；重跑相关生命周期与facts测试",
+      "deletion_safety": "不需要删模块或兼容代码；不改变世界书/存档schema",
+      "forbidden_scope": "原著、世界书、真实存档、配置、core主体、无关重构、生成物、真实模型调用"
+    },
+    {
+      "module": "host/message-adapter.js",
+      "evidence": "No-op sendMessage returns observed:true while chat is empty; commit-recovery accepts observed flag.",
+      "threshold": "Local Fix",
+      "suggested_gate_mode": "Local Fix Only",
+      "behavior_contract_hints": "Never claim a host message observed without identifiable host evidence; unconfirmed delivery must not permit state commit. Preserve successful supported delivery and placeholder updates.",
+      "patch_budget": "One acknowledgement path; normally 1-2 files, target under 80 changed lines; add focused adapter tests. No changes authorized by this audit.",
+      "pre_change_baseline": "Five targeted tests pass; dedicated no-op delivery repro currently demonstrates defect.",
+      "verification_gate": "No-op/throwing send/slash/render/update, positive append/update, and commit rejection on absent evidence; host API acceptance separately.",
+      "deletion_safety": "No deletion recommended; compatibility fallbacks must not be removed without callsite/runtime evidence.",
+      "forbidden_scope": "Settings, archives, root manifest/templates, unrelated core/game modules, provider migrations and actual user data."
+    },
+    {
+      "module": "agent/doupo-agent-ui/memory/memory-runtime.js",
+      "evidence": "MU-02离线确认最高号删除后restore复用退役编号",
+      "threshold": "Local Fix",
+      "suggested_gate_mode": "Local Fix Only",
+      "behavior_contract_hints": "restore后新ID不得与当前存活/退休ID冲突；不改schema与手动/模型分工",
+      "patch_budget": "runtime与现有runtime测试，1-2文件，目标小于80变更行；如需新增持久高水位则重新过门",
+      "pre_change_baseline": "现有runtime测试通过；新增删除最高号→restore→新增测试先失败",
+      "verification_gate": "新增恢复续号回归+六份memory/unified测试；长期>200退休另行MU-12，不能称已一并解决",
+      "deletion_safety": "本候选不删模块；unified外部合同未查明，不批准删除",
+      "forbidden_scope": "当前仅报告未授权实施；不得改真实存档/配置、公开namespace、DB列、连接、其他分片及生成包"
+    },
+    {
+      "module": "index.js runExpCondense/confirmExpCondense",
+      "evidence": "NPC-01 original-function memory repro overwrites same-name character after switching chat",
+      "threshold": "Local Fix",
+      "suggested_gate_mode": "Local Fix Only",
+      "behavior_contract_hints": "Stale scope/version/cancelled exp draft must not become confirmable or mutate current ledger; valid draft still requires explicit confirmation.",
+      "patch_budget": "One path, 1-2 files, target under 80 changed lines; re-gate if larger; no implementation authorized now",
+      "pre_change_baseline": "Nine NPC scripts pass; cross-chat memory repro fails",
+      "verification_gate": "Delayed response plus A/B/A scope, concurrent exp edit, confirm and cancel matrix",
+      "deletion_safety": "No module deletion",
+      "forbidden_scope": "No NPC rewrite, prompt/favor contract changes, real save/config edits or broad persistence schema changes"
+    },
+    {
+      "module": "agent/doupo-agent-ui/self/self-runtime.js",
+      "evidence": "R1 确定性复现：整栈3-3留0，restore变1。",
+      "threshold": "Local Fix",
+      "suggested_gate_mode": "Local Fix Only",
+      "behavior_contract_hints": "只修 removeItem 数量校验与归零删除，合法消耗原子生效，非法消耗无副作用，撤销保留原条目ID及数量。",
+      "patch_budget": "一个行为路径，实现+既有测试，通常1-2文件，目标<80行；如牵出撤销整体重构则重新GATE。",
+      "pre_change_baseline": "本次9文件通过+R1失败；开始前重跑self-runtime.test.mjs并加入边界断言。",
+      "verification_gate": "全栈/单件/非法count/同楼撤销/restore及DB往返；完整快照无零栈。",
+      "deletion_safety": "不删除模块/兼容路径，只允许删除已耗尽的目标条目；真实数据不修改。",
+      "forbidden_scope": "不改DB表结构/初始化JSON/配置/index/MVU协议，不做其他13项并发批量修复；需用户明确实施授权。"
+    },
+    {
+      "module": "impact/impact-runtime.js",
+      "evidence": "最高编号在archive时restore后新增与unarchive生成两个i1，内存已复现",
+      "threshold": "Local Fix",
+      "suggested_gate_mode": "Local Fix Only",
+      "behavior_contract_hints": "活跃与归档共享唯一且单调接续的ID；恢复不得改变既有parent/ref含义",
+      "patch_budget": "一个ID分配行为路径，1-2文件，目标少于80变更行",
+      "pre_change_baseline": "本分片11/11范围测试通过，碰撞repro失败",
+      "verification_gate": "归档最高ID/空records/存档往返/恢复再新增与unarchive唯一性回归",
+      "deletion_safety": "不涉及删除；禁止静默重编号破坏引用",
+      "forbidden_scope": "不改真实存档、不扩schema、不重写runtime、不捎带其他问题；需单独授权实现"
+    },
+    {
+      "module": "agent/doupo-agent-ui/index.js",
+      "evidence": "6678 awaits file data then replaces/persists current ledger without scope/continuation guard.",
+      "threshold": "Local Fix",
+      "suggested_gate_mode": "Local Fix Only",
+      "behavior_contract_hints": "Import authorization binds initiating chat; switching/invalidating chat must reject without writes; same-chat import retains explicit overwrite confirmation.",
+      "patch_budget": "One path, 1-2 files, target under 80 changed lines; separate authorization required.",
+      "pre_change_baseline": "Five scoped offline test files pass; no async file-import isolation regression exists in reviewed tests.",
+      "verification_gate": "Delayed file read + chat switch + zero destination writes; normal import regression.",
+      "deletion_safety": "No module deletion or saved-data migration.",
+      "forbidden_scope": "No runtime internals, saved chat/config changes, global cleanup or enabled behavior changes."
+    }
+  ]
+}

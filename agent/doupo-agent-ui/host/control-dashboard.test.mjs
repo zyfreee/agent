@@ -11,6 +11,9 @@ const audit = createAuditLog();
 const record = (event, extra = {}) => audit.record({ ...identity, event, ...extra });
 const build = extra => buildControlDashboard({ scope, records: audit.list(), ...extra });
 const moduleOf = (view, id) => view.modules.find(module => module.id === id);
+// OPT-091: nested current setting wins, even when false and legacy says true.
+for (const legacy of [undefined, true]) assert.equal(moduleOf(build({ settings: { setting: { enabled: false }, enableFactsLibrary: legacy } }), 'facts').configuration, '已关闭');
+assert.equal(moduleOf(build({ settings: { setting: { enabled: true }, enableFactsLibrary: false } }), 'facts').configuration, '已开启');
 const empty = build();
 assert.equal(empty.modules.length, 8);
 assert.equal(moduleOf(empty, 'sandbox').title, '开放世界');

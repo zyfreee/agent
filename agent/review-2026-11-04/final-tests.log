@@ -1,0 +1,87 @@
+agent module adapter tests passed
+audit log tests passed
+commit recovery tests passed
+coordinator tests passed
+data contract tests passed
+facts-pipeline.test.mjs 通过
+impact engine tests passed
+module runner tests passed
+operation ledger tests passed
+quality gate tests passed
+settle categories tests passed
+state store tests passed
+turn pipeline tests passed
+turn state tests passed
+extension package layout checks passed
+api-presets tests passed
+capability preflight tests passed
+control dashboard scope, metadata, states and theme tests passed
+[斗破Agent·数据库桥] 预检拒绝
+display regex tests passed
+host storage tests passed
+llm client tests passed
+mvu-arbiter tests passed
+orb hud state machine, panels, previews, caps and v2 settlement tests passed
+prompt injection tests passed
+self-mvu tests passed
+UI state tests passed
+impact flow tests passed
+impact live wiring tests passed
+impact decide tests passed
+impact ops tests passed
+impact runtime tests passed
+impact select tests passed
+index chat isolation behavioral tests passed
+index lifecycle tests passed
+memory recall tests passed
+facts index tests passed
+facts library tests passed
+facts select tests passed
+✔ malformed first-pass replies return unparsed without a lookup call (3.495ms)
+history event adapter tests passed
+history operation classifier tests passed
+history restore tests passed
+narrative guard tests passed
+setting supply tests passed
+NPC autonomy planner tests passed
+npc-cold-runtime: ok
+NPC commit gate tests passed
+NPC conflict coordinator tests passed
+NPC decision guard tests passed
+npc-ledger 测试通过
+NPC outcome bridge tests passed
+NPC plan reassessment tests passed
+npc-recorder 测试通过
+action resolver tests passed
+request classifier tests passed
+request router NPC invalidation tests passed
+request router tests passed
+world simulator tests passed
+sandbox mode tests passed
+sandbox world tests passed
+self decide tests passed
+self ops tests passed
+self runtime tests passed
+✔ budget fitting retains the accepted summary instead of reconstructing it (1.364ms)
+✔ summary and fitted summary cannot expose later-volume sections or summary fallback (2.4008ms)
+✔ token accounting includes separators and measures the entire accepted text (1.4919ms)
+✔ fitting uses the supplied token counter, including ellipsis and prefix fallback (1.7392ms)
+✔ default and unlimited budgets keep full text and preserve volume trimming (1.7545ms)
+settings template smoke checks passed: C:\Users\86158\Desktop\异界转生录\doupo\agent\doupo-agent-ui\
+settle adjudicate tests passed (44 cases)
+settle integration wiring tests passed
+settle session tests passed
+unified-decide.test.mjs 通过
+world decide tests passed
+world ops tests passed
+world runtime tests passed
+
+模块测试汇总：77/77 通过
+ℹ tests 6
+ℹ suites 0
+ℹ pass 6
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 13526.7829

@@ -126,6 +126,64 @@
       ]
     ]
   },
+  "sheet_dpEquipment": {
+    "uid": "sheet_dpEquipment",
+    "name": "纳戒·装备",
+    "sourceData": {
+      "note": "装备栏（穿戴中的武器/防具/饰品），编号与扩展台账一致。只由斗破Agent扩展写入，AI 禁止操作。",
+      "initNode": "禁止操作。",
+      "insertNode": "禁止操作。",
+      "updateNode": "禁止操作。",
+      "deleteNode": "禁止操作。",
+      "ddl": "CREATE TABLE dp_equipment ( -- 装备栏表\n  row_id INTEGER PRIMARY KEY, -- 行号\n  entry_id TEXT NOT NULL, -- 编号\n  name TEXT NOT NULL, -- 名称\n  grade TEXT, -- 品阶\n  type TEXT, -- 类型\n  source TEXT -- 来源\n);"
+    },
+    "updateConfig": {
+      "uiSentinel": -1,
+      "contextDepth": -1,
+      "updateFrequency": 0,
+      "batchSize": -1,
+      "skipFloors": -1
+    },
+    "content": [
+      [
+        "row_id",
+        "编号",
+        "名称",
+        "品阶",
+        "类型",
+        "来源"
+      ]
+    ]
+  },
+  "sheet_dpTreasures": {
+    "uid": "sheet_dpTreasures",
+    "name": "纳戒·天材地宝",
+    "sourceData": {
+      "note": "天材地宝（异火、妖丹、灵矿、先天灵物之类），编号与扩展台账一致。只由斗破Agent扩展写入，AI 禁止操作。",
+      "initNode": "禁止操作。",
+      "insertNode": "禁止操作。",
+      "updateNode": "禁止操作。",
+      "deleteNode": "禁止操作。",
+      "ddl": "CREATE TABLE dp_treasures ( -- 天材地宝表\n  row_id INTEGER PRIMARY KEY, -- 行号\n  entry_id TEXT NOT NULL, -- 编号\n  name TEXT NOT NULL, -- 名称\n  grade TEXT, -- 品阶\n  type TEXT, -- 类别\n  source TEXT -- 来源\n);"
+    },
+    "updateConfig": {
+      "uiSentinel": -1,
+      "contextDepth": -1,
+      "updateFrequency": 0,
+      "batchSize": -1,
+      "skipFloors": -1
+    },
+    "content": [
+      [
+        "row_id",
+        "编号",
+        "名称",
+        "品阶",
+        "类别",
+        "来源"
+      ]
+    ]
+  },
   "sheet_dpItems": {
     "uid": "sheet_dpItems",
     "name": "纳戒·行囊",
@@ -159,14 +217,14 @@
   },
   "sheet_dpRecipes": {
     "uid": "sheet_dpRecipes",
-    "name": "纳戒·配方",
+    "name": "纳戒·炼丹",
     "sourceData": {
-      "note": "已掌握配方。只由斗破Agent扩展写入，AI 禁止操作。",
+      "note": "已掌握的丹方与器谱（类别列区分炼药/炼器）。只由斗破Agent扩展写入，AI 禁止操作。",
       "initNode": "禁止操作。",
       "insertNode": "禁止操作。",
       "updateNode": "禁止操作。",
       "deleteNode": "禁止操作。",
-      "ddl": "CREATE TABLE dp_recipes ( -- 配方表\n  row_id INTEGER PRIMARY KEY, -- 行号\n  entry_id TEXT NOT NULL, -- 编号\n  name TEXT NOT NULL, -- 名称\n  craft TEXT, -- 类别\n  grade TEXT, -- 品阶\n  materials TEXT -- 材料\n);"
+      "ddl": "CREATE TABLE dp_recipes ( -- 炼丹表\n  row_id INTEGER PRIMARY KEY, -- 行号\n  entry_id TEXT NOT NULL, -- 编号\n  name TEXT NOT NULL, -- 名称\n  craft TEXT, -- 类别\n  grade TEXT, -- 品阶\n  materials TEXT -- 材料\n);"
     },
     "updateConfig": {
       "uiSentinel": -1,
@@ -188,14 +246,14 @@
   },
   "sheet_dpCrafts": {
     "uid": "sheet_dpCrafts",
-    "name": "纳戒·炼制台",
+    "name": "纳戒·炼器",
     "sourceData": {
-      "note": "炼制进度（进行中/成功/失败），日期按世界时钟。只由斗破Agent扩展写入，AI 禁止操作。",
+      "note": "炼丹与炼器的进行中/成功/失败记录，日期按世界时钟。只由斗破Agent扩展写入，AI 禁止操作。",
       "initNode": "禁止操作。",
       "insertNode": "禁止操作。",
       "updateNode": "禁止操作。",
       "deleteNode": "禁止操作。",
-      "ddl": "CREATE TABLE dp_crafts ( -- 炼制台表\n  row_id INTEGER PRIMARY KEY, -- 行号\n  entry_id TEXT NOT NULL, -- 编号\n  name TEXT NOT NULL, -- 名称\n  craft TEXT, -- 类别\n  start_day INTEGER, -- 开始日\n  end_day INTEGER, -- 结束日\n  status TEXT, -- 状态\n  note TEXT -- 备注\n);"
+      "ddl": "CREATE TABLE dp_crafts ( -- 炼器表\n  row_id INTEGER PRIMARY KEY, -- 行号\n  entry_id TEXT NOT NULL, -- 编号\n  name TEXT NOT NULL, -- 名称\n  craft TEXT, -- 类别\n  start_day INTEGER, -- 开始日\n  end_day INTEGER, -- 结束日\n  status TEXT, -- 状态\n  note TEXT -- 备注\n);"
     },
     "updateConfig": {
       "uiSentinel": -1,
@@ -221,12 +279,12 @@
     "uid": "sheet_dpGoals",
     "name": "纳戒·目标",
     "sourceData": {
-      "note": "目标与约定（主线标星在优先级里）。只由斗破Agent扩展写入，AI 禁止操作。",
+      "note": "目标与约定（短标题进列表与注入，完整内容进详情；主线标星在优先级里）。只由斗破Agent扩展写入，AI 禁止操作。",
       "initNode": "禁止操作。",
       "insertNode": "禁止操作。",
       "updateNode": "禁止操作。",
       "deleteNode": "禁止操作。",
-      "ddl": "CREATE TABLE dp_goals ( -- 目标表\n  row_id INTEGER PRIMARY KEY, -- 行号\n  entry_id TEXT NOT NULL, -- 编号\n  goal_text TEXT NOT NULL, -- 内容\n  priority TEXT, -- 优先级\n  due TEXT, -- 期限\n  done TEXT -- 达成\n);"
+      "ddl": "CREATE TABLE dp_goals ( -- 目标表\n  row_id INTEGER PRIMARY KEY, -- 行号\n  entry_id TEXT NOT NULL, -- 编号\n  goal_title TEXT, -- 标题\n  goal_text TEXT NOT NULL, -- 内容\n  priority TEXT, -- 优先级\n  due TEXT, -- 期限\n  done TEXT -- 达成\n);"
     },
     "updateConfig": {
       "uiSentinel": -1,
@@ -239,6 +297,7 @@
       [
         "row_id",
         "编号",
+        "标题",
         "内容",
         "优先级",
         "期限",
@@ -255,7 +314,7 @@
       "insertNode": "禁止操作。",
       "updateNode": "禁止操作。",
       "deleteNode": "禁止操作。",
-      "ddl": "CREATE TABLE dp_memory_small ( -- 小记忆表\n  row_id INTEGER PRIMARY KEY, -- 行号\n  entry_id TEXT NOT NULL, -- 编号\n  content TEXT NOT NULL, -- 内容\n  quote TEXT, -- 引文\n  basis TEXT, -- 依据\n  related TEXT, -- 关联\n  aliases TEXT, -- 别名\n  weight TEXT, -- 分量\n  day INTEGER, -- 记于日\n  done TEXT, -- 已了结\n  resolved_day INTEGER, -- 了结日\n  note TEXT -- 备注\n);"
+      "ddl": "CREATE TABLE dp_memory_small ( -- 小记忆表\n  row_id INTEGER PRIMARY KEY, -- 行号\n  entry_id TEXT NOT NULL, -- 编号\n  content TEXT NOT NULL, -- 内容\n  quote TEXT, -- 引文\n  basis TEXT, -- 依据\n  related TEXT, -- 关联\n  aliases TEXT, -- 别名\n  weight TEXT, -- 分量\n  day INTEGER, -- 记于日\n  note TEXT -- 备注\n);"
     },
     "updateConfig": {
       "uiSentinel": -1,
@@ -265,15 +324,15 @@
       "skipFloors": -1
     },
     "exportConfig": {
-      "enabled": true,
+      "enabled": false,
       "splitByRow": true,
       "entryType": "keyword",
       "keywords": "关联,别名",
       "preventRecursion": true,
-      "entryName": "主角近事",
-      "injectionTemplate": "<主角近事>\n$1\n</主角近事>",
+      "entryName": "记忆近事",
+      "injectionTemplate": "<记忆近事>\n$1\n</记忆近事>",
       "extraIndexEnabled": false,
-      "extraIndexEntryName": "主角近事-索引",
+      "extraIndexEntryName": "记忆近事-索引",
       "extraIndexColumns": [],
       "extraIndexColumnModes": {},
       "extraIndexInjectionTemplate": "",
@@ -299,8 +358,6 @@
         "别名",
         "分量",
         "记于日",
-        "已了结",
-        "了结日",
         "备注"
       ]
     ]
@@ -314,7 +371,7 @@
       "insertNode": "禁止操作。",
       "updateNode": "禁止操作。",
       "deleteNode": "禁止操作。",
-      "ddl": "CREATE TABLE dp_memory_big ( -- 大记忆表\n  row_id INTEGER PRIMARY KEY, -- 行号\n  entry_id TEXT NOT NULL, -- 编号\n  content TEXT NOT NULL, -- 内容\n  quote TEXT, -- 引文\n  basis TEXT, -- 依据\n  related TEXT, -- 关联\n  aliases TEXT, -- 别名\n  tag TEXT, -- 标签\n  weight TEXT, -- 分量\n  day INTEGER, -- 记于日\n  done TEXT, -- 已了结\n  resolved_day INTEGER, -- 了结日\n  note TEXT -- 备注\n);"
+      "ddl": "CREATE TABLE dp_memory_big ( -- 大记忆表\n  row_id INTEGER PRIMARY KEY, -- 行号\n  entry_id TEXT NOT NULL, -- 编号\n  content TEXT NOT NULL, -- 内容\n  quote TEXT, -- 引文\n  basis TEXT, -- 依据\n  related TEXT, -- 关联\n  aliases TEXT, -- 别名\n  tag TEXT, -- 标签\n  weight TEXT, -- 分量\n  day INTEGER, -- 记于日\n  note TEXT -- 备注\n);"
     },
     "updateConfig": {
       "uiSentinel": -1,
@@ -324,15 +381,15 @@
       "skipFloors": -1
     },
     "exportConfig": {
-      "enabled": true,
+      "enabled": false,
       "splitByRow": true,
       "entryType": "keyword",
       "keywords": "关联,别名",
       "preventRecursion": true,
-      "entryName": "主角记忆",
-      "injectionTemplate": "<主角记忆>\n$1\n</主角记忆>",
+      "entryName": "记忆存储",
+      "injectionTemplate": "<记忆存储>\n$1\n</记忆存储>",
       "extraIndexEnabled": false,
-      "extraIndexEntryName": "主角记忆-索引",
+      "extraIndexEntryName": "记忆存储-索引",
       "extraIndexColumns": [],
       "extraIndexColumnModes": {},
       "extraIndexInjectionTemplate": "",
@@ -359,8 +416,6 @@
         "标签",
         "分量",
         "记于日",
-        "已了结",
-        "了结日",
         "备注"
       ]
     ]

@@ -41,4 +41,37 @@ conflict.prepare({ ...proposal, branchId: 'conflict', commitId: 'c5', messageId:
 conflict.markMessage({ sessionId: 's', branchId: 'conflict', commitId: 'c5', messageId: 'm5', observed: true });
 state.commit({ sessionId: 's', branchId: 'conflict', baseVersion: 'v1', commitId: 'outside', candidate: { nextState: {} } });
 assert.equal(conflict.commit({ sessionId: 's', branchId: 'conflict', commitId: 'c5' }).reason, 'stale_state');
+// OPT-086: terminal records retire into bounded tombstones instead of saturating the journal.
+state.seed({ sessionId: 's', branchId: 'saturate', stateVersion: 'v1', state: {} });
+const saturate = createCommitRecovery({ stateStore: state, maxEntries: 1 });
+assert.equal(saturate.prepare({ ...proposal, branchId: 'saturate', commitId: 'cA1', messageId: 'mA1' }).status, 'prepared');
+assert.equal(saturate.cancel({ sessionId: 's', branchId: 'saturate', commitId: 'cA1' }).status, 'cancelled');
+assert.equal(saturate.prepare({ ...proposal, branchId: 'saturate', commitId: 'cA2', messageId: 'mA2' }).status, 'prepared');
+assert.equal(saturate.prepare({ ...proposal, branchId: 'saturate', commitId: 'cA1', messageId: 'mA1' }).status, 'duplicate_commit');
+assert.equal(saturate.prepare({ ...proposal, branchId: 'saturate', commitId: 'cA1', messageId: 'mA1' }).stateVersion, null);
+assert.equal(saturate.commit({ sessionId: 's', branchId: 'saturate', commitId: 'cA1' }).status, 'duplicate_commit');
+
+state.seed({ sessionId: 's', branchId: 'retire', stateVersion: 'v1', state: {} });
+const retire = createCommitRecovery({ stateStore: state, maxEntries: 1 });
+retire.prepare({ ...proposal, branchId: 'retire', commitId: 'cB1', messageId: 'mB1' });
+retire.markMessage({ sessionId: 's', branchId: 'retire', commitId: 'cB1', messageId: 'mB1', observed: true });
+assert.equal(retire.commit({ sessionId: 's', branchId: 'retire', commitId: 'cB1' }).status, 'committed');
+assert.equal(state.read({ sessionId: 's', branchId: 'retire' }).stateVersion, 'v2');
+assert.equal(retire.prepare({ ...proposal, branchId: 'retire', commitId: 'cB2', messageId: 'mB2', baseVersion: 'v2' }).status, 'prepared');
+const retiredHit = retire.prepare({ ...proposal, branchId: 'retire', commitId: 'cB1', messageId: 'mB1' });
+assert.equal(retiredHit.status, 'duplicate_commit');
+assert.equal(retiredHit.stateVersion, 'v2');
+const retiredCommit = retire.commit({ sessionId: 's', branchId: 'retire', commitId: 'cB1' });
+assert.equal(retiredCommit.status, 'duplicate_commit');
+assert.equal(retiredCommit.stateVersion, 'v2');
+
+state.seed({ sessionId: 's', branchId: 'uncertain', stateVersion: 'v1', state: {} });
+const uncertain = createCommitRecovery({ stateStore: state, maxEntries: 1 });
+uncertain.prepare({ ...proposal, branchId: 'uncertain', commitId: 'cC1', messageId: 'mC1' });
+uncertain.markMessage({ sessionId: 's', branchId: 'uncertain', commitId: 'cC1', messageId: 'mC1', observed: true });
+state.commit({ sessionId: 's', branchId: 'uncertain', baseVersion: 'v1', commitId: 'outside', candidate: { nextState: {} } });
+assert.equal(uncertain.commit({ sessionId: 's', branchId: 'uncertain', commitId: 'cC1' }).status, 'save_uncertain');
+assert.equal(uncertain.prepare({ ...proposal, branchId: 'uncertain', commitId: 'cC2', messageId: 'mC2' }).status, 'journal_full');
+assert.equal(uncertain.inspect({ sessionId: 's', branchId: 'uncertain', commitId: 'cC1' }).phase, 'save_uncertain');
+
 console.log('commit recovery tests passed');

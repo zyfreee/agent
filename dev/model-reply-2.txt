@@ -1,0 +1,10 @@
+好的，第二轮：
+
+```json
+{"note":"玩家出门打听，府中议论升级为城内动静；补两条带标题的事件。","ops":[
+{"op":"advance","minutes":120},
+{"op":"addEvent","scope":"near","title":"萧府门前来了云岚宗信使","text":"一名云岚宗信使在萧府门前投帖，说少宗主三日内到乌坦城","basis":"本轮玩家出门打听，下人所言有了下文","weight":"major","days":3},
+{"op":"addEvent","scope":"world","title":"乌坦城米价上涨","text":"乌坦城米价因云岚宗来人传言上涨了两成，城中商户开始囤货惜售","basis":"云岚宗行程在城内传开后的市井反应","weight":"minor","days":7,"location":"乌坦城"},
+{"op":"updateTask","id":"t1","detail":"目标：搞清她此行的真实目的。进展：信使已投帖，三日内到；米价上涨，萧家需备礼应对。"}
+]}
+```

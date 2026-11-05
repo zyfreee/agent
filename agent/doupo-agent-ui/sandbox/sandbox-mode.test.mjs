@@ -43,7 +43,7 @@ assert.equal(mode.cancelSwitch(scope).status, 'cancelled');
 assert.equal(mode.confirm(scope).reason, 'no_pending_switch');
 
 mode.sync({ ...scope, taskId: 'task-2', stateVersion: 'v8', enabled: false, allowMidgameSwitch: true });
-const switched = mode.confirm({ ...scope, reason: '玩家决定回到主线' });
+const switched = mode.confirm({ ...scope, taskId: 'task-2', stateVersion: 'v8', reason: '玩家决定回到主线' });
 assert.equal(switched.status, 'switched');
 assert.equal(switched.mode, 'mainline');
 assert.equal(switched.history.length, 1);
@@ -65,7 +65,55 @@ assert.equal(mode.read({ sessionId: 's2', branchId: 'b1' }).status, 'empty');
 const limited = createSandboxMode({ maxHistory: 2 });
 for (const [index, enabled] of [[1, true], [2, false], [3, true], [4, false]]) {
     limited.sync({ ...scope, taskId: `t${index}`, stateVersion: `v${index}`, enabled, allowMidgameSwitch: true });
-    limited.confirm(scope);
+    limited.confirm({ ...scope, taskId: `t${index}`, stateVersion: `v${index}` });
 }
 assert.equal(limited.read(scope).history.length, 2);
+// OPT-065: snapshots contain only one scope; pending switches are never persisted.
+{
+    const a = { sessionId: 'A', branchId: 'main' };
+    const b = { sessionId: 'B', branchId: 'fork' };
+    const source = createSandboxMode();
+    source.sync({ ...a, enabled: false });
+    source.sync({ ...b, enabled: false });
+    source.sync({ ...b, enabled: true, taskId: 'tb', stateVersion: 'vb', inertia: 'strong' });
+    source.confirm({ ...b, taskId: 'tb', stateVersion: 'vb' });
+    const savedA = source.snapshot(a);
+    const savedB = source.snapshot(b);
+    const target = createSandboxMode();
+    assert.equal(target.restore(savedA, a).status, 'restored');
+    target.restore(savedB, b);
+    assert.equal(target.read(a).mode, 'mainline');
+    assert.equal(target.read(b).mode, 'sandbox');
+    assert.equal(target.read(b).history.length, 1);
+    assert.equal(target.read(b).inertia, 'strong');
+    savedB.record.mode = 'mainline';
+    assert.equal(target.read(b).mode, 'sandbox', 'restore must copy');
+    source.sync({ ...a, enabled: true, taskId: 'ta', stateVersion: 'va' });
+    target.restore(source.snapshot(a), a);
+    assert.equal(target.confirm({ ...a, taskId: 'ta', stateVersion: 'va' }).reason, 'no_pending_switch');
+    const before = target.read(b);
+    assert.equal(target.restore({ schemaVersion: 999, record: {} }, b).status, 'rejected');
+    assert.deepEqual(target.read(b), before);
+    assert.equal(target.restore(null, a).status, 'empty');
+    assert.equal(target.read(a).status, 'empty');
+    assert.equal(target.sync({ ...a, enabled: true }).mode, 'sandbox', 'preserve existing first adoption policy');
+    assert.equal(target.read(b).mode, 'sandbox', 'restoring A must not clear B');
+}
+
+// OPT-066: confirmation must be bound to the current task/state and original mode settings.
+{
+    const r = createSandboxMode();
+    r.sync({ ...scope, enabled: false });
+    r.sync({ ...scope, enabled: true, taskId: 't1', stateVersion: 'v1', canonCharactersAutonomous: false });
+    assert.equal(r.confirm(scope).reason, 'stale_switch_context');
+    assert.equal(r.confirm({ ...scope, taskId: 't2', stateVersion: 'v1' }).reason, 'stale_switch_context');
+    assert.equal(r.confirm({ ...scope, taskId: 't1', stateVersion: 'v2' }).reason, 'stale_switch_context');
+    assert.equal(r.read(scope).mode, 'mainline');
+    assert.equal(r.confirm({ ...scope, taskId: 't1', stateVersion: 'v1' }).status, 'switched');
+    assert.equal(r.read(scope).canonCharactersAutonomous, false);
+    r.sync({ ...scope, enabled: false, taskId: 't3', stateVersion: 'v3' });
+    r.sync({ ...scope, enabled: true, inertia: 'weak' });
+    assert.equal(r.confirm({ ...scope, taskId: 't3', stateVersion: 'v3' }).reason, 'no_pending_switch');
+}
+
 console.log('sandbox mode tests passed');

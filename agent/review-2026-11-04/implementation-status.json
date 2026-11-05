@@ -1,0 +1,861 @@
+{
+  "updatedAt": "2026-11-04T18:29:39.079Z",
+  "authorization": "User: 继续跟着清单优化呀一直到优化完",
+  "boundary": "Source+offline tests; no deploy/real model/real save/git mutations or rewrite",
+  "items": [
+    {
+      "checklistId": "OPT-001",
+      "title": "关闭Agent总控后自动链仍调用模型并写账",
+      "file": "agent/doupo-agent-ui/index.js",
+      "status": "entry_focused_verified",
+      "evidence": "index-chat-lifecycle.test.mjs: master-off零调用零写、飞行中关闭拒绝迟到结果、重启用单监听；真实宿主验收未做",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-002",
+      "title": "后台静默调用期间下一轮可能永久漏记",
+      "file": "agent/doupo-agent-ui/index.js",
+      "status": "module_verified",
+      "evidence": "入口green(index-background-order)+host onQuietIdle hook；共享采样根重叠同测覆盖",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-003",
+      "title": "整栈消耗保留零数量，重载或数据库往返复活一件",
+      "file": "agent/doupo-agent-ui/self/self-runtime.js",
+      "status": "fixed_offline",
+      "evidence": "implementation-batch-a-2026-11-04",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-004",
+      "title": "update 校验失败前已改字段，拒绝结果不代表账本未变",
+      "file": "agent/doupo-agent-ui/self/self-runtime.js",
+      "status": "fixed_offline",
+      "evidence": "implementation-batch-a-2026-11-04",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-005",
+      "title": "撤销不是完整逆操作，且失败被当成已撤销",
+      "file": "agent/doupo-agent-ui/self/self-runtime.js",
+      "status": "fixed_offline",
+      "evidence": "implementation-continuation/self-final-receipt.json + self-r1r4-final-verification.json (R1-R4 coordinator re-verified 8/8 suites)",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-006",
+      "title": "MVU 重生成先按旧版结果做差分，runtime 随后撤销导致引用失效",
+      "file": "agent/doupo-agent-ui/host/mvu-arbiter.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/host-final-receipt.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-007",
+      "title": "恢复丢掉同楼撤销基线，刷新后重新生成重复累计",
+      "file": "agent/doupo-agent-ui/self/self-runtime.js",
+      "status": "fixed_offline",
+      "evidence": "implementation-continuation/self-final-receipt.json + self-r1r4-final-verification.json (R1-R4 coordinator re-verified 8/8 suites)",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-008",
+      "title": "没有本地存档时新空戒时间戳阻止数据库恢复，随后反向覆盖数据库",
+      "file": "agent/doupo-agent-ui/index.js",
+      "status": "entry_focused_verified",
+      "evidence": "index-continuation-regressions.test.mjs: 无本地存档旧DB恢复/旧facts写入/双AI消息输入定位/召回缓存完整身份/过期经历草稿",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-009",
+      "title": "数据库异步写入及延迟回拉没有聊天身份护栏",
+      "file": "agent/doupo-agent-ui/host/db-bridge.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/host-final-receipt.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-010",
+      "title": "仲裁等待后仍使用旧聊天楼号，能向新聊天落账",
+      "file": "agent/doupo-agent-ui/host/mvu-arbiter.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/host-final-receipt.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-011",
+      "title": "多个镜像同时协调同一旧视图，产生重号行或旧快照覆盖新账",
+      "file": "agent/doupo-agent-ui/host/db-bridge.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/host-final-receipt.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-012",
+      "title": "数据库镜像不是完整快照，但收养会整份替换并丢掉未入表字段",
+      "file": "agent/doupo-agent-ui/host/db-tables.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/host-final-receipt.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-013",
+      "title": "非空装备槽渲染调用未定义函数而中断纳戒页刷新",
+      "file": "agent/doupo-agent-ui/index.js",
+      "status": "fixed_offline",
+      "evidence": "implementation-batch-a-2026-11-04",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-014",
+      "title": "穿戴转移整栈删除且第二步失败也当成成功",
+      "file": "agent/doupo-agent-ui/index.js",
+      "status": "entry_focused_verified",
+      "evidence": "equip/unequip await receipt（UI窗口）+ self-r1r4-final-verification 8/8；真实宿主验收未做",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-015",
+      "title": "切聊天保留旧人物弹窗，保存与删除可作用于新聊天同名档案",
+      "file": "agent/doupo-agent-ui/index.js",
+      "status": "entry_focused_verified",
+      "evidence": "UI final receipt + ui-final-window-green.log 32/32；全量87/88（第88为NPC在途红测）；真实宿主验收未做",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-016",
+      "title": "收养布尔护栏放行后整账覆盖，退役项与本地新账不受保护",
+      "file": "agent/doupo-agent-ui/index.js",
+      "status": "entry_focused_verified",
+      "evidence": "implementation-continuation/memory-index-adoption-green.log",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-017",
+      "title": "restore只按存活条目续号，复用退役ID",
+      "file": "agent/doupo-agent-ui/memory/memory-runtime.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/memory-receipt.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-018",
+      "title": "总结提交未核对输入版本，可把等待期间删除的事实重新写回",
+      "file": "agent/doupo-agent-ui/index.js",
+      "status": "entry_focused_verified",
+      "evidence": "implementation-continuation/index-memory-injection-green.log",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-019",
+      "title": "旧聊天的经历精简回答可以覆盖当前聊天的同名人物",
+      "file": "agent/doupo-agent-ui/index.js",
+      "status": "entry_focused_verified",
+      "evidence": "index-continuation-regressions.test.mjs: 无本地存档旧DB恢复/旧facts写入/双AI消息输入定位/召回缓存完整身份/过期经历草稿",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-020",
+      "title": "世界书补全的目标绑定及重抽保护可被英文键和嵌套字段绕过",
+      "file": "agent/doupo-agent-ui/index.js",
+      "status": "entry_focused_verified",
+      "evidence": "npc/npc-ledger-extract-guard.test.mjs: 实际index白名单段对抗矩阵全拦（英文键/嵌套/别名/favor/presence），raw-apply对照有牙",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-021",
+      "title": "事实检索等待结束后可把旧会话资料写入新会话",
+      "file": "agent/doupo-agent-ui/index.js",
+      "status": "entry_focused_verified",
+      "evidence": "index-continuation-regressions.test.mjs: 无本地存档旧DB恢复/旧facts写入/双AI消息输入定位/召回缓存完整身份/过期经历草稿",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-022",
+      "title": "世界书异步重载没有提交所有权，旧书可覆盖新书索引",
+      "file": "agent/doupo-agent-ui/index.js",
+      "status": "entry_focused_verified",
+      "evidence": "implementation-continuation/index-memory-injection-green.log",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-023",
+      "title": "结算上下文直接携带未来卷增补，绕开设定注入防剧透",
+      "file": "agent/doupo-agent-ui/index.js",
+      "status": "entry_focused_verified",
+      "evidence": "implementation-continuation/index-memory-injection-green.log",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-024",
+      "title": "行动依据未绑定原文区间，重叠片段可重复收益且重复动作被误拒",
+      "file": "agent/doupo-agent-ui/settle/settle-adjudicate.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/core-owned-tests.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-025",
+      "title": "人工复核拒绝的事实仍以 supported 返回",
+      "file": "agent/doupo-agent-ui/narrative/facts-library.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/core-owned-tests.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-026",
+      "title": "默认设定主链把卷号对象传给整数裁剪器，未来卷分段实际未裁剪",
+      "file": "agent/doupo-agent-ui/core/turn-stages.js",
+      "status": "entry_focused_verified",
+      "evidence": "implementation-continuation/index-memory-injection-green.log",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-027",
+      "title": "挂起的场记结果可在换聊天后写入新会话",
+      "file": "agent/doupo-agent-ui/index.js",
+      "status": "entry_focused_verified",
+      "evidence": "index-continuation-regressions.test.mjs: 场记过期选择不写入；缓存签名含scope+epoch+双runtime+设置+消息身份",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-028",
+      "title": "存档恢复忽略归档最大编号导致影响ID碰撞",
+      "file": "agent/doupo-agent-ui/impact/impact-runtime.js",
+      "status": "entry_focused_verified",
+      "evidence": "implementation-continuation/index-memory-injection-green.log",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-029",
+      "title": "消息未落地，回执仍称已观察到",
+      "file": "agent/doupo-agent-ui/host/message-adapter.js",
+      "status": "entry_focused_verified",
+      "evidence": "implementation-continuation/index-memory-injection-green.log",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-030",
+      "title": "并发采样覆盖不能还原原始宿主设置",
+      "file": "agent/doupo-agent-ui/host/llm-client.js",
+      "status": "module_verified",
+      "evidence": "host模块green；共享采样根重叠由index-background-order.test.mjs覆盖",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-031",
+      "title": "持久化失败仍宣告已保存",
+      "file": "agent/doupo-agent-ui/core/orchestrator.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/core-owned-tests.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-032",
+      "title": "人物簿文件导入可覆盖切换后的聊天",
+      "file": "agent/doupo-agent-ui/index.js",
+      "status": "entry_focused_verified",
+      "evidence": "implementation-continuation/index-032-051-green.log",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-033",
+      "title": "记忆决定没有等待纳戒记账完成",
+      "file": "agent/doupo-agent-ui/index.js",
+      "status": "entry_focused_verified",
+      "evidence": "implementation-continuation/index-background-order-green.log",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-034",
+      "title": "热重载清理与正式停用清理不一致",
+      "file": "agent/doupo-agent-ui/index.js",
+      "status": "entry_focused_verified",
+      "evidence": "implementation-continuation/index-memory-injection-green.log",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-035",
+      "title": "文档同时宣称数据库与扩展各自为真账本",
+      "file": "agent/doupo-agent-ui/README.md",
+      "status": "fixed_offline",
+      "evidence": "implementation-continuation/docs-final-receipt.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-036",
+      "title": "合法同名目标内容/期限和配方品级更新被静默忽略",
+      "file": "agent/doupo-agent-ui/host/mvu-arbiter.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/host-final-receipt.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-037",
+      "title": "数据库初始化导入件落后于源码，仍启用旧记忆导出和废弃列",
+      "file": "agent/斗破Agent数据库桥接表.json",
+      "status": "fixed_offline",
+      "evidence": "implementation-continuation/docs-final-receipt.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-038",
+      "title": "整表申报容量高于 runtime 单批上限，尾部变化会被丢弃",
+      "file": "agent/doupo-agent-ui/host/mvu-arbiter.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/host-final-receipt.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-039",
+      "title": "天材地宝的移除按钮没有对应操作映射",
+      "file": "agent/doupo-agent-ui/index.js",
+      "status": "entry_focused_verified",
+      "evidence": "UI final receipt + ui-final-window-green.log 32/32；全量87/88（第88为NPC在途红测）；真实宿主验收未做",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-040",
+      "title": "手动账本操作未等待保存结果，失败后仍结束编辑或宣告完成",
+      "file": "agent/doupo-agent-ui/index.js",
+      "status": "entry_focused_verified",
+      "evidence": "UI final receipt + ui-final-window-green.log 32/32；全量87/88（第88为NPC在途红测）；真实宿主验收未做",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-041",
+      "title": "人物档案等破坏性删除一击提交，缺少确认或可见撤销",
+      "file": "agent/doupo-agent-ui/index.js",
+      "status": "entry_focused_verified",
+      "evidence": "UI final receipt + ui-final-window-green.log 32/32；全量87/88（第88为NPC在途红测）；真实宿主验收未做",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-042",
+      "title": "校验拒绝后仍清空记忆及世界登记草稿",
+      "file": "agent/doupo-agent-ui/index.js",
+      "status": "entry_focused_verified",
+      "evidence": "UI final receipt + ui-final-window-green.log 32/32；全量87/88（第88为NPC在途红测）；真实宿主验收未做",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-043",
+      "title": "总结只保留八把召回钥匙且忽略模型aliases",
+      "file": "agent/doupo-agent-ui/memory/memory-runtime.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/memory-receipt.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-044",
+      "title": "召回缓存缺聊天作用域和输入版本，跨聊天/同长编辑可误命中",
+      "file": "agent/doupo-agent-ui/index.js",
+      "status": "entry_focused_verified",
+      "evidence": "index-continuation-regressions.test.mjs: 无本地存档旧DB恢复/旧facts写入/双AI消息输入定位/召回缓存完整身份/过期经历草稿",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-045",
+      "title": "缺失/坏类型ids误判明确空召回，绕过失败降级",
+      "file": "agent/doupo-agent-ui/memory/memory-recall.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/memory-receipt.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-046",
+      "title": "同楼撤销未撤销opId去重记录，相同操作重试后账变空",
+      "file": "agent/doupo-agent-ui/memory/memory-runtime.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/memory-receipt.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-047",
+      "title": "注入记录保存裁剪前全集，写入失败也标成功",
+      "file": "agent/doupo-agent-ui/index.js",
+      "status": "entry_focused_verified",
+      "evidence": "implementation-continuation/index-memory-injection-green.log",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-048",
+      "title": "预算装满正文再加抬头，最终写入从条目中间截断",
+      "file": "agent/doupo-agent-ui/index.js",
+      "status": "entry_focused_verified",
+      "evidence": "implementation-continuation/index-memory-injection-green.log",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-049",
+      "title": "大记忆优先截尾目录，长期账本可让新小记忆不可见",
+      "file": "agent/doupo-agent-ui/memory/memory-recall.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/memory-receipt.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-050",
+      "title": "退休登记仅200个，超过窗口旧帧可复活最早删除的事实",
+      "file": "agent/doupo-agent-ui/memory/memory-runtime.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/memory-receipt.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-051",
+      "title": "人物记账只记楼层号，重生成后的旧人物变化不会撤回",
+      "file": "agent/doupo-agent-ui/index.js",
+      "status": "module_verified",
+      "evidence": "recordReply原子同楼替换+replay合同+入口集成（npc-closure-receipt-20261105 + index-032-051-green.log）",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-052",
+      "title": "冷藏序号不持久化，恢复后新草稿覆盖旧草稿",
+      "file": "agent/doupo-agent-ui/npc/npc-cold-runtime.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/npc-final106-continuation-receipt.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-053",
+      "title": "确认一份冷藏草稿把同人物其他草稿一并标为已确认",
+      "file": "agent/doupo-agent-ui/npc/npc-cold-runtime.js",
+      "status": "entry_focused_verified",
+      "evidence": "npc-closure-receipt-20261105: 同名sibling→stale异名不受影响；入口validatePreview→apply→mark(previewId)已有index-continuation-regressions覆盖",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-054",
+      "title": "NPC决定重放键缺状态版本，v2可能返回v1决定",
+      "file": "agent/doupo-agent-ui/npc/npc-decision-guard.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/npc-final106-continuation-receipt.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-055",
+      "title": "adjustPlan可以复活已取消或已完成计划",
+      "file": "agent/doupo-agent-ui/npc/npc-autonomy.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/npc-final106-continuation-receipt.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-056",
+      "title": "协调器丢动作和过程字段，outcome直接串联失败",
+      "file": "agent/doupo-agent-ui/npc/npc-conflict.js",
+      "status": "module_verified",
+      "evidence": "SELF-NPC-R5修复：bridge边界npcId-scoped action/attempt id，sourceActionId追溯保留（npc-closure-receipt-20261105）",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-057",
+      "title": "未显式提出process的决定仍可凭合成ID进入世界候选",
+      "file": "agent/doupo-agent-ui/npc/npc-outcome-bridge.js",
+      "status": "module_verified",
+      "evidence": "SELF-NPC-R5修复：bridge边界npcId-scoped action/attempt id，sourceActionId追溯保留（npc-closure-receipt-20261105）",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-058",
+      "title": "未知日期null规范化后变为第0天",
+      "file": "agent/doupo-agent-ui/npc/npc-ledger.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/npc-final106-continuation-receipt.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-059",
+      "title": "注入超预算的降级实际整个人物消失",
+      "file": "agent/doupo-agent-ui/npc/npc-ledger.js",
+      "status": "module_verified",
+      "evidence": "SELF-NPC-R6修复：预算逐轮动态判断，可行布局A全+B简保留（npc-closure-receipt-20261105）",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-060",
+      "title": "来源修订并确认事实后，检索仍使用旧的作品线与原作等级",
+      "file": "agent/doupo-agent-ui/narrative/facts-library.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/core-owned-tests.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-061",
+      "title": "角色已知事实在全局 limit 之后过滤，可误报角色不知情",
+      "file": "agent/doupo-agent-ui/narrative/facts-library.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/core-owned-tests.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-062",
+      "title": "第一次选条校验整库而非本次已展示目录白名单",
+      "file": "agent/doupo-agent-ui/narrative/facts-select.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/core-owned-tests.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-063",
+      "title": "历史事件适配器使用任务缓存 scope，宿主换聊天不会使旧任务失效",
+      "file": "agent/doupo-agent-ui/index.js",
+      "status": "entry_focused_verified",
+      "evidence": "implementation-continuation/index-memory-injection-green.log",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-064",
+      "title": "事实输入定位被最近两条角色消息提前终止",
+      "file": "agent/doupo-agent-ui/index.js",
+      "status": "entry_focused_verified",
+      "evidence": "index-continuation-regressions.test.mjs: 无本地存档旧DB恢复/旧facts写入/双AI消息输入定位/召回缓存完整身份/过期经历草稿",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-065",
+      "title": "正式沙盒口径仅存在内存且无记录时直接采用全局开关",
+      "file": "agent/doupo-agent-ui/sandbox/sandbox-mode.js",
+      "status": "entry_focused_verified",
+      "evidence": "implementation-continuation/world-index-sandbox-receipt.json + index-sandbox-regressions 6/6",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-066",
+      "title": "模式确认只记录任务版本而不复验也不使飞行候选失效",
+      "file": "agent/doupo-agent-ui/sandbox/sandbox-mode.js",
+      "status": "entry_focused_verified",
+      "evidence": "implementation-continuation/world-index-sandbox-receipt.json + index-sandbox-regressions 6/6",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-067",
+      "title": "updateTask拒绝非法期限前已经修改详情",
+      "file": "agent/doupo-agent-ui/world/world-runtime.js",
+      "status": "fixed_offline",
+      "evidence": "implementation-batch-a-2026-11-04",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-068",
+      "title": "同楼重生成撤销任务更新时遗漏原期限",
+      "file": "agent/doupo-agent-ui/world/world-runtime.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/world-final-receipt.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-069",
+      "title": "同楼先撤销再按旧opId去重使重放结果消失",
+      "file": "agent/doupo-agent-ui/world/world-runtime.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/world-final-receipt.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-070",
+      "title": "当日恢复的逾期归档条被成熟扫描水位跳过",
+      "file": "agent/doupo-agent-ui/impact/impact-runtime.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/world-final-receipt.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-071",
+      "title": "自动成熟不在同楼撤销日志内导致时钟回滚后仍已发酵",
+      "file": "agent/doupo-agent-ui/impact/impact-runtime.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/world-final-receipt.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-072",
+      "title": "schema同名level覆盖势力实力档次为世界氛围枚举",
+      "file": "agent/doupo-agent-ui/world/world-decide.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/world-final-receipt.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-073",
+      "title": "场记缓存签名不能区分多轮相同开头和世界变化",
+      "file": "agent/doupo-agent-ui/index.js",
+      "status": "entry_focused_verified",
+      "evidence": "index-continuation-regressions.test.mjs: 场记过期选择不写入；缓存签名含scope+epoch+双runtime+设置+消息身份",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-074",
+      "title": "待发酵安排绕过台账预算全量送入场记",
+      "file": "agent/doupo-agent-ui/impact/impact-select.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/world-final-receipt.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-075",
+      "title": "界面保留对象预算与节点宽限设置但现行链没有消费者",
+      "file": "agent/doupo-agent-ui/index.js",
+      "status": "entry_focused_verified",
+      "evidence": "UI final receipt + ui-final-window-green.log 32/32；全量87/88（第88为NPC在途红测）；真实宿主验收未做",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-076",
+      "title": "世界级传闻失去未证实标记且台账未传certainty",
+      "file": "agent/doupo-agent-ui/impact/impact-ops.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/world-final-receipt.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-077",
+      "title": "静默调用取消只结束本地等待，底层仍可能运行",
+      "file": "agent/doupo-agent-ui/host/llm-client.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/host-final-receipt.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-078",
+      "title": "鉴权头按大小写敏感合并，未实现覆盖语义",
+      "file": "agent/doupo-agent-ui/host/llm-client.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/host-final-receipt.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-079",
+      "title": "YAML接受半份文档并静默改变流式值类型",
+      "file": "agent/doupo-agent-ui/host/api-presets.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/host-final-receipt.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-080",
+      "title": "拉取模型没有截止时间，按钮可能永久等待",
+      "file": "agent/doupo-agent-ui/host/llm-client.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/host-final-receipt.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-081",
+      "title": "空写入清理失败却记录已清理",
+      "file": "agent/doupo-agent-ui/host/prompt-injection.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/host-final-receipt.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-082",
+      "title": "正文先交付再准备提交导致可见消息与状态分裂",
+      "file": "agent/doupo-agent-ui/core/orchestrator.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/core-owned-tests.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-083",
+      "title": "快照恢复丢失初始基线导致无法回滚首版",
+      "file": "agent/doupo-agent-ui/core/orchestrator.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/core-owned-tests.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-084",
+      "title": "解析失败与路由早退不会清理占位消息",
+      "file": "agent/doupo-agent-ui/core/orchestrator.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/core-owned-tests.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-085",
+      "title": "流水线超时未中止阶段信号",
+      "file": "agent/doupo-agent-ui/core/turn-pipeline.js",
+      "status": "entry_focused_verified",
+      "evidence": "implementation-continuation/index-memory-injection-green.log",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-086",
+      "title": "已完成或取消提交永久占满恢复日志",
+      "file": "agent/doupo-agent-ui/core/commit-recovery.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/core-opt086-green.log: 有界墓碑回收，不确定态绝不逐出；31/31 owned green",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-087",
+      "title": "手动卷号与自动进度失去来源信息",
+      "file": "agent/doupo-agent-ui/core/turn-stages.js",
+      "status": "entry_focused_verified",
+      "evidence": "implementation-continuation/index-memory-injection-green.log",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-088",
+      "title": "候选快照与返回对象共享引用使防篡改比较失效",
+      "file": "agent/doupo-agent-ui/request/request-router.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/core-owned-tests.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-089",
+      "title": "prepare之后丢失NPC候选失效追踪",
+      "file": "agent/doupo-agent-ui/request/request-router.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/core-owned-tests.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-090",
+      "title": "设定偏离审计事件不在白名单导致静默丢失",
+      "file": "agent/doupo-agent-ui/core/audit-log.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/core-owned-tests.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-091",
+      "title": "原著摘要忽略嵌套开关",
+      "file": "agent/doupo-agent-ui/host/control-dashboard.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/host-final-receipt.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-092",
+      "title": "总控模型设置按钮跳到不存在页面",
+      "file": "agent/doupo-agent-ui/index.js",
+      "status": "entry_focused_verified",
+      "evidence": "UI final receipt + ui-final-window-green.log 32/32；全量87/88（第88为NPC在途红测）；真实宿主验收未做",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-093",
+      "title": "恢复跟随默认按钮没有提交持久保存",
+      "file": "agent/doupo-agent-ui/index.js",
+      "status": "entry_focused_verified",
+      "evidence": "UI final receipt + ui-final-window-green.log 32/32；全量87/88（第88为NPC在途红测）；真实宿主验收未做",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-094",
+      "title": "API方案保存失败被吞但界面宣称已保存",
+      "file": "agent/doupo-agent-ui/index.js",
+      "status": "entry_focused_verified",
+      "evidence": "UI final receipt + ui-final-window-green.log 32/32；全量87/88（第88为NPC在途红测）；真实宿主验收未做",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-095",
+      "title": "悬浮详情条目不能用键盘激活",
+      "file": "agent/doupo-agent-ui/index.js",
+      "status": "entry_focused_verified",
+      "evidence": "UI final receipt + ui-final-window-green.log 32/32；全量87/88（第88为NPC在途红测）；真实宿主验收未做",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-096",
+      "title": "弹窗缺少完整焦点与对话框语义",
+      "file": "agent/doupo-agent-ui/index.js",
+      "status": "entry_focused_verified",
+      "evidence": "UI final receipt + ui-final-window-green.log 32/32；全量87/88（第88为NPC在途红测）；真实宿主验收未做",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-097",
+      "title": "刷新全部列表会连带关闭已打开详情",
+      "file": "agent/doupo-agent-ui/index.js",
+      "status": "entry_focused_verified",
+      "evidence": "UI final receipt + ui-final-window-green.log 32/32；全量87/88（第88为NPC在途红测）；真实宿主验收未做",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-098",
+      "title": "全部列表把截断后的200条当成总数",
+      "file": "agent/doupo-agent-ui/host/orb-hud.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/host-final-receipt.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-099",
+      "title": "旧世界书导入结果可以覆盖新选择的索引",
+      "file": "agent/doupo-agent-ui/index.js",
+      "status": "entry_focused_verified",
+      "evidence": "implementation-continuation/index-memory-injection-green.log",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-100",
+      "title": "失效或失败投影仍接受动作请求",
+      "file": "agent/doupo-agent-ui/host/ui-state.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/host-final-receipt.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-101",
+      "title": "非法时限被静默当成未填，用户设定期限被丢弃",
+      "file": "agent/doupo-agent-ui/index.js",
+      "status": "entry_focused_verified",
+      "evidence": "UI final receipt + ui-final-window-green.log 32/32；全量87/88（第88为NPC在途红测）；真实宿主验收未做",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-102",
+      "title": "影响保存仅调整状态筛选，仍可能被分量、性质或搜索隐藏",
+      "file": "agent/doupo-agent-ui/index.js",
+      "status": "entry_focused_verified",
+      "evidence": "UI final receipt + ui-final-window-green.log 32/32；全量87/88（第88为NPC在途红测）；真实宿主验收未做",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-103",
+      "title": "同日记忆按编号升序，最新预览可能优先显示旧条目",
+      "file": "agent/doupo-agent-ui/index.js",
+      "status": "entry_focused_verified",
+      "evidence": "UI final receipt + ui-final-window-green.log 32/32；全量87/88（第88为NPC在途红测）；真实宿主验收未做",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-104",
+      "title": "等条数替换经历不更新版本和修改时间",
+      "file": "agent/doupo-agent-ui/npc/npc-ledger.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/npc-final106-continuation-receipt.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-105",
+      "title": "前情上限已经丢行时目录仍报告未截断",
+      "file": "agent/doupo-agent-ui/narrative/facts-index.js",
+      "status": "module_verified",
+      "evidence": "implementation-continuation/core-owned-tests.json",
+      "runtime": "not_verified"
+    },
+    {
+      "checklistId": "OPT-106",
+      "title": "安装文档中的当前清单路径已过时",
+      "file": "INSTALL.md",
+      "status": "fixed_offline",
+      "evidence": "implementation-continuation/docs-final-receipt.json",
+      "runtime": "not_verified"
+    }
+  ],
+  "counts": {
+    "entry_focused_verified": 44,
+    "module_verified": 53,
+    "fixed_offline": 9
+  },
+  "note": "Reconciled interim status; module_verified is not integrated acceptance. Final suite and independent review remain pending. Original audit unchanged."
+}

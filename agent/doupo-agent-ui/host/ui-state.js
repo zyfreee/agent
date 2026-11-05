@@ -44,6 +44,9 @@ export function createUiState({ maxVisibleChanges = 50, maxActions = 100 } = {})
         const projection = projections.get(`${sessionId}\u0000${branchId}`);
         if (!projection) return { accepted: false, reason: 'projection_unavailable', requestId };
         if (projection.stateVersion !== stateVersion) return { accepted: false, reason: 'stale_projection', requestId, currentVersion: projection.stateVersion };
+        if (['use_item', 'start_action', 'continue_action', 'interrupt_action'].includes(action) && projection.readState !== 'ready') {
+            return { accepted: false, reason: 'projection_not_ready', requestId, readState: projection.readState };
+        }
         const request = { requestId, sessionId, branchId, stateVersion, action, targetId, payload: structuredClone(payload), status: 'submitted', submitted: true, executed: false };
         actionRequests.set(key, request);
         return { accepted: true, request: structuredClone(request) };

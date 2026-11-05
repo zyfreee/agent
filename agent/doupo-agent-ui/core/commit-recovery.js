@@ -9,14 +9,34 @@ export function createCommitRecovery({ stateStore, maxEntries = 500 } = {}) {
     if (!Number.isInteger(maxEntries) || maxEntries < 1 || maxEntries > 50000) throw new RangeError('maxEntries 超出范围');
     const journal = new Map();
     const cancelled = new Set();
+    // OPT-086：日志满时只回收安全终结（committed/cancelled）的最旧记录，
+    // 用有界墓碑保留幂等去重；未确认阶段永不回收。墓碑自身超限丢最旧。
+    const tombstones = new Map();
     function key(sessionId, branchId, commitId) { return `${sessionId}\u0000${branchId}\u0000${commitId}`; }
+    function tombstoneHit(id) {
+        const marker = tombstones.get(id);
+        if (!marker) return null;
+        return { status: 'duplicate_commit', commitId: id.split('\u0000')[2], stateVersion: marker.stateVersion ?? null };
+    }
+    function retireOldestTerminal() {
+        for (const [id, record] of journal) {
+            if (record.phase !== 'committed' && record.phase !== 'cancelled') continue;
+            journal.delete(id);
+            if (tombstones.size >= maxEntries) tombstones.delete(tombstones.keys().next().value);
+            tombstones.set(id, { phase: 'retired', stateVersion: record.result?.stateVersion ?? null, terminalAt: new Date().toISOString() });
+            return true;
+        }
+        return false;
+    }
     function prepare({ sessionId, branchId, baseVersion, commitId, candidate, messageId } = {}) {
         sessionId = required(sessionId, 'sessionId'); branchId = required(branchId, 'branchId'); commitId = required(commitId, 'commitId');
         baseVersion = required(baseVersion, 'baseVersion'); messageId = required(messageId, 'messageId');
         if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate) || !candidate.nextState || typeof candidate.nextState !== 'object' || Array.isArray(candidate.nextState)) throw new TypeError('candidate.nextState 必须是对象');
         const id = key(sessionId, branchId, commitId);
         if (journal.has(id)) return { status: 'duplicate_prepare', record: structuredClone(journal.get(id)) };
-        if (journal.size >= maxEntries) return { status: 'journal_full' };
+        const retired = tombstoneHit(id);
+        if (retired) return retired;
+        if (journal.size >= maxEntries && !retireOldestTerminal()) return { status: 'journal_full' };
         const state = stateStore.read({ sessionId, branchId });
         if (!state || !state.stateVersion) return { status: 'missing_branch' };
         if (state.stateVersion !== baseVersion) return { status: 'stale_state', currentVersion: state.stateVersion };
@@ -48,7 +68,11 @@ export function createCommitRecovery({ stateStore, maxEntries = 500 } = {}) {
     function commit({ sessionId, branchId, commitId } = {}) {
         sessionId = required(sessionId, 'sessionId'); branchId = required(branchId, 'branchId'); commitId = required(commitId, 'commitId');
         const id = key(sessionId, branchId, commitId); const record = journal.get(id);
-        if (!record) return { status: 'missing_journal' };
+        if (!record) {
+            const retired = tombstoneHit(id);
+            if (retired) return retired;
+            return { status: 'missing_journal' };
+        }
         if (cancelled.has(id) || record.phase === 'cancelled') return { status: 'cancelled' };
         if (record.phase === 'committed') return { status: 'duplicate_commit', result: structuredClone(record.result) };
         if (record.phase === 'evidence_conflict') return { status: 'save_uncertain', reason: 'message_evidence_conflict' };

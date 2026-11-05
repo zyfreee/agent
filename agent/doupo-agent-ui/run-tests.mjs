@@ -9,6 +9,7 @@ async function findTests(currentDirectory) {
     const tests = [];
     for (const entry of entries) {
         const fullPath = path.join(currentDirectory, entry.name);
+        if (entry.name === '.tmp' || entry.name === 'node_modules') continue; // 备份与依赖不参加测试
         if (entry.isDirectory()) tests.push(...await findTests(fullPath));
         else if (entry.isFile() && entry.name.endsWith('.test.mjs')) tests.push(fullPath);
     }

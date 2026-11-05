@@ -11,6 +11,20 @@ function makeContext() {
     };
 }
 
+// OPT-081: failed empty cleanup retains the previous non-cleared receipt.
+{
+    let body = '', fail = false;
+    const host = { setExtensionPrompt(key, text) { if (fail && !text) throw new Error('blocked'); body = text; } };
+    const channel = createPromptInjection({ getContext: () => host });
+    channel.write({ text: 'old' }); fail = true;
+    assert.equal(channel.write({ text: ' ' }).status, 'failed');
+    assert.equal(channel.inspect().last.cleared, false);
+    assert.equal(body, 'old');
+    fail = false;
+    assert.equal(channel.write({ text: '' }).status, 'empty');
+    assert.equal(channel.inspect().last.cleared, true);
+}
+
 // No host channel: the module must report it instead of pretending to inject.
 const absent = createPromptInjection({ getContext: () => ({}) });
 assert.equal(absent.inspect().status, 'unsupported');

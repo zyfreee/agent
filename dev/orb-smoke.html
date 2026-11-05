@@ -15,7 +15,7 @@
 <div class="page">
     <h1>悬浮球冒烟页</h1>
     <p>页面加载后会自动激活 Agent 扩展（宿主能力是桩）。右侧应出现小球：点它拉成长条，再点图标看只读信息窗。</p>
-    <p>下面这行是给信息窗灌的演示数据：世界第 5 天（含势力/氛围）、纳戒有功法行囊、记忆两条、人物簿有三个人。</p>
+    <p>下面这行是给信息窗灌的演示数据：世界第 5 天（事件 6 条、势力氛围齐全）、纳戒有功法行囊、记忆两条、人物簿六个人。事件与人物都超过主窗上限，栏目标题右边应出现「全部」，点它弹全量副窗（副窗自己滚动）。</p>
 </div>
 <script type="module">
     // 最小宿主桩：没有 eventSource、没有 extensionSettings，扩展会走“未连接宿主”的默认路径。
@@ -30,8 +30,15 @@
         clock: { day: 5, minute: 510, label: '' },
         info: { era: '斗气大陆', location: '乌坦城', weather: '晴', reputation: '', wanted: '魔炎谷通缉' },
         tension: 'rising',
-        nearEvents: [{ id: 'e1', text: '坊市集市开张', day: 4, weight: 'minor', basis: '酒馆听说', endDay: 6 }],
-        worldEvents: [{ id: 'e2', text: '迦南学院招生队路过', day: 3, weight: 'major', endDay: 9, pinned: true }],
+        nearEvents: [
+            { id: 'e1', title: '坊市开市', text: '坊市集市开张，摊位从街口一直摆到河桥，人挤得走不动', day: 4, weight: 'minor', basis: '酒馆听说', location: '乌坦城·坊市', endDay: 6 },
+            { id: 'e3', title: '中街设卡盘查', text: '加列家中街设卡盘查，过往行商都要交验货单', day: 5, weight: 'minor', basis: '亲眼所见', location: '乌坦城·中街', endDay: 7 },
+            { id: 'e4', title: '三阶魔核有下落', text: '药老要的三阶魔核在拍卖行有了下落，三日后开拍', day: 5, weight: 'major', basis: '拍卖行风声' },
+            { id: 'e5', text: '萧家护卫队在城外操练', day: 4, weight: 'minor' },
+            { id: 'e6', title: '纳兰家车马入城', text: '纳兰家的车马进了乌坦城，随行带着云岚宗的旗号', day: 5, weight: 'rumor', basis: '城门守卫闲聊' },
+            { id: 'e7', text: '后山出现陌生斗者踪迹', day: 3, weight: 'minor' },
+        ],
+        worldEvents: [{ id: 'e2', title: '迦南学院招生', text: '迦南学院招生队路过乌坦城，在广场当街考校少年斗气', day: 3, weight: 'major', basis: '城门守卫闲聊', location: '乌坦城广场', endDay: 9, pinned: true }],
         factions: [
             { name: '魔炎谷', stance: 'hostile', dynamics: '扬言寻仇', basis: '上楼放话', day: 3, updatedDay: 4 },
             { name: '乌坦城萧家', stance: 'allied', dynamics: '在筹备护卫', day: 2, updatedDay: 3 },
@@ -70,6 +77,9 @@
             { name: '萧薰儿', favor: 45, presence: '在场', importance: '重要', identity: '萧家小姐' },
             { name: '药老', favor: 88, presence: '在场', importance: '重要', identity: '寄居戒指的前辈' },
             { name: '萧战', favor: 0, presence: '不在场', importance: '不重要', identity: '萧家家长' },
+            { name: '萧媚', favor: 12, presence: '在场', importance: '不重要', identity: '萧家旁支' },
+            { name: '加列奥', favor: -30, presence: '不在场', importance: '重要', identity: '加列家少主' },
+            { name: '坊市管事', favor: 5, presence: '在场', importance: '不重要', identity: '坊市管事' },
         ],
     });
 

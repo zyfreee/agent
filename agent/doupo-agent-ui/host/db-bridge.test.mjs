@@ -82,6 +82,62 @@ function createFakeApi() {
     return { api, calls, setData: view => { data = view; } };
 }
 
+// OPT-009: expired ensure/CRUD/debounce never dispatch into the next owner.
+{
+    const { api, calls } = createFakeApi();
+    globalThis.window = { AutoCardUpdaterAPI: api };
+    let release;
+    const blocked = new Promise(resolve => { release = resolve; });
+    const rawImport = api.importTemplateFromData;
+    api.importTemplateFromData = async (...args) => { await blocked; return rawImport(...args); };
+    let owner = 1;
+    const bridge = createDbBridge({ capture: () => owner, isCurrent: token => token === owner });
+    const pending = bridge.mirrorSelf(sampleSelf);
+    await Promise.resolve();
+    owner += 1;
+    bridge.onChatChanged();
+    release();
+    assert.equal((await pending).ok, false, 'expired ensure must not continue with CRUD');
+    assert.equal(api.exportTableAsJson().sheet_dpProfile.content.length, 1);
+    let adopted = 0;
+    bridge.onExternalChange(() => { adopted += 1; });
+    calls.callbacks[0]({}, {});
+    bridge.onChatChanged();
+    await new Promise(resolve => setTimeout(resolve, 520));
+    assert.equal(adopted, 0, 'old debounced view must be discarded');
+    const settings = { enabled: false };
+    const disabled = createDbBridge({ getSettings: () => settings });
+    assert.equal((await disabled.mirrorSelf(sampleSelf)).ok, false);
+    assert.equal(await disabled.adoptSelf(), null);
+    delete globalThis.window;
+}
+
+// OPT-011: mirror calls reconcile sequentially, including failed CRUD fallback.
+{
+    const { api, calls } = createFakeApi();
+    globalThis.window = { AutoCardUpdaterAPI: api };
+    const bridge = createDbBridge();
+    await bridge.ensure();
+    calls.crudFails = true;
+    let release, started;
+    const entered = new Promise(resolve => { started = resolve; });
+    const gate = new Promise(resolve => { release = resolve; });
+    const raw = api.insertRow;
+    let first = true;
+    api.insertRow = async (...args) => {
+        if (first) { first = false; started(); await gate; }
+        return raw(...args);
+    };
+    const older = bridge.mirrorSelf(sampleSelf);
+    await entered;
+    const newer = bridge.mirrorSelf({ ...sampleSelf, gold: 987 });
+    await new Promise(resolve => setTimeout(resolve, 5));
+    release();
+    await Promise.all([older, newer]);
+    assert.equal((await bridge.adoptSelf()).gold, 987, 'latest queued snapshot must win');
+    delete globalThis.window;
+}
+
 // 1. 没有数据库脚本：全部静默跳过，状态 missing
 {
     delete globalThis.window;
@@ -123,8 +179,8 @@ function createFakeApi() {
     const sampleMemory = {
         schemaVersion: 2,
         entries: [
-            { id: 'm1', tier: 'small', text: '穆蛇之辱', quote: '把灵石留下。', basis: '测试', related: ['穆蛇'], aliases: ['穆老大'], weight: 'minor', tag: '', day: 2, done: false, resolvedDay: null, note: '' },
-            { id: 'm2', tier: 'big', text: '欠药老一条命', quote: '', basis: '', related: ['药老'], aliases: ['药尘'], weight: 'major', tag: 'grudge', day: 3, done: false, resolvedDay: null, note: '' },
+            { id: 'm1', tier: 'small', text: '穆蛇之辱', quote: '把灵石留下。', basis: '测试', related: ['穆蛇'], aliases: ['穆老大'], weight: 'minor', tag: '', day: 2, note: '' },
+            { id: 'm2', tier: 'big', text: '欠药老一条命', quote: '', basis: '', related: ['药老'], aliases: ['药尘'], weight: 'major', tag: 'grudge', day: 3, note: '' },
         ],
         log: [],
         updatedAt: '2026-10-29T00:00:00.000Z',
@@ -133,18 +189,53 @@ function createFakeApi() {
     assert.equal(memoryMirror.ok, true);
     const memoryAdopted = await bridge.adoptMemory();
     assert.ok(sameMemoryState(memoryAdopted, sampleMemory));
-    // 了结一条 → 一次 updateRow
-    const resolved = JSON.parse(JSON.stringify(sampleMemory));
-    resolved.entries[0].done = true;
-    resolved.entries[0].resolvedDay = 4;
-    const resolvedMirror = await bridge.mirrorMemory(resolved);
-    assert.equal(resolvedMirror.ok, true);
-    assert.equal(resolvedMirror.ops, 1);
-    assert.equal((await bridge.adoptMemory()).entries[0].done, true);
+    // 改分量+备注 → 一次 updateRow
+    const memoryChanged = JSON.parse(JSON.stringify(sampleMemory));
+    memoryChanged.entries[0].weight = 'major';
+    memoryChanged.entries[0].note = '穆蛇扬言报复';
+    const changedMirror = await bridge.mirrorMemory(memoryChanged);
+    assert.equal(changedMirror.ok, true);
+    assert.equal(changedMirror.ops, 1);
+    const reAdopted = await bridge.adoptMemory();
+    assert.equal(reAdopted.entries[0].weight, 'major');
+    assert.equal(reAdopted.entries[0].note, '穆蛇扬言报复');
 
     // 设置关掉：跳过
     const offBridge = createDbBridge({ getSettings: () => ({ enableDbBridge: false }) });
     assert.deepEqual(await offBridge.mirrorSelf(sampleSelf), { ok: false, skipped: true });
+    delete globalThis.window;
+}
+
+// 2b. 旧版目标表升级：ensure 原位迁移并回导模板（老行保留），随后镜像/收养走新结构
+{
+    const { api, calls, setData } = createFakeApi();
+    const legacyView = {
+        mate: { type: 'chatSheets', version: 1 },
+        sheet_dpGoalsOld: {
+            name: '纳戒·目标',
+            content: [
+                ['row_id', '编号', '内容', '优先级', '期限', '达成'],
+                ['1', 'g1', '三年之约，云岚宗一雪前耻', '主线', '三年后', '否'],
+            ],
+        },
+    };
+    api.getTableTemplate = () => JSON.parse(JSON.stringify(legacyView));
+    setData(JSON.parse(JSON.stringify(legacyView)));
+    globalThis.window = { AutoCardUpdaterAPI: api };
+    const bridge = createDbBridge({ getSettings: () => undefined });
+    const withGoals = {
+        ...sampleSelf,
+        goals: [{ id: 'g1', title: '三年之约', name: '三年之约', text: '三年之约，云岚宗一雪前耻', priority: '主线', due: '三年后', done: false }],
+    };
+    const mirrored = await bridge.mirrorSelf(withGoals);
+    assert.equal(mirrored.ok, true, `旧表升级镜像应成功：${bridge.status().message}`);
+    assert.equal(calls.importTemplate, 1, '迁移过的模板要回导一次才落库');
+    const adopted = await bridge.adoptSelf();
+    assert.ok(adopted, '升级后应能收养');
+    assert.equal(adopted.goals.length, 1, '升级不丢目标行');
+    assert.equal(adopted.goals[0].title, '三年之约', '标题列已补出');
+    assert.equal(adopted.goals[0].text, '三年之约，云岚宗一雪前耻', '完整内容原样保留');
+    assert.equal(adopted.goals[0].done, false);
     delete globalThis.window;
 }
 

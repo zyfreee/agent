@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { SANDBOX_WORLD_PROMPT, SANDBOX_DECIDE_NOTE } from './sandbox-world.js';
+import { SANDBOX_WORLD_PROMPT, SANDBOX_DECIDE_NOTE, buildSandboxDecideNote } from './sandbox-world.js';
 
 // 1. 开放世界哲学：口径改名、不跟剧情、世界书不在场时以本提示词为准
 for (const keyword of ['【开放世界 · 斗气大陆】', '开放世界口径', '不跟随原著剧情', '不是日程表', '没有世界书条目可查时', '已发生事实']) {
@@ -43,4 +43,12 @@ for (const keyword of ['【开放世界口径】', '不跟随原著剧情', 'rum
 }
 assert.ok(SANDBOX_DECIDE_NOTE.length < 300, `决定分支说明太长：${SANDBOX_DECIDE_NOTE.length} 字`);
 
+
+// 6. 动态决定说明：惯性三档都要落到字面；非法惯性回落中档；人物自主开关有对应说明
+for (const [inertia, keyword] of [['strong', '世界惯性·强'], ['medium', '世界惯性·中'], ['weak', '世界惯性·弱']]) {
+    assert.ok(buildSandboxDecideNote({ inertia }).includes(keyword), `${inertia} 惯性说明缺失`);
+}
+assert.ok(buildSandboxDecideNote({ inertia: 'bogus' }).includes('世界惯性·中'), '非法惯性要回落中档');
+assert.ok(buildSandboxDecideNote({ inertia: 'weak', canonCharactersAutonomous: false }).includes('只对玩家的行动作出反应'), '关闭人物自主要有对应说明');
+assert.ok(buildSandboxDecideNote({ inertia: 'strong' }).includes('【开放世界口径】'), '动态说明要保留基础口径声明');
 console.log('sandbox world tests passed');

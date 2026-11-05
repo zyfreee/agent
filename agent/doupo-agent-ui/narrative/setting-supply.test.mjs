@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
-import { createSettingSupply } from './setting-supply.js';
+import test from 'node:test';
+import { createSettingSupply, trimToVolume } from './setting-supply.js';
+
+assert.equal(trimToVolume('当前内容\n〔卷04 增补〕\n未来内容', 1), '当前内容');
+assert.equal(trimToVolume('当前内容\n〔卷04 增补〕\n未来内容', 4), '当前内容\n〔卷04 增补〕\n未来内容');
 import { createTurnStages } from '../core/turn-stages.js';
 import { createLlmClient, buildSettingSelectPrompt } from '../host/llm-client.js';
 
@@ -146,5 +150,83 @@ const emptyStages = createTurnStages({ runner: {}, actions: {}, world: {}, compo
 const none = await emptyStages.gather(gatherCtx);
 assert.equal(none.status, 'no_settings');
 assert.match(none.note, /还没有登记原著设定/);
+
+test('budget fitting retains the accepted summary instead of reconstructing it', () => {
+    const fittedSupply = createSettingSupply({ countTokens: text => text.length });
+    fittedSupply.register({ id: 'fit', name: '设定', content: `短句。${'很长的后续句子'.repeat(20)}。` });
+    const result = fittedSupply.assemble([{ id: 'fit', layer: 'full' }], { budget: 30 });
+    assert.deepEqual(result.layers, [{ id: 'fit', layer: 'summary' }]);
+    assert.equal(result.text, '[fit] 设定：短句。…');
+    assert.equal(result.tokens, result.text.length);
+    assert.ok(result.tokens <= result.budget);
+});
+
+test('summary and fitted summary cannot expose later-volume sections or summary fallback', () => {
+    const volumeSupply = createSettingSupply({ countTokens: text => text.length });
+    volumeSupply.register([
+        { id: 'vol', name: '设定', content: `〔卷01〕\n简介：当下。${'本卷背景。'.repeat(20)}\n〔卷04 增补〕\n正文：后续秘密。` },
+        { id: 'future', name: '后期', content: '〔卷04 增补〕\n正文：后续秘密。', summary: '后续秘密摘要。' },
+    ]);
+    for (const [layer, budget] of [['summary', 500], ['summary', 45], ['full', 45]]) {
+        const result = volumeSupply.assemble([{ id: 'vol', layer }], { volume: 1, budget });
+        assert.match(result.text, /当下/);
+        assert.doesNotMatch(result.text, /卷04|后续秘密/);
+        assert.equal(result.tokens, result.text.length);
+        assert.ok(result.tokens <= budget);
+    }
+    const future = volumeSupply.assemble([{ id: 'future', layer: 'summary' }], { volume: 1, budget: 500 });
+    assert.doesNotMatch(future.text, /卷04|后续秘密/);
+});
+
+test('token accounting includes separators and measures the entire accepted text', () => {
+    const counted = createSettingSupply({ countTokens: text => text.length });
+    counted.register([{ id: 'a', name: '甲', content: '正文。' }, { id: 'b', name: '乙', content: '正文。' }]);
+    const chosen = [{ id: 'a', layer: 'mention' }, { id: 'b', layer: 'mention' }];
+    const exact = counted.assemble(chosen, { budget: 11 });
+    assert.equal(exact.text, '[a] 甲\n[b] 乙');
+    assert.equal(exact.tokens, 11);
+    const tight = counted.assemble(chosen, { budget: 10 });
+    assert.deepEqual(tight.usedIds, ['a']);
+    assert.deepEqual(tight.droppedIds, ['b']);
+    assert.equal(tight.tokens, tight.text.length);
+    const rounded = createSettingSupply({ countTokens: text => Math.ceil(text.length / 4) });
+    rounded.register([{ id: 'a', name: '甲', content: '正文。' }, { id: 'b', name: '乙', content: '正文。' }]);
+    const shared = rounded.assemble(chosen, { budget: 3 });
+    assert.deepEqual(shared.usedIds, ['a', 'b'], 'joined token counts need not equal the sum of per-line counts');
+    assert.equal(shared.tokens, Math.ceil(shared.text.length / 4));
+});
+
+test('fitting uses the supplied token counter, including ellipsis and prefix fallback', () => {
+    const countTokens = text => [...text].reduce((total, ch) => total + (ch === '…' ? 5 : 2), 0);
+    const counted = createSettingSupply({ countTokens });
+    counted.register([
+        { id: 's', name: '设定', content: `甲。${'长句'.repeat(50)}。` },
+        { id: 'p', name: '设定', content: '没有句号'.repeat(50) },
+    ]);
+    for (const id of ['s', 'p']) {
+        const result = counted.assemble([{ id, layer: 'summary' }], { budget: 60 });
+        assert.equal(result.layers[0].layer, 'summary');
+        assert.ok(result.text.endsWith('…'));
+        assert.equal(result.tokens, countTokens(result.text));
+        assert.ok(result.tokens <= 60);
+    }
+    const ellipsisBoundary = counted.assemble([{ id: 's', layer: 'summary' }], { budget: countTokens('[s] 设定：甲。…') - 1 });
+    assert.deepEqual(ellipsisBoundary.layers, [{ id: 's', layer: 'mention' }], 'ellipsis must fit along with the sentence');
+});
+
+test('default and unlimited budgets keep full text and preserve volume trimming', () => {
+    const unlimited = createSettingSupply({ countTokens: text => text.length });
+    unlimited.register({ id: 'all', name: '设定', content: '〔卷01〕\n当前正文。\n〔卷04 增补〕\n后续秘密。' });
+    const chosen = [{ id: 'all', layer: 'mention' }];
+    for (const budget of [undefined, 0, '', Infinity, -1]) {
+        const result = unlimited.assemble(chosen, { budget });
+        assert.equal(result.budget, 0);
+        assert.deepEqual(result.layers, [{ id: 'all', layer: 'full' }]);
+        assert.match(result.text, /后续秘密/);
+        assert.equal(result.tokens, result.text.length);
+        assert.doesNotMatch(unlimited.assemble(chosen, { budget, volume: 1 }).text, /卷04|后续秘密/);
+    }
+    assert.match(unlimited.assemble(chosen).text, /后续秘密/);
+});
 
 console.log('setting supply tests passed');

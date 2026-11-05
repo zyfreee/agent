@@ -6,6 +6,7 @@ assert.ok(WORLD_DECIDE_PROMPT.includes('"note"') && WORLD_DECIDE_PROMPT.includes
 assert.ok(WORLD_DECIDE_PROMPT.includes('rumor'), '默认提示词必须教传闻用法');
 assert.ok(WORLD_DECIDE_PROMPT.includes('reputation') && WORLD_DECIDE_PROMPT.includes('wanted'), '默认提示词必须含名声/通缉');
 assert.ok(WORLD_DECIDE_PROMPT.includes('basis'), '默认提示词必须要求事件有依据');
+assert.ok(WORLD_DECIDE_PROMPT.includes('title 必写'), '事件短标题必须要求必写');
 assert.ok(WORLD_DECIDE_PROMPT.includes('addTask') && WORLD_DECIDE_PROMPT.includes('completeTask'), '默认提示词必须含任务操作');
 assert.ok(WORLD_DECIDE_PROMPT.includes('不要替玩家立他没答应的事'), '任务规则要防越权立任务');
 assert.ok(WORLD_DECIDE_PROMPT.includes('setFaction') && WORLD_DECIDE_PROMPT.includes('setPerson'), '默认提示词必须含势力/人物操作');
@@ -14,6 +15,8 @@ assert.ok(WORLD_DECIDE_PROMPT.includes('时间跳跃'), '提示词要写时间�
 assert.ok(WORLD_DECIDE_PROMPT.includes('四季轮转'), '提示词要写季节');
 assert.equal(DECIDE_JSON_SCHEMA.properties.ops.items.properties.op.enum.includes('setFaction'), true, 'schema 认势力操作');
 assert.ok(DECIDE_JSON_SCHEMA.properties.ops.items.properties.stance, 'schema 认 stance 字段');
+assert.ok(['type', 'level', 'leader', 'elders', 'members', 'assets', 'relations'].every(key => DECIDE_JSON_SCHEMA.properties.ops.items.properties[key]), 'schema 认势力档案字段');
+assert.ok(WORLD_DECIDE_PROMPT.includes('档案字段'), '提示词写明势力档案与留空保旧');
 assert.equal(DECIDE_JSON_SCHEMA.properties.ops.items.properties.op.enum.includes('addEvent'), true);
 assert.equal(DECIDE_JSON_SCHEMA.properties.ops.items.properties.weight.enum.includes('rumor'), true);
 assert.equal(DECIDE_JSON_SCHEMA.properties.ops.items.properties.op.enum.includes('addTask'), true, 'schema 认任务操作');
@@ -64,5 +67,20 @@ assert.equal(overflow.ops.length, 12, '操作上限 12 条');
 const mixed = parseDecision(JSON.stringify({ note: 'n', ops: [{ op: 'advance', days: 1 }, 'junk', { nope: 1 }, { op: 'addEvent', scope: 'near', text: '好条目' }] }));
 assert.equal(mixed.ops.length, 2, '坏条目过滤、好条目保留');
 assert.equal(mixed.dropped, 2);
+
+// OPT-072: exercise the emitted schema's type/enum/required/anyOf constraints offline.
+function schemaAccepts(schema, value) {
+    if (schema.type && (schema.type === 'array' ? !Array.isArray(value) : schema.type === 'object' ? !value || typeof value !== 'object' || Array.isArray(value) : typeof value !== schema.type)) return false;
+    if (schema.enum && !schema.enum.includes(value)) return false;
+    if (schema.required?.some(key => !(key in value))) return false;
+    if (schema.properties && Object.entries(schema.properties).some(([key, child]) => key in value && !schemaAccepts(child, value[key]))) return false;
+    if (schema.items && !value.every(item => schemaAccepts(schema.items, item))) return false;
+    return !schema.anyOf || schema.anyOf.some(branch => schemaAccepts(branch, value));
+}
+const acceptsOp = op => schemaAccepts(DECIDE_JSON_SCHEMA, { ops: [op] });
+assert.equal(acceptsOp({ op: 'setFaction', name: '云岚宗', level: '加玛帝国一流' }), true);
+assert.equal(acceptsOp({ op: 'setTension', level: 'rising' }), true);
+assert.equal(acceptsOp({ op: 'setTension', level: 'bad' }), false);
+assert.equal(acceptsOp({ op: 'setTension' }), false);
 
 console.log('world decide tests passed');

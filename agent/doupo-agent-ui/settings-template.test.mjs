@@ -15,13 +15,13 @@ assert.match(entry, /renderExtensionTemplateAsync\('third-party\/agent', 'settin
 assert.match(entry, /new URL\('\.\/settings\.html', import\.meta\.url\)/);
 assert.match(entry, /#extensions_settings2/);
 assert.match(entry, /data-settings-page="overview"/);
-for (const page of ['hub', 'facts', 'action', 'world', 'npc', 'npcledger', 'self', 'memory', 'impact', 'sandbox', 'runtime']) {
+for (const page of ['apis', 'hub', 'facts', 'action', 'world', 'npc', 'npcledger', 'self', 'memory', 'impact', 'sandbox', 'runtime']) {
     assert.match(entry, new RegExp(`data-settings-page="${page}"`), `缺少独立页面：${page}`);
     assert.match(entry, new RegExp(`data-settings-section="${page}"`), `缺少页面内容：${page}`);
 }
 assert.doesNotMatch(entry, /data-settings-page="llm"/, '「模型与连接」页已并入「模型设置」，不该再出现');
 assert.doesNotMatch(entry, /data-settings-page="exp"/, '独立「经历」页已并入人物信息面板弹窗，不该再出现');
-for (const setting of ['llm.provider', 'facts.maxEntries', 'action.requireConfirmation', 'world.tickMinutes', 'npc.maxCandidates', 'impact.maxChainDepth', 'impact.decideTemperature', 'impact.decideMaxTokens', 'impact.decideTopP', 'impact.injectTemperature', 'impact.injectMaxTokens', 'impact.injectPresencePenalty', 'enableSandboxMode', 'sandbox.inertia', 'budget.maxModules', 'status.showHistory', 'setting.progress', 'injection.depth', 'ui.legacyTurn', 'prompt.select']) {
+for (const setting of ['facts.maxEntries', 'action.requireConfirmation', 'world.tickMinutes', 'npc.maxCandidates', 'impact.maxChainDepth', 'enableSandboxMode', 'sandbox.inertia', 'budget.maxModules', 'status.showHistory', 'setting.progress', 'injection.depth', 'ui.legacyTurn', 'prompt.select']) {
     assert.match(entry, new RegExp(`data-setting="${setting.replace('.', '\\.')}`), `缺少设置绑定：${setting}`);
 }
 assert.match(entry, /activeSettingsPage/);
@@ -46,16 +46,59 @@ for (const path of new Set(boundPaths)) {
     }
 }
 assert.ok(boundPaths.includes('sandbox.inertia'));
-// 「模型设置」集中页必须真的收齐每一路独立模型调用的接口与参数，且功能页不再重复：
-// 同一份 API 设置只允许出现一次（就在模型设置页），提示词则只留在各功能页。
+// 「模型设置」页已减负成“每个功能只选一个方案”（schemaVersion 10）：
+// 旧的手填字段（模式选择、地址/密钥/协议/模型名、采样参数、每卡拉取按钮）全部删除，
+// 不绑方案＝跟随酒馆主连接；旧配置由 host-storage 的迁移一次性搬成方案并绑定。
 const hubStart = entry.indexOf('data-settings-section="hub"');
 const hubEnd = entry.indexOf('data-settings-section="facts"');
 assert.ok(hubStart >= 0 && hubEnd > hubStart, '找不到「模型设置」集中页');
 const hubMarkup = entry.slice(hubStart, hubEnd);
-for (const setting of ['llm.mode', 'setting.mode', 'settle.mode', 'world.decideMode', 'npc.ledgerMode', 'npc.coldMode', 'memory.decideMode', 'impact.decideMode', 'impact.injectMode']) {
-    assert.match(hubMarkup, new RegExp(`data-setting="${setting.replace('.', '\\.')}"`), `模型设置页缺少：${setting}`);
-    assert.equal(boundPaths.filter(path => path === setting).length, 1, `接口设置应只在模型设置页出现一次：${setting}`);
+for (const legacy of ['llm.mode', 'llm.baseUrl', 'llm.apiKey', 'llm.model', 'llm.temperature', 'llm.topP', 'setting.mode', 'setting.baseUrl', 'settle.mode', 'settle.baseUrl', 'settle.temperature', 'world.decideMode', 'world.decideBaseUrl', 'world.decideTemperature', 'npc.ledgerMode', 'npc.ledgerBaseUrl', 'npc.ledgerTemperature', 'npc.coldMode', 'npc.coldBaseUrl', 'memory.decideMode', 'memory.decideBaseUrl', 'memory.decideTemperature', 'impact.modelMode', 'impact.decideMode', 'impact.decideBaseUrl', 'impact.decideTemperature', 'impact.injectMode', 'impact.injectBaseUrl', 'impact.injectTemperature']) {
+    assert.doesNotMatch(entry, new RegExp(`data-setting="${legacy.replace('.', '\\.')}"`), `手填字段应已删除：${legacy}`);
 }
+for (const legacyButton of ['data-llm-models', 'data-facts-models', 'data-settle-models', 'data-worlddecide-models', 'data-memorydecide-models', 'data-npc-ledger-models', 'data-npc-cold-models', 'data-impact-models']) {
+    assert.doesNotMatch(entry, new RegExp(legacyButton.replace(/-/g, '\\-')), `每卡拉取模型按钮应已删除（方案卡上保留）：${legacyButton}`);
+}
+assert.doesNotMatch(entry, /CONNECTION_MODE_TOGGLERS/, '连接模式登记表应随模式选择一起删除');
+// 非连接类的运行参数保留在卡上：全局超时、世界/记忆的喂楼数与条目上限。
+for (const keep of ['llm.timeoutMs', 'world.decideMaxFloors', 'world.decideMaxEntries', 'memory.decideMaxFloors', 'memory.decideMaxEntries']) {
+    assert.match(hubMarkup, new RegExp(`data-setting="${keep.replace('.', '\\.')}"`), `模型设置页应保留运行参数：${keep}`);
+}
+// API设置：方案编辑元素齐备；「模型设置」页每卡一个方案选择（纳戒决定与记忆决定是两条独立调用，各自绑定）。
+const apisStart = entry.indexOf('data-settings-section="apis"');
+const apisEnd = entry.indexOf('data-settings-section="hub"');
+assert.ok(apisStart >= 0 && apisEnd > apisStart, '找不到「API设置」页');
+const apisMarkup = entry.slice(apisStart, apisEnd);
+assert.match(apisMarkup, /data-api-preset-list/, 'API设置页缺少方案列表容器');
+assert.match(apisMarkup, /data-api-add-preset/, 'API设置页缺少新建方案按钮');
+for (const binding of ['llm.apiPreset', 'setting.apiPreset', 'world.decideApiPreset', 'npc.ledgerApiPreset', 'npc.extractApiPreset', 'npc.expApiPreset', 'npc.coldApiPreset', 'self.decideApiPreset', 'memory.decideApiPreset', 'memory.recallApiPreset', 'memory.consolidateApiPreset', 'impact.decideApiPreset', 'impact.injectApiPreset']) {
+    assert.equal(boundPaths.filter(path => path === binding).length, 1, `方案绑定下拉应只在模型设置页出现一次：${binding}`);
+}
+assert.match(hubMarkup, /data-api-preset-select/g ? /data-api-preset-select/ : /never/, '模型设置页缺少方案绑定下拉');
+assert.equal([...hubMarkup.matchAll(/data-api-preset-select/g)].length, 14, '方案绑定下拉应恰好 14 个（每个独立模型调用一张卡；行动结算分类与最终判定共用一张）');
+assert.doesNotMatch(entry, /data-setting="settle\.apiPreset"/, '分类判定已并入最终判定同一套 API，不再有独立绑定下拉');
+// 绑定下拉首项＝跟随酒馆主连接（不绑方案的语义），不再是“手动配置”。
+assert.match(entry, /跟随酒馆主连接（不绑方案）/, '绑定下拉首项应标明“跟随酒馆主连接”');
+assert.doesNotMatch(entry, /手动配置（用下面的字段）/, '“手动配置”选项应随手填字段一起删除');
+// 构建器语义：绑定了方案整套走方案，没绑＝跟随酒馆（connection: 'tavern'），不再读旧手填字段拼覆盖。
+assert.match(entry, /function presetOverrides/, '缺少方案覆盖解析函数');
+assert.match(entry, /presetOverrides\('memory'\) \?\? \{ connection: 'tavern' \}/, '记忆决定没绑方案时应回落跟随酒馆');
+assert.match(entry, /recallOverrides: presetOverrides\('memoryRecall'\) \?\? \{ connection: 'tavern' \}/, '记忆召回没绑方案时应回落跟随酒馆');
+assert.match(entry, /consolidateOverrides: presetOverrides\('memoryConsolidate'\) \?\? \{ connection: 'tavern' \}/, '记忆总结没绑方案时应回落跟随酒馆');
+assert.match(entry, /overrides: presetOverrides\('settleResult'\) \?\? \{ connection: 'tavern' \}/, '行动结算（分类判定并入最终判定）没绑方案时应回落跟随酒馆');
+assert.match(entry, /presetOverrides\('settleResult'\) \?\? \{ connection: 'tavern' \}/, '生成前最终判定没绑方案也应跟随酒馆');
+assert.match(entry, /data-settle-follow-default/, '自定义提示词必须能显式恢复跟随默认');
+assert.match(entry, /data-settle-prompt-warning/, '保留旧提示词时必须提示格式兼容边界');
+assert.match(entry, /writeSettleAdjudicationForPrompt\(\{ force: true, preview: true \}\)/, '手动按钮只预览，不占用正文注入通道');
+assert.match(entry, /presetOverrides\('world'\) \?\? \{ connection: 'tavern' \}/, '世界决定没绑方案时应回落跟随酒馆');
+assert.match(entry, /presetOverrides\('npcCold'\) \?\? \{ connection: 'tavern' \}/, '冷藏推进员没绑方案时应回落跟随酒馆');
+assert.match(entry, /return presetOverrides\('facts'\);/, '原著选条没绑方案时应回落跟随酒馆');
+assert.match(entry, /function impactPlanFromPreset/, '缺少影响方案→计划转换');
+// 方案卡上的“拉取模型”：按钮、取值函数、点击接线三者一个不能少（这是全扩展唯一的拉模型入口；
+// 按钮由 apiPresetHtml 运行时生成，不在静态节标里）。
+assert.match(entry, /data-api-preset-models/, '方案卡缺少拉取模型按钮');
+assert.match(entry, /async function fetchApiPresetModels\(/, '缺少方案卡拉取函数');
+assert.match(entry, /closest\?\.\('\[data-api-preset-models\]'\)/, '方案卡拉取按钮没有点击接线');
 // 纳戒与记忆的决定连接合并成一套（统一存 memory.decide*，模型设置页“纳戒与记忆 · 决定模型”一张卡）：
 // 纳戒侧的独立连接卡、模式下拉与拉取按钮不该再出现。
 assert.doesNotMatch(entry, /data-setting="self\.decideMode"/, '纳戒决定连接已并入记忆侧共用卡，不该再有 self.decideMode 绑定');
@@ -74,52 +117,15 @@ assert.match(entry, /data-sandbox-status/);
 assert.match(entry, /function syncSandboxModeFromSettings/);
 assert.match(entry, /agentSandboxMode\.sync\(\{/);
 assert.match(entry, /agentSandboxMode\.read\(\{/);
-// 连接模式的灰显联动必须一张表管全：模板里每个连接模式下拉都要登记进 CONNECTION_MODE_TOGGLERS，
-// 否则当场切换“跟随酒馆/自定义”时那张卡的地址/密钥不会跟着灰显或解禁
-//（曾经漏过原著资料、记忆书记官、人物簿记录员三张卡，选了自定义还灰着、跟随酒馆还能改地址）。
-const registryStart = entry.indexOf('const CONNECTION_MODE_TOGGLERS');
-const registryEnd = entry.indexOf(']);', registryStart);
-assert.ok(registryStart >= 0 && registryEnd > registryStart, '找不到连接模式登记表 CONNECTION_MODE_TOGGLERS');
-const registryKeys = [...entry.slice(registryStart, registryEnd).matchAll(/\['([a-zA-Z0-9_.]*(?:mode|Mode))',/g)].map(match => match[1]);
-// 连接模式下拉的判据：选项里有“跟随酒馆”(value="tavern")。facts.sourceMode 这类业务模式下拉不算。
-const modeSelects = [...new Set([...entry.matchAll(/<select[^>]*data-setting="([a-zA-Z0-9_.]+)"[^>]*>((?:(?!<\/select>).)*)<\/select>/gs)]
-    .filter(match => match[2].includes('value="tavern"'))
-    .map(match => match[1]))];
-assert.ok(modeSelects.length >= 9, `连接模式下拉数量异常：${modeSelects.join(', ')}`);
-for (const mode of modeSelects) {
-    assert.ok(registryKeys.includes(mode), `连接模式 ${mode} 没登记进 CONNECTION_MODE_TOGGLERS，切换时这张卡不会联动`);
-}
-// “拉取模型”的取值判据：fetchModelList 传进来的名字是 'BaseUrl'/'ApiKey'。
-// 曾把判据写成 name === 'Base'（永远判不中），接口地址取到密钥那一格，
-// 请求变成 “sk-xxx/v1/models” 相对路径打到酒馆自己，所有卡点拉取全是 404。
-assert.doesNotMatch(entry, /name === 'Base'\s*\?/, "拉取模型取值判据写错：'Base' 永远不等于传入的 'BaseUrl'，会把密钥当成接口地址发出去");
-for (const path of ['llm.baseUrl', 'setting.baseUrl', 'settle.baseUrl', 'world.decideBaseUrl', 'memory.decideBaseUrl', 'npc.ledgerBaseUrl', 'npc.coldBaseUrl']) {
-    assert.match(entry, new RegExp(`name === 'BaseUrl' \\? readSettingInput\\(panel, '${path.replace('.', '\\.')}'\\)`), `拉取模型必须读 ${path}`);
-}
-// 每一张连接卡都必须有“拉取模型”按钮，且模板里的按钮、取值函数、点击接线三者一个不能少
-//（记忆书记官、冷藏推进员曾经只有接线没有按钮，全局连接和人物簿记录员干脆两边都没有，玩家对着模型名手抄）。
-for (const [button, fn] of [
-    ['data-llm-models', 'fetchLlmModels'],
-    ['data-facts-models', 'fetchFactsModels'],
-    ['data-settle-models', 'fetchSettleModels'],
-    ['data-worlddecide-models', 'fetchWorldDecideModels'],
-    ['data-memorydecide-models', 'fetchMemoryDecideModels'],
-    ['data-npc-ledger-models', 'fetchNpcLedgerModels'],
-    ['data-npc-cold-models', 'fetchNpcColdModels'],
-]) {
-    assert.match(hubMarkup, new RegExp(button.replace(/-/g, '\\-')), `模型设置页缺少拉取按钮：${button}`);
-    assert.match(entry, new RegExp(`function ${fn}\\(`), `缺少拉取函数：${fn}`);
-    assert.match(entry, new RegExp(`closest\\?\\.\\('\\[${button.replace(/-/g, '\\-')}\\]'\\)`), `拉取按钮没有点击接线：${button}`);
-}
-assert.match(hubMarkup, /data-impact-models="decide"/, '模型设置页缺少记录员拉取按钮');
-assert.match(hubMarkup, /data-impact-models="inject"/, '模型设置页缺少场记拉取按钮');
-// 人物簿记录员/按世界书补档走的是自己卡上的连接：选了“自定义”时不查全局，跟随酒馆时只看酒馆静默
+// 功能守卫：绑了方案（connection === 'custom'）直连方案端点；没绑＝跟随酒馆，只看酒馆静默
 // 生成这条路通不通（availableFor('tavern')），不拿“全局连接是否配好”当代理——
 // 全局选了自定义但空着时，configured() 永远是 false，跟酒馆模式的功能会被误拦在门口（世界决定同病）。
 const ledgerGuard = entry.slice(entry.indexOf('async function runNpcLedgerRecord'), entry.indexOf('/** 生成前把人物档案写进正文提示词'));
 assert.match(ledgerGuard, /settings\.connection !== 'custom' && agentLlmClient\.availableFor\('tavern'\) !== true/, '记录员的连接检查：custom 不查全局，tavern 只看静默生成可用');
 const extractGuard = entry.slice(entry.indexOf('async function runNpcLedgerExtract'), entry.indexOf('/** 记录员这一路用哪套连接'));
-assert.match(extractGuard, /settings\.connection !== 'custom' && agentLlmClient\.availableFor\('tavern'\) !== true/, '按世界书补档的连接检查：custom 不查全局，tavern 只看静默生成可用');
+assert.match(extractGuard, /overrides\.connection !== 'custom' && agentLlmClient\.availableFor\('tavern'\) !== true/, '按世界书补档的连接检查：用档案抄录自己的绑定，custom 不查全局，tavern 只看静默生成可用');
+const expGuard = entry.slice(entry.indexOf('async function runExpCondense'), entry.indexOf('pendingExpCondense = request;'));
+assert.match(expGuard, /overrides\.connection !== 'custom' && agentLlmClient\.availableFor\('tavern'\) !== true/, '经历精简的连接检查：用精简自己的绑定');
 const worldGuard = entry.slice(entry.indexOf('async function runWorldDecision'), entry.indexOf('let memoryDecideRunning'));
 assert.match(worldGuard, /settings\.overrides\.connection !== 'custom' && agentLlmClient\.availableFor\('tavern'\) !== true/, '世界决定的连接检查：custom 不查全局，tavern 只看静默生成可用');
 assert.doesNotMatch(entry, /agentLlmClient\.configured\(\) !== true/, '功能守卫不许再用 configured() 当连接检查——它只反映全局卡，不代表这一路自己的连接');
@@ -134,13 +140,45 @@ assert.match(entry, /function npcProfileReadText/, '只读视图缺少文本渲�
 assert.match(entry, /NPC_INFO_BUNDLES/, '信息页要按组拆成多页（基本/心性/资产）');
 assert.match(styleCss, /is-empty/, '空字段要有占位样式');
 assert.match(styleCss, /\.dai-agent-modal \{ position: fixed/, '弹窗必须 fixed 定位，否则在长设置页里会超出屏幕');
-// 拉到的模型必须真的可点选：fetchModelList 要给模型输入框接上 datalist（模板没铺就现建），
+// 拉到的模型必须真的可点选：方案卡拉取要给模型输入框接上 datalist（模板没铺就现建），
 // 否则候选拉回来只能塞进空气，状态栏“点模型名那一格就能选”成了一句空话。
-assert.match(entry, /targetInput\.list/, '拉取模型要检查输入框已接的 datalist');
+assert.match(entry, /modelInput\.list/, '拉取模型要检查输入框已接的 datalist');
 assert.match(entry, /createElement\('datalist'\)/, '拉取模型要能现建 datalist');
 assert.match(entry, /setAttribute\('list'/, '拉取模型要把 list 属性接到输入框上');
-// 原著设定页的“模型”状态行要读选条自己的连接卡（setting.*），空项才标注沿用全局；
+// 原著设定页的“模型”状态行要读选条绑定的方案（setting.apiPreset），没绑就照实说跟随酒馆；
 // 曾经只读全局连接，功能卡配好了状态栏还喊“未填地址·未填模型”，误导排查。
-assert.match(entry, /const factsCfg = settings\.setting \?\? \{\};/, '原著状态行的模型信息必须读 setting 自己的连接');
-assert.match(entry, /空项沿用全局/, '原著状态行要标注哪些项沿用了全局');
+assert.match(entry, /fieldValue\(settings, 'setting\.apiPreset'\)/, '原著状态行必须读选条绑定的方案');
+assert.match(entry, /跟随酒馆主连接（未绑方案）/, '原著状态行没绑方案时要标注跟随酒馆');
+// 滚轮接力：悬浮层（设置面板/球）里所有滚动盒滑到头后必须把滚轮交出去，
+// 逐层往外（清单→页面主区），最外层落到主界面（酒馆聊天区 #chat）；
+// 原生滚动链到 fixed 弹层就断（body 不滚），不许用 overscroll-behavior: contain 把链锁死。
+assert.match(entry, /function relayWheelToInterface/, '缺少滚轮接力函数');
+assert.match(entry, /addEventListener\('wheel', relayWheelToInterface, \{ passive: false \}\)/, '滚轮接力要绑在 document 上且 passive:false');
+assert.match(entry, /SCROLL_RELAY_SELECTOR = '\.dai-settings-panel, \.dai-orb'/, '接力范围必须盖住设置面板与悬浮球');
+assert.match(entry, /getElementById\('chat'\)/, '接力终点必须是主界面聊天区 #chat');
+assert.doesNotMatch(styleCss, /overscroll-behavior:\s*contain/, '滚动盒不许 contain 锁链——滑到头要交出去');
+// 装备槽位图：不画人形，格子按人身上的位置摆（头在上/身体居中/足在下），
+// 装备名称直接写进部位格；容器不许整体 aria-hidden——里面是可点的装备名。
+assert.match(entry, /dai-body-slots/, '装备槽位图网格缺失');
+assert.match(entry, /function figureGradeClass/, '槽位图缺少品级配色函数');
+assert.match(entry, /dai-body-slot__label/, '槽位缺少部位标签');
+assert.doesNotMatch(entry, /dai-body-figure__stage|BODY_FIGURE_ANCHORS|dai-body-figure__ghost/, '人形剪影时代的舞台/锚点/浮层应已删除');
+assert.doesNotMatch(entry, /createElementNS\('http:\/\/www\.w3\.org\/2000\/svg'/, '人形 SVG 已删，不该再画');
+assert.doesNotMatch(entry, /data-self-figure[^>]*aria-hidden/, '槽位图容器不许整体 aria-hidden（里面是可点装备名）');
+assert.match(styleCss, /\.dai-body-slots/, '槽位网格样式缺失');
+assert.match(styleCss, /\.dai-body-slot\.is-gold/, '品级染缘样式缺失');
+// 空槽位＝装备入口：设置页点「＋ 装备」要从行囊挑对口备用装备；悬浮球纯展示没有这个按钮。
+assert.match(entry, /dai-body-slot__add/, '空槽位缺少「＋ 装备」入口');
+assert.match(entry, /function openSelfEquipPicker/, '缺少行囊挑选弹窗');
+assert.match(entry, /'武器': 'weapon', '防具': 'body', '饰品': 'accessory'/, '挑选弹窗要按类别对准部位');
+// 悬浮球上的「Agent 系统」图标＝设置面板的入口；左上角旧按钮退役（挂载函数删除，面板创建不能跟着没）。
+assert.match(entry, /systemIcon\.addEventListener\('click', \(\) => openSettingsPanel\(\)\)/, '悬浮球系统图标要一键打开设置面板');
+assert.doesNotMatch(entry, /function mountSettingsButton/, '左上角设置按钮已退役，不该再挂载');
+assert.doesNotMatch(styleCss, /\.dai-settings-button/, '旧按钮样式应随手删掉');
+// 沙盒口径：惯性要真的进决定提示词；本局内切换要有确认/取消按钮。
+assert.match(entry, /buildSandboxDecideNote\(\{/, '沙盒决定说明要按惯性动态生成');
+assert.doesNotMatch(entry, /SANDBOX_DECIDE_NOTE/, '静态决定说明应退役');
+assert.match(entry, /data-sandbox-confirm/, '缺少切换确认按钮');
+assert.match(entry, /data-sandbox-cancel/, '缺少切换取消按钮');
+assert.match(entry, /function syncSandboxPendingRow/, '缺少待确认提示条同步');
 console.log(`settings template smoke checks passed: ${directory}`);

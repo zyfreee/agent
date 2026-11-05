@@ -14,14 +14,17 @@ https://github.com/zyfreee/agent.git
 public/scripts/extensions/third-party/agent/manifest.json
 ```
 
-当前清单引用：
+当前 `manifest.json` 直接引用：
 
-- `agent/doupo-agent-ui/index.js`
-- `agent/doupo-agent-ui/host/style.css`
-- `settings.html`（扩展设置栏目模板，供 `renderExtensionTemplateAsync('third-party/agent', 'settings')` 读取）
-- `agent/doupo-agent-ui/settings.html`（入口脚本的相对路径备用模板）
+- `index.js`（根转发入口，重新导出 `agent/doupo-agent-ui/index.js` 的模块实现与生命周期钩子）
+- `style.css`（根样式，与 `agent/doupo-agent-ui/host/style.css` 模块样式副本保持一致）
 
-根目录模板是酒馆标准加载路径；入口目录副本只用于安装目录名变化或本地开发时的备用加载。两份模板由静态测试保持一致。
+设置模板不在清单的 js/css 字段中，由入口在运行时读取：
+
+- `settings.html`（根目录标准模板，供 `renderExtensionTemplateAsync('third-party/agent', 'settings')` 读取）
+- `agent/doupo-agent-ui/settings.html`（模块入口的相对路径备用模板）
+
+根转发入口、模块实现和备用文件均保留，不要把清单改指嵌套路径来“修正文档”。仓库根目录可运行 `node agent/doupo-agent-ui/extension-package.test.mjs` 检查清单目标、生命周期导出与双 CSS 一致性；运行 `node agent/doupo-agent-ui/settings-template.test.mjs` 检查标准/备用模板一致性及加载路径。离线检查不等于已在真实酒馆安装或更新成功。
 
 ## 更新步骤
 

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createTurnPipeline } from '../core/turn-pipeline.js';
+import { createTurnStages } from '../core/turn-stages.js';
 import { createDataContractRegistry } from '../core/data-contract.js';
 import { createQualityGate } from '../core/quality-gate.js';
 import { createNarrativeGuard } from '../narrative/narrative-guard.js';
@@ -26,6 +27,23 @@ assert.ok(progress.some(item => item.currentStage === 'classify'));
 assert.equal(progress.at(-1).status, 'candidate_ready');
 assert.ok(progress.every((item, index) => index === 0 || item.sequence > progress[index - 1].sequence));
 assert.equal((await pipe.run(input)).status, 'duplicate_task');
+
+// OPT-085: deadline aborts the same signal supplied to the stage.
+let deadlineSignal;
+const deadlinePipe = createTurnPipeline({ stageTimeoutMs: { adjudicate: 5 }, stages: {
+    adjudicate: ({ signal }) => { deadlineSignal = signal; return new Promise(() => {}); },
+} });
+assert.equal((await deadlinePipe.run({ ...input, taskId: 'deadline-abort' })).error, 'stage_timeout');
+assert.equal(deadlineSignal.aborted, true);
+
+const forwardedSignal = new AbortController().signal;
+let adjudicatorSignal;
+const signalStages = createTurnStages({ runner: {}, world: {}, getState: () => ({ player: { gold: 100 } }), compose: async () => ({}),
+    actions: { resolve: () => ({ status: 'candidate', changes: [{ targetId: 'player', field: 'gold', before: 100, after: 99 }] }) },
+    settleAdjudicator: async ({ signal }) => { adjudicatorSignal = signal; return { effects: [{ targetId: 'player', field: 'gold', type: 'add', value: -1, allowNegative: true }] }; },
+});
+await signalStages.adjudicate({ ...input, signal: forwardedSignal, data: { taskType: 'explicit_action', authorization: { playerAction: { targetId: 'gate', method: 'pay' } }, interpretation: { category: 'general' } } });
+assert.equal(adjudicatorSignal, forwardedSignal, 'actual stage forwards its cancellation signal to the adjudicator');
 
 const failed = createTurnPipeline({ stages: { classify: () => ({ kind: 'chat' }), plan: () => { throw new Error('plan failed'); }, gather: () => { throw new Error('must not run'); } } });
 const failResult = await failed.run({ ...input, taskId: 't2' });

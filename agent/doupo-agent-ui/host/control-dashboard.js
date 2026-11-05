@@ -51,7 +51,10 @@ export function buildControlDashboard({ settings = {}, records = [], tasks = [],
     const readEnabled = module => {
         const keys = [module.setting, module.legacySetting].filter(Boolean);
         if (!keys.length) return null;
-        for (const key of keys) if (settings[key] !== undefined) return settings[key] !== false;
+        for (const key of keys) {
+            const value = key.split('.').reduce((object, part) => object?.[part], settings);
+            if (value !== undefined) return value !== false;
+        }
         return true;
     };
     const modules = MODULES.map(module => {

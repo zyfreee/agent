@@ -353,7 +353,7 @@ export function createFactsIndex({ volumeIndex = VOLUME_INDEX } = {}) {
             lines,
             firstCount: first.length,
             prevCount: Math.min(prev.length, maxPrev),
-            truncated: rows.length > lines.length,
+            truncated: rows.length > lines.length || prev.length > maxPrev,
             total: entries.length,
         };
     }

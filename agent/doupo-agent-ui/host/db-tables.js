@@ -13,6 +13,8 @@
  * 双写从根上排除；表头/DDL 改动必须同步改测试。
  */
 
+import { deriveGoalTitle, normalizeGoal } from '../self/goal-data.js';
+
 const PROHIBIT = '禁止操作。';
 
 /**
@@ -56,14 +58,15 @@ function defineTable(key, name, englishName, headers, ddl, note, exportConfig) {
 
 /**
  * 记忆表的数据库「导出配置」（exportConfig）：龙血玄黄按每张表自带的这份配置生成世界书条目——
- * keyword 绿光条目逐行一条，触发词取 keywords 里列出的列（逗号分隔多个列名），行里那些列的值
- * 再按逗号切成一个个触发词；人名/地名命中最近楼层就整行注入，模板里的 $1 是该行内容。
- * 这是“数据库的召回把记忆召回出来”的正道：配置跟着表格定义走，数据库脚本一行不用改。
+ * keyword 绿光条目逐行一条，触发词取 keywords 里列出的列，人名/地名命中最近楼层就整行注入。
+ * 默认关闭（enabled:false）：记忆召回由扩展自己的召回决定负责（memory-recall.js，失败退回
+ * 关键词兜底），注入预算与排序都在扩展侧控制；绿光条目开着会同一条记忆双份进提示词。
+ * 配置形状保留，需要数据库侧召回时把 enabled 改回 true 即可。
  * 与 updateConfig.updateFrequency=0（AI 禁填）互不相干——导出是展示侧，双写防护照旧。
  */
 function memoryExportConfig(entryName, order) {
     return {
-        enabled: true,
+        enabled: false,
         splitByRow: true,
         entryType: 'keyword',
         keywords: '关联,别名',
@@ -150,6 +153,38 @@ const SELF_SKILLS = defineTable(
     '斗技清单，编号与扩展台账一致。只由斗破Agent扩展写入，AI 禁止操作。',
 );
 
+const SELF_EQUIPMENT = defineTable(
+    'sheet_dpEquipment',
+    '纳戒·装备',
+    'dp_equipment',
+    ['row_id', '编号', '名称', '品阶', '类型', '来源'],
+    `CREATE TABLE dp_equipment ( -- 装备栏表
+  row_id INTEGER PRIMARY KEY, -- 行号
+  entry_id TEXT NOT NULL, -- 编号
+  name TEXT NOT NULL, -- 名称
+  grade TEXT, -- 品阶
+  type TEXT, -- 类型
+  source TEXT -- 来源
+);`,
+    '装备栏（穿戴中的武器/防具/饰品），编号与扩展台账一致。只由斗破Agent扩展写入，AI 禁止操作。',
+);
+
+const SELF_TREASURES = defineTable(
+    'sheet_dpTreasures',
+    '纳戒·天材地宝',
+    'dp_treasures',
+    ['row_id', '编号', '名称', '品阶', '类别', '来源'],
+    `CREATE TABLE dp_treasures ( -- 天材地宝表
+  row_id INTEGER PRIMARY KEY, -- 行号
+  entry_id TEXT NOT NULL, -- 编号
+  name TEXT NOT NULL, -- 名称
+  grade TEXT, -- 品阶
+  type TEXT, -- 类别
+  source TEXT -- 来源
+);`,
+    '天材地宝（异火、妖丹、灵矿、先天灵物之类），编号与扩展台账一致。只由斗破Agent扩展写入，AI 禁止操作。',
+);
+
 const SELF_ITEMS = defineTable(
     'sheet_dpItems',
     '纳戒·行囊',
@@ -170,10 +205,10 @@ const SELF_ITEMS = defineTable(
 
 const SELF_RECIPES = defineTable(
     'sheet_dpRecipes',
-    '纳戒·配方',
+    '纳戒·炼丹',
     'dp_recipes',
     ['row_id', '编号', '名称', '类别', '品阶', '材料'],
-    `CREATE TABLE dp_recipes ( -- 配方表
+    `CREATE TABLE dp_recipes ( -- 炼丹表
   row_id INTEGER PRIMARY KEY, -- 行号
   entry_id TEXT NOT NULL, -- 编号
   name TEXT NOT NULL, -- 名称
@@ -181,15 +216,15 @@ const SELF_RECIPES = defineTable(
   grade TEXT, -- 品阶
   materials TEXT -- 材料
 );`,
-    '已掌握配方。只由斗破Agent扩展写入，AI 禁止操作。',
+    '已掌握的丹方与器谱（类别列区分炼药/炼器）。只由斗破Agent扩展写入，AI 禁止操作。',
 );
 
 const SELF_CRAFTS = defineTable(
     'sheet_dpCrafts',
-    '纳戒·炼制台',
+    '纳戒·炼器',
     'dp_crafts',
     ['row_id', '编号', '名称', '类别', '开始日', '结束日', '状态', '备注'],
-    `CREATE TABLE dp_crafts ( -- 炼制台表
+    `CREATE TABLE dp_crafts ( -- 炼器表
   row_id INTEGER PRIMARY KEY, -- 行号
   entry_id TEXT NOT NULL, -- 编号
   name TEXT NOT NULL, -- 名称
@@ -199,30 +234,31 @@ const SELF_CRAFTS = defineTable(
   status TEXT, -- 状态
   note TEXT -- 备注
 );`,
-    '炼制进度（进行中/成功/失败），日期按世界时钟。只由斗破Agent扩展写入，AI 禁止操作。',
+    '炼丹与炼器的进行中/成功/失败记录，日期按世界时钟。只由斗破Agent扩展写入，AI 禁止操作。',
 );
 
 const SELF_GOALS = defineTable(
     'sheet_dpGoals',
     '纳戒·目标',
     'dp_goals',
-    ['row_id', '编号', '内容', '优先级', '期限', '达成'],
+    ['row_id', '编号', '标题', '内容', '优先级', '期限', '达成'],
     `CREATE TABLE dp_goals ( -- 目标表
   row_id INTEGER PRIMARY KEY, -- 行号
   entry_id TEXT NOT NULL, -- 编号
+  goal_title TEXT, -- 标题
   goal_text TEXT NOT NULL, -- 内容
   priority TEXT, -- 优先级
   due TEXT, -- 期限
   done TEXT -- 达成
 );`,
-    '目标与约定（主线标星在优先级里）。只由斗破Agent扩展写入，AI 禁止操作。',
+    '目标与约定（短标题进列表与注入，完整内容进详情；主线标星在优先级里）。只由斗破Agent扩展写入，AI 禁止操作。',
 );
 
 const MEMORY_SMALL = defineTable(
     'sheet_dpMemorySmall',
     '小记忆',
     'dp_memory_small',
-    ['row_id', '编号', '内容', '引文', '依据', '关联', '别名', '分量', '记于日', '已了结', '了结日', '备注'],
+    ['row_id', '编号', '内容', '引文', '依据', '关联', '别名', '分量', '记于日', '备注'],
     `CREATE TABLE dp_memory_small ( -- 小记忆表
   row_id INTEGER PRIMARY KEY, -- 行号
   entry_id TEXT NOT NULL, -- 编号
@@ -233,8 +269,6 @@ const MEMORY_SMALL = defineTable(
   aliases TEXT, -- 别名
   weight TEXT, -- 分量
   day INTEGER, -- 记于日
-  done TEXT, -- 已了结
-  resolved_day INTEGER, -- 了结日
   note TEXT -- 备注
 );`,
     '小记忆（轻量近事；关联/别名是人名/地名/物名、逗号分隔，是数据库关键词召回的触发词；引文=当时的一句原话）。只由斗破Agent扩展写入，AI 禁止操作。',
@@ -245,7 +279,7 @@ const MEMORY_BIG = defineTable(
     'sheet_dpMemoryBig',
     '大记忆',
     'dp_memory_big',
-    ['row_id', '编号', '内容', '引文', '依据', '关联', '别名', '标签', '分量', '记于日', '已了结', '了结日', '备注'],
+    ['row_id', '编号', '内容', '引文', '依据', '关联', '别名', '标签', '分量', '记于日', '备注'],
     `CREATE TABLE dp_memory_big ( -- 大记忆表
   row_id INTEGER PRIMARY KEY, -- 行号
   entry_id TEXT NOT NULL, -- 编号
@@ -257,8 +291,6 @@ const MEMORY_BIG = defineTable(
   tag TEXT, -- 标签
   weight TEXT, -- 分量
   day INTEGER, -- 记于日
-  done TEXT, -- 已了结
-  resolved_day INTEGER, -- 了结日
   note TEXT -- 备注
 );`,
     '大记忆（值得一直记住的事；标签列=恩怨/情报/伏笔/大事记，可空；关联/别名是人名/地名/物名、逗号分隔，是数据库关键词召回的触发词；引文=当时的一句原话）。只由斗破Agent扩展写入，AI 禁止操作。',
@@ -269,7 +301,7 @@ export const MEMORY_TABLE_DEFS = Object.freeze([MEMORY_SMALL, MEMORY_BIG]);
 const MEMORY_TABLE_BY_TIER = Object.freeze({ small: MEMORY_SMALL, big: MEMORY_BIG });
 
 export const SELF_TABLE_DEFS = Object.freeze([
-    SELF_PROFILE, SELF_TITLES, SELF_TECHNIQUES, SELF_SKILLS, SELF_ITEMS,
+    SELF_PROFILE, SELF_TITLES, SELF_TECHNIQUES, SELF_SKILLS, SELF_EQUIPMENT, SELF_TREASURES, SELF_ITEMS,
     SELF_RECIPES, SELF_CRAFTS, SELF_GOALS,
 ]);
 export const ALL_TABLE_DEFS = Object.freeze([...SELF_TABLE_DEFS, ...MEMORY_TABLE_DEFS]);
@@ -280,6 +312,13 @@ export const ALL_TABLE_DEFS = Object.freeze([...SELF_TABLE_DEFS, ...MEMORY_TABLE
  * 就会从聊天模板里删掉，数据无损失（世界真账本一直在扩展台账与聊天存档里）。
  */
 export const RETIRED_TABLE_NAMES = Object.freeze(['世界·现状', '世界·事件', '世界·任务']);
+
+/**
+ * 改名过的桥接表（按中文表名认）：配方→炼丹、炼制台→炼器 只是表名升级，
+ * 表头与数据不动。merge 时把旧表名原位改成新名并上报 migrated——不改名的话
+ * 旧表会当外来表留在聊天里，新表再补一份空的，同一份数据就分家了。
+ */
+export const RENAMED_TABLE_NAMES = Object.freeze({ '纳戒·配方': '纳戒·炼丹', '纳戒·炼制台': '纳戒·炼器' });
 
 const TABLE_BY_KEY = new Map(ALL_TABLE_DEFS.map(def => [def.key, def]));
 const TABLE_BY_NAME = new Map(ALL_TABLE_DEFS.map(def => [def.name, def]));
@@ -323,14 +362,49 @@ export function buildBridgeSheets() {
  * 数据库校验器也不会再因同名连坐拒绝整包。表内容以扩展状态为准，镜像会按当前结构重写。
  * 同名同表头但导出配置对不上（比如数据库补了默认关闭的 exportConfig）→ 原位刷成当前定义，
  * 算进 updated——否则记忆表的关键词召回配置永远送不进已建好的表。
- * 返回 { template, added, replaced, updated, removed }；existing 为空时返回纯片段。
+ * 旧版目标表（无「标题」列）→ 原位补列迁移、保住全部老行，算进 migrated；
+ * migrated 非空时调用方必须回导模板，迁移才会落进数据库。
+ * 返回 { template, added, replaced, updated, removed, migrated }；existing 为空时返回纯片段。
  */
+/**
+ * 旧版目标表签名（还没有「标题」列）。merge 导入是整包替换：同名表头对不上就整表
+ * 剔除再补空新表——不做原位迁移，玩家立过的目标会在升级那一轮全部蒸发。
+ */
+const LEGACY_GOAL_HEADERS = Object.freeze(['row_id', '编号', '内容', '优先级', '期限', '达成']);
+
+/**
+ * 旧版目标表原位升级：在「编号」后插入「标题」列，老行从内容补一个兼容短标题
+ * （与存档恢复同一口径）；DDL/节点配置整块换成当前定义——旧 DDL 列数对不上新表头，
+ * 不换会被数据库校验器连坐拒绝整包。幂等：迁移后的表头不再命中旧签名，重复 merge
+ * 不重复补列。返回是否迁移过。
+ */
+function migrateLegacyGoalSheet(sheet, fragmentSheet) {
+    const headers = Array.isArray(sheet?.content?.[0]) ? sheet.content[0].map(header => String(header)) : [];
+    const isLegacy = headers.length === LEGACY_GOAL_HEADERS.length
+        && headers.every((header, index) => normalizeHeaderCell(header) === normalizeHeaderCell(LEGACY_GOAL_HEADERS[index]));
+    if (!isLegacy) return false;
+    const rows = sheet.content.slice(1).filter(row => Array.isArray(row));
+    sheet.content = [
+        ['row_id', '编号', '标题', '内容', '优先级', '期限', '达成'],
+        ...rows.map(row => {
+            const cells = row.slice(0, LEGACY_GOAL_HEADERS.length);
+            return [...cells.slice(0, 2), deriveGoalTitle(cells[2]), ...cells.slice(2)];
+        }),
+    ];
+    sheet.sourceData = JSON.parse(JSON.stringify(fragmentSheet.sourceData));
+    sheet.updateConfig = JSON.parse(JSON.stringify(fragmentSheet.updateConfig));
+    if (fragmentSheet.exportConfig) sheet.exportConfig = JSON.parse(JSON.stringify(fragmentSheet.exportConfig));
+    else delete sheet.exportConfig;
+    return true;
+}
+
 export function mergeBridgeSheets(existing) {
     const base = existing && typeof existing === 'object' && !Array.isArray(existing)
         ? JSON.parse(JSON.stringify(existing))
         : { mate: { type: 'chatSheets', version: 1 } };
     if (!base.mate || typeof base.mate !== 'object') base.mate = { type: 'chatSheets', version: 1 };
     const removed = [];
+    const migrated = [];
     for (const [key, sheet] of Object.entries(base)) {
         if (!key.startsWith('sheet_')) continue;
         const name = normalizeHeaderCell(sheet?.name);
@@ -344,10 +418,21 @@ export function mergeBridgeSheets(existing) {
     const addedKeys = [];
     const replaced = [];
     const updated = [];
+    // 改名升级：旧表名原位改成新名（表头数据一字不动），上报 migrated 让调用方回导落库。
+    for (const sheet of Object.values(base)) {
+        if (!sheet || typeof sheet !== 'object' || !sheet.name) continue;
+        const newName = RENAMED_TABLE_NAMES[normalizeHeaderCell(sheet.name)];
+        if (newName && sheet.name !== newName) {
+            migrated.push(sheet.name);
+            sheet.name = newName;
+        }
+    }
     for (const def of ALL_TABLE_DEFS) {
         const sameNameKey = Object.keys(base).find(key => key.startsWith('sheet_')
             && normalizeHeaderCell(base[key]?.name) === normalizeHeaderCell(def.name));
         if (sameNameKey) {
+            // 目标表升级走原位迁移（保住全部老行），别让「表头对不上→空表顶掉」吃掉数据。
+            if (def === SELF_GOALS && migrateLegacyGoalSheet(base[sameNameKey], fragment[def.key])) migrated.push(def.name);
             const headers = Array.isArray(base[sameNameKey]?.content?.[0])
                 ? base[sameNameKey].content[0].map(header => String(header))
                 : [];
@@ -371,7 +456,7 @@ export function mergeBridgeSheets(existing) {
         addedKeys.push(def.key);
     }
     if (addedKeys.length) markNewSentinel(base, addedKeys);
-    return { template: base, added, replaced, updated, removed };
+    return { template: base, added, replaced, updated, removed, migrated };
 }
 
 // ---------- 导入包净化：外来表 DDL 对齐表头 ----------
@@ -520,6 +605,8 @@ export function desiredSelfRows(self) {
         { def: SELF_TITLES, rows: (Array.isArray(state.titles) ? state.titles : []).map(item => [cell(item)]) },
         { def: SELF_TECHNIQUES, rows: entry(state.techniques, e => [cell(e.id), cell(e.name), cell(e.grade), cell(e.type), cell(e.progress), cell(e.source)]) },
         { def: SELF_SKILLS, rows: entry(state.skills, e => [cell(e.id), cell(e.name), cell(e.grade), cell(e.type), cell(e.source)]) },
+        { def: SELF_EQUIPMENT, rows: entry(state.equipment, e => [cell(e.id), cell(e.name), cell(e.grade), cell(e.type), cell(e.source)]) },
+        { def: SELF_TREASURES, rows: entry(state.treasures, e => [cell(e.id), cell(e.name), cell(e.grade), cell(e.type), cell(e.source)]) },
         {
             def: SELF_ITEMS,
             rows: entry(state.items, e => [cell(e.id), cell(e.name), cell(e.category), cell(e.grade), cell(Number.isInteger(e.count) ? e.count : 1), flagCell(e.equipped), cell(e.source)]),
@@ -531,29 +618,96 @@ export function desiredSelfRows(self) {
         },
         {
             def: SELF_GOALS,
-            rows: entry(state.goals, e => [cell(e.id), cell(e.text), cell(e.priority), cell(e.due), flagCell(e.done)]),
+            rows: entry(state.goals, e => [cell(e.id), cell(e.title || deriveGoalTitle(e.text)), cell(e.text), cell(e.priority), cell(e.due), flagCell(e.done)]),
         },
     ];
 }
 
+// DB rows are a projection, never a full replacement for runtime-owned fields.
+export function preserveUnmappedSelfFields(projected, current = {}) {
+    const next = structuredClone(projected);
+    for (const key of ['techniques', 'skills', 'equipment', 'treasures', 'items', 'recipes', 'crafts', 'goals']) {
+        if (!Array.isArray(next[key])) continue;
+        const byId = new Map((current[key] ?? []).map(row => [row.id, row]));
+        next[key] = next[key].map(row => ({ ...structuredClone(byId.get(row.id) ?? {}), ...row }));
+    }
+    if (current._runtime) {
+        const groups = { Technique: 'techniques', Skill: 'skills', Equipment: 'equipment', Treasure: 'treasures', Item: 'items', Recipe: 'recipes', Craft: 'crafts', Goal: 'goals', Title: 'titles' };
+        const touched = new Set();
+        let unknown = false;
+        for (const undo of current._runtime.lastFloor?.undo ?? []) {
+            if (undo.op === 'setGold' || undo.op === 'deltaGold') touched.add('gold');
+            else if (undo.op === 'setProfile') touched.add('profile');
+            else if (undo.op === '_restoreRealm' || undo.op === 'setRealm') touched.add('realm');
+            else if (undo.op === '_restoreEntries' && undo.key) touched.add(undo.key);
+            else {
+                const suffix = Object.keys(groups).find(name => String(undo.op).endsWith(name));
+                if (suffix) touched.add(groups[suffix]);
+                else unknown = true;
+            }
+        }
+        const before = desiredSelfRows(current);
+        const after = desiredSelfRows(next);
+        const keys = ['profile', 'titles', 'techniques', 'skills', 'equipment', 'treasures', 'items', 'recipes', 'crafts', 'goals'];
+        const changed = before.some((group, i) => JSON.stringify(group.rows) !== JSON.stringify(after[i].rows)
+            && (unknown || touched.has(keys[i]) || (i === 0 && (touched.has('gold') || touched.has('realm')))));
+        if (changed) {
+            const error = new Error('数据库修改与当前楼层回滚基线冲突，请先结束该楼层再收养');
+            error.code = 'db_runtime_conflict';
+            throw error;
+        }
+        next._runtime = structuredClone(current._runtime);
+    }
+    return next;
+}
+
 // ---------- 表格行 → 状态（回拉/收养用） ----------
 
-function sheetRows(tableData, def) {
-    if (!tableData || typeof tableData !== 'object') return [];
+function findSheet(tableData, def) {
+    if (!tableData || typeof tableData !== 'object') return null;
     for (const key of Object.keys(tableData)) {
         if (!key.startsWith('sheet_')) continue;
         const sheet = tableData[key];
-        if (sheet?.name === def.name && Array.isArray(sheet.content)) {
-            // 数据行从 1 开始（第 0 行是表头）；只认表头吻合的行，列数不对的丢弃。
-            return sheet.content.slice(1).filter(row => Array.isArray(row) && row.length >= def.headers.length);
-        }
+        if (sheet?.name === def.name && Array.isArray(sheet.content)) return sheet;
     }
-    return [];
+    return null;
+}
+
+function sheetRows(tableData, def) {
+    const sheet = findSheet(tableData, def);
+    if (!sheet) return [];
+    // 数据行从 1 开始（第 0 行是表头）；只认表头吻合的行，列数不对的丢弃。
+    return sheet.content.slice(1).filter(row => Array.isArray(row) && row.length >= def.headers.length);
 }
 
 function entryId(value, prefix, index) {
     const id = cell(value).trim();
     return id || `${prefix}${index}`;
+}
+
+/**
+ * 目标表解码：按表头找列（有无「标题」列的新旧结构都认，列序不依赖下标），
+ * 行再交目标归一器清洗——text-only 的老目标在这里补出标题与 name，不再被丢。
+ */
+function decodeGoalRows(tableData) {
+    const sheet = findSheet(tableData, SELF_GOALS);
+    if (!sheet) return [];
+    const headers = Array.isArray(sheet.content?.[0]) ? sheet.content[0].map(header => String(header)) : [];
+    const at = name => headers.findIndex(header => normalizeHeaderCell(header) === name);
+    const titleAt = at('标题');
+    const textAt = at('内容');
+    if (textAt < 0) return [];
+    return sheet.content.slice(1)
+        .filter(row => Array.isArray(row))
+        .map((row, i) => normalizeGoal({
+            id: entryId(row[at('编号')], 'g', i + 1),
+            title: titleAt >= 0 ? cell(row[titleAt]) : '',
+            text: cell(row[textAt]),
+            priority: cell(row[at('优先级')]),
+            due: cell(row[at('期限')]),
+            done: readFlag(row[at('达成')]),
+        }, i + 1))
+        .filter(Boolean);
 }
 
 export function selfStateFromTables(tableData) {
@@ -565,6 +719,12 @@ export function selfStateFromTables(tableData) {
     }));
     const skills = sheetRows(tableData, SELF_SKILLS).map((row, i) => ({
         id: entryId(row[1], 's', i + 1), name: cell(row[2]), grade: cell(row[3]), type: cell(row[4]), source: cell(row[5]),
+    }));
+    const equipment = sheetRows(tableData, SELF_EQUIPMENT).map((row, i) => ({
+        id: entryId(row[1], 'e', i + 1), name: cell(row[2]), grade: cell(row[3]), type: cell(row[4]), source: cell(row[5]),
+    }));
+    const treasures = sheetRows(tableData, SELF_TREASURES).map((row, i) => ({
+        id: entryId(row[1], 'z', i + 1), name: cell(row[2]), grade: cell(row[3]), type: cell(row[4]), source: cell(row[5]),
     }));
     const items = sheetRows(tableData, SELF_ITEMS).map((row, i) => ({
         id: entryId(row[1], 'b', i + 1), name: cell(row[2]), category: cell(row[3]), grade: cell(row[4]),
@@ -578,9 +738,7 @@ export function selfStateFromTables(tableData) {
         startDay: readDay(row[4]), endDay: readDay(row[5]),
         status: readLabel(row[6], CRAFT_STATUS_VALUES, 'open'), note: cell(row[7]),
     }));
-    const goals = sheetRows(tableData, SELF_GOALS).map((row, i) => ({
-        id: entryId(row[1], 'g', i + 1), text: cell(row[2]), priority: cell(row[3]) || '支线', due: cell(row[4]), done: readFlag(row[5]),
-    }));
+    const goals = decodeGoalRows(tableData);
     const state = {
         schemaVersion: 1,
         day: Math.max(1, readInt(profileRow[13], 1)),
@@ -591,7 +749,7 @@ export function selfStateFromTables(tableData) {
         },
         realm: { realm: cell(profileRow[10]), stage: cell(profileRow[11]) },
         gold: readInt(profileRow[12], 0),
-        titles, techniques, skills, items, recipes, crafts, goals,
+        titles, techniques, skills, equipment, treasures, items, recipes, crafts, goals,
         log: [],
         updatedAt: cell(profileRow[14]) || '',
     };
@@ -599,7 +757,7 @@ export function selfStateFromTables(tableData) {
 }
 
 function isEmptySelfState(state) {
-    return !state.titles.length && !state.techniques.length && !state.skills.length && !state.items.length
+    return !state.titles.length && !state.techniques.length && !state.skills.length && !state.equipment.length && !state.treasures.length && !state.items.length
         && !state.recipes.length && !state.crafts.length && !state.goals.length
         && Object.values(state.profile).every(value => !value)
         && !state.realm.realm && !state.realm.stage && !state.gold;
@@ -767,7 +925,7 @@ export function desiredMemoryRows(memory) {
     ];
     const tailCells = entry => [
         WEIGHT_LABELS[entry.weight] || WEIGHT_LABELS.minor,
-        intCell(entry.day), flagCell(entry.done), dayCell(entry.resolvedDay), cell(entry.note),
+        intCell(entry.day), cell(entry.note),
     ];
     const smallRows = entries.filter(entry => entry.tier === 'small').map(entry => [...baseCells(entry), ...tailCells(entry)]);
     const bigRows = entries.filter(entry => entry.tier === 'big').map(entry => {
@@ -787,32 +945,46 @@ function splitNames(value) {
     return cell(value).split(/[、,，]/).map(item => item.trim()).filter(Boolean).slice(0, 4);
 }
 
+/** 按表头名定位列的读取器：镜像表可能是旧 12 列（含已了结/了结日）或新 10 列，收养读取不写死下标。 */
+function memoryColumnReader(tableData, def) {
+    const sheet = findSheet(tableData, def);
+    const headers = Array.isArray(sheet?.content?.[0]) ? sheet.content[0] : def.headers;
+    return {
+        cell: (row, name) => {
+            const at = headers.indexOf(name);
+            return at >= 0 ? row[at] : '';
+        },
+    };
+}
+
 export function memoryStateFromTables(tableData) {
     const entries = [];
     let seq = 0;
+    const small = memoryColumnReader(tableData, MEMORY_SMALL);
     for (const row of sheetRows(tableData, MEMORY_SMALL)) {
         seq += 1;
         const entry = {
-            id: entryId(row[1], 'm', seq), tier: 'small',
-            text: cell(row[2]), quote: cell(row[3]), basis: cell(row[4]),
-            related: splitNames(row[5]), aliases: splitNames(row[6]),
+            id: entryId(small.cell(row, '编号'), 'm', seq), tier: 'small',
+            text: cell(small.cell(row, '内容')), quote: cell(small.cell(row, '引文')), basis: cell(small.cell(row, '依据')),
+            related: splitNames(small.cell(row, '关联')), aliases: splitNames(small.cell(row, '别名')),
             tag: '',
-            weight: readLabel(row[7], WEIGHT_VALUES, 'minor'),
-            day: Math.max(1, readInt(row[8], 1)),
-            done: readFlag(row[9]), resolvedDay: readDay(row[10]), note: cell(row[11]),
+            weight: readLabel(small.cell(row, '分量'), WEIGHT_VALUES, 'minor'),
+            day: Math.max(1, readInt(small.cell(row, '记于日'), 1)),
+            note: cell(small.cell(row, '备注')),
         };
         if (entry.text) entries.push(entry);
     }
+    const big = memoryColumnReader(tableData, MEMORY_BIG);
     for (const row of sheetRows(tableData, MEMORY_BIG)) {
         seq += 1;
         const entry = {
-            id: entryId(row[1], 'm', seq), tier: 'big',
-            text: cell(row[2]), quote: cell(row[3]), basis: cell(row[4]),
-            related: splitNames(row[5]), aliases: splitNames(row[6]),
-            tag: readLabel(row[7], TIER_TAG_VALUES, ''),
-            weight: readLabel(row[8], WEIGHT_VALUES, 'minor'),
-            day: Math.max(1, readInt(row[9], 1)),
-            done: readFlag(row[10]), resolvedDay: readDay(row[11]), note: cell(row[12]),
+            id: entryId(big.cell(row, '编号'), 'm', seq), tier: 'big',
+            text: cell(big.cell(row, '内容')), quote: cell(big.cell(row, '引文')), basis: cell(big.cell(row, '依据')),
+            related: splitNames(big.cell(row, '关联')), aliases: splitNames(big.cell(row, '别名')),
+            tag: readLabel(big.cell(row, '标签'), TIER_TAG_VALUES, ''),
+            weight: readLabel(big.cell(row, '分量'), WEIGHT_VALUES, 'minor'),
+            day: Math.max(1, readInt(big.cell(row, '记于日'), 1)),
+            note: cell(big.cell(row, '备注')),
         };
         if (entry.text) entries.push(entry);
     }

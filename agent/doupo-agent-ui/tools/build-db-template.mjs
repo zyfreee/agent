@@ -1,8 +1,10 @@
 /**
- * 生成「龙血玄黄·数据库」桥接表模板 JSON（纳戒 8 + 记忆 2 = 10 张；世界运转不连数据库）。
+ * 生成「龙血玄黄·数据库」桥接表模板 JSON（当前纳戒 10 + 记忆 2 = 12 张；世界运转不连数据库）。
+ * 实际表数始终取 ALL_TABLE_DEFS；这里只生成空表头模板，不读取聊天或迁移旧档。
  *
  * 表定义的唯一来源是 host/db-tables.js——改表先改那里，再跑本脚本重新生成：
- *   node tools/build-db-template.mjs
+ *   node agent/doupo-agent-ui/tools/build-db-template.mjs （在仓库根目录执行）
+ *   node agent/doupo-agent-ui/tools/docs-contract.test.mjs generated （只读校验生成物）
  * 输出 ../斗破Agent数据库桥接表.json，并按数据库脚本 parseImportedTemplateData_ACU
  * 的导入解析规则做结构自检（mate / sheet_ 键 / name+content+sourceData / DDL 注释列），
  * 自检不过直接失败退出，绝不写出坏模板。

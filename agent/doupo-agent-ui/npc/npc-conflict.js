@@ -27,6 +27,7 @@ export function createNpcConflictCoordinator({ maxDecisions = 20 } = {}) {
             const npcId = text(item.npcId, 'decision.npcId');
             if (seen.has(npcId)) { rejected.push({ npcId, reason: 'duplicate_npc_decision' }); continue; }
             seen.add(npcId);
+            if (item.pauseBeforeAction === true || item.status === 'waiting_player') { rejected.push({ npcId, reason: 'player_response_required' }); continue; }
             const authority = item.authority;
             if (!authority || authority.allowed !== true) { rejected.push({ npcId, reason: 'missing_decision_authority' }); continue; }
             if (authority.stateVersion && authority.stateVersion !== stateVersion) { rejected.push({ npcId, reason: 'authority_state_mismatch' }); continue; }
@@ -35,7 +36,12 @@ export function createNpcConflictCoordinator({ maxDecisions = 20 } = {}) {
             const represents = list(authority.represents, 'authority.represents');
             const rank = authority.rank === undefined ? 0 : authority.rank;
             if (!Number.isInteger(rank) || rank < 0 || rank > 1000) throw new TypeError('authority.rank 必须为 0 到 1000 的整数');
-            valid.push({ npcId, intent: text(item.intent, 'decision.intent'), targetId: item.targetId ? text(item.targetId, 'decision.targetId') : null, rank, represents });
+            if (Object.entries({ sessionId, branchId, stateVersion }).some(([field, value]) => item[field] !== undefined && item[field] !== value)) { rejected.push({ npcId, reason: 'decision_scope_mismatch' }); continue; }
+            const decision = { npcId, intent: text(item.intent, 'decision.intent'), targetId: item.targetId ? text(item.targetId, 'decision.targetId') : null, rank, represents, sessionId, branchId, stateVersion };
+            for (const field of ['method', 'actionId', 'attemptId', 'authorizedActions', 'process', 'taskId', 'evidenceFactIds', 'authorizedAction', 'authority']) {
+                if (item[field] !== undefined) decision[field] = structuredClone(item[field]);
+            }
+            valid.push(decision);
         }
         const groups = new Map();
         for (const item of valid) {
@@ -46,7 +52,7 @@ export function createNpcConflictCoordinator({ maxDecisions = 20 } = {}) {
         const outcomes = [];
         for (const [target, group] of groups) {
             const intents = new Set(group.map(item => item.intent));
-            if (intents.size === 1) { outcomes.push({ status: 'coordinated', targetId: target, decision: group[0], participants: group.map(item => item.npcId) }); continue; }
+            if (intents.size === 1) { outcomes.push({ status: 'coordinated', targetId: target, decision: group[0], decisions: group, participants: group.map(item => item.npcId) }); continue; }
             const highest = Math.max(...group.map(item => item.rank));
             const winners = group.filter(item => item.rank === highest);
             if (winners.length !== 1) { outcomes.push({ status: 'needs_review', reason: 'conflicting_equal_authority', targetId: target, participants: group.map(item => item.npcId) }); continue; }

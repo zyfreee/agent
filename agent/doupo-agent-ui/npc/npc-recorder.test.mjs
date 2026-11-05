@@ -153,4 +153,14 @@ import { createNpcLedger } from './npc-ledger.js';
     assert.ok(NPC_RECORD_PROMPT.includes('±10'), '规则要给模型一个幅度上限');
 }
 
+// 13) 建档门槛：背景龙套不许进人物簿，新人物建档必须以过门槛为前提。
+{
+    assert.ok(NPC_RECORD_PROMPT.includes('【谁能建档】'), '门槛要单独成节');
+    assert.ok(NPC_RECORD_PROMPT.includes('商贩'), '要点名背景龙套的例子');
+    assert.ok(NPC_RECORD_PROMPT.includes('实际交集'), '门槛判据是实际交集');
+    assert.ok(NPC_RECORD_PROMPT.includes('污染人物簿'), '要说清写进去的代价');
+    assert.ok(NPC_RECORD_PROMPT.includes('过了门槛'), '新人物建档必须以过门槛为前提');
+    assert.ok(!NPC_RECORD_PROMPT.includes('路人龙套为 false'), '不许再暗示路人龙套也要记');
+}
+
 console.log('npc-recorder 测试通过');

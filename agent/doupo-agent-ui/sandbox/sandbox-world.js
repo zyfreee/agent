@@ -1,3 +1,5 @@
+import { normalizeInertia } from './sandbox-mode.js';
+
 /**
  * 沙盒世界基线：斗破苍穹主世界的内置提示词。
  *
@@ -37,3 +39,17 @@ export const SANDBOX_WORLD_PROMPT = [
 
 /** 决定调用的开放世界分支说明：与世界基线拼在 user 里，告诉决定模型这套世界怎么用。 */
 export const SANDBOX_DECIDE_NOTE = '【开放世界口径】本局是开放的斗气大陆，不跟随原著剧情：世界常识以随附的斗气大陆基线为准，事件从例行运转、势力动向与玩家行动的涟漪里长出来；远处的事用 rumor 传闻记录（玩家查证后用 resolveEvent 了结并另记真相或戳穿），不要把原著桥段排成日程。';
+
+/** 决定调用的动态口径说明：基础口径 + 世界惯性 + 原著人物自主性，按本局正式记录现算。 */
+export function buildSandboxDecideNote({ inertia, canonCharactersAutonomous = true } = {}) {
+    const level = normalizeInertia(inertia);
+    const inertiaLines = {
+        strong: '世界惯性·强：世界推着走——可以自主登记新事件、推进势力野心与既有传闻，不必等玩家行动。',
+        medium: '世界惯性·中：只演化台账里已有的事件与传闻（推进、到期、了结），不凭空起大事，玩家介入才大幅偏移。',
+        weak: '世界惯性·弱：世界静置——只回应玩家行动引发的变动，不主动推进任何事件与传闻。',
+    };
+    const autonomyLine = canonCharactersAutonomous !== false
+        ? '原著人物保留自主行动：按自身处境行事，结果不预设。'
+        : '原著人物不主动推进自身轨迹，只对玩家的行动作出反应。';
+    return [SANDBOX_DECIDE_NOTE, inertiaLines[level], autonomyLine].join('');
+}

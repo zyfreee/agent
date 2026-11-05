@@ -1,0 +1,307 @@
+119:function getHostContext() {
+127:function captureAgentContinuation() {
+140:function invalidateAgentContinuations() {
+149:function persistFactsLastInjection() {
+162:function hydrateFactsLastInjection() {
+174:function installDisplayRegex() {
+186:function bindHostLifecycle() {
+435:export function recordAgentAudit(raw) {
+477:function getEnabledModuleIds() {
+560:function presetOverrides(group) {
+570:function factsOverrides() {
+693:function injectionSettings() {
+702:function worldEventSettings() {
+714:function dbStateAdoptable(dbUpdatedAt, localUpdatedAt) {
+724:function memoryTableAdoptable(derivedEntries = [], localEntries = [], retiredIds = []) {
+738:function restoreWorldFromChat() {
+743:function persistWorld() {
+751:function writeWorldInjectionForPrompt() {
+769:function selfLedgerSettings() {
+790:function restoreSelfFromChat() {
+803:async function adoptSelfFromDb() {
+818:function handleExternalTableChange(view) {
+848:function persistSelf() {
+859:function memorySettings() {
+882:function restoreMemoryFromChat() {
+893:function renderRuntimeMode(panel) {
+907:async function adoptMemoryFromDb() {
+921:function persistMemory() {
+936:function memoryRecallCacheKey(chat) {
+948:function setMemoryRecallStatus(message) {
+954:function renderMemoryRecallResult(selection) {
+973:async function runMemoryRecall({ source = 'manual', chat = null } = {}) {
+1044:function memoryLastInjectionView() {
+1048:function recordMemoryLastInjection(record) {
+1054:function markMemoryLastInjectionCleared() {
+1060:function persistMemoryLastInjection() {
+1071:function hydrateMemoryLastInjection() {
+1083:async function writeMemoryInjectionForPrompt({ chat = null } = {}) {
+1144:function applySelfOps(operations, context = {}) {
+1158:function markCreationInitPending() {
+1166:function creationInitPending() {
+1175:function clearCreationInitPending() {
+1181:function writeSelfInjectionForPrompt() {
+1195:function applySelfOpsFromLatestReply() {
+1218:function applyMemoryOpsFromLatestReply() {
+1243:function applyMemoryOps(operations) {
+1250:function setSelfStatus(message) {
+1258:function setSelfDecideStatus(message) {
+1264:function renderSelfDecisionResult(decision, result) {
+1294:async function runSelfDecision({ source = 'auto' } = {}) {
+1378:function tavernWorldbookApi() {
+1384:async function setMvuDeclarationEntries(enable) {
+1409:async function setSelfMvuChannel(channel) {
+1423:function selfCreateFromPanel(panel, list) {
+1451:function selfStartCraftFromPanel(panel) {
+1477:function selfEntryRow({ list, id, label, detail, badges = [], actions = [] }) {
+1495:function selfActionButton(text, dataset) {
+1503:function openSelfDetailModal(panel, list, id) {
+1592:function renderSelfEntryList(container, list) {
+1730:function figureGradeClass(grade) {
+1742:function renderEquipmentFigure(equipped, { compact = false, onOpen, onEquip } = {}) {
+1810:function openSelfEquipPicker(panel, slot) {
+1834:function renderSelfBodyFigure(container, snapshot) {
+1849:function refreshSelfPage(panel) {
+1927:function impactParam(value, max = 2) {
+1933:function impactSettings() {
+1978:function impactPlanFromPreset(bound) {
+1997:function planExtras(role) {
+2007:function impactModelPlan(settings) {
+2027:function impactCustomConnection(role) {
+2038:function syncImpactLimits() {
+2044:function worldDay() {
+2050:function restoreImpactFromChat() {
+2061:function persistImpact() {
+2075:function npcLedgerBookLines(floors) {
+2091:function npcLedgerOverrides(settings, patch = {}) {
+2115:export function setNpcPlayerContextProvider(provider) {
+2120:function npcPlayerContext() {
+2130:function npcLedgerBookEntries(name, aliases = [], titles = []) {
+2163:async function runNpcLedgerExtract({ names = null, overwrite = false } = {}) {
+2239:function npcLedgerSettings() {
+2278:function restoreNpcLedgerFromChat() {
+2290:function persistNpcLedger() {
+2297:function restoreNpcColdFromChat() {
+2303:function persistNpcCold() {
+2309:function npcColdSettings() {
+2330:function npcColdOverrides(settings) {
+2335:function coldFloors(limit) {
+2342:async function runNpcColdPreview() {
+2394:function confirmNpcColdPreview(id) {
+2410:function discardNpcColdPreview(id) {
+2418:function setNpcLedgerStatus(message) {
+2426:function applyNpcLedgerPayload(payload, { source = '手动', floor = null, logSrc = null } = {}) {
+2438:async function runNpcLedgerRecord({ source = 'auto' } = {}) {
+2516:function writeNpcLedgerInjectionForPrompt() {
+2528:function npcLedgerCardRow(record, injected) {
+2567:function renderNpcLedgerList(panel) {
+2602:function renderNpcLedgerRecent(target) {
+2620:function renderNpcColdPreviews(panel) {
+2650:function refreshNpcLedgerPage(panel) {
+2679:function renderNpcColdBench(target) {
+2720:function applyNpcLedgerPatchFromPanel(panel) {
+2762:function openNpcProfileModal(panel, name, { tab = 'basic' } = {}) {
+2977:function npcProfileFieldCell(field, record) {
+3015:function npcProfileFieldText(field, value) {
+3032:function npcProfileReadText(field, value) {
+3049:function saveNpcProfileFields(panel, name) {
+3092:function thingTextForProfile(item) {
+3105:async function runExpCondense(panel, name) {
+3156:function confirmExpCondense(panel, name) {
+3174:function impactConversation(chat, limit = 6) {
+3199:async function pickImpactsForPrompt({ snapshot, settings, chat }) {
+3228:async function writeImpactInjectionForPrompt({ chat } = {}) {
+3303:async function prepareInjectionForPrompt({ chat } = {}) {
+3350:function settleScopeKey() {
+3355:function resetSettleAdjudication() {
+3361:function settleEnabled() {
+3369:function settleAdjudicationView() {
+3374:function recordSettleAdjudication(record) {
+3381:function persistSettleAdjudication() {
+3400:function hydrateSettleAdjudication() {
+3410:function settleStateFromSelf() {
+3414:function reconcileSettleAdjudication(snapshot) {
+3426:function readInjectedChannelTexts() {
+3440:function settleResultStatusText() {
+3446:function renderSettleResultCard() {
+3487:function collectSettleMaterials(chat = null) {
+3521:async function writeSettleAdjudicationForPrompt({ chat = null, force = false, preview = false } = {}) {
+3608:function applyWorldOpsFromLatestReply() {
+3633:function lastReplyIndex(chat) {
+3644:function currentVolumeForWorld() {
+3664:function escapeHtml(value) {
+3674:function settleCustomCategoryHtml(category) {
+3680:function renderSettleCustomCategories(panel, openId = null) {
+3694:function saveSettleCustomCategories(categories) {
+3700:function updateSettleCustomCategory(id, patch) {
+3706:function addSettleCustomCategory(panel) {
+3720:function removeSettleCustomCategory(panel, id) {
+3730:function apiPresetHtml(preset) {
+3738:function renderApiPresets(panel, openId = null) {
+3752:function saveApiPresets(presets) {
+3759:function renderApiPresetSelects(panel) {
+3780:function clearApiPresetBindings(id) {
+3792:function addApiPreset(panel) {
+3808:function removeApiPreset(panel, id) {
+3818:function copyApiPreset(panel, id) {
+3835:function updateApiPresetField(id, field, value) {
+3841:async function fetchApiPresetModels(panel, id) {
+3890:function settleSettings() {
+3923:function worldDecideSettings() {
+3936:function setWorldDecideStatus(message) {
+3943:function renderWorldDecisionResult(decision, result) {
+3972:async function runWorldDecision({ source = 'auto' } = {}) {
+4059:function setMemoryDecideStatus(message) {
+4065:function renderMemoryDecisionResult(decision, result) {
+4090:async function runMemoryDecision({ source = 'auto' } = {}) {
+4169:function setMemoryConsolidateStatus(message) {
+4181:async function runMemoryConsolidation({ source = 'auto' } = {}) {
+4260:function formatCallDetail(item) {
+4269:function buildCallLogRows() {
+4298:function renderCallLogList(panel) {
+4318:function resolveCurrentCharacter(context) {
+4335:function probeCoverScriptStatus() {
+4368:function unifiedActive() {
+4376:async function runUnifiedDecision({ source = 'auto' } = {}) {
+4385:function setImpactStatus(message) {
+4396:async function runImpactDecision({ source = 'auto' } = {}) {
+4489:function publishPipelineProgress(progress) {
+4500:export function probeAgentCapabilities(options) {
+4506:export function getAgentCapabilities() { return agentCapabilities; }
+4508:export function initializeHistoryEvents() {
+4659:function updateCoordinatorTask(taskId, status, fields) {
+4663:function text(value, fallback = '') {
+4667:function makeElement(tag, className, value) {
+4677:function ensureAgentModal(panel) {
+4702:function openAgentModal(panel, title, dock, { wide = false } = {}) {
+4723:function closeAgentModal(panel) {
+4741:function bindModalActions(panel) {
+4754:function renderCapabilities(capabilities) {
+4771:function renderStatus(payload) {
+4824:function handleStatusEvent(event) {
+4837:function applyOrbPosition() {
+4865:function persistOrbPosition() {
+4875:function bindOrbDrag(ball) {
+4924:function wheelDeltaPixels(event) {
+4930:function scrollBoxVertical(el) {
+4935:function scrollBoxCanTake(el, dy) {
+4940:function mainInterfaceScroller() {
+4946:function relayWheelToInterface(event) {
+4975:function bindScrollRelay() {
+4982:function mountOrbHud() {
+5054:function syncOrbHud() {
+5082:function refreshOpenOrbPanel() {
+5093:function collectOrbData() {
+5136:function renderOrbPanel(panel, id) {
+5182:function buildOrbEntryCard(item) {
+5203:function toggleOrbListPopup(index) {
+5208:function closeOrbListPopup() {
+5215:function openOrbListPopup(index) {
+5228:function buildOrbListPopup(group, view) {
+5260:function positionOrbListPopup() {
+5269:function toggleOrbNpcPopup(name) {
+5274:function closeOrbNpcPopup() {
+5280:function openOrbNpcPopup(name) {
+5293:function buildOrbNpcPopup(record) {
+5383:function positionOrbPopElement(pop, anchor) {
+5401:function positionOrbNpcPopup() {
+5413:function popText(value) {
+5417:function popDueLabel(endDay, today) {
+5422:function toggleOrbItemPopup(ref) {
+5429:function closeOrbItemPopup() {
+5435:function openOrbItemPopup(ref) {
+5448:function buildOrbItemPopup(model) {
+5479:function buildOrbItemPopModel(ref) {
+5590:function positionOrbItemPopup() {
+5595:function disposeOrbHud() {
+5608:function applyAppearance(settings = currentSettings()) {
+5622:function refreshControlDashboard() {
+5663:function currentSettings() {
+5681:function setSandboxStatus(text) {
+5692:function syncSandboxPendingRow() {
+5703:function confirmSandboxSwitch() {
+5712:function cancelSandboxSwitch() {
+5719:function syncSandboxModeFromSettings() {
+5783:export function loadSettingEntries() {
+5789:function updateSetting(path, value) {
+5817:function closeSettingsPanel() {
+5823:function openSettingsPanel() {
+5840:function fieldValue(settings, path) {
+5844:function syncSettingsForm() {
+5891:function bindWorldTileOutside(panel) {
+5903:function closeWorldTileEditors(panel) {
+5912:function createSettingsPanel() {
+6974:async function loadInlineSettingsTemplate() {
+6999:async function mountInlineSettings() {
+7023:function scheduleInlineSettingsMount() {
+7035:function observeInlineSettingsContainer() {
+7043:function mount() {
+7075:export function onActivate() {
+7080:export async function onInstall() {
+7087:export async function onUpdate() {
+7093:export function onDelete() {
+7097:export async function onClean() {
+7102:export function onDisable() {
+7131:export function onEnable() {
+7138:function start() {
+7145:function exposeHostBridge() {
+7197:export function publishAgentStatus(detail) {
+7202:export function beginAgentTask(task) {
+7213:export function setAgentHistoryScope(scope) {
+7222:export function updateAgentTask(taskId, status, fields) {
+7229:function currentAgentScope() {
+7237:function sandboxModeActive() {
+7253:function describeState(record) {
+7266:function describeTurnResult(result) {
+7285:function refreshFactsStatusCard() {
+7291:function applyWorldOps(operations) {
+7299:function worldApplyFromPanel(panel, operations) {
+7310:function worldAdvanceFromPanel(panel, days) {
+7315:function worldAddFromPanel(panel) {
+7344:function worldAddTaskFromPanel(panel) {
+7363:function memoryApplyFromPanel(panel, operations) {
+7374:function memoryAddFromPanel(panel) {
+7419:function renderMemoryEntryList(container, entries, { conflicts = null, tier = 'small', pager = null, recent = false } = {}) {
+7498:function renderMemoryInjectionCard(section) {
+7543:function refreshMemoryPage(panel) {
+7651:function openReadonlyDetailModal(panel, title, sections, { wide = false } = {}) {
+7669:function capDetailTitle(text) {
+7675:function introText(value, cap = 24) {
+7681:function wireRowDetail(row, build, { ignore = 'button' } = {}) {
+7691:function renderWorldEventList(container, events, { emptyNote, scope = 'near' } = {}) {
+7740:function worldSetFactionFromPanel(panel) {
+7766:function worldSetPersonFromPanel(panel) {
+7784:function renderWorldFactionList(container, factions) {
+7842:function fillWorldFactionDock(panel, faction) {
+7863:function renderWorldPeopleList(container, people) {
+7896:function renderWorldTaskList(container, tasks) {
+7945:function journalSourceLabel(source) {
+7953:function refreshWorldPage(panel) {
+8030:function impactFormField(form, name) {
+8035:function openImpactForm(panel, record = null) {
+8062:function closeImpactForm(panel) {
+8073:function saveImpactForm(panel) {
+8129:function runImpactOp(panel, op, successText) {
+8144:function renderImpactArchive(panel) {
+8193:function buildImpactItem(record, { injected = false, children = null, chatLength = null, compact = false } = {}) {
+8265:function renderImpactRecent(panel) {
+8286:function renderImpactLibrary(panel) {
+8356:function openImpactLedger(panel) {
+8364:function renderFactsStatus(panel) {
+8439:function renderFactsLastInjection(panel) {
+8479:function scheduleWorldbookSync(panel) {
+8494:function describeSyncResult(result) {
+8502:function refreshWorldbookStats(panel) {
+8532:function renderFactsBrowser(panel) {
+8602:async function listWorldbookNames() {
+8616:function renderWorldbookPicker(panel) {
+8639:function rememberWorldbookOptions(panel, names) {
+8647:async function scanWorldbookNames(panel) {
+8673:function splitPluginEntries(result) {
+8682:async function syncWorldbookIndex() {
+8701:async function importWorldbookFromPanel(panel) {
+8731:function renderTurnExtras(panel) {
+8759:export async function runLatestTurn() {
+8771:async function runTurnWithInput(input, triggerMessageId) {
+8778:async function runTurnFromPanel(panel, { retry = false } = {}) {
+8809:async function rollbackFromPanel(panel, version) {

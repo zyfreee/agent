@@ -1,0 +1,548 @@
+{
+  "target": "C:/Users/86158/Desktop/异界转生录/doupo/agent/doupo-agent-ui/{world,impact,sandbox}; impact-flow.test.mjs; impact-live.test.mjs; agent/09-沙盒模式功能方案.md; index.js必要接线",
+  "mode": "full-scan",
+  "focus": "general",
+  "snapshot": {
+    "root": "C:/Users/86158/Desktop/异界转生录/doupo",
+    "head": "1dee86edb89a8f6efc4b8bbd8192a3a9c1017748",
+    "date": "2026-11-04",
+    "worktree": "以当前脏工作树为准，不是HEAD审查；范围内world/impact/index/sandbox-world已有修改，8个旧sandbox文件已被用户删除。未改实现、配置或存档。",
+    "coverage_status": "partial",
+    "boundary": "完整读取现存world/impact/sandbox生产与测试18文件、两根集成测试及设计方案；index仅必要接线。不存在的旧sandbox文件未读取HEAD版本。"
+  },
+  "routing_decision": "AUDIT -> SWEEP -> REPORT；只读。只授权产生本JSON及同名Markdown。不浏览器、不真实模型、不写真实存档。",
+  "a0_receipt": {
+    "route": "code-quality-workflow",
+    "documents": [
+      "ST-A0"
+    ],
+    "snapshot_version": "2026-08-18",
+    "candidates": [],
+    "goal": "有证据的限定范围审查",
+    "red_lines": "不修改实现/存档/配置，不浏览器不真实模型",
+    "acceptance": "文件coverage、功能状态、发现触发/行号/影响/建议/验收与未验证边界"
+  },
+  "coverage": [
+    {
+      "path": "agent/doupo-agent-ui/world/world-decide.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整144行；提示词、schema、喂料、解析和12操作上限；发现level重复定义"
+    },
+    {
+      "path": "agent/doupo-agent-ui/world/world-decide.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整71行；离线执行通过；schema测试只检查字段存在，未检查level语义"
+    },
+    {
+      "path": "agent/doupo-agent-ui/world/world-ops.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整217行；时钟/季节、事件传闻、势力人物任务注入、整块预算和指令提取"
+    },
+    {
+      "path": "agent/doupo-agent-ui/world/world-ops.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整154行；离线执行通过；预算、任务/势力/传闻展示、裸行和fenced解析"
+    },
+    {
+      "path": "agent/doupo-agent-ui/world/world-runtime.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整699行；时钟、事件/到期、任务、势力/人物、恢复、撤销、opId、容量；内存复现3种失败"
+    },
+    {
+      "path": "agent/doupo-agent-ui/world/world-runtime.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整322行；离线执行通过；现有到期/重roll/恢复/容量正常路径；缺任务期限撤销及同楼opId组合"
+    },
+    {
+      "path": "agent/doupo-agent-ui/impact/impact-decide.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整176行；记录/adjust/ripen/close/revert、传闻与因果层数提示、schema和喂料"
+    },
+    {
+      "path": "agent/doupo-agent-ui/impact/impact-decide.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整72行；离线执行通过；输入数量/每楼裁剪、坏JSON、操作过滤"
+    },
+    {
+      "path": "agent/doupo-agent-ui/impact/impact-ops.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整155行；影响摘要、注入/台账排序与预算、记录节奏"
+    },
+    {
+      "path": "agent/doupo-agent-ui/impact/impact-ops.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整86行；离线执行通过；现有预算允许保留超长首行，未测试world级rumor"
+    },
+    {
+      "path": "agent/doupo-agent-ui/impact/impact-runtime.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整732行；登记去重/链深、成熟、编辑/调期、归档恢复、删楼、恢复与版本；复现ID碰撞/恢复过期条未成熟/成熟不可回滚"
+    },
+    {
+      "path": "agent/doupo-agent-ui/impact/impact-runtime.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整284行；离线执行通过；正常登记/成熟/同楼/归档/删楼；缺归档最高号恢复和成熟撤销"
+    },
+    {
+      "path": "agent/doupo-agent-ui/impact/impact-select.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整218行；选条输入、存在性/收场/去重校验、未成熟标记、输入输出预算；1000待发酵条输入测量"
+    },
+    {
+      "path": "agent/doupo-agent-ui/impact/impact-select.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整136行；离线执行通过；假JSON选条、数量与输出预算、依赖方向"
+    },
+    {
+      "path": "agent/doupo-agent-ui/sandbox/sandbox-mode.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整97行；Map记录、sync/confirm/cancel、模式口径与历史；确认无版本复验、无持久化接口"
+    },
+    {
+      "path": "agent/doupo-agent-ui/sandbox/sandbox-mode.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整71行；离线执行通过；同一实例分支隔离/确认取消/副本/历史上限；不覆盖重载"
+    },
+    {
+      "path": "agent/doupo-agent-ui/sandbox/sandbox-world.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整55行；静态基线与动态惯性/人物自主提示；未按真实来源核验世界设定"
+    },
+    {
+      "path": "agent/doupo-agent-ui/sandbox/sandbox-world.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整54行；离线执行通过；关键词和4000字上限，不证明剧情行为或原著正确性"
+    },
+    {
+      "path": "agent/doupo-agent-ui/impact-flow.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整170行；假generateQuietPrompt、两轮记录与选条、顺序缓存与手改失效；离线通过"
+    },
+    {
+      "path": "agent/doupo-agent-ui/impact-live.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整83行；纯getContext内存冒烟，不是真酒馆；注入/修改/元数据恢复通过"
+    },
+    {
+      "path": "agent/09-沙盒模式功能方案.md",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整274行；明确是建议且未冻结（4、215、217-229、255-259行）；不把全部建议当已承诺实现"
+    },
+    {
+      "path": "agent/doupo-agent-ui/index.js",
+      "status": "partial",
+      "reason": "8826行入口只读必要接线，不声称全文件审查",
+      "evidence": "读取90-155、210-242、285-345、365-384、470-490、730-770、1930-2085、3180-3335、3345-3357、3580-3630、3920-4055、4375-4485、5680-5778、7100-7140、7230-7250；搜索sandbox/impact/world引用与设置6090-6094；未读其余入口"
+    },
+    {
+      "path": "agent/doupo-agent-ui/sandbox/sandbox-engine.js",
+      "status": "unread",
+      "reason": "当前工作树已删除；未读取HEAD旧实现",
+      "evidence": "git status D"
+    },
+    {
+      "path": "agent/doupo-agent-ui/sandbox/sandbox-engine.test.mjs",
+      "status": "unread",
+      "reason": "当前工作树已删除；未读取HEAD旧测试",
+      "evidence": "git status D"
+    },
+    {
+      "path": "agent/doupo-agent-ui/sandbox/sandbox-goals.js",
+      "status": "unread",
+      "reason": "当前工作树已删除；未读取HEAD旧实现",
+      "evidence": "git status D"
+    },
+    {
+      "path": "agent/doupo-agent-ui/sandbox/sandbox-goals.test.mjs",
+      "status": "unread",
+      "reason": "当前工作树已删除；未读取HEAD旧测试",
+      "evidence": "git status D"
+    },
+    {
+      "path": "agent/doupo-agent-ui/sandbox/sandbox-leads.js",
+      "status": "unread",
+      "reason": "当前工作树已删除；未读取HEAD旧实现",
+      "evidence": "git status D"
+    },
+    {
+      "path": "agent/doupo-agent-ui/sandbox/sandbox-leads.test.mjs",
+      "status": "unread",
+      "reason": "当前工作树已删除；未读取HEAD旧测试",
+      "evidence": "git status D"
+    },
+    {
+      "path": "agent/doupo-agent-ui/sandbox/sandbox-nodes.js",
+      "status": "unread",
+      "reason": "当前工作树已删除；未读取HEAD旧实现",
+      "evidence": "git status D"
+    },
+    {
+      "path": "agent/doupo-agent-ui/sandbox/sandbox-nodes.test.mjs",
+      "status": "unread",
+      "reason": "当前工作树已删除；未读取HEAD旧测试",
+      "evidence": "git status D"
+    }
+  ],
+  "findings": [
+    {
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 3258,
+      "title": "挂起的场记结果可在换聊天后写入新会话",
+      "behavior": "影响选条异步注入的会话隔离",
+      "evidence": "3228-3288捕获旧snapshot并await选条，恢复后没有captureAgentContinuation或scope/version复验；233-239即使清通道并恢复新账也不能取消旧promise。内存：A发起impactInjection，切chatId/chat/chatMetadata到B，释放固定picks，返回injected且doupo_impact实际为A会话私有事实写入B。world/impact记录员4032/4450已有continuation，不涵盖场记。",
+      "risk": "新会话正文携带上一会话世界事实；停用/编辑/手动改账的旧结果同样可能覆盖当前注入。",
+      "recommendation": "复用现有continuation门控并加入账本版本与模式代次校验；同一signature挂起请求合并，陈旧结果不得写缓存或通道。",
+      "verification": "延迟假场记，CHAT_CHANGED清空并恢复B后释放A；A应stale，B通道保持空/自己的文本；再测停用、改账、重roll和两个并发调用。"
+    },
+    {
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/impact/impact-runtime.js",
+      "line": 681,
+      "title": "存档恢复忽略归档最大编号导致影响ID碰撞",
+      "behavior": "影响归档、续聊登记与恢复",
+      "evidence": "restore的seq只扫描state.records；467-475 unarchive不检查活跃库已有同ID。内存：登记i1→forget→snapshot/restore→登记新条→unarchive i1，list得到两个id=i1的不同记录。",
+      "risk": "后续ref、parent、Map选条定位歧义；forget按ID和其他ID集合逻辑可能误操作多条。",
+      "recommendation": "编号接续同时扫描records与archive；恢复和unarchive明确处理重复ID，避免静默改写既有引用。",
+      "verification": "最高ID仅在archive、records为空/非空、反复保存恢复再新增/找回，全部ID唯一且旧parent/ref指向不变。"
+    },
+    {
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/sandbox/sandbox-mode.js",
+      "line": 24,
+      "title": "正式沙盒口径仅存在内存且无记录时直接采用全局开关",
+      "behavior": "模式跨重载与老存档授权",
+      "evidence": "24-25仅Map，返回API93-94没有snapshot/restore；index对agentSandboxMode引用搜索无宿主保存/恢复接线，sync只由设置变更6947触发。index7237-7245无记录直接读enableSandboxMode。内存新建实例read旧scope为空；全局开关与该分支已确认模式不一致时重载会改变实际口径。方案60-70要求正式状态/老档主线。",
+      "risk": "续聊丢失确认结果、惯性与历史；老主线存档在全局开关开启时可无确认进入开放世界。",
+      "recommendation": "通过现有会话存储持久化并恢复模式/惯性/历史；区分新开局与旧档缺字段，旧档默认mainline，不将设置等同正式授权。",
+      "verification": "主线A和沙盒B分别确认，重建模块与重开聊天后保持各自模式；旧档缺字段且全局开关开启仍主线；确认前后事实不回退。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/sandbox/sandbox-mode.js",
+      "line": 55,
+      "title": "模式确认只记录任务版本而不复验也不使飞行候选失效",
+      "behavior": "模式切换授权与跨模式候选提交",
+      "evidence": "sync50存taskId/stateVersion；confirm55-67只按scope读取pending并写mode，未接收或比对当前版本。index5703-5709确认后仅更新显示，未invalidateAgentContinuations；127-137 continuation不含模式，4032/4450可让旧模式请求继续提交。内存旧task/v1 pending无任何当前版本参数即可confirm switched。",
+      "risk": "跨回合迟到确认及旧口径决定能在模式切换后生效；纸面绑定并不是提交门控。",
+      "recommendation": "确认时比对当前任务/分支/状态版本，模式切换产生代次并废弃此前未提交决定/选条；复用现有门控，不新建另一套总控。",
+      "verification": "v1申请后推进v2再确认应拒绝或重确认；旧模式假请求挂起，切换后释放不得落账；新模式请求正常提交。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/world/world-runtime.js",
+      "line": 455,
+      "title": "updateTask拒绝非法期限前已经修改详情",
+      "behavior": "单条操作拒绝必须无副作用",
+      "evidence": "455先写task.detail，456-458才校验days。内存旧detail=旧，updateTask detail=不应写入,days=0返回rejected/bad_days，但snapshot.detail已变。525-528人物相同态度/新basis亦有先写后判无变化的结构。",
+      "risk": "面板显示未生效却改了正式状态，缺少成功流水/撤销与一致保存语义。",
+      "recommendation": "在临时候选对象完成所有校验和变化检测后一次写入；同类setPerson路径一起列为后续验证，不无边界重写。",
+      "verification": "非法days混合有效detail后完整snapshot不变（允许明确日志例外）；重复态度但basis变化必须明确成功或完全无副作用。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/world/world-runtime.js",
+      "line": 463,
+      "title": "同楼重生成撤销任务更新时遗漏原期限",
+      "behavior": "任务期限重roll恢复",
+      "evidence": "453-454保存beforeDetail/beforeEndDay，但463 undo仅detail。内存任务第2天到期，同楼更新days10后同楼apply([])，detail恢复旧值而endDay仍10。",
+      "risk": "新正文没有延期，任务却继续获得旧版本额外期限。",
+      "recommendation": "撤销保存并恢复完整可变任务字段，支持原endDay=null，避免用相对days反推绝对截止日。",
+      "verification": "同楼更新detail+days后重roll空操作，detail/endDay精确等于更新前；跨天及null期限同测。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/world/world-runtime.js",
+      "line": 620,
+      "title": "同楼先撤销再按旧opId去重使重放结果消失",
+      "behavior": "幂等与重生成组合",
+      "evidence": "620-621撤销lastFloor，但opIdMemory不删除旧批次ID，632-634跳过新版同opId；impact-runtime538-539/550-552有同结构。内存同floor=3两次相同addEvent/opId=x，第二次noop duplicate[x]且事件列表为空。",
+      "risk": "重试/同楼重放从一次生效退化为没有记录，幂等合同破坏。",
+      "recommendation": "先识别相同批次纯重试，或为撤销批次同步撤回相应去重记忆；两个runtime用同一行为测试矩阵，不贸然抽大公共基类。",
+      "verification": "world和impact分别测同floor同opId重复、同floor不同内容、跨floor同opId，预期保留一次或明确替换，不能变成零次。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/impact/impact-runtime.js",
+      "line": 203,
+      "title": "当日恢复的逾期归档条被成熟扫描水位跳过",
+      "behavior": "归档找回及存档恢复后的自动成熟",
+      "evidence": "203 day<=sweptDay直接返回；apply543先扫再执行unarchive，474随后才加入records。内存第1天记ripen2后归档，第5天unarchive再同日apply([])，状态active,due=1,ripened=0,dueIds=[]。restore684同样把水位设为存档日而不扫到期条。",
+      "risk": "已经到日子的影响需额外过一天或手动处理，面板成熟状态与正文到期判断不一致。",
+      "recommendation": "让新增/恢复的待扫描条使扫描失效，或按需扫描到期active，不用仅日期假定库内容没变；恢复时与世界时钟对齐。",
+      "verification": "当天找回过期条与恢复包含当日到期active的存档，无需再推进游戏日即可成熟且只记一次流水。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/impact/impact-runtime.js",
+      "line": 543,
+      "title": "自动成熟不在同楼撤销日志内导致时钟回滚后仍已发酵",
+      "behavior": "影响成熟与世界时钟重生成一致性",
+      "evidence": "sweepDue203-216直接改状态，apply543调用结果只返回dueIds，未加入undoSteps；538只回滚操作undo。内存第1天记ripen2，floor3/day5空apply成熟，再floor3/day1空apply，state仍ripened且ripenedDay=3。",
+      "risk": "正文改成没有跨日，影响仍提前应验；与世界runtime已有到期事件恢复形成不一致。",
+      "recommendation": "自动成熟纳入对应楼层的可逆状态变更，区分既有已提交成熟与本次时钟导致的成熟；协调世界→影响顺序。",
+      "verification": "世界推进触发影响成熟后同楼改为不推进，记录回active且成熟日清空；不回滚其他楼已确认的成熟。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/world/world-decide.js",
+      "line": 67,
+      "title": "schema同名level覆盖势力实力档次为世界氛围枚举",
+      "behavior": "结构化世界决定的势力档案",
+      "evidence": "64定义level自由string，67再次定义同名level枚举calm/rising/storm；对象实际只保留后者。内存打印DECIDE_JSON_SCHEMA...level为该枚举；index4029把schema传出。world-decide.test18只验证键存在。",
+      "risk": "启用严格结构化输出的连接无法按提示生成加玛帝国一流等势力档次，或模型被迫输出错误档次；未调用真实提供商，不断言所有连接必现。",
+      "recommendation": "按op分别收紧setFaction.level和setTension.level，保留各自语义；消除对象重复键。",
+      "verification": "在离线JSON schema校验器中，setFaction level=加玛帝国一流有效，setTension level=rising有效且bad无效；真实接口仅后续授权验证。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 3241,
+      "title": "场记缓存签名不能区分多轮相同开头和世界变化",
+      "behavior": "影响选条缓存失效",
+      "evidence": "3241-3245仅version/条数/day/预算/模型/draft前80字/floors.length；缺正文内容、真实楼号、地点、world版本及prompt等设置。impactConversation限制最近楼数，长聊达到固定floors.length且账本无变化时重复输入，签名可相同；3246直接复用旧文本。",
+      "risk": "下一幕地点/上下文变化仍复用上幕挑选；原两轮测试因账本version变化而绕过此边界。",
+      "recommendation": "签名纳入scope/回复与草稿身份、相关世界版本及决定参数；与飞行请求共享准确键，不全量序列化无限账本。",
+      "verification": "固定账本版本与day，足量最近楼后连发相同前80字但不同后文/地点/回复的两幕，必须重新挑选；同一幕重复拦截仍只挑一次。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/impact/impact-select.js",
+      "line": 127,
+      "title": "待发酵安排绕过台账预算全量送入场记",
+      "behavior": "不限账本规模下输入预算",
+      "evidence": "104台账有1800字/30行限制，但110取全部pending，127-128直接map/join无数量或字符上限。内存buildImpactInjectUser：1待发酵条339字符，1000条29243字符。index1972账本固定不限条数，因此可达。",
+      "risk": "场记输入随待发酵库存线性增长，增加接口成本、上下文超限与延迟；不是已测真实模型耗时。",
+      "recommendation": "对待发酵区共用总字符/条数预算，优先关联当前场景且最近到期的安排，并明确省略数量；账本本身保持完整。",
+      "verification": "0/1/1000/10000条时输入满足明确总上限，最近应关注条保留，省略有计数，不丢库中记录。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 6094,
+      "title": "界面保留对象预算与节点宽限设置但现行链没有消费者",
+      "behavior": "沙盒预算及节点时间窗口",
+      "evidence": "6094显示sandbox.maxNewObjectsPerTurn和nodeWindowSlackDays；生产代码搜索这两字段只命中该界面（设置默认等宿主文件未全读）；现存sandbox仅mode/world提示，节点/线索引擎工作树已删除。runWorldDecision4038直接apply最多12操作，没有沙盒新增对象预算；world-runtime417-432仍可多次addTask。6093窗口起止自动发生说明也与sandbox-world47-49世界惯性文本不同。",
+      "risk": "用户设置0仍可能新增任务/事件；界面暗示存在节点窗口调度但当前范围没有其实现，不能把方案SB03-05/SB10/SB12当通过。",
+      "recommendation": "先诚实标注未实现或隐藏无效设置/旧窗口说明；只有另行批准完整节点/预算功能时再实现，勿在审查中恢复已删除模块。",
+      "verification": "设新增预算0/1时新增对象不越界且超额明确排队/拒绝；若不提供该功能，界面不得声称可调。节点窗口需独立验收，不用关键词测试代替。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/impact/impact-ops.js",
+      "line": 23,
+      "title": "世界级传闻失去未证实标记且台账未传certainty",
+      "behavior": "世界影响的传闻与事实边界",
+      "evidence": "impactMark23先判weight=world返回★，24的rumor分支因此不可达；injectionLine46只用impactMark，ledgerLine97-117从未输出certainty。故同一条world+rumor在脚本注入仅有★，在场记/记录员台账不带未证实字段。runtime允许此组合，select提示要求传闻不能写成事实。",
+      "risk": "高影响传闻被下游作为既成事实使用的硬信息边界缺失；不能依赖title/detail恰好含传闻字样。",
+      "recommendation": "权重与可信度独立呈现（如★？或明确传闻·未证实），台账无论权重均携带certainty；不自动将rumor升级certain。",
+      "verification": "world/major/minor × certain/rumor矩阵，脚本注入、台账和picks路径都保留未证实语义，普通世界级certain仍有★。"
+    }
+  ],
+  "feature_status": [
+    {
+      "feature": "时钟/季节/分钟进位",
+      "status": "offline_pass_with_boundaries",
+      "evidence": "world-runtime/ops测试通过；advance累计day超过99999后格式化/恢复边界未测，不据此单列缺陷"
+    },
+    {
+      "feature": "身边/世界事件、预定地点、了结置顶",
+      "status": "offline_pass",
+      "evidence": "登记/双域/去重/短标题/地点/预定/置顶/容量正常路径通过；容量裁剪后的完整撤销未验证"
+    },
+    {
+      "feature": "任务新增/更新/完成/删除/期限",
+      "status": "confirmed_defects",
+      "evidence": "正常CRUD/恢复通过；拒绝仍写与期限撤销失败已复现；任务逾期仍active只显示已逾期，不将未规定的自动失败当bug"
+    },
+    {
+      "feature": "势力/人物档案",
+      "status": "partial",
+      "evidence": "留空保旧/更新/恢复通过；level schema覆盖确认；人物仅basis变化的拒绝副作用待单独回归"
+    },
+    {
+      "feature": "世界传闻/到期",
+      "status": "offline_pass",
+      "evidence": "world传闻·未证实标记与到期事件扫除/单次推进重roll测试通过；多个时钟操作组合撤销未验证"
+    },
+    {
+      "feature": "重生成/幂等/存档往返",
+      "status": "confirmed_defects",
+      "evidence": "简单同楼路径通过；同opId重roll会删空、任务期限不恢复；持久化lastFloor不在snapshot，刷新后重roll未验证"
+    },
+    {
+      "feature": "影响记录、修复、因果链、相似去重",
+      "status": "offline_pass",
+      "evidence": "正常record/adjust/ripen/close/revert/chain/duplicate与260条无淘汰测试通过"
+    },
+    {
+      "feature": "影响选条/成熟/归档恢复",
+      "status": "confirmed_defects",
+      "evidence": "正常两轮通过；跨聊天旧选条、缓存、无界pending、成熟不撤销、同日恢复跳扫、归档ID碰撞确认"
+    },
+    {
+      "feature": "影响传闻",
+      "status": "confirmed_defect",
+      "evidence": "world+rumor标记优先级及台账遗漏certainty可达"
+    },
+    {
+      "feature": "沙盒口径切换授权与续聊",
+      "status": "confirmed_defects",
+      "evidence": "同一实例确认取消与分支隔离通过；模式不持久化、旧档回落全局、确认无版本复验"
+    },
+    {
+      "feature": "沙盒剧情来源与主链接线",
+      "status": "partial",
+      "evidence": "开放世界跳过扩展设定索引、正文换内置基线，世界决定另附惯性/自主性；不能证明酒馆原生世界书也被禁用；节点调度/可达性/发现知识状态未实现于当前sandbox范围"
+    },
+    {
+      "feature": "预算与并发",
+      "status": "confirmed_defects_and_gaps",
+      "evidence": "输出ops/picks数量有界，world/impact决定有busy+continuation；场记无旧响应门控、pending输入无界，沙盒对象预算未接线；全局quiet队列由entry分片负责"
+    }
+  ],
+  "tests": {
+    "command": "node --test <root>/agent/doupo-agent-ui/world/*.test.mjs <root>/agent/doupo-agent-ui/impact/*.test.mjs <root>/agent/doupo-agent-ui/sandbox/*.test.mjs <root>/agent/doupo-agent-ui/impact-flow.test.mjs <root>/agent/doupo-agent-ui/impact-live.test.mjs",
+    "passed_files": 11,
+    "failed_files": 0,
+    "duration_ms": 2771.9401,
+    "model_calls": "0真实调用；generateQuietPrompt全为固定JSON/延迟Promise假函数",
+    "storage": "仅对象与内存chatMetadata；未保存真实聊天",
+    "additional": "stdin Node内存复现9类状态问题及pending输入测量；无新增测试文件"
+  },
+  "refactor_signals": [
+    {
+      "module": "world/world-runtime.js",
+      "threshold": "同一状态所有权下拒绝副作用、任务撤销缺字段和幂等/撤销顺序三项有证据P2",
+      "evidence": "建议Refactor Backlog，仅在单条原子校验与可逆操作边界分阶段整理；现在不重写runtime"
+    },
+    {
+      "module": "impact/impact-runtime.js",
+      "threshold": "ID分配、归档恢复与成熟水位共享生命周期但缺统一不变量",
+      "evidence": "先分别Local Fix：ID唯一与到期扫描；有回归后再决定是否统一生命周期，不从缺陷数直接推导重写"
+    },
+    {
+      "module": "sandbox/sandbox-mode.js + index mode接线",
+      "threshold": "正式模式的存储、确认版本和异步候选代次不在同一提交合同",
+      "evidence": "Refactor Backlog：通过既有hostStorage/continuation建立单一模式真相，不另加平行总控"
+    }
+  ],
+  "slimming_themes": [
+    {
+      "pattern": "Compatibility Path",
+      "occurrences": 2,
+      "suggested_handling": "world正文world代码块与独立decide两通道各有运行配置和测试，不能删其一；先确认用户配置迁移与真实宿主行为。"
+    },
+    {
+      "pattern": "Duplicate Logic",
+      "occurrences": 2,
+      "suggested_handling": "world/impact均有lastFloor undo+opIdMemory并呈现同一缺陷；先共享测试矩阵，未证明值得建立抽象基类。"
+    },
+    {
+      "pattern": "Compatibility Path",
+      "occurrences": 1,
+      "suggested_handling": "沙盒节点宽限/旧窗口文案无生产消费者，适合经授权移除或标注未实现；删除安全尚需设置迁移/README/发布引用检查，当前不判Dead Code。"
+    }
+  ],
+  "do_not_touch_yet": [
+    "保留旧档事件标题补全和较长任务/影响标题恢复兼容；恢复长度与新增长度有意不同。",
+    "保留世界与影响runtime独立职责、影响档案与手动修改标记、传闻层；不为省提示词删除正式账本。",
+    "八个已删除sandbox文件不恢复、不从HEAD回灌；范围外core/request/host存储实现未完整审查，不能宣称可删除。",
+    "设计方案明确建议且未冻结，未实现的七项功能不一律报成回归；仅当前界面/实际执行矛盾列发现。"
+  ],
+  "verification_gates": [
+    {
+      "check": "复跑11个现存范围离线测试",
+      "scope": "基线11/11，不代表边界验收完成"
+    },
+    {
+      "check": "归档ID唯一与同日成熟恢复新增回归",
+      "scope": "impact/impact-runtime"
+    },
+    {
+      "check": "拒绝无副作用、期限精确撤销、opId同楼组合回归",
+      "scope": "world/impact运行时"
+    },
+    {
+      "check": "延迟假场记跨聊天/停用/切模式/改账不得写通道",
+      "scope": "index影响选条生命周期"
+    },
+    {
+      "check": "模块重载分支恢复、旧档缺字段、陈旧确认与跨模式候选拒绝",
+      "scope": "sandbox模式合同"
+    },
+    {
+      "check": "输入预算随1/1000/10000条增长仍有界，可信度与权重矩阵",
+      "scope": "impact喂料和传闻输出"
+    }
+  ],
+  "optimization_handoffs": [
+    {
+      "module": "impact/impact-runtime.js",
+      "evidence": "最高编号在archive时restore后新增与unarchive生成两个i1，内存已复现",
+      "threshold": "Local Fix",
+      "suggested_gate_mode": "Local Fix Only",
+      "behavior_contract_hints": "活跃与归档共享唯一且单调接续的ID；恢复不得改变既有parent/ref含义",
+      "patch_budget": "一个ID分配行为路径，1-2文件，目标少于80变更行",
+      "pre_change_baseline": "本分片11/11范围测试通过，碰撞repro失败",
+      "verification_gate": "归档最高ID/空records/存档往返/恢复再新增与unarchive唯一性回归",
+      "deletion_safety": "不涉及删除；禁止静默重编号破坏引用",
+      "forbidden_scope": "不改真实存档、不扩schema、不重写runtime、不捎带其他问题；需单独授权实现"
+    }
+  ],
+  "gate_recommendation": {
+    "optimization_eligibility": "Eligible for Gate Review",
+    "execution": "Local Fix Only建议，当前仅报告不进入CHANGE",
+    "selected_candidate": "影响ID恢复唯一性",
+    "modules": {
+      "world": "Refactor Backlog",
+      "impact": "Local Fix",
+      "sandbox": "Refactor Backlog",
+      "index必要接线": "Local Fix"
+    }
+  },
+  "unverified": [
+    "未浏览器、未真实酒馆、未真实模型、未运行完整仓库测试/打包/插件安装，未对真实存档写入。",
+    "host llm队列/网络重试/超时与保存失败durability由其他分片；本分片不重复entry负责的总开关、self-memory顺序、quiet忙时丢轮问题。",
+    "未核验SANDBOX_WORLD_PROMPT原著来源与所有修行知识正确性；关键词通过不等于事实正确。",
+    "未完整读取index剩余部分、core/request/host，以及已删除sandbox旧版；本报告不声称全仓审查完成。",
+    "SAND-02节点六态、SAND-04可达性/在场/亲见转述推测、SAND-05目标失败和取舍、SAND-06超额队列、SAND-07主线重新对齐均无本分片运行验收；旧方案仅作设计差距。",
+    "事件/任务容量裁剪副作用的完整撤销、跨刷新同楼重roll、多个时钟操作撤销、99999天边界、真实并发跨会话事件顺序均未执行专项验收。",
+    "未证明扩展开放世界分支能禁止宿主原生世界书；当前代码只明确跳过扩展自有资料链。"
+  ]
+}

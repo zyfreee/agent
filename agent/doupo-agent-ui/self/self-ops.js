@@ -21,8 +21,8 @@ export const SELF_GUIDE = [
     '{"op":"addSkill","name":"吸掌","grade":"玄阶低级","type":"功法斗技"}',
     '{"op":"addItem","name":"回气丹","category":"丹药","grade":"一品","count":3}',
     '```',
-    '可用操作：setProfile(field:name|gender|age|race|origin|affiliation|talent|appearance,text≤60字)；setRealm(realm≤12字,stage≤12字，如 斗者+三星)；setGold(amount≥0)/addGold(amount，可为负)；addTitle/removeTitle(text≤16字)；addTechnique/addSkill(name,grade,type,progress,source,note)；updateTechnique/updateSkill(id,…字段)；removeTechnique/removeSkill(id)；addItem(name,category,grade,count,note)/updateItem(id,count,equipped,grade,note)/removeItem(id,count)；addRecipe(name,craft,grade,materials,note)/removeRecipe(id)；startCraft(name,craft,days,note)/finishCraft(id,result:success|fail,note)；addGoal(text≤80字,priority:主线|支线,due)/finishGoal(id)/removeGoal(id)。id 只能用纳戒清单里已有的编号。',
-    '记账规则：只记主角自己身上的变化，有据可依（从最近剧情里长出来），不要照搬原著桥段；境界突破必须剧情真到位，不轻易写；获得功法斗技、丹药、装备要有来源。炼制成功后要用 addItem 把成品记进行囊；装备穿上/脱下用 updateItem 的 equipped。',
+    '可用操作：setProfile(field:name|gender|age|race|origin|affiliation|talent|appearance,text≤60字)；setRealm(realm≤12字,stage≤12字，如 斗者+三星)；setGold(amount≥0)/addGold(amount，可为负)；addTitle/removeTitle(text≤16字)；addTechnique/addSkill(name,grade,type,progress,source,note)；updateTechnique/updateSkill(id,…字段)；removeTechnique/removeSkill(id)；addEquipment(name,grade,type,source,note)/updateEquipment(id,…字段)/removeEquipment(id)；addTreasure(name,grade,type,source,note)/updateTreasure(id,…字段)/removeTreasure(id)；addItem(name,category,grade,count,note)/updateItem(id,count,grade,note)/removeItem(id,count)；addRecipe(name,craft,grade,materials,note)/removeRecipe(id)；startCraft(name,craft,days,note)/finishCraft(id,result:success|fail,note)；addGoal(title必写≤20字短标题,text≤80字完整内容,priority:主线|支线,due)/finishGoal(id)/removeGoal(id)。目标 title 只写短标题，完整内容放 text，两者不要重复；缺 title 或超过 20 字的条目会被脚本整条拒绝。id 只能用纳戒清单里已有的编号。',
+    '记账规则：只记主角自己身上的变化，有据可依（从最近剧情里长出来），不要照搬原著桥段；境界突破必须剧情真到位，不轻易写；获得功法斗技、丹药、装备要有来源。穿在身上的装备用 addEquipment 记进装备栏（type：武器|防具|饰品|其他），脱下、损毁或被夺用 removeEquipment，行囊只放没在用的东西；天材地宝（异火、妖丹、灵矿、先天灵物之类）用 addTreasure 单独记进天材地宝栏（type：异火|灵物|矿石|其他），易主或耗尽用 removeTreasure；炼制成功后要用 addItem 把成品记进行囊（成品是穿的就记装备栏）。',
     '没有需要记下的变化就完全不要输出这个区块；正文照常写给玩家看，指令只是记账。',
 ].join('\n');
 
@@ -36,8 +36,12 @@ function text(value) {
     return typeof value === 'string' ? value.trim() : '';
 }
 
-/** 纳戒快照 → 注入文本；身份与境界永远保留，超预算从目标、进行中炼制、行囊往上丢。 */
-export function buildSelfInjection(snapshot = {}, { maxChars = DEFAULT_MAX_CHARS } = {}) {
+/**
+ * 纳戒快照 → 注入文本；身份与境界永远保留，超预算从目标、进行中炼制、行囊往上丢。
+ * withIds=true 时条目前带编号（t1·焚决）：决定模型要靠它引用 update/remove 的 id；
+ * 正文注入保持默认关，省字数。
+ */
+export function buildSelfInjection(snapshot = {}, { maxChars = DEFAULT_MAX_CHARS, withIds = false } = {}) {
     const cap = clampInt(maxChars, 200, 4000, DEFAULT_MAX_CHARS);
     const profile = snapshot.profile ?? {};
     const realmState = snapshot.realm ?? {};
@@ -54,25 +58,33 @@ export function buildSelfInjection(snapshot = {}, { maxChars = DEFAULT_MAX_CHARS
     if (realmBody) lines.push(`境界：${realmBody}${text(realmState.stage) || ''}`);
     if (Number.isInteger(snapshot.gold) && snapshot.gold > 0) lines.push(`金币：${snapshot.gold}`);
     if (Array.isArray(snapshot.titles) && snapshot.titles.length) lines.push(`称号：${snapshot.titles.join('、')}`);
-    const entryLine = item => `${item.name}${item.grade ? `（${item.grade}${item.progress ? `·${item.progress}` : ''}）` : item.progress ? `（${item.progress}）` : ''}`;
+    const idOf = item => (withIds && item?.id ? `${item.id}·` : '');
+    const entryLine = item => `${idOf(item)}${item.name}${item.grade ? `（${item.grade}${item.progress ? `·${item.progress}` : ''}）` : item.progress ? `（${item.progress}）` : ''}`;
     if (Array.isArray(snapshot.techniques) && snapshot.techniques.length) lines.push(`功法：${snapshot.techniques.map(entryLine).join('、')}`);
     if (Array.isArray(snapshot.skills) && snapshot.skills.length) lines.push(`斗技：${snapshot.skills.map(entryLine).join('、')}`);
+    const gear = [
+        ...(Array.isArray(snapshot.equipment) ? snapshot.equipment : []),
+        ...(Array.isArray(snapshot.items) ? snapshot.items : []).filter(item => item.equipped === true),
+    ];
+    if (gear.length) lines.push(`装备：${gear.map(item => `${idOf(item)}${item.name}${item.grade ? `（${item.grade}${item.type ? `·${item.type}` : ''}）` : item.type ? `（${item.type}）` : ''}`).join('、')}`);
+    if (Array.isArray(snapshot.treasures) && snapshot.treasures.length) {
+        lines.push(`天材地宝：${snapshot.treasures.map(item => `${idOf(item)}${item.name}${item.grade ? `（${item.grade}${item.type ? `·${item.type}` : ''}）` : item.type ? `（${item.type}）` : ''}`).join('、')}`);
+    }
     const items = Array.isArray(snapshot.items) ? snapshot.items : [];
-    const equipped = items.filter(item => item.equipped === true);
-    if (equipped.length) lines.push(`装备中：${equipped.map(item => item.name).join('、')}`);
     const bag = items.filter(item => item.equipped !== true).sort((a, b) => b.count - a.count);
     if (bag.length) {
         const shown = bag.slice(0, BAG_LIMIT);
-        lines.push(`行囊：${shown.map(item => `${item.name}${item.count > 1 ? `×${item.count}` : ''}`).join('、')}${bag.length > shown.length ? `…（另有 ${bag.length - shown.length} 种）` : ''}`);
+        lines.push(`行囊：${shown.map(item => `${idOf(item)}${item.name}${item.count > 1 ? `×${item.count}` : ''}`).join('、')}${bag.length > shown.length ? `…（另有 ${bag.length - shown.length} 种）` : ''}`);
     }
     const openCrafts = (Array.isArray(snapshot.crafts) ? snapshot.crafts : []).filter(job => job.status === 'open');
     if (openCrafts.length) {
-        lines.push(`进行中：${openCrafts.map(job => `${job.craft || '炼制'}·${job.name}${job.count > 1 ? `×${job.count}` : ''}${job.endDay !== null && job.endDay !== undefined ? (job.endDay >= today ? `（剩 ${job.endDay - today + 1} 天）` : '（已超期）') : ''}`).join('；')}`);
+        lines.push(`进行中：${openCrafts.map(job => `${idOf(job)}${job.craft || '炼制'}·${job.name}${job.count > 1 ? `×${job.count}` : ''}${job.endDay !== null && job.endDay !== undefined ? (job.endDay >= today ? `（剩 ${job.endDay - today + 1} 天）` : '（已超期）') : ''}`).join('；')}`);
     }
     const openGoals = (Array.isArray(snapshot.goals) ? snapshot.goals : []).filter(goal => goal.done !== true);
     if (openGoals.length) {
         const sorted = [...openGoals].sort((a, b) => (a.priority === '主线' ? 0 : 1) - (b.priority === '主线' ? 0 : 1));
-        lines.push(`目标：${sorted.map(goal => `${goal.priority === '主线' ? '★' : '·'}${goal.text}${goal.due ? `（${goal.due}）` : ''}`).join('；')}`);
+        // 目标行：短标题当名字，完整内容跟在后面——标题一眼扫，细节不丢。
+        lines.push(`目标：${sorted.map(goal => `${idOf(goal)}${goal.priority === '主线' ? '★' : '·'}${goal.title || goal.text}${goal.text && goal.title && goal.text !== goal.title ? `：${goal.text}` : ''}${goal.due ? `（${goal.due}）` : ''}`).join('；')}`);
     }
     let output = lines.join('\n');
     const appearance = text(profile.appearance);

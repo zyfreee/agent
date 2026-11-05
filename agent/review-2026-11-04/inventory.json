@@ -1,0 +1,1217 @@
+{
+  "at": "2026-11-04T12:37:25.754Z",
+  "mode": "full-scan",
+  "root": "C:\\Users\\86158\\Desktop\\异界转生录\\doupo",
+  "head": "1dee86edb89a8f6efc4b8bbd8192a3a9c1017748",
+  "exclusions": [
+    "agent/doupo-agent-ui/.tmp (private backups/logs and past evidence; not production source)",
+    "worldbook and original novel corpus outside agent/ (data source only, not rewriting or full content audit)",
+    "dev/ and browser profiles (not Agent maintained runtime)"
+  ],
+  "files": [
+    {
+      "path": "INSTALL.md",
+      "bytes": 1169,
+      "lines": 35,
+      "sha256": "4fa6579e9b084ea016fdb9e461e912bcb144dc33934f0f685d6b7cf2f1ad7b20",
+      "kind": "documentation"
+    },
+    {
+      "path": "README.md",
+      "bytes": 4544,
+      "lines": 74,
+      "sha256": "3774cb444fa01fc07cb05cb026962af6cdf3d463399e6c0c175bd4410ef14cd3",
+      "kind": "documentation"
+    },
+    {
+      "path": "agent/09-沙盒模式功能方案.md",
+      "bytes": 19846,
+      "lines": 275,
+      "sha256": "42d3526a148856724fb27cb52c807ce469b9ba3810216fe07615e31377cae25b",
+      "kind": "documentation"
+    },
+    {
+      "path": "agent/doupo-agent-ui/.tmp-hub.txt",
+      "bytes": 30032,
+      "lines": 151,
+      "sha256": "bd565f1d93eb08076714a85e198336ac919287cf6e2a2f2e3731df52d2afe704",
+      "kind": "documentation"
+    },
+    {
+      "path": "agent/doupo-agent-ui/README.md",
+      "bytes": 43710,
+      "lines": 253,
+      "sha256": "ca4e5b9d0a0a2977a46103c05c1d63de4501af2d9061f84fbcf3197aa2e427e8",
+      "kind": "documentation"
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/agent-modules.js",
+      "bytes": 1641,
+      "lines": 35,
+      "sha256": "0e6270d5d11e4e9a98edf66ea97d5b58596165d4acda441f307cde876e6dae49",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/agent-modules.test.mjs",
+      "bytes": 2671,
+      "lines": 35,
+      "sha256": "868ddfa6c58b944401aab610bfbf8bbfc8abcbd5bc66b260b49cbc4aa904c0ae",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/audit-log.js",
+      "bytes": 2760,
+      "lines": 25,
+      "sha256": "6d85e8d52312065d984a6e83030a7eddb66d9b24df378634d2a1acbd13ec34a7",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/audit-log.test.mjs",
+      "bytes": 1581,
+      "lines": 22,
+      "sha256": "d6f724ae26c43b12dcab20a96d8e925566b82fc14346913b01bb78a495728943",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/commit-recovery.js",
+      "bytes": 6882,
+      "lines": 83,
+      "sha256": "c2c2b745b0a30dac7cea3c871870d10c47d2ad00624a1e8243534c88c9d717c8",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/commit-recovery.test.mjs",
+      "bytes": 3738,
+      "lines": 45,
+      "sha256": "fb877f365edebe9486e766c8cb4773b8765b1ed231243f46d2e6abe9d6c6b925",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/coordinator.js",
+      "bytes": 3351,
+      "lines": 80,
+      "sha256": "1f226aad26e7450cf7ac0f7fdbd030ef882b26cbacbe187ced2f86079726515f",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/coordinator.test.mjs",
+      "bytes": 1682,
+      "lines": 30,
+      "sha256": "2695a85fceffa1e59a41f000e1554786fcbc3f18fc4fc89eb2c6220e9f24ea03",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/data-contract.js",
+      "bytes": 7117,
+      "lines": 82,
+      "sha256": "2d1f6a67bf318f155ae71da35bedf7eced8e5bb8958f69523c4b2f45ecd4ba4f",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/data-contract.test.mjs",
+      "bytes": 2536,
+      "lines": 23,
+      "sha256": "ac28d926738bb6993d199a2648b57c6a781db5411d21c4083e43ee0ec1538c84",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/facts-pipeline.test.mjs",
+      "bytes": 11037,
+      "lines": 213,
+      "sha256": "dc2cadbfb8c903b533c758937e30dcde094fdc5b8076e138aba7cfe5ff80b71e",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/impact-engine.js",
+      "bytes": 6408,
+      "lines": 95,
+      "sha256": "62fa27a3558847b18f7ceef02f55cbf3093b0c242f3d7b027d0cc0d4ecb790af",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/impact-engine.test.mjs",
+      "bytes": 4330,
+      "lines": 38,
+      "sha256": "5ac0849017599c765378912b3996b0422fa7f1a1dc7ea8114717522338970e85",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/module-runner.js",
+      "bytes": 14986,
+      "lines": 188,
+      "sha256": "de92a172cde5979e13afaf83e37f85256409c323fab427612c2695497ab721b8",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/module-runner.test.mjs",
+      "bytes": 8750,
+      "lines": 108,
+      "sha256": "3d826194452a19a94b014a0a5a9b00b422960893514c2058a4b7f3ab0fe78026",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/operation-ledger.js",
+      "bytes": 4871,
+      "lines": 56,
+      "sha256": "5a80c74bf6e98598ab948b98e117b2440c7c61e62e406c78ef0d4395c347924b",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/operation-ledger.test.mjs",
+      "bytes": 2157,
+      "lines": 27,
+      "sha256": "f30ba109178777b755cc8cc1b4b2292a4baf54f31cfb62f00bddee4839cd00ab",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/orchestrator.js",
+      "bytes": 13685,
+      "lines": 257,
+      "sha256": "46f5e2e31975764d9faf5c832b9703c0352d244d52e76efa0ea7e1e0e3118135",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/orchestrator.test.mjs",
+      "bytes": 7923,
+      "lines": 165,
+      "sha256": "a66eeab4b8e6a6dd30cc94e6fddb05cec97fd4f35c1a05ff826db3c63ecbf848",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/quality-gate.js",
+      "bytes": 5918,
+      "lines": 64,
+      "sha256": "507bfbb63c61b9a3ff2eb6c71b67ec9bfe0b6fb3ce410b19aeffa3edf05a1695",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/quality-gate.test.mjs",
+      "bytes": 3228,
+      "lines": 33,
+      "sha256": "f018d8439acc9fcf55f4b62887e7c1c4ca7019a2586a82989f4f31acbb8fd8c8",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/settle-categories.js",
+      "bytes": 16721,
+      "lines": 237,
+      "sha256": "76a42218956347f8aecc17cac3caab8cf7208204e68719cb929c9d5d9554b090",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/settle-categories.test.mjs",
+      "bytes": 5652,
+      "lines": 98,
+      "sha256": "faa61c508545f926761ceed8771178e5181b65418a39f824e2a6016063cc8a41",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/state-store.js",
+      "bytes": 8188,
+      "lines": 100,
+      "sha256": "a68f0bc46cced2fb1349fd2db66ae1180244eb76fafdca9041bdd4075a850d31",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/state-store.test.mjs",
+      "bytes": 2412,
+      "lines": 27,
+      "sha256": "e69f6fb0304027360799fe31d2732fb2b05ad316a2b44d955ebc988844044346",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/turn-pipeline.js",
+      "bytes": 23138,
+      "lines": 264,
+      "sha256": "7a3c3e2f60198318e85cb24faaa2bdb420d53488b10e2b8045b88dbb1dde25ac",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/turn-pipeline.test.mjs",
+      "bytes": 14024,
+      "lines": 152,
+      "sha256": "274cb3d1792b6373db8fdbc5dcdb8ba4a6c8929332b1bc5fa973116a5d9cd2f7",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/turn-stages.js",
+      "bytes": 28457,
+      "lines": 534,
+      "sha256": "e54502f54d571d5ccff8aec0cf77bff43b9b2db77b3cd990baff8642852a761e",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/turn-state.js",
+      "bytes": 5167,
+      "lines": 113,
+      "sha256": "e01ff99e8276e51d7bdf0b43f8b66e87e430141db4ceac2654aeadb5f7a36c8f",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/turn-state.test.mjs",
+      "bytes": 2344,
+      "lines": 53,
+      "sha256": "7b05d546268598462078125a5daa22dac0a358685673d6029b43e17552571ec1",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/demo-turn.mjs",
+      "bytes": 8685,
+      "lines": 174,
+      "sha256": "95d0f1ba29bdc751c39a8bb4ee56663c35bf442c944e98ef6b986935a7f8a85d",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/extension-package.test.mjs",
+      "bytes": 1191,
+      "lines": 24,
+      "sha256": "bca8fadedad575349c1f109a5b5cdd04c7a1406bb08c6d080d9e99f9e30aecdb",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/api-presets.js",
+      "bytes": 13685,
+      "lines": 310,
+      "sha256": "b92f12467c37df5bf8eeb8fabd9d34646b1e54739d380e820b63b29ad1c5583f",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/api-presets.test.mjs",
+      "bytes": 6904,
+      "lines": 122,
+      "sha256": "b555af5960cf4833bb03c7b6737a954e8638200118337dec65938d4461069b61",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/capability-preflight.js",
+      "bytes": 2007,
+      "lines": 29,
+      "sha256": "6600b73d724c8e672abbc2b9aee484b70eba0792fe82748d95227f5ea57c3975",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/capability-preflight.test.mjs",
+      "bytes": 1190,
+      "lines": 18,
+      "sha256": "f763b1713b545cf838ce302c2c7fb2b97e0816c6ca6e0eeffa3223917509f6db",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/control-dashboard.js",
+      "bytes": 5107,
+      "lines": 82,
+      "sha256": "2e4cd1e30988bfeab499b57de98e01d6698a211daad3be6f172e1109767e1060",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/control-dashboard.test.mjs",
+      "bytes": 4761,
+      "lines": 69,
+      "sha256": "1a9d8a844d8d9a4dcc9bba5270b49a140653fd931278bf74647712a7bc8cf8e1",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/db-bridge.js",
+      "bytes": 14213,
+      "lines": 298,
+      "sha256": "fa78fa868bc71977334d9bb1ca8d9bc4afdb9c974a48a9687de24f389100d2ff",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/db-bridge.test.mjs",
+      "bytes": 14430,
+      "lines": 289,
+      "sha256": "6d0432fdadb7ffbc907fc34f7027ca9addce96a4b300cfd2a88ba303c11ebebc",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/db-tables.js",
+      "bytes": 43717,
+      "lines": 965,
+      "sha256": "7c4e8baed6a5424aa11d5b1d1bd27ad0c9fcf998fa1470c57760c088feed341d",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/db-tables.test.mjs",
+      "bytes": 33915,
+      "lines": 564,
+      "sha256": "905538bec70e80cdc343d45dff8ead7cbc97fa33850da3a3580cfb1a5b0ef098",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/display-regex.js",
+      "bytes": 6781,
+      "lines": 134,
+      "sha256": "27cf3da94f4a6d3c20ed95435146a0f268a631efc50e12d286335aaf4869fdc5",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/display-regex.test.mjs",
+      "bytes": 8030,
+      "lines": 130,
+      "sha256": "cc8fde5ae7e674963ad1e4530abed7da6b595a10ce674b36c754ba396f191850",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/host-storage.js",
+      "bytes": 37484,
+      "lines": 627,
+      "sha256": "f6608d64980a30bf4a0d452f05fea3c1143565e0144c1c91510c665851e9323c",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/host-storage.test.mjs",
+      "bytes": 19237,
+      "lines": 235,
+      "sha256": "b6401524a209d8b369a807282767df9c80100807acdf76dfa3682453e74e014c",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/llm-client.js",
+      "bytes": 43822,
+      "lines": 727,
+      "sha256": "c6541cb91c980a124f79bfc85aec4183d2980701502136ace5322fac2ac390e5",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/llm-client.test.mjs",
+      "bytes": 38452,
+      "lines": 679,
+      "sha256": "89122d57a6f27a95dccc9eb3bc156cf82002419dcc3b0a0d011bed47316f710c",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/message-adapter.js",
+      "bytes": 5175,
+      "lines": 99,
+      "sha256": "cdffb065d2987e8bea00c6c58961cef29d591f36e9f7c48d829098492a7b13cd",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/mvu-arbiter.js",
+      "bytes": 24039,
+      "lines": 503,
+      "sha256": "d06a624e4cd5dd178b6fb902cc96eb57a04302149509e30dcc58db0ecf445aca",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/mvu-arbiter.test.mjs",
+      "bytes": 26834,
+      "lines": 532,
+      "sha256": "0a31a259d58316dad3a7b89b9b72d69077e74fb3edfc8cdc99adfd16ab1e961e",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/orb-hud.js",
+      "bytes": 41655,
+      "lines": 717,
+      "sha256": "254bd3d9aaadd417aa0abff1c28ddaee1403f25236e033bb40cbed460a4ea723",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/orb-hud.test.mjs",
+      "bytes": 37290,
+      "lines": 534,
+      "sha256": "711d99a22af8c9237995d06e25e22a9ebcfd0fefebf231086d611369e55c9740",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/prompt-injection.js",
+      "bytes": 5023,
+      "lines": 120,
+      "sha256": "7f62573ab01bdf72359933e96c1759d725a5ad4bc36665c80cb54ff6e9184db3",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/prompt-injection.test.mjs",
+      "bytes": 3292,
+      "lines": 74,
+      "sha256": "8bfe36ee3ef18ae3314030ccc8c47301770e7ee2d1521d018b14284a1ea76f6c",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/self-mvu.js",
+      "bytes": 9612,
+      "lines": 200,
+      "sha256": "dc1889c717ac2cf0db1db1fbb23bc6c5a36a52a2513bdf60ccf46150e7e78d6d",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/self-mvu.test.mjs",
+      "bytes": 9472,
+      "lines": 197,
+      "sha256": "5b5c8804f1579538754ca16867b50de18885264d70b555c08211a902a2cac4bc",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/state-persistence.js",
+      "bytes": 2770,
+      "lines": 57,
+      "sha256": "84ac0d8751f3eb7d65be8f8d50a9c7e733bdeca084d12624e303461ccedd1bde",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/style.css",
+      "bytes": 80123,
+      "lines": 1004,
+      "sha256": "c73b4618e42100b7bc23477ebc5c48bcfaad7c3531b616c53e3f7251fc802605",
+      "kind": "ui"
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/ui-state.js",
+      "bytes": 6083,
+      "lines": 79,
+      "sha256": "b281e0b8545077101a818f9f510fb331480f6bf20bea0d47e2a00c549bda9cab",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/ui-state.test.mjs",
+      "bytes": 2963,
+      "lines": 37,
+      "sha256": "a1bebf35e26efcabc8c79378ba1efdd75cc0d896fe749770514041bcab47fe01",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/impact-flow.test.mjs",
+      "bytes": 7674,
+      "lines": 171,
+      "sha256": "a9f41be06c92d07a0b4b0352c24e6cd1f3c273b0a7918de50e0e3c6abbd1bbd8",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/impact-live.test.mjs",
+      "bytes": 3838,
+      "lines": 84,
+      "sha256": "acddc9148284f672557d5ab82575758e04a3e48fde56e2a6931720a0b2f337a4",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/impact/impact-decide.js",
+      "bytes": 14427,
+      "lines": 177,
+      "sha256": "316f8f12ef049963c0b3c097c0815febebf25464a614209899f2ea703ae55205",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/impact/impact-decide.test.mjs",
+      "bytes": 3813,
+      "lines": 73,
+      "sha256": "de45f5a74a07485e32fb3575d3ed10e3d30187b10f6ae9fd6667f7cbc155afa5",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/impact/impact-ops.js",
+      "bytes": 7951,
+      "lines": 156,
+      "sha256": "79cf8e9c9cf4a6f5d3a1e73e448ebc89c60c6ef4e7b8f7627445674a4f1af741",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/impact/impact-ops.test.mjs",
+      "bytes": 5602,
+      "lines": 87,
+      "sha256": "3d1019ea2dec50936863f3ebdd07f96d650f8d9fcb338e7b57a1b74e3309f6ea",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/impact/impact-runtime.js",
+      "bytes": 36973,
+      "lines": 733,
+      "sha256": "589a7874d14517b7f4a684855c466b15bfc2639ce4a00268bf7abd5b77564ea6",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/impact/impact-runtime.test.mjs",
+      "bytes": 20550,
+      "lines": 285,
+      "sha256": "c5ea3f03a93bae3e665585fa2e3e136ab7b5cf9f2b0c076877ff69768eaeb25e",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/impact/impact-select.js",
+      "bytes": 12321,
+      "lines": 219,
+      "sha256": "79cd72db2883672025ce538901343b84e8d581b2e0695ea4cddf568a602007a4",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/impact/impact-select.test.mjs",
+      "bytes": 7255,
+      "lines": 137,
+      "sha256": "00a9fa033f07bd55c87fe8affe39b7ea8d2c7239ebf20af41577e3c469e6ad2b",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/index-chat-lifecycle.test.mjs",
+      "bytes": 8507,
+      "lines": 146,
+      "sha256": "ab691574b8a59c869ae2824d33cff0347ece6a87e7c126b204133836cdd7157b",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/index-lifecycle.test.mjs",
+      "bytes": 1264,
+      "lines": 21,
+      "sha256": "46fbc1f1488043f60edaaac3aad97bd0220ac59376545c381a2ad0828cfffdd9",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/index.js",
+      "bytes": 617213,
+      "lines": 8826,
+      "sha256": "76ed8e8b1f0cdb56141d0b1859ff9be54c039d4c23f26640509063ca29fa481a",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/memory/memory-consolidate.js",
+      "bytes": 6894,
+      "lines": 105,
+      "sha256": "0628bbd35862a2d94e1fba5b02ce30a2e6203e6c57702dc351ef3825f45b457d",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/memory/memory-consolidate.test.mjs",
+      "bytes": 4984,
+      "lines": 69,
+      "sha256": "3a47a5178435f134d1ae5e585fca382616bd8e40d64ceb80065ede0bebc8caaa",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/memory/memory-decide.js",
+      "bytes": 7748,
+      "lines": 117,
+      "sha256": "de1c5d8582c18dd1928c6f3bdaf2a71e137ef1bc94d43c1d51ea30ec2b7a6528",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/memory/memory-decide.test.mjs",
+      "bytes": 5237,
+      "lines": 81,
+      "sha256": "92fabcb48d75dae7607ba8301a908f6683e2c1460b1b4e6f67ad904b216a7f8e",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/memory/memory-ops.js",
+      "bytes": 10646,
+      "lines": 204,
+      "sha256": "199b5755334f041aae8d38801b1a3c2f54d7b636f1f308654031fb1aafeaf126",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/memory/memory-ops.test.mjs",
+      "bytes": 8317,
+      "lines": 133,
+      "sha256": "258abe7c059b87b929c5d36c9d841b3bdb0c233d5fbbc87ae0cce02f1fabca23",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/memory/memory-recall.js",
+      "bytes": 8697,
+      "lines": 141,
+      "sha256": "8dfa9614a14735d47d52e9dfe7a1a1394391bf14edb3b98d9602981f84320309",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/memory/memory-recall.test.mjs",
+      "bytes": 5364,
+      "lines": 88,
+      "sha256": "046e2a61a484c52be1984af14f402e9621ac6cc6e432b5ae8fddd570208f106e",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/memory/memory-runtime.js",
+      "bytes": 20317,
+      "lines": 418,
+      "sha256": "3faaf8ca7d57d47fd56d6be976d3cc5974d3dd6ec2b7e8e9b7d7ad25b5b58ad5",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/memory/memory-runtime.test.mjs",
+      "bytes": 15272,
+      "lines": 214,
+      "sha256": "294c00c8eaed5cef7ec9cbdea76eb110acf3572bcaf53c67ea08d21fd783bf7a",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/facts-index.js",
+      "bytes": 17879,
+      "lines": 363,
+      "sha256": "457602a018ec1fa5f69924319a76a8e55848428e8dfca99c1c2c6afe44010030",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/facts-index.test.mjs",
+      "bytes": 3613,
+      "lines": 67,
+      "sha256": "830835f4de7e85a71a90b24680eb7f50747e5d38d835ebd5f3eb7d2ad04b6cf1",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/facts-library.js",
+      "bytes": 11708,
+      "lines": 176,
+      "sha256": "217d5904739d6639a39532c871b3d5627a3dfb7ef4ea70ea35a5160bfb6678b2",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/facts-library.test.mjs",
+      "bytes": 5162,
+      "lines": 56,
+      "sha256": "04ce43aa18c8afa6b7816381255d1bae1e4d209a099dc222049814d7d725c8ba",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/facts-select.js",
+      "bytes": 16688,
+      "lines": 293,
+      "sha256": "4b08dd55ad5445011ad4862ee2479d843042aa05e0cb5c2bf4c4d5dc9df62d4b",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/facts-select.test.mjs",
+      "bytes": 13962,
+      "lines": 248,
+      "sha256": "fcd3601d6fc0e1c178ad64ca38f7827ede9c46e66b9a9fbed7427342c8a7fd14",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/history-events.js",
+      "bytes": 7921,
+      "lines": 126,
+      "sha256": "b2d40af052de1c04d68c8413136196ad95142daa6f00eb60f216cd908f9654ef",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/history-events.test.mjs",
+      "bytes": 6298,
+      "lines": 87,
+      "sha256": "0c980607e818c6a6b90f8d36106afa68e4df50aa81ff15dce4b9ac7bb6b3461c",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/history-operation.js",
+      "bytes": 3153,
+      "lines": 42,
+      "sha256": "207381ec8466487d365e01c9004a92f16d0c1d2fc5aa29fa17805a3b41db0396",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/history-operation.test.mjs",
+      "bytes": 2165,
+      "lines": 24,
+      "sha256": "064d673993329a2a4b5d8e0daf3d15d1c65962ccd074846438c1a3730ea19901",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/history-restore.js",
+      "bytes": 6134,
+      "lines": 65,
+      "sha256": "1ca8943242396b3241f4a4efae0542f076d2537852d92bb68b74c297e6865faa",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/history-restore.test.mjs",
+      "bytes": 3872,
+      "lines": 32,
+      "sha256": "ed34380265ebf144b1ccc5a753cd7a72fd23285251205801ec9398a586d8b1f1",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/narrative-guard.js",
+      "bytes": 6037,
+      "lines": 79,
+      "sha256": "69b752e7c635c09bf7d55091bcbd89cf32a77513c29456dd633734be023f84af",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/narrative-guard.test.mjs",
+      "bytes": 3645,
+      "lines": 36,
+      "sha256": "23efe24c41dbdb760c388adbbb075386d7fc3ad907737a9cda4270bf67430282",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/setting-supply.js",
+      "bytes": 15108,
+      "lines": 345,
+      "sha256": "4bc6d3bcf2921ac12be34aa479fc897720e261daef27f5c0ecada0c068e24fd5",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/setting-supply.test.mjs",
+      "bytes": 12810,
+      "lines": 230,
+      "sha256": "16c637cbc2f02a3a5375bdb198e574b3e8a474fd0ddb4d056d901c65b9a46a75",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/volume-index.generated.js",
+      "bytes": 12230,
+      "lines": 5,
+      "sha256": "26b508435e9950ad1292378f42cc955164050444450aa1350346d773bde1afe3",
+      "kind": "generated"
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/worldbook-source.js",
+      "bytes": 4284,
+      "lines": 98,
+      "sha256": "b1f365e14b69a9a996109fa826aa6739220f9fa0fb6b0d403c440b08ff82491b",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-autonomy.js",
+      "bytes": 10732,
+      "lines": 132,
+      "sha256": "3096ee1dc84d849c84468b4b4094930f4b7397da856a9d1f793a24f7d50c0e5b",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-autonomy.test.mjs",
+      "bytes": 5046,
+      "lines": 52,
+      "sha256": "018ef1728467b59d613ee58e18019bab0338f0fac9c6937797fd4906d31a8f06",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-cold-recorder.js",
+      "bytes": 3393,
+      "lines": 48,
+      "sha256": "2be7d3f9d26de0cae74291532624f28e2249e790358980ab7003aaab8a5dffc4",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-cold-runtime.js",
+      "bytes": 9248,
+      "lines": 190,
+      "sha256": "647f47d0d07535a910a5c3da42e3840122bd114dc150dbe3eba2e3c54188722f",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-cold-runtime.test.mjs",
+      "bytes": 2040,
+      "lines": 37,
+      "sha256": "8b553c2b6b0ea576047c107cb8646d236e3446ed502bc499a13efb5905f3de52",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-commit-gate.js",
+      "bytes": 3473,
+      "lines": 46,
+      "sha256": "3df00bb3009d4494bf31cd9c0c73bb37eeee3a53958f114841df267a8ebe16fc",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-commit-gate.test.mjs",
+      "bytes": 1784,
+      "lines": 18,
+      "sha256": "841fb7d1cf4d10cf9bb267237bb5f756e796b51f36f0a200049c8f4215d20a47",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-conflict.js",
+      "bytes": 4404,
+      "lines": 63,
+      "sha256": "9bdf301d39d6d39b9633cb4c45be51a435a466e98265295a4e78cbc2c12d56c1",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-conflict.test.mjs",
+      "bytes": 1552,
+      "lines": 21,
+      "sha256": "6d8f0e6a0426c32fbfd05fc7602bae4e2c65e1fdb4d9daf8beef47fa3d5fc5c1",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-decision-guard.js",
+      "bytes": 8004,
+      "lines": 91,
+      "sha256": "5ca94b9976f96067cfb374163af2d71460ab177a9e19c03dce56438e7bdae789",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-decision-guard.test.mjs",
+      "bytes": 4094,
+      "lines": 44,
+      "sha256": "2c9971c0a0cc4114e6641055875a8bd8de4b7cea0aea8efea27027a228246996",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-ledger.js",
+      "bytes": 48510,
+      "lines": 869,
+      "sha256": "a5c046c6b9bfb6fa3632584dd37e2d8fc91225ecfb91d42c631799402df1d1c5",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-ledger.test.mjs",
+      "bytes": 16150,
+      "lines": 283,
+      "sha256": "fc200aff2a667c877c47493a46b902f14d668314482f60d1f721a63b6901a5df",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-outcome-bridge.js",
+      "bytes": 4954,
+      "lines": 70,
+      "sha256": "bbf6e85ed5882877c7c639c0a1a089769cd18488686ec6746d161b1bc7d5dbb7",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-outcome-bridge.test.mjs",
+      "bytes": 1959,
+      "lines": 19,
+      "sha256": "f7a6eef80cf074e6fd3bdf3a798d70f199f4661045a80de37dcd05dee093c26b",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-plan-reassessment.js",
+      "bytes": 8484,
+      "lines": 73,
+      "sha256": "48e9d616a17e13035056e101ffae2db91ffaa4b6b98620858eb4162e025764fe",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-plan-reassessment.test.mjs",
+      "bytes": 3952,
+      "lines": 40,
+      "sha256": "1bd74bfc6b22622733014820fdafaf48326a65fcfa90f604c1b3cd1386a8e53a",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-recorder.js",
+      "bytes": 17579,
+      "lines": 284,
+      "sha256": "32b9983ba65d8c9e0ad27ce7a9da0e792e2ad736761905c15753b804125f5141",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-recorder.test.mjs",
+      "bytes": 8529,
+      "lines": 167,
+      "sha256": "48a1e43a8115380e6520edcd9db687e38cc14ded613dc954d8b3f481e447d556",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/request/action-resolver.js",
+      "bytes": 7536,
+      "lines": 78,
+      "sha256": "29e0a2c76a7979642e4cd7e9c45eadaac4eb4c8e1f81f49923a82ae9dd4ad1bd",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/request/action-resolver.test.mjs",
+      "bytes": 4301,
+      "lines": 43,
+      "sha256": "5fb4c5faa756f7346be76a4ff72c3cd98ba5810bb61cce85c340dc7369aa1688",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/request/request-classifier.js",
+      "bytes": 5042,
+      "lines": 43,
+      "sha256": "06b9fd17de8e937ffeffaf40547a9e00f7e533e14a55beb4ec3c2d7cba46cb0f",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/request/request-classifier.test.mjs",
+      "bytes": 3187,
+      "lines": 29,
+      "sha256": "bf2d93b3d236776296c8957fdab8911f756d93c7cc7e8bc09e6553df6a54c1ff",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/request/request-router.js",
+      "bytes": 14645,
+      "lines": 162,
+      "sha256": "1105e07d0a8654e4934c5947330267d830fdb9b2533718d315025f36896a4201",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/request/request-router.npc-invalidation.test.mjs",
+      "bytes": 2352,
+      "lines": 25,
+      "sha256": "4aa6926b950a18cb00c5201f132c4c2d06f3c011d2554cad1e26c8a8cfdb5344",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/request/request-router.test.mjs",
+      "bytes": 13110,
+      "lines": 125,
+      "sha256": "8ca5b3913921e7ee2e13ed4a931c1af42d2411de3cdfb4bd1bcb8b92da485c17",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/request/world-simulator.js",
+      "bytes": 5763,
+      "lines": 62,
+      "sha256": "68c32e132017a3f27f3757d6d361602b44c8915ed47e386856764dbf53634027",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/request/world-simulator.test.mjs",
+      "bytes": 3419,
+      "lines": 40,
+      "sha256": "3e6597bc42ea3ad0eeed4913ba646b68de76da5db07a4e0402dea76a3e7eea82",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/run-tests.mjs",
+      "bytes": 1263,
+      "lines": 33,
+      "sha256": "2ba69862c9a5830ed3d8d120f90b72872821eff38e1380c2c364e5c9bcad7ff7",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/sandbox/sandbox-mode.js",
+      "bytes": 5542,
+      "lines": 98,
+      "sha256": "5387aac046b9225930593b7ade8ba781b7bb84cbc96314149010d4ad58053f92",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/sandbox/sandbox-mode.test.mjs",
+      "bytes": 3361,
+      "lines": 72,
+      "sha256": "fb005c5edcc61ebccbf0cf17d61298b79f3235985396b6896e0e09bf708da511",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/sandbox/sandbox-world.js",
+      "bytes": 6576,
+      "lines": 56,
+      "sha256": "e936e6c9a281f2f1d2e2260e30ba1d6603970dced34f903d34095dae1213d2a3",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/sandbox/sandbox-world.test.mjs",
+      "bytes": 4000,
+      "lines": 55,
+      "sha256": "25bbdfc6e4860ffb4777b983618ffe20798f86153ce7fff3f4a33fecc5aa6df3",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/self/goal-data.js",
+      "bytes": 2517,
+      "lines": 58,
+      "sha256": "ee309c8255d617bee19c0d3a76937b67ad4a3f0dcf323663c93daa5f1eb502e3",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/self/self-decide.js",
+      "bytes": 11074,
+      "lines": 128,
+      "sha256": "aae4ad3d5beee475c1a853e0b27d22a3307539d261ec9115fd3c7b0295eaf107",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/self/self-decide.test.mjs",
+      "bytes": 4077,
+      "lines": 64,
+      "sha256": "f1f01bd132a3261aa2e36272b0a993d5fdcffff334c89141c26a3b823c19cb71",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/self/self-ops.js",
+      "bytes": 10843,
+      "lines": 160,
+      "sha256": "f04214937ec1951b673b232f3fc046ce6980ad48abb19e9ecba6a7a217a661ef",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/self/self-ops.test.mjs",
+      "bytes": 6305,
+      "lines": 93,
+      "sha256": "2a37f36c94bdb38dd6614a8260e065de051bae16d374b4cd370e284d3a200198",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/self/self-runtime.js",
+      "bytes": 32367,
+      "lines": 589,
+      "sha256": "7561ed2c7453141fae286fca5c23d1c7c51a4cd45e1a2ac3314fe680a26a576b",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/self/self-runtime.test.mjs",
+      "bytes": 14839,
+      "lines": 241,
+      "sha256": "c86441399d8009b02f17b4199560ba5fe4a1d8dee4da5d40063c81c59401e315",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/settings-template.test.mjs",
+      "bytes": 17855,
+      "lines": 180,
+      "sha256": "bb19c9bf5fdca06e43cc411bdb5e0cf5881f48a4a959a00b7453a10c46325153",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/settings.html",
+      "bytes": 751,
+      "lines": 16,
+      "sha256": "b030ad9385d93736a93ab9204365ef3eb80eb47aaf89f61f8b3ea169049bf86c",
+      "kind": "ui"
+    },
+    {
+      "path": "agent/doupo-agent-ui/settle/settle-adjudicate.js",
+      "bytes": 50143,
+      "lines": 598,
+      "sha256": "7bf452642c74f7c11be8749b9c291b97b31a20075ba67b4b5857e03329ee73eb",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/settle/settle-adjudicate.test.mjs",
+      "bytes": 38970,
+      "lines": 505,
+      "sha256": "95de824449481a3b17b63f7084338ad2c61d19f202195a0ac5501160dafbe043",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/settle/settle-integration.test.mjs",
+      "bytes": 19501,
+      "lines": 382,
+      "sha256": "3e38c61f0993a6941363b2e81a5daf0e98162901fa1cf4a307b5bc833a2ee636",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/settle/settle-session.js",
+      "bytes": 1975,
+      "lines": 54,
+      "sha256": "4b19f5a166a7b9527be80b230416829fe060f9da6468c624da7b16008698bb2f",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/settle/settle-session.test.mjs",
+      "bytes": 11355,
+      "lines": 229,
+      "sha256": "d0390dc73ef35e5213cfb0308d7e5865356b83950668dcd040d75e050e39c885",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/tools/build-db-template.mjs",
+      "bytes": 3757,
+      "lines": 64,
+      "sha256": "f49abd2cad3eaa343ae81210f6e55e2c9ffcb77f59d6fd5caea3015de2bc8476",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/unified/unified-decide.js",
+      "bytes": 16590,
+      "lines": 205,
+      "sha256": "511bc770e0ba830d68e921377f13419f9873b2d73d7981f3c08ef416a6b5cb62",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/unified/unified-decide.test.mjs",
+      "bytes": 6856,
+      "lines": 126,
+      "sha256": "e9b1a76d68ee4e65497660d844867d9dd4e4246bb93371048132c8269d9f5f3b",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/world/world-decide.js",
+      "bytes": 13071,
+      "lines": 145,
+      "sha256": "dd836062877d5a166839f8d124bc3f1bf80243c961bd054b4364d4565f182244",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/world/world-decide.test.mjs",
+      "bytes": 5616,
+      "lines": 72,
+      "sha256": "304d9c61e3d367acc99a08de9bd1656d6160e2efe3eba671ab744a1a42b3d953",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/world/world-ops.js",
+      "bytes": 14700,
+      "lines": 218,
+      "sha256": "3eb8e742e69e7858e9b9751bc36012a38a9f0cd01f017c1129a8bea34650738a",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/world/world-ops.test.mjs",
+      "bytes": 9287,
+      "lines": 155,
+      "sha256": "1078f70712233a6019bde9fecfa47442dfb8ad3a50caee6b1e0900e19c02b47c",
+      "kind": "test"
+    },
+    {
+      "path": "agent/doupo-agent-ui/world/world-runtime.js",
+      "bytes": 37157,
+      "lines": 700,
+      "sha256": "5c287d222c6064d9f8c76447044eb03548f534deeaf4632b73a1bc6320367ed5",
+      "kind": "source"
+    },
+    {
+      "path": "agent/doupo-agent-ui/world/world-runtime.test.mjs",
+      "bytes": 23689,
+      "lines": 323,
+      "sha256": "e33256e57e8f2c1564cfc7eb5c5d8711fe1cb2d3b0d815e81daf875b49ca8bab",
+      "kind": "test"
+    },
+    {
+      "path": "agent/mvu/README.md",
+      "bytes": 1638,
+      "lines": 23,
+      "sha256": "b29a78801dcea2892a03d5f239c9a77af30c63f29b4f3c1af1ab1b711ac74528",
+      "kind": "documentation"
+    },
+    {
+      "path": "agent/mvu/纳戒MVU套件.json",
+      "bytes": 9716,
+      "lines": 174,
+      "sha256": "57663f1c4aeb4f06d8d81ca46ef1c3d7abb9d966a55badcd3783f7b2ea988175",
+      "kind": "data"
+    },
+    {
+      "path": "agent/mvu/纳戒变量结构脚本.js",
+      "bytes": 3810,
+      "lines": 65,
+      "sha256": "8f6690a66fa2e43c6cdbfe60d105f9a81d9d8c5854d6978bcaaea870048bccaa",
+      "kind": "source"
+    },
+    {
+      "path": "agent/斗破Agent数据库桥接表.json",
+      "bytes": 14341,
+      "lines": 428,
+      "sha256": "335284b3c1021a0a1b13101ed3be937509c0df909f00869289159e538358d2e6",
+      "kind": "data"
+    },
+    {
+      "path": "agent/斗破纳戒MVU初始化.json",
+      "bytes": 2968,
+      "lines": 48,
+      "sha256": "d826f99885700aed761ebcac5efef3bcd1ae57bf12362397c802c7cd301ebbed",
+      "kind": "data"
+    },
+    {
+      "path": "index.js",
+      "bytes": 343,
+      "lines": 13,
+      "sha256": "7ecb28480450b1251cd232b4df118427701f71c192539ec2a05dce0808281f82",
+      "kind": "source"
+    },
+    {
+      "path": "manifest.json",
+      "bytes": 571,
+      "lines": 23,
+      "sha256": "c0c8e40c664e6bbe5a5881abf6d1a51f3cb7cba8e1462e5e03b93760f7edfc19",
+      "kind": "data"
+    },
+    {
+      "path": "settings.html",
+      "bytes": 751,
+      "lines": 16,
+      "sha256": "b030ad9385d93736a93ab9204365ef3eb80eb47aaf89f61f8b3ea169049bf86c",
+      "kind": "ui"
+    },
+    {
+      "path": "style.css",
+      "bytes": 80123,
+      "lines": 1004,
+      "sha256": "c73b4618e42100b7bc23477ebc5c48bcfaad7c3531b616c53e3f7251fc802605",
+      "kind": "ui"
+    }
+  ]
+}

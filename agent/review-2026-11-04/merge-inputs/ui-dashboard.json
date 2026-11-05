@@ -1,0 +1,472 @@
+{
+  "target": "C:/Users/86158/Desktop/异界转生录/doupo [UI/dashboard/settings/display slice]",
+  "mode": "full-scan",
+  "focus": "general",
+  "routing_decision": "AUDIT -> bounded SWEEP -> REPORT; read-only except the two authorized reports; no implementation changes",
+  "snapshot": {
+    "head": "1dee86edb89a8f6efc4b8bbd8192a3a9c1017748",
+    "worktree": "Existing dirty worktree reviewed, not HEAD. Other slices were not frozen. Line references describe the observed worktree.",
+    "index_sha256": "76ed8e8b1f0cdb56141d0b1859ff9be54c039d4c23f26640509063ca29fa481a",
+    "style_sha256": "c73b4618e42100b7bc23477ebc5c48bcfaad7c3531b616c53e3f7251fc802605"
+  },
+  "coverage": [
+    {
+      "path": "agent/doupo-agent-ui/host/control-dashboard.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Full text 1-81; scope filtering, themes, module configuration and navigation consumer traced."
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/orb-hud.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Full text 1-716; all 12 current panel projections, refs, caps, ordering and settlement wording."
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/display-regex.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Full text 1-133; four definitions, registration ownership, display-only flags and transform helper."
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/ui-state.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Full text 1-78; projection/version/action transitions and limits; JS caller search found import/export but no live UI use."
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/control-dashboard.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Full text 1-68 read; executed successfully."
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/ui-state.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Full text 1-36 read; executed successfully; stale readState missing from assertions."
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/orb-hud.test.mjs",
+      "status": "partial",
+      "reason": "Read assertion/comment inventory, not every fixture and control-flow line of the 533-line file.",
+      "evidence": "All assertion/comment matches inspected; whole file executed successfully."
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/display-regex.test.mjs",
+      "status": "partial",
+      "reason": "Read 1-112; 113-129 not individually reviewed.",
+      "evidence": "Fixtures, display flags, CSS contract and beginning of idempotent-registration assertions read; whole file executed successfully."
+    },
+    {
+      "path": "agent/doupo-agent-ui/settings-template.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Full text 1-179 read; whole file executed successfully. Primarily textual assertions, not DOM interaction tests."
+    },
+    {
+      "path": "agent/doupo-agent-ui/settings.html",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "All 15 lines read; inline entry and status; root/fallback equality asserted by executed test."
+    },
+    {
+      "path": "settings.html",
+      "status": "partial",
+      "reason": "Equality tested, not independently line-reviewed.",
+      "evidence": "settings-template.test.mjs compares root and fallback text byte-for-text."
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/style.css",
+      "status": "partial",
+      "reason": "Interaction/accessibility/veil/motion selectors sampled; not all 1003 lines read; no browser or images.",
+      "evidence": "131,176-177,318-320,490-496,574-578,623-625,809-818,935-937 inspected; byte-identical to root style.css."
+    },
+    {
+      "path": "style.css",
+      "status": "partial",
+      "reason": "Byte consistency and corresponding selectors only; no full style or visual review.",
+      "evidence": "Exact byte equality with host/style.css verified."
+    },
+    {
+      "path": "agent/doupo-agent-ui/index.js",
+      "status": "partial",
+      "reason": "UI slice only. Remaining lines, long markup and all handlers not listed here were not fully read. No runtime-internal re-review.",
+      "evidence": "Read/targeted excerpts:127-146,174-185,2290-2295,3730-3855,3870-3909,4677-4753,4982-5135,5182-5259,5595-5888,5912-5928,6100-6218,6222-6298,6507-6536,6650-6704,6840-6973,7291-7315,8647-8672,8701-8730,8778-8825. Separately inspected all handler selector/await/confirm matches in 6147-6865 and function locations after 4489. Other symbols only located, not reviewed."
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/host-storage.js",
+      "status": "unread",
+      "reason": "Migration and persistence internals belong to storage slice. DEFAULT_SETTINGS paths were indirectly exercised by settings-template test, not independently reviewed here.",
+      "evidence": ""
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/host-storage.test.mjs",
+      "status": "unread",
+      "reason": "Not separately read or run in this resumed slice.",
+      "evidence": ""
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/api-presets.js",
+      "status": "unread",
+      "reason": "Preset normalization internals not re-reviewed; index UI management functions only.",
+      "evidence": ""
+    },
+    {
+      "path": "agent/doupo-agent-ui/index-chat-lifecycle.test.mjs",
+      "status": "unread",
+      "reason": "Lifecycle belongs to entry slice; not read/run here.",
+      "evidence": ""
+    },
+    {
+      "path": "dev/shots",
+      "status": "excluded",
+      "reason": "User forbids images/browser; no visual acceptance attempted.",
+      "evidence": ""
+    }
+  ],
+  "findings": [
+    {
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 6678,
+      "title": "人物簿文件导入可覆盖切换后的聊天",
+      "behavior": "手动导入人物簿的聊天授权与异步续接",
+      "trigger": "聊天A点击导入并确认，文件选择器或file.text等待期间切到B，再完成读取。",
+      "evidence": "6667-6690 在打开文件选择器前确认；6678 await file.text后6681直接agentNpcLedger.load，6683 persistNpcLedger，没有聊天/分支/epoch复查。2290-2294持久化当前ledger；127-137已有captureAgentContinuation但本入口未使用。",
+      "risk": "A的授权可能用于替换B的当前人物簿并进入当前保存路径。可达数据覆盖路径，未进行真实聊天复现。",
+      "recommendation": "打开文件选择器前绑定聊天/分支和续接令牌，在change及await之后复查；过期中止，不能写当前聊天。覆盖确认与目标聊天绑定。",
+      "verification": "延迟file.text模拟A到B；断言B ledger及保存调用零变更；同聊导入仍成功；读文件期间同聊历史变化按约定拒绝。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/host/control-dashboard.js",
+      "line": 54,
+      "title": "原著摘要忽略嵌套开关",
+      "behavior": "总控原著设定启停摘要",
+      "trigger": "setting.enabled=false，enableFactsLibrary=true或默认开启。",
+      "evidence": "MODULES:3 setting为setting.enabled；54读取settings[key]而非分段路径。纯函数反例输出nested facts disabled: 已开启。当前测试58-64只用新字段true，不能发现误读。",
+      "risk": "关闭原著注入后摘要仍显示开启，误导控制和排查。",
+      "recommendation": "按路径读取新字段，仅真正缺省时回退旧字段。",
+      "verification": "增加新旧字段相反值及新字段false且旧字段缺省测试，断言新字段优先。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 5655,
+      "title": "总控模型设置按钮跳到不存在页面",
+      "behavior": "总控卡片到设置页面导航",
+      "trigger": "点击总控模型与连接卡的设置按钮。",
+      "evidence": "control-dashboard.js:10 id=llm；5655直接以module.id生成data-settings-page；6104-6106未校验页面便隐藏所有不匹配section。实际13个section无llm，模型页为hub；settings-template.test:22明确禁止llm页。",
+      "risk": "所有功能section隐藏，出现空白页；侧栏可恢复。",
+      "recommendation": "显式映射llm到hub，并使未知页面回退overview。",
+      "verification": "逐一触发8张总控卡，均恰好显示一个存在的section；未知id不得产生空白。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 6245,
+      "title": "恢复跟随默认按钮没有提交持久保存",
+      "behavior": "行动结算结果提示词恢复默认",
+      "trigger": "已有自定义settle.resultPrompt时点击data-settle-follow-default，再重载扩展。",
+      "evidence": "6244-6248仅updateSetting、syncSettingsForm、renderSettleResultCard；5789-5815不调用saveSettings；通用input路径6957才await保存，该按钮不派发input也不直接保存。",
+      "risk": "内存看似已恢复，但本路径未主动交给宿主保存；重载可能恢复旧值，后续其他保存可能偶然掩盖。",
+      "recommendation": "复用统一异步保存路径并展示结果，仍保存空字符串表示跟随默认，不冻结默认全文。",
+      "verification": "mock保存接口，点击后要求保存且值为空；重建storage后仍跟随默认；保存拒绝有反馈。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 3754,
+      "title": "API方案保存失败被吞但界面宣称已保存",
+      "behavior": "API方案字段、新建复制删除及清除绑定的持久反馈",
+      "trigger": "saveSettings拒绝或返回未保存状态。",
+      "evidence": "3752-3755 fire-and-forget且catch为空；3835-3837仅返回updateSettings结果；6922、6933依据ready显示方案已保存；3789清绑定同样吞失败。",
+      "risk": "密钥/地址/绑定仅内存修改也被宣称成功，重启丢失且无排查信号；不据此宣称密钥泄露。",
+      "recommendation": "以保存完成结果驱动反馈，处理非saved和reject，区分内存更新与持久完成。",
+      "verification": "模拟saved/unavailable/reject及连续编辑乱序，仅最后一次真实保存成功可显示成功。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 5183,
+      "title": "悬浮详情条目不能用键盘激活",
+      "behavior": "事件/人物/记忆/影响/原著等详情入口",
+      "trigger": "Tab浏览悬浮球带ref条目及全部列表。",
+      "evidence": "5183使用div，5192只设role=button，5193仅click，没有tabIndex及Enter/Space处理；5255副窗复用同组件。",
+      "risk": "指针可打开的信息详情对纯键盘用户不可达，角色声明与行为不符。",
+      "recommendation": "优先原生button和合规子结构，或补tabIndex与Enter/Space语义；关闭后恢复触发器焦点。",
+      "verification": "DOM测试Tab顺序、Enter/Space与click各只激活一次；辅助技术留真实验收。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 4677,
+      "title": "弹窗缺少完整焦点与对话框语义",
+      "behavior": "设置主对话框和子弹窗焦点管理",
+      "trigger": "打开设置或只读/表单弹窗后Tab或关闭弹窗。",
+      "evidence": "5917-5919主设置声明aria-modal；4677-4697子dialog普通div无role/关联标题；4720只聚焦input/textarea/select，纯只读内容不迁焦；4723-4737关闭不恢复焦点；6963-6967仅Escape无Tab圈定。",
+      "risk": "焦点留在遮挡内容或逃到聊天区，子对话框无法被正确识别；Esc也依赖当前焦点所在。",
+      "recommendation": "补子dialog语义与标题关联，打开聚焦可交互项/容器，圈定当前模态焦点并恢复触发器；背景inert策略须宿主验收。",
+      "verification": "DOM测试只读与表单的初始焦点、Tab/Shift+Tab、Esc、关闭返回；真实辅助技术另验，不作视觉声明。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 5087,
+      "title": "刷新全部列表会连带关闭已打开详情",
+      "behavior": "悬浮球全部列表与详情组合刷新",
+      "trigger": "全部列表内打开详情后，状态刷新触发refreshOpenOrbPanel。",
+      "evidence": "5087先openOrbListPopup；5220无条件closeOrbItemPopup；5089随后才检查已被关闭的orbItemPopElement/ref，无法更新详情。",
+      "risk": "后台刷新令详情突然消失，违背5086同时更新副窗和详情的意图。",
+      "recommendation": "刷新前保留详情ref，再刷新列表和有效详情；仅切栏目或目标失效才关闭。",
+      "verification": "全部->详情->状态事件组合测试，详情保持且反映新值；目标删除时明确关闭或提示。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/host/orb-hud.js",
+      "line": 98,
+      "title": "全部列表把截断后的200条当成总数",
+      "behavior": "超过200条的悬浮栏目",
+      "trigger": "栏目原始记录超过FULL_CAP=200。",
+      "evidence": "65上限200；97-99先slice再令total=rows.length；index:5234显示该total，5255只铺all，没有分页或截断提示。",
+      "risk": "全部显示200且无法访问第201条以后，用户误认为没有更多；限制DOM有益，但总数语义错误。",
+      "recommendation": "保留原始total，增加truncated/hasMore和分页或完整设置页入口，保留渲染上限。",
+      "verification": "201及1000条：总数真实、预览仍4条、DOM有界且后续记录有入口。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 8707,
+      "title": "旧世界书导入结果可以覆盖新选择的索引",
+      "behavior": "手动世界书导入的异步新鲜度",
+      "trigger": "A导入等待时改选B或再导入B，A最后返回。",
+      "evidence": "8703捕获name；8707 await读取；8712-8715无选书名/请求序号/聊天续接复查便clear/register/load全局供应与索引；6868-6873允许期间改选。",
+      "risk": "界面设置为B，实际索引被后到的A替换，后续检索和显示不一致。",
+      "recommendation": "所有选书导入共享提交序号，提交前核对当前选书与续接身份；过期请求不得清空当前索引。",
+      "verification": "延迟A/B使A后到，最终索引只能为B；切聊或取消后旧请求不得提交。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/host/ui-state.js",
+      "line": 46,
+      "title": "失效或失败投影仍接受动作请求",
+      "behavior": "尚未接入实际UI的投影动作意图接口",
+      "trigger": "readState=stale/failed/loading但stateVersion仍匹配。",
+      "evidence": "35-49只验证projection存在和版本相等，未检查readState；纯函数反例stale+use_item返回accepted=true。JS调用检索只见index:27 import/469 export和本模块定义，未见实际UI调用。",
+      "risk": "未来消费者可能把不可用投影当可操作；当前UI不走该接口，不是已证明的实际执行漏洞。",
+      "recommendation": "接入前定义只读/变更动作允许的readState，至少变更意图要求ready，保留accepted不等于executed。",
+      "verification": "逐readState测试use_item/start_action，stale/failed/loading拒绝变更；ready正常，重复请求和版本保护不回归。"
+    }
+  ],
+  "feature_status": [
+    {
+      "feature": "总控",
+      "status": "defects",
+      "evidence": "nested开关误读、llm导航丢页；scope过滤和固定元数据静态稳定。"
+    },
+    {
+      "feature": "世界运转",
+      "status": "partial",
+      "evidence": "完整投影；推进1-365天与apply/persist已读；事件、势力、人物、任务行细节未全读。"
+    },
+    {
+      "feature": "纳戒",
+      "status": "partial",
+      "evidence": "身份/境界/行囊/装备/炼制/目标完整投影；各手动选择器已定位，实体编辑/装备确认未逐条读取。"
+    },
+    {
+      "feature": "记忆存储",
+      "status": "partial",
+      "evidence": "大小记忆、注入和ref投影完整；决定/召回/合并入口已读；晋升/遗忘/分页实现未全读。"
+    },
+    {
+      "feature": "人物簿",
+      "status": "defects",
+      "evidence": "导入跨聊天覆盖P1；导出只JSON.stringify ledger；编辑/删除/经历等仅部分绑定核对。"
+    },
+    {
+      "feature": "冷藏推进",
+      "status": "partial",
+      "evidence": "名单/新近标签/草稿完整投影；确认/丢弃和勾选入口已读；扫描与内部授权未复审。"
+    },
+    {
+      "feature": "世界影响",
+      "status": "partial",
+      "evidence": "进行中状态投影完整；新增编辑保存关闭撤销遗忘归档绑定清单已定位；表单与确认未全读。"
+    },
+    {
+      "feature": "原著资料",
+      "status": "defects",
+      "evidence": "异步旧书索引覆盖；选书/保存/默认提示词已核对；详情浏览器长列表实现未读。"
+    },
+    {
+      "feature": "行动结算",
+      "status": "defects",
+      "evidence": "手动按钮明确force+preview；审核/候选/对账和清理语义清楚；跟随默认缺保存。"
+    },
+    {
+      "feature": "数据镜像",
+      "status": "static_projection_reviewed",
+      "evidence": "bridge异常/开关/MVU只读投影已读；实际同步正确性归其他分片。"
+    },
+    {
+      "feature": "运行日志",
+      "status": "static_projection_reviewed",
+      "evidence": "固定标签、倒序、读取40条；全部来源的按聊天隔离未复审。"
+    },
+    {
+      "feature": "开放世界",
+      "status": "static_bindings_reviewed",
+      "evidence": "实际为第12个信息窗之一；read/sync及确认取消链已读；无scope明确不可用；runtime内部不复审。"
+    },
+    {
+      "feature": "API设置/11连接选择",
+      "status": "defects",
+      "evidence": "新增复制删除、password转义、datalist和清绑定有接线；成功保存反馈不可靠；迁移内部未读。"
+    },
+    {
+      "feature": "外观/显示美化用户控制",
+      "status": "partial",
+      "evidence": "主题迁移、compact/showOrb绑定存在；正则同名不覆盖尊重用户disabled；四条默认全局安装，帷幕隐藏三楼外内容，通过正则面板停用后重进聊天恢复，非专属即时开关。"
+    },
+    {
+      "feature": "可访问性/弹窗/键盘/刷新",
+      "status": "defects",
+      "evidence": "role button无键盘、子dialog焦点语义不足、全部刷新关闭详情；外点与Esc分层关闭代码存在；无视觉验收。"
+    },
+    {
+      "feature": "长列表性能",
+      "status": "partial",
+      "evidence": "预览4、full200、rows10有上限；截断未提示；全量sort/map后再cap且收集所有runtime，未做CPU/布局测量。"
+    },
+    {
+      "feature": "设置持久/迁移绑定",
+      "status": "partial",
+      "evidence": "通用input先update再await save且sequence防旧文案；两条保存路径有缺口；默认落点和模板一致性测试通过；schema迁移内部未读。"
+    },
+    {
+      "feature": "敏感DOM/导入导出",
+      "status": "limited_static_review",
+      "evidence": "API key转义后进入password value属性，headers为明文textarea，这是编辑器DOM不是加密边界；未见本范围全设置导出。人物簿JSON不含API配置。未全审消毒器/真实错误日志。"
+    }
+  ],
+  "tests": {
+    "command": "node --test --test-reporter=tap agent/doupo-agent-ui/host/control-dashboard.test.mjs agent/doupo-agent-ui/host/orb-hud.test.mjs agent/doupo-agent-ui/host/ui-state.test.mjs agent/doupo-agent-ui/host/display-regex.test.mjs agent/doupo-agent-ui/settings-template.test.mjs",
+    "result": "5 file-level subtests passed; 0 failed; exit 0; duration 100.3896 ms on final explicit TAP run.",
+    "probes": [
+      {
+        "input": "buildControlDashboard({settings:{setting:{enabled:false},enableFactsLibrary:true}})",
+        "observed": "facts.configuration = 已开启"
+      },
+      {
+        "input": "updateProjection readState stale, then matching-version use_item request",
+        "observed": "accepted = true"
+      }
+    ],
+    "limits": "These are offline scripts and pure-function counterexamples, not browser/real-host acceptance. settings-template mostly matches strings. No tests added or implementation edited."
+  },
+  "refactor_signals": [
+    {
+      "module": "agent/doupo-agent-ui/index.js",
+      "threshold": "Multiple independent UI save/async-commit boundary gaps",
+      "evidence": "3752-3755,6244-6248,6678-6683,8707-8715 show missing completion or freshness checks; staged local fixes, not an entry rewrite."
+    }
+  ],
+  "slimming_themes": [
+    {
+      "pattern": "Duplicate Logic",
+      "occurrences": 2,
+      "suggested_handling": "P3 candidate: identical host/style.css:176-177 focus-visible rules. Only deduplicate after authorization, keeping mirrored CSS identical."
+    },
+    {
+      "pattern": "Duplicate Logic",
+      "occurrences": 2,
+      "suggested_handling": "host and root CSS are byte-identical. Treat deployment mirror as contractual until packaging ownership is confirmed; do not delete one."
+    },
+    {
+      "pattern": "Compatibility Path",
+      "occurrences": 1,
+      "suggested_handling": "ui-state exported but not connected to current UI; possible external consumer. Do not claim dead code or delete it."
+    }
+  ],
+  "stable_items": [
+    "Dashboard scope filters session/branch/known taskIds; absent scope does not expose cross-chat records; fixed failure wording excludes raw outcomes.",
+    "Theme migration and invalid-value fallback explicit.",
+    "All 12 panel projections read; settlement distinguishes injected candidates from confirmed ledger reconciliation.",
+    "Display regex flags, placements, CSS contract and same-name non-overwrite covered by tests; user disabled/custom script retained.",
+    "Most inspected detail rendering uses textContent; preset HTML values escaped; password not proof of encryption or secrecy from same-origin scripts.",
+    "Two CSS files byte-identical; this does not prove rendered host behavior."
+  ],
+  "do_not_touch_yet": [
+    "enabled=false still writing and HMR cleanup inconsistency belong to entry report; not duplicated.",
+    "No business-runtime internals, saved chats, configuration or build/release changes.",
+    "Default global floor hiding is current explicit product policy with regex-panel opt-out; do not invent a contrary contract or silently change defaults.",
+    "Unreviewed handlers are not marked passed merely because selector bindings exist."
+  ],
+  "verification_gates": [
+    {
+      "check": "Focused pure-function/DOM/delayed-Promise regressions for findings",
+      "scope": "Scope-bound import, outdated worldbook completion, page navigation, persistence errors, focus/keyboard, combined popup refresh, real list totals"
+    },
+    {
+      "check": "Real SillyTavern manual acceptance; NOT RUN in this slice",
+      "scope": "12 info windows, 13 settings sections, regex toggle/reload, focus, scroll and freshness; no visual claim"
+    },
+    {
+      "check": "Storage slice reconciliation",
+      "scope": "schema migration, API binding defaults and actual persistence contract; no duplicate internal audit"
+    }
+  ],
+  "optimization_handoffs": [
+    {
+      "module": "agent/doupo-agent-ui/index.js",
+      "evidence": "6678 awaits file data then replaces/persists current ledger without scope/continuation guard.",
+      "threshold": "Local Fix",
+      "suggested_gate_mode": "Local Fix Only",
+      "behavior_contract_hints": "Import authorization binds initiating chat; switching/invalidating chat must reject without writes; same-chat import retains explicit overwrite confirmation.",
+      "patch_budget": "One path, 1-2 files, target under 80 changed lines; separate authorization required.",
+      "pre_change_baseline": "Five scoped offline test files pass; no async file-import isolation regression exists in reviewed tests.",
+      "verification_gate": "Delayed file read + chat switch + zero destination writes; normal import regression.",
+      "deletion_safety": "No module deletion or saved-data migration.",
+      "forbidden_scope": "No runtime internals, saved chat/config changes, global cleanup or enabled behavior changes."
+    }
+  ],
+  "gate_recommendation": {
+    "structural": "Local Fix",
+    "execution": "Local Fix Only",
+    "optimization_eligibility": "Needs Gate",
+    "authorization": "Report only; do not enter CHANGE. Only import isolation proposed as first candidate."
+  },
+  "a0_receipt": {
+    "primary_skill": "code-quality-workflow",
+    "route": "manual minimal routing; deterministic library router not run",
+    "loaded_document_ids": [
+      "A0",
+      "audit-and-sweep"
+    ],
+    "snapshot_version": "Not queried; not fabricated",
+    "goal": "Two evidence-backed scoped reports",
+    "red_lines": "No source/chat/config/browser/images; no duplicate entry-owned enabled/HMR findings",
+    "acceptance": "Coverage, per-feature status, evidence/impact/recommendation/verification, explicit gaps; offline tests separately recorded",
+    "design_candidates": []
+  },
+  "verification_gaps": [
+    "index.js remaining UI source not fully read, especially self/NPC/profile/impact editing, list renderers and several async wrappers.",
+    "orb test fixtures/control flow partially unread; display-regex test tail unread; CSS only targeted review.",
+    "No real host regex-engine, sanitizer/class-prefix, hidden-history search or browser acceptance; pure transform is not host rendering evidence.",
+    "No browser, images, screen reader, performance benchmark or full-repository test run."
+  ],
+  "residual_risk": "Scoped source coverage remains partial. This report does not certify full-repository or full-UI acceptance. Existing worktree edits preserved. Only the two authorized report files were written."
+}

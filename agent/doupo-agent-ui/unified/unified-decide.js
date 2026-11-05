@@ -29,7 +29,7 @@ export const UNIFIED_DECIDE_PROMPT = [
     '某一侧这轮没有变化就给空数组 ops:[]，绝不为凑数而记账；cited 填本轮聊天实际用到或呼应了的旧记忆编号（就是【记忆存储】块里条目的 id），没用到就给 []。',
     '',
     '═══ 纳戒侧（self.ops）═══',
-    '纳戒只记主角自己：身份信息（姓名/性别/年龄/种族/出身/所属/斗气属性/天赋/外貌）、境界与段位、金币、称号、功法、斗技、行囊物品、炼药炼器的配方与进度、目标约定。世界的事件、别人的档案不归你管，一律不记。',
+    '纳戒只记主角自己：身份信息（姓名/性别/年龄/种族/出身/所属/斗气属性/天赋/外貌）、境界与段位、金币、称号、功法、斗技、装备栏（穿戴中的武器/防具/饰品）、行囊物品、炼药炼器的配方与进度、目标约定。世界的事件、别人的档案不归你管，一律不记。',
     '可用操作（脚本逐条校验，写错字段或越界的条目会被丢弃，不影响其他条目）：',
     '- {"op":"setProfile","field":"name|gender|age|race|origin|affiliation|attribute|talent|appearance","text":"≤60字，attribute（斗气属性）≤12字"}：身份信息。年龄只在剧情明确过去了一段时间后才改，不要每轮硬加。斗气属性（火/风/雷/冰/水/土/木/暗/毒/无属性等）不轻易变；无属性与特殊体质只在剧情真正揭示时写。',
     '- {"op":"setRealm","realm":"斗者","stage":"三星"}：境界突破。斗气大陆的阶梯是 斗之气(一~九段)→斗者→斗师→大斗师→斗灵→斗王→斗皇→斗宗→斗尊→斗圣→斗帝(各一~九星)；境界必须剧情真到位才写，一场战斗一次突破就够了。',
@@ -37,10 +37,11 @@ export const UNIFIED_DECIDE_PROMPT = [
     '- {"op":"addTitle","text":"≤16字"} / {"op":"removeTitle","text":"…"}：称号得失。',
     '- {"op":"addTechnique","name":"焚决","grade":"黄阶低级","type":"修炼功法","progress":"第三层","source":"药老所赠"}：获得功法（含身法、炼药术）；{"op":"updateTechnique","id":"t1","progress":"第四层"}：进阶；{"op":"removeTechnique","id":"t1"}：废弃或被夺。',
     '- {"op":"addSkill","name":"八极崩","grade":"黄阶高级","type":"攻击","source":"…"}：获得斗技；updateSkill/removeSkill 同上。',
-    '- {"op":"addItem","name":"回气丹","category":"丹药","grade":"一品","count":3,"source":"…"}：获得物品（category：丹药|材料|武器|防具|杂物|关键物）；{"op":"updateItem","id":"b1","count":2} 或 {"op":"removeItem","id":"b1","count":1}：消耗；{"op":"updateItem","id":"b1","equipped":true}：穿上/脱下装备。同名同类别会自动并账。',
-    '- {"op":"addRecipe","name":"回气丹","craft":"炼药","grade":"一品","materials":"…"}：掌握配方；{"op":"removeRecipe","id":"r1"}。',
+    '- {"op":"addItem","name":"回气丹","category":"丹药","grade":"一品","count":3,"source":"…"}：获得物品（category：丹药|材料|武器|防具|杂物|关键物）；{"op":"updateItem","id":"b1","count":2} 或 {"op":"removeItem","id":"b1","count":1}：消耗。同名同类别会自动并账；已经穿上/佩戴的装备改用 addEquipment 记装备栏，不要留在行囊里。',
+    '- {"op":"addEquipment","name":"玄重尺","grade":"玄阶中品","type":"武器","source":"…"}：获得并穿上装备（type：武器|防具|饰品|其他，进装备栏）；{"op":"updateEquipment","id":"e1","grade":"…"}：精炼、改装、修复；{"op":"removeEquipment","id":"e1"}：脱下、损毁或被夺（想收进行囊就再补一条 addItem）。',
+    '- {"op":"addRecipe","name":"回气丹","craft":"炼药","grade":"一品","materials":"…"}：掌握丹方；{"op":"removeRecipe","id":"r1"}。',
     '- {"op":"startCraft","name":"回气散","craft":"炼药","days":3,"note":"缺一味凝骨草"}：开工炼制；{"op":"finishCraft","id":"c1","result":"success","note":"成丹三枚"}：出炉（fail=炸炉）。炼成后必须再补一条 addItem 把成品记进行囊。',
-    '- {"op":"addGoal","text":"三年之约，云岚宗一雪前耻","priority":"主线","due":"三年后"}：立下目标或约定；{"op":"finishGoal","id":"g1"}：达成；{"op":"removeGoal","id":"g1"}：放弃或作废。',
+    '- {"op":"addGoal","title":"三年之约雪前耻","text":"三年之约，云岚宗一雪前耻，当众赢回萧家颜面","priority":"主线","due":"三年后"}：立下目标或约定。title 必写——不超过 20 字短标题；完整内容放 text（≤80字），两者不要重复；缺 title 或超过 20 字的条目会被脚本整条拒绝。{"op":"finishGoal","id":"g1"}：达成；{"op":"removeGoal","id":"g1"}：放弃或作废。',
     '记账规则：变化必须从最近剧情里有依据地长出来（战斗获胜、交易成交、有人赠予、炼制出炉），id 只能用纳戒清单里已有的编号；没有依据的不要记，也不要照搬原著桥段——剧情真走到那一步才记。self.ops 一次最多 12 条，写不下就留到下一轮。',
     '',
     '═══ 记忆侧（memory.ops）═══',
@@ -48,6 +49,7 @@ export const UNIFIED_DECIDE_PROMPT = [
     '- 只记小记忆（remember）：轻量记录的近事杂事——谁说过什么、主角干了什么小事、当下的小恩小怨小动静。weight 用 minor，不必重要才记，保持主角"记得这几天发生过什么"。',
     '- 大记忆不用你管：小记忆攒够后脚本会自动总结成大记忆，你没有 memorize/promote 这类操作。',
     '- quote 可选：本轮里最有味道的一句原话（≤60字），日后召回会原样带回；只准摘聊天里真实出现过的对白，没有就空着。',
+    '- title 必写：1~14 字短标题（名词短语，概括这条记忆，如「加列家中街设卡」「洗骨草扣货待沽」）。记忆列表主页面只显示标题，正文细节全在 text 与 note 里；缺标题或超过 14 字的条目会被脚本整条拒绝，不要拿正文原句硬凑。',
     '- forgetMemory(id)：记错了或已无意义，整条删除。记忆不是任务，没有"了结"状态；旧事也保留召回权，只是按强度与重要性排在后面。',
     '记账规则：只记玩家看得到的事——主角亲身经历或得知的，以及正文里实际演到的情节（主角不在场的也照记，basis 写清从哪楼/谁/什么事来）；变化必须从最近聊天里有依据地长出来；text≤300字，basis 必写，related 必写 1-4 个（本场出现的人名/地名/物名，作为召回钥匙）；related 为空的操作会被脚本拒绝。',
     '口吻：记忆是中性的记事，写清"谁/在哪/发生了什么"，不要写成"我"的第一人称日记。',
@@ -59,7 +61,7 @@ export const UNIFIED_DECIDE_PROMPT = [
 
 /** 纳戒操作的 JSON Schema 属性集（与 self-decide.js 的 SELF_JSON_SCHEMA 同源）。 */
 const SELF_OP_PROPERTIES = Object.freeze({
-    op: { type: 'string', enum: ['setProfile', 'setRealm', 'setGold', 'addGold', 'addTitle', 'removeTitle', 'addTechnique', 'updateTechnique', 'removeTechnique', 'addSkill', 'updateSkill', 'removeSkill', 'addItem', 'updateItem', 'removeItem', 'addRecipe', 'removeRecipe', 'startCraft', 'finishCraft', 'addGoal', 'finishGoal', 'removeGoal'] },
+    op: { type: 'string', enum: ['setProfile', 'setRealm', 'setGold', 'addGold', 'addTitle', 'removeTitle', 'addTechnique', 'updateTechnique', 'removeTechnique', 'addSkill', 'updateSkill', 'removeSkill', 'addEquipment', 'updateEquipment', 'removeEquipment', 'addItem', 'updateItem', 'removeItem', 'addRecipe', 'removeRecipe', 'startCraft', 'finishCraft', 'addGoal', 'finishGoal', 'removeGoal'] },
     field: { type: 'string' },
     text: { type: 'string' },
     realm: { type: 'string' }, stage: { type: 'string' },
@@ -71,17 +73,43 @@ const SELF_OP_PROPERTIES = Object.freeze({
     id: { type: 'string' }, result: { type: 'string', enum: ['success', 'fail'] },
     days: { type: 'number' },
     priority: { type: 'string', enum: ['主线', '支线'] }, due: { type: 'string' },
+    title: { type: 'string', minLength: 1, maxLength: 20, pattern: '\\S' },
 });
+
+/** 只对新增类操作强制非空短标题；删除/完成/状态类按编号操作不强制。 */
+const SELF_OPS_ANYOF = Object.freeze([
+    {
+        properties: { op: { enum: ['addGoal'] }, title: { type: 'string', minLength: 1, maxLength: 20, pattern: '\\S' } },
+        required: ['op', 'title'],
+    },
+    {
+        properties: { op: { enum: ['setProfile', 'setRealm', 'setGold', 'addGold', 'addTitle', 'removeTitle', 'addTechnique', 'updateTechnique', 'removeTechnique', 'addSkill', 'updateSkill', 'removeSkill', 'addEquipment', 'updateEquipment', 'removeEquipment', 'addItem', 'updateItem', 'removeItem', 'addRecipe', 'removeRecipe', 'startCraft', 'finishCraft', 'finishGoal', 'removeGoal'] } },
+        required: ['op'],
+    },
+]);
 
 /** 记忆操作的 JSON Schema 属性集（与 memory-decide.js 的 MEMORY_JSON_SCHEMA 同源）。 */
 const MEMORY_OP_PROPERTIES = Object.freeze({
     op: { type: 'string', enum: ['remember', 'forgetMemory'] },
+    title: { type: 'string', minLength: 1, maxLength: 14, pattern: '\\S' },
     text: { type: 'string' }, basis: { type: 'string' }, note: { type: 'string' }, quote: { type: 'string' },
     related: { type: 'array', items: { type: 'string' } },
     weight: { type: 'string', enum: ['major', 'minor'] },
     tag: { type: 'string', enum: ['grudge', 'intel', 'thread', 'milestone'] },
     id: { type: 'string' },
 });
+
+/** 只对 remember 强制非空短标题；forgetMemory 按编号操作不强制。 */
+const MEMORY_OPS_ANYOF = Object.freeze([
+    {
+        properties: { op: { enum: ['remember'] }, title: { type: 'string', minLength: 1, maxLength: 14, pattern: '\\S' } },
+        required: ['op', 'title'],
+    },
+    {
+        properties: { op: { enum: ['forgetMemory'] } },
+        required: ['op'],
+    },
+]);
 
 /** 合并决定的结构化输出约束；解析端并不依赖它，只是提高严格度。 */
 export const UNIFIED_JSON_SCHEMA = Object.freeze({
@@ -92,14 +120,14 @@ export const UNIFIED_JSON_SCHEMA = Object.freeze({
             type: 'object',
             properties: {
                 note: { type: 'string' },
-                ops: { type: 'array', items: { type: 'object', properties: SELF_OP_PROPERTIES, required: ['op'] } },
+                ops: { type: 'array', items: { type: 'object', properties: SELF_OP_PROPERTIES, required: ['op'], anyOf: SELF_OPS_ANYOF } },
             },
         },
         memory: {
             type: 'object',
             properties: {
                 note: { type: 'string' },
-                ops: { type: 'array', items: { type: 'object', properties: MEMORY_OP_PROPERTIES, required: ['op'] } },
+                ops: { type: 'array', items: { type: 'object', properties: MEMORY_OP_PROPERTIES, required: ['op'], anyOf: MEMORY_OPS_ANYOF } },
             },
         },
         cited: { type: 'array', items: { type: 'string' } },
@@ -114,7 +142,7 @@ export const UNIFIED_JSON_SCHEMA = Object.freeze({
 export function buildUnifiedDecideUser({ selfSnapshot = {}, memorySnapshot = {}, floors = [], worldbookLines = [] } = {}) {
     const sceneText = (Array.isArray(floors) ? floors : [])
         .map(floor => (typeof floor?.text === 'string' ? floor.text : '')).join('\n');
-    const selfBlock = buildSelfInjection(selfSnapshot, { maxChars: 1600 });
+    const selfBlock = buildSelfInjection(selfSnapshot, { maxChars: 1600, withIds: true });
     const memoryBlock = buildMemoryInjection(memorySnapshot, { maxChars: 1200, sceneText }) || '（本场没有勾起任何旧记忆）';
     const bookLines = (Array.isArray(worldbookLines) ? worldbookLines : [])
         .filter(line => typeof line === 'string' && line.trim())

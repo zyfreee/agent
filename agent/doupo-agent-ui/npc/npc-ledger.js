@@ -276,15 +276,21 @@ function clampNumber(value, min, max, fallback) {
     return Math.max(min, Math.min(max, Math.round(number)));
 }
 
+function normalizeDay(value) {
+    if ((typeof value !== 'number' && typeof value !== 'string') || String(value).trim() === '') return null;
+    const day = Number(value);
+    return Number.isInteger(day) && day >= 1 && day <= 99999 ? day : null;
+}
+
 /** 一条经历：一句“他从此不一样了”的转变 + 世界天数/楼层。 */
-function normalizeExpEntry(item) {
+function normalizeExpEntry(item, fallbackDay = null) {
     if (item && typeof item === 'object' && !Array.isArray(item)) {
         const body = text(item.转变 ?? item.text ?? item.内容 ?? item.事情, 200);
-        const day = Number.isFinite(Number(item.day)) ? Number(item.day) : (Number.isFinite(Number(item.天数)) ? Number(item.天数) : null);
+        const day = normalizeDay(item.day !== undefined ? item.day : item.天数 !== undefined ? item.天数 : fallbackDay);
         const floor = Number.isInteger(item.floor) ? item.floor : (Number.isInteger(item.楼层) ? item.楼层 : null);
         return { text: body, day, floor };
     }
-    return { text: text(item, 200), day: null, floor: null };
+    return { text: text(item, 200), day: normalizeDay(fallbackDay), floor: null };
 }
 
 function normalizeName(value) {
@@ -340,17 +346,28 @@ export function normalizeRecord(raw) {
     }
     const favor = clampFavor(input.favor);
     if (favor !== null) record.favor = favor;
+    // 冷藏推进的盖章：最近一次自行活动动过哪些字段，读旧档时不能丢。
+    if (input.coldTouch && typeof input.coldTouch === 'object') {
+        record.coldTouch = {
+            day: normalizeDay(input.coldTouch.day),
+            floor: Number.isInteger(input.coldTouch.floor) ? input.coldTouch.floor : null,
+            fields: Array.isArray(input.coldTouch.fields) ? input.coldTouch.fields.map(item => text(item, 12)).filter(Boolean).slice(0, 12) : [],
+            at: text(input.coldTouch.at, 32),
+        };
+    }
     if (Array.isArray(input.log)) {
         record.log = input.log.map(item => ({
             floor: Number.isInteger(item?.floor) ? item.floor : null,
-            day: Number.isFinite(Number(item?.day)) ? Number(item.day) : null,
+            day: normalizeDay(item?.day),
             text: text(item?.text ?? item, 200),
+            // src 标来源：'冷藏' ＝ 冷藏推进补写的自行活动，读旧档时不能丢。
+            ...(item && typeof item === 'object' && typeof item.src === 'string' && item.src.trim() ? { src: text(item.src, 12) } : {}),
         })).filter(item => item.text).slice(-MAX_LOG);
     }
     if (Array.isArray(input.favorLog)) {
         record.favorLog = input.favorLog.map(item => ({
             floor: Number.isInteger(item?.floor) ? item.floor : null,
-            day: Number.isFinite(Number(item?.day)) ? Number(item.day) : null,
+            day: normalizeDay(item?.day),
             delta: clampFavor(item?.delta) ?? 0,
             reason: text(item?.reason, FAVOR_REASON_MAX),
         })).slice(-MAX_FAVOR_LOG);
@@ -420,7 +437,7 @@ export function normalizePatch(raw, context = {}) {
         if (target === 'exp') {
             const entries = Array.isArray(value) ? value : [value];
             for (const entry of entries) {
-                const clean = normalizeExpEntry(entry);
+                const clean = normalizeExpEntry(entry, context.day);
                 if (clean.text) result.exp.push(clean);
                 if (result.exp.length >= MAX_EXP_PER_PATCH) break;
             }
@@ -474,6 +491,16 @@ export function createNpcLedger({ maxRecords = 200, now = () => new Date() } = {
     const records = new Map();
     let changes = 0;
     let lastChange = null;
+    let lastReply = null;
+    const bookState = () => structuredClone({ records: [...records.values()], changes, lastChange });
+    const fingerprint = value => JSON.stringify(value, (_key, item) => item && typeof item === 'object' && !Array.isArray(item)
+        ? Object.fromEntries(Object.keys(item).sort().map(key => [key, item[key]])) : item);
+    function validBook(value) {
+        if (!value || !Array.isArray(value.records) || value.records.length > maxRecords || !Number.isSafeInteger(value.changes) || value.changes < 0) return false;
+        if (value.lastChange !== null && (!value.lastChange || typeof value.lastChange.name !== 'string' || typeof value.lastChange.at !== 'string' || !Array.isArray(value.lastChange.fields) || value.lastChange.fields.some(item => typeof item !== 'string'))) return false;
+        const normalized = value.records.map(normalizeRecord);
+        return normalized.every(Boolean) && new Set(normalized.map(item => item.name.toLowerCase())).size === normalized.length && fingerprint(normalized) === fingerprint(value.records);
+    }
 
     const stamp = () => {
         const value = now();
@@ -519,7 +546,7 @@ export function createNpcLedger({ maxRecords = 200, now = () => new Date() } = {
     function apply(payload, context = {}) {
         const patches = patchList(payload).map(item => normalizePatch(item, context));
         const floor = Number.isInteger(context.floor) ? context.floor : null;
-        const day = Number.isFinite(Number(context.day)) ? Number(context.day) : null;
+        const day = normalizeDay(context.day);
         const result = { status: 'applied', applied: [], skipped: [], ignored: [], created: [], changed: 0 };
         for (const patch of patches) {
             if (!patch.name) { result.skipped.push({ reason: 'missing_name', ignored: patch.ignored }); continue; }
@@ -559,10 +586,12 @@ export function createNpcLedger({ maxRecords = 200, now = () => new Date() } = {
                     touched.push(`好感${favorDelta > 0 ? '+' : ''}${favorDelta}`);
                 }
             }
-            if (!fillOnly) for (const line of patch.log) target.log.push({ floor, day, text: line });
+            // logSrc：这次补丁的流水来源标签（'冷藏' ＝ 冷藏推进的自行活动），逐条带在流水上。
+            const logSrc = typeof context.logSrc === 'string' && context.logSrc.trim() ? text(context.logSrc, 12) : null;
+            if (!fillOnly) for (const line of patch.log) target.log.push(logSrc ? { floor, day, text: line, src: logSrc } : { floor, day, text: line });
             if (target.log.length > MAX_LOG) target.log.splice(0, target.log.length - MAX_LOG);
             if (!fillOnly && patch.log.length) touched.push('流水');
-            if (!fillOnly) for (const entry of patch.exp) target.exp.push({ ...entry, day: entry.day ?? day, floor: entry.floor ?? floor });
+            if (!fillOnly) for (const entry of patch.exp) target.exp.push({ ...entry, floor: entry.floor ?? floor });
             if (target.exp.length > MAX_EXP) target.exp.splice(0, target.exp.length - MAX_EXP);
             if (!fillOnly && patch.exp.length) touched.push('经历');
             target.lastFloor = floor ?? target.lastFloor;
@@ -572,12 +601,39 @@ export function createNpcLedger({ maxRecords = 200, now = () => new Date() } = {
                 changes += 1;
                 lastChange = { name: target.name, fields: touched, floor, day, at: target.updatedAt };
                 result.changed += 1;
+                // 冷藏推进不只补流水：位置/正在做什么等字段也会改。把这次自行活动动过的字段盖章在档案上，
+                // 档案面板和悬浮球靠它标“❄ 这里是自行活动改的”。
+                if (logSrc) target.coldTouch = { day, floor, fields: touched.slice(), at: target.updatedAt };
             }
             result.applied.push({ name: target.name, fields: touched, favor: favorDelta, created: result.created.includes(target.name) });
         }
         if (!patches.length) result.status = 'empty';
         if (!result.applied.length && patches.length) result.status = 'ignored';
         return result;
+    }
+
+    /** Latest reply replacement is allowed only while its complete after-book is untouched. */
+    function recordReply(payload, context = {}) {
+        const floor = context.floor;
+        if (!Number.isSafeInteger(floor) || floor < 0) return { status: 'rejected', reason: 'invalid_reply_floor' };
+        const replacing = lastReply?.floor === floor;
+        if (!replacing && (context.replay === true || (lastReply && floor < lastReply.floor) || (!lastReply && [...records.values()].some(record => Number.isInteger(record.lastFloor) && record.lastFloor >= floor)))) return { status: 'replay_unavailable', reason: 'reply_baseline_missing', floor };
+        const current = bookState();
+        if (replacing && fingerprint(current) !== lastReply.afterFingerprint) return { status: 'replay_conflict', reason: 'ledger_changed_since_reply', floor };
+        const before = replacing ? structuredClone(lastReply.before) : current;
+        const temporary = createNpcLedger({ maxRecords, now });
+        temporary.load({ records: before.records });
+        const result = temporary.apply(payload, context);
+        const next = temporary.exportAll().records;
+        const nextStatus = temporary.status();
+        // Normalization and proposal evaluation finish before touching the live book.
+        if (fingerprint(next.map(normalizeRecord)) !== fingerprint(next)) return { status: 'replay_conflict', reason: 'invalid_reply_result', floor };
+        records.clear();
+        for (const record of next) records.set(record.name.toLowerCase(), record);
+        changes = before.changes + nextStatus.changes;
+        lastChange = structuredClone(nextStatus.lastChange ?? before.lastChange);
+        lastReply = { floor, before, afterFingerprint: fingerprint(bookState()) };
+        return { ...result, floor, replaced: replacing };
     }
 
     function remove(name) {
@@ -604,8 +660,9 @@ export function createNpcLedger({ maxRecords = 200, now = () => new Date() } = {
         const record = records.get(key);
         const clean = (Array.isArray(entries) ? entries : []).map(item => normalizeExpEntry(item)).filter(item => item.text).slice(-MAX_EXP);
         const before = record.exp.length;
+        const changed = JSON.stringify(record.exp) !== JSON.stringify(clean);
         record.exp = clean;
-        if (before !== clean.length) {
+        if (changed) {
             record.version += 1;
             record.updatedAt = stamp();
             changes += 1;
@@ -698,6 +755,7 @@ export function createNpcLedger({ maxRecords = 200, now = () => new Date() } = {
             version: NPC_LEDGER_VERSION,
             savedAt: stamp(),
             records: [...records.values()].map(record => structuredClone(record)),
+            ...(lastReply ? { _runtime: { version: 1, lastReply: structuredClone(lastReply) } } : {}),
         };
     }
 
@@ -712,6 +770,18 @@ export function createNpcLedger({ maxRecords = 200, now = () => new Date() } = {
             if (records.size >= maxRecords) { skipped += 1; continue; }
             records.set(record.name.toLowerCase(), record);
         }
+        lastReply = null;
+        const runtime = payload._runtime;
+        const saved = runtime?.lastReply;
+        try {
+            const after = typeof saved?.afterFingerprint === 'string' ? JSON.parse(saved.afterFingerprint) : null;
+            if (runtime?.version === 1 && Number.isSafeInteger(saved?.floor) && saved.floor >= 0 && validBook(saved.before) && validBook(after)
+                && fingerprint(after) === saved.afterFingerprint && fingerprint(after.records) === fingerprint([...records.values()])) {
+                lastReply = structuredClone(saved);
+                changes = after.changes;
+                lastChange = structuredClone(after.lastChange);
+            }
+        } catch { /* malformed optional metadata never supplies a replay baseline */ }
         return { status: 'loaded', total: records.size, skipped };
     }
 
@@ -724,46 +794,55 @@ export function createNpcLedger({ maxRecords = 200, now = () => new Date() } = {
     }
 
     function injection({ budget = 900, maxFull = 6, maxBrief = 14, header = NPC_LEDGER_HEADER } = {}) {
+        const cap = value => Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+        budget = cap(budget); maxFull = cap(maxFull); maxBrief = cap(maxBrief);
+        const recent = (a, b) => (b.lastFloor ?? -1) - (a.lastFloor ?? -1) || a.name.localeCompare(b.name, 'zh');
         const all = [...records.values()];
-        const fullTargets = all.filter(record => record.presence === '在场' && record.importance === '重要');
-        const briefTargets = all.filter(record => record.presence === '在场' && record.importance !== '重要');
-        const distantTargets = all.filter(record => record.presence !== '在场' && record.importance === '重要');
-        const full = fullTargets.slice(0, Math.max(0, maxFull));
-        const brief = briefTargets.slice(0, Math.max(0, maxBrief));
-        const distant = distantTargets.slice(0, Math.max(0, maxBrief));
-        const line = record => (record.importance === '重要' ? describeBrief(record, { distant: record.presence !== '在场' }) : describeLine(record));
+        const fullTargets = all.filter(record => record.presence === '在场' && record.importance === '重要').sort(recent);
+        const rest = [
+            ...all.filter(record => record.presence === '在场' && record.importance !== '重要').sort(recent),
+            ...all.filter(record => record.presence !== '在场' && record.importance === '重要').sort(recent),
+        ];
+        const eligible = [...fullTargets, ...rest];
+        const full = fullTargets.slice(0, maxFull);
+        const brief = [...fullTargets.slice(maxFull), ...rest].slice(0, maxBrief);
+        const line = record => {
+            const body = record.importance === '重要' ? describeBrief(record, { distant: record.presence !== '在场' }) : describeLine(record);
+            if (body.length <= 120) return body;
+            // Compact whole fields, never cut a rendered profile in the middle.
+            return [record.name, record.presence, record.location.slice(0, 24), record.identity.slice(0, 32), `好感 ${record.favor}`].filter(Boolean).join('｜');
+        };
         const build = () => {
-            const blocks = [];
-            if (full.length) blocks.push(full.map(describeFull).join('\n'));
-            const rest = [...brief, ...distant].map(line).filter(Boolean);
-            if (rest.length) blocks.push(rest.join('\n'));
+            const blocks = [...full.map(describeFull), ...brief.map(line)];
             return blocks.length ? `${header}\n${blocks.join('\n')}` : '';
         };
         let text2 = build();
-        const degraded = [];
-        // 超预算就从“最不重要、最久没出现”的整档描述开始降级成一行，而不是硬截断半句话。
-        while (text2.length > budget && full.length > 1) {
-            const dropped = full.pop();
-            degraded.push(dropped.name);
+        // First keep every important present NPC as a brief profile, then omit lowest priority.
+        // 每轮重新用当前 text2 判断是否还超预算：降级一次后放得下就立即停，不能把冻结的
+        // 初始判断带进循环——否则可行布局也会被继续降级、把人从简档里挤出去。
+        while (text2.length > budget && full.length) {
+            const record = full.pop();
+            if (maxBrief > 0) {
+                brief.unshift(record);
+                if (brief.length > maxBrief) brief.pop();
+            }
             text2 = build();
         }
-        let truncated = false;
-        if (text2.length > budget) {
-            text2 = text2.slice(0, Math.max(0, budget));
-            truncated = true;
+        while (text2.length > budget && brief.length) {
+            brief.pop();
+            text2 = build();
         }
+        const used = [...full, ...brief].map(record => record.name);
+        const omitted = eligible.filter(record => !used.includes(record.name)).map(record => record.name);
+        const degraded = brief.filter(record => fullTargets.includes(record)).map(record => record.name);
         return {
-            text: text2,
-            chars: text2.length,
-            truncated,
-            degraded,
-            used: [...full, ...brief, ...distant].map(record => record.name),
-            counts: { full: full.length, brief: brief.length + distant.length },
+            text: text2, chars: text2.length, truncated: omitted.length > 0, degraded, omitted, used,
+            counts: { full: full.length, brief: brief.length },
         };
     }
 
     return Object.freeze({
-        apply, get, list, remove, clear, status, exportAll, load, describe, injection, exps, replaceExp,
+        apply, recordReply, get, list, remove, clear, status, exportAll, load, describe, injection, exps, replaceExp,
         setFields, addExp, removeExp,
         find: name => (findKey(name) ? true : false),
         names: () => [...records.values()].map(record => record.name),

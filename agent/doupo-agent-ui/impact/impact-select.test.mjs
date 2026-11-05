@@ -133,4 +133,27 @@ assert.match(tight.split('\n')[1], /药材/);
 const source = await readFile(new URL('./impact-select.js', import.meta.url), 'utf8');
 assert.doesNotMatch(source, /from '\.\.\/index\.js'/);
 
+// OPT-076: model-rephrased picks still carry the record's uncertainty.
+for (const weight of ['world', 'major', 'minor']) {
+    const row = record({ weight, certainty: 'rumor', ripenDay: null });
+    const result = buildImpactInjectionFromPicks([row], [{ ref: row.id, text: '有人传信' }]);
+    assert.match(result, /？/);
+    assert.equal(result.includes('★'), weight === 'world');
+}
+
+// OPT-074: inventory size must not become prompt size; relevant/soon items win.
+for (const count of [0, 1, 1000, 10000]) {
+    const rows = Array.from({ length: count }, (_, n) => record({ id: `i${n + 1}`, title: `安排${n}`, target: '远城', ripenDay: 99 }));
+    if (count) rows[count - 1] = record({ id: 'relevant', title: '当前城要事', target: '乌坦城', ripenDay: 3 });
+    const before = JSON.stringify(rows);
+    const value = buildImpactInjectUser({ records: rows, snapshot: { info: { location: '乌坦城' } }, day: 1 });
+    const pendingBlock = value.split('【还没发作的安排（只能提醒，不能写成已经发生）】\n')[1].split('\n\n【最近对话')[0];
+    assert.ok(pendingBlock.length <= 600, `pending chars ${count}: ${pendingBlock.length}`);
+    assert.ok(pendingBlock.split('\n').filter(line => line.startsWith('- #')).length <= 8);
+    assert.ok(value.length <= 8000, `total chars ${count}: ${value.length}`);
+    if (count) assert.match(pendingBlock, /#relevant/);
+    if (count > 8) assert.match(pendingBlock, /另省略 \d+ 条/);
+    assert.equal(JSON.stringify(rows), before, 'budgeting must never prune persisted inventory');
+}
+
 console.log('impact select tests passed');

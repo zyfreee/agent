@@ -107,7 +107,23 @@ export function buildImpactInjectUser({ snapshot = {}, records = [], floors = []
         ripened: ledgerRecords.filter(record => record.state === 'ripened').length,
         closed: ledgerRecords.filter(record => record.state === 'closed' || record.state === 'reverted').length,
     };
-    const pending = ledgerRecords.filter(record => record.state === 'active' && record.ripenDay !== null && record.ripenDay > today);
+    const scene = [snapshot?.info?.location, text(draft).slice(0, DRAFT_CHARS),
+        ...(Array.isArray(floors) ? floors : []).slice(-MAX_FLOORS).map(floor => text(floor?.text).slice(0, FLOOR_CHARS))].join('\n');
+    const relevant = record => [record.target, record.title].some(value => text(value) && scene.includes(text(value)));
+    const pending = ledgerRecords.filter(record => record.state === 'active' && record.ripenDay !== null && record.ripenDay > today)
+        .sort((a, b) => Number(relevant(b)) - Number(relevant(a)) || a.ripenDay - b.ripenDay || b.day - a.day);
+    const pendingLines = [];
+    let pendingChars = 0;
+    for (const record of pending) {
+        if (pendingLines.length >= 8) break;
+        const line = `- #${record.id}｜第 ${record.ripenDay} 天才会发作｜${record.title}${impactMark(record)}`;
+        // 600 characters total, reserving room for the omission receipt.
+        if (pendingChars + line.length + 1 > 560) break;
+        pendingLines.push(line);
+        pendingChars += line.length + 1;
+    }
+    const omitted = pending.length - pendingLines.length;
+    if (omitted) pendingLines.push(`- （另省略 ${omitted} 条待发酵安排）`);
     const recent = (Array.isArray(floors) ? floors : [])
         .slice(-MAX_FLOORS)
         .map(floor => {
@@ -125,7 +141,7 @@ export function buildImpactInjectUser({ snapshot = {}, records = [], floors = []
         '',
         '【还没发作的安排（只能提醒，不能写成已经发生）】',
         pending.length
-            ? pending.map(record => `- #${record.id}｜第 ${record.ripenDay} 天才会发作｜${record.title}`).join('\n')
+            ? pendingLines.join('\n')
             : '- （没有等待发作的事）',
         '',
         `【最近对话（旧 → 新，共 ${recent.length} 楼）】`,

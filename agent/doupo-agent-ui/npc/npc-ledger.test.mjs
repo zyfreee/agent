@@ -1,5 +1,104 @@
 import assert from 'node:assert/strict';
-import { createNpcLedger, favorLabel, normalizePatch, NPC_FIELDS, FAVOR_MIN, FAVOR_MAX, FAVOR_REASON_MAX, FAVOR_STEP_MAX } from './npc-ledger.js';
+import { createNpcLedger, favorLabel, normalizePatch, normalizeRecord, NPC_FIELDS, FAVOR_MIN, FAVOR_MAX, FAVOR_REASON_MAX, FAVOR_STEP_MAX } from './npc-ledger.js';
+
+// OPT-051: replace only the owned latest floor, never restore over manual work.
+{
+    const make = () => createNpcLedger({ now: () => 'fixed' });
+    const patch = (text, favor = 4) => ({ name: 'A', identity: text, favor, log: [text], exp: [text], presence: '在场' });
+    const ledger = make(); ledger.apply({ name: 'A', identity: 'baseline', favor: 2 });
+    const before = ledger.exportAll().records, beforeStatus = structuredClone(ledger.status());
+    assert.equal(ledger.recordReply(patch('old'), { floor: 3, day: 2 }).status, 'applied');
+    assert.equal(ledger.recordReply(patch('new', -1), { floor: 3, day: 2 }).replaced, true);
+    assert.equal(ledger.get('A').favor, 1); assert.equal(ledger.get('A').identity, 'new');
+    assert.deepEqual(ledger.get('A').log.map(item => item.text), ['new']);
+    assert.deepEqual(ledger.get('A').exp.map(item => item.text), ['new']);
+    ledger.recordReply(patch('new', -1), { floor: 3, day: 2 });
+    assert.equal(ledger.get('A').favor, 1, 'manual retry never accumulates');
+    assert.equal(ledger.recordReply(null, { floor: 3 }).status, 'empty');
+    assert.deepEqual(ledger.exportAll().records, before); assert.deepEqual(ledger.status(), beforeStatus);
+    ledger.recordReply(patch('floor3'), { floor: 3 });
+    ledger.recordReply(patch('floor4', 1), { floor: 4 });
+    assert.equal(ledger.get('A').favor, 7);
+    ledger.recordReply(patch('floor4new', 2), { floor: 4 });
+    assert.equal(ledger.get('A').favor, 8);
+    const snapshot = ledger.exportAll(), status = structuredClone(ledger.status());
+    assert.equal(ledger.recordReply(null, { floor: 3 }).status, 'replay_unavailable');
+    assert.deepEqual(ledger.exportAll(), snapshot); assert.deepEqual(ledger.status(), status);
+    const manual = make(); manual.apply({ name: 'manual before floor0', identity: 'keep' });
+    assert.equal(manual.recordReply([], { floor: 0 }).status, 'empty');
+    const fresh = make(); fresh.recordReply({ name: 'created', favor: 5 }, { floor: 0 });
+    fresh.recordReply([], { floor: 0 }); assert.equal(fresh.status().total, 0);
+    assert.equal(fresh.recordReply([], { floor: -1 }).status, 'rejected');
+    assert.equal(fresh.recordReply([], {}).status, 'rejected');
+    for (const edit of [book => book.setFields('A', { identity: 'manual' }), book => book.apply({ name: 'B', identity: 'manual' }), book => book.addExp('A', 'manual'), book => book.remove('A')]) {
+        const book = make(); book.recordReply(patch('reply'), { floor: 2 }); edit(book);
+        const saved = book.exportAll(), state = structuredClone(book.status());
+        assert.equal(book.recordReply(patch('replacement'), { floor: 2 }).status, 'replay_conflict');
+        assert.deepEqual(book.exportAll(), saved); assert.deepEqual(book.status(), state);
+        assert.equal(book.recordReply(patch('next'), { floor: 3 }).status, 'applied', 'forward floor preserves intervening manual work');
+    }
+    const throwing = { get name() { throw new Error('bad payload'); } };
+    assert.throws(() => ledger.recordReply(throwing, { floor: 4 }), /bad payload/);
+    assert.deepEqual(ledger.exportAll(), snapshot); assert.deepEqual(ledger.status(), status);
+    const exported = ledger.exportAll();
+    assert.equal(exported._runtime.version, 1); assert.equal(exported._runtime.lastReply.floor, 4);
+    const restored = make(); restored.load(JSON.parse(JSON.stringify(exported)));
+    assert.equal(restored.recordReply(null, { floor: 4, replay: true }).status, 'empty');
+    assert.equal(restored.get('A').identity, 'floor3'); assert.equal(restored.get('A').favor, 6);
+    for (const corrupt of [saved => delete saved._runtime, saved => { saved._runtime.version = 2; }, saved => { saved._runtime.lastReply.floor = -1; }, saved => { saved._runtime.lastReply.before.records[0].favor = 999; }, saved => { saved._runtime.lastReply.before.records.push(saved._runtime.lastReply.before.records[0]); }, saved => { saved._runtime.lastReply.afterFingerprint = '{}'; }, saved => { saved.records[0].identity = 'external edit'; }]) {
+        const saved = structuredClone(exported); corrupt(saved);
+        const book = make(); book.load(saved); const before = book.exportAll(), state = structuredClone(book.status());
+        assert.equal(book.recordReply(null, { floor: 4, replay: true }).status, 'replay_unavailable');
+        assert.deepEqual(book.exportAll(), before); assert.deepEqual(book.status(), state);
+    }
+    const legacy = make(); legacy.load({ records: exported.records });
+    assert.equal(legacy.recordReply(patch('old archive'), { floor: 4 }).status, 'replay_unavailable');
+    assert.equal(legacy.recordReply(patch('forward'), { floor: 5 }).status, 'applied');
+    const emptyLegacy = make(); emptyLegacy.load({ records: [] });
+    assert.equal(emptyLegacy.recordReply([], { floor: 4, replay: true }).status, 'replay_unavailable');
+    const manualAfter = make(); manualAfter.load(exported); manualAfter.setFields('A', { identity: 'manual after load' });
+    const manualSnapshot = manualAfter.exportAll();
+    const manualReloaded = make(); manualReloaded.load(manualSnapshot);
+    assert.equal(manualReloaded.recordReply([], { floor: 4, replay: true }).status, 'replay_unavailable');
+    assert.equal(manualReloaded.get('A').identity, 'manual after load');
+    const malformed = structuredClone(exported); malformed._runtime.lastReply.afterFingerprint = 'not JSON';
+    const recovered = make(); assert.equal(recovered.load(malformed).status, 'loaded');
+    assert.equal(recovered.recordReply([], { floor: 4, replay: true }).status, 'replay_unavailable');
+    const emptyFloor = make(); emptyFloor.recordReply([], { floor: 8 });
+    const emptyRestored = make(); emptyRestored.load(emptyFloor.exportAll());
+    assert.equal(emptyRestored.recordReply({ name: 'new branch' }, { floor: 8, replay: true }).status, 'applied');
+    const snapshotClone = ledger.exportAll(); snapshotClone._runtime.lastReply.before.records.length = 0;
+    assert.deepEqual(ledger.exportAll(), snapshot, 'export metadata is detached');
+    const ordinary = make(); ordinary.apply(patch('ordinary'), { floor: 1 }); ordinary.apply(patch('ordinary'), { floor: 1 });
+    assert.equal(ordinary.get('A').favor, 8, 'ordinary apply remains additive');
+}
+
+// OPT-058: unknown/invalid days stay null across apply, condense and persistence.
+for (const day of [null, undefined, '', '  ', 0, -1, 1.5, 100000, true, 'bad', 1, '12', 99999]) {
+    const expected = [1, '12', 99999].includes(day) ? Number(day) : null;
+    const ledger = createNpcLedger();
+    ledger.apply({ name: 'date', exp: [{ text: 'change', day }], log: ['event'], favor: 1 }, { day, logSrc: '冷藏' });
+    const record = ledger.get('date');
+    assert.equal(record.exp[0].day, expected);
+    assert.equal(record.log[0].day, expected);
+    assert.equal(record.favorLog[0].day, expected);
+    assert.equal(record.coldTouch.day, expected);
+    ledger.replaceExp('date', [{ text: 'condensed', day }]);
+    const restored = createNpcLedger(); restored.load(ledger.exportAll());
+    assert.equal(restored.get('date').exp[0].day, expected);
+    assert.equal(restored.get('date').log[0].day, expected);
+    assert.equal(restored.get('date').favorLog[0].day, expected);
+    assert.equal(restored.get('date').coldTouch.day, expected);
+    assert.equal(normalizeRecord({ name: 'raw', exp: [{ text: 'x', day }], log: [{ text: 'x', day }], favorLog: [{ day }], coldTouch: { day } }).exp[0].day, expected);
+}
+{
+    const ledger = createNpcLedger();
+    ledger.apply({ name: 'date', exp: [{ text: 'unknown', day: null }, { text: 'missing' }, { text: 'alias', 天数: 3 }, 'context'] }, { day: 7 });
+    assert.deepEqual(ledger.get('date').exp.map(item => item.day), [null, 7, 3, 7]);
+    ledger.addExp('date', 'manual unknown');
+    assert.equal(ledger.get('date').exp.at(-1).day, null);
+}
+
 
 // 0) 组键打包（模型的常见输出）：外貌/性格/对玩家/处境带着一堆子字段来时必须拆开逐个收，
 // 不拆的话整组都会被当成不认识的键丢掉，信息面板就只剩空壳。
@@ -128,6 +227,94 @@ import { createNpcLedger, favorLabel, normalizePatch, NPC_FIELDS, FAVOR_MIN, FAV
     assert.ok(view.used.length >= 2);
 }
 
+// OPT-059: preserve complete visible profiles before omission; metadata matches text.
+{
+    const ledger = createNpcLedger();
+    ledger.apply({ 人物: ['A', 'B'].map(name => ({ name, identity: '身'.repeat(200), presence: '在场', importance: '重要' })) });
+    const view = ledger.injection({ budget: 300 });
+    assert.deepEqual(view.used.sort(), ['A', 'B']);
+    // 可行布局：A 全档 + B 简档已 ≤300，只降级 B；不得继续把 A 也降掉。
+    assert.deepEqual(view.degraded, ['B']);
+    assert.deepEqual(view.omitted, []);
+    assert.equal(view.counts.full, 1); assert.equal(view.counts.brief, 1);
+    for (const name of view.used) assert.match(view.text, new RegExp(name));
+    assert.ok(view.chars <= 300);
+    for (const budget of [0, 1, 10, 30, 60, 120]) {
+        const small = ledger.injection({ budget });
+        assert.ok(small.chars <= budget);
+        assert.equal(small.counts.full + small.counts.brief, small.used.length);
+        assert.deepEqual([...small.used, ...small.omitted].sort(), ['A', 'B']);
+        assert.ok(small.degraded.every(name => small.used.includes(name)));
+        for (const name of ['A', 'B']) assert.equal(small.text.includes(name), small.used.includes(name));
+        assert.ok(!small.text || small.text.split('\n').at(-1).includes('好感'), 'never half a profile');
+    }
+}
+{
+    const ledger = createNpcLedger();
+    ledger.apply({ name: 'old', presence: '在场', importance: '重要' }, { floor: 1 });
+    ledger.apply({ name: 'new', presence: '在场', importance: '重要' }, { floor: 9 });
+    ledger.apply({ name: 'present', presence: '在场' });
+    ledger.apply({ name: 'distant', importance: '重要' });
+    ledger.apply({ name: 'irrelevant' });
+    const capped = ledger.injection({ budget: 4000, maxFull: 1, maxBrief: 2 });
+    assert.match(capped.text, /【new】/);
+    assert.deepEqual(capped.used, ['new', 'old', 'present']);
+    assert.deepEqual(capped.degraded, ['old']); assert.deepEqual(capped.omitted, ['distant']);
+    const briefOnly = ledger.injection({ budget: 4000, maxFull: 0, maxBrief: 2 });
+    assert.deepEqual(briefOnly.used, ['new', 'old']); assert.equal(briefOnly.counts.full, 0);
+    const none = ledger.injection({ budget: 4000, maxFull: 0, maxBrief: 0 });
+    assert.equal(none.text, ''); assert.equal(none.used.length, 0); assert.equal(none.omitted.length, 4);
+    const fullOnly = ledger.injection({ budget: 4000, maxFull: 1, maxBrief: 0 });
+    assert.deepEqual(fullOnly.used, ['new']); assert.equal(fullOnly.counts.brief, 0);
+}
+
+// SELF-NPC-R6: the budget loop must stop the moment the current layout fits.
+{
+    const ledger = createNpcLedger();
+    ledger.apply({ 人物: [{ name: 'A', identity: 'captain', look: 'x'.repeat(200), presence: '在场', importance: '重要' }, { name: 'B', identity: 'guard', look: 'y'.repeat(200), presence: '在场', importance: '重要' }] });
+    const view = ledger.injection({ budget: 300, maxFull: 2, maxBrief: 1 });
+    assert.deepEqual(view.used, ['A', 'B']);
+    assert.deepEqual(view.omitted, []);
+    assert.deepEqual(view.degraded, ['B']);
+    assert.equal(view.counts.full, 1); assert.equal(view.counts.brief, 1);
+    assert.ok(view.chars <= 300, `feasible layout ${view.chars} must fit budget 300`);
+    assert.match(view.text, /【A】/, 'A keeps the full profile');
+    assert.match(view.text, /B｜在场/, 'B stays visible as a brief line');
+    const tiny = ledger.injection({ budget: 40, maxBrief: 0 });
+    assert.ok(tiny.chars <= 40);
+    assert.deepEqual(tiny.used, []);
+    assert.deepEqual(tiny.omitted.sort(), ['A', 'B']);
+    const three = createNpcLedger();
+    three.apply({ 人物: ['A', 'B', 'C'].map(name => ({ name, identity: '弟子', presence: '在场', importance: '重要' })) }, { floor: 1 });
+    three.apply({ name: 'C', doing: '巡场' }, { floor: 9 });
+    const ranked = three.injection({ budget: 55, maxFull: 1, maxBrief: 2 });
+    assert.deepEqual(ranked.used, ['C', 'A'], 'most recent important profile keeps priority');
+    assert.deepEqual(ranked.omitted, ['B']);
+    assert.ok(ranked.chars <= 55);
+}
+
+// OPT-104: content, not entry count, controls experience change metadata.
+{
+    let tick = 0;
+    const ledger = createNpcLedger({ now: () => `tick-${++tick}` });
+    ledger.apply({ name: 'version', exp: ['before'] });
+    for (const entries of [[{ text: 'after', day: null }], [{ text: 'dated', day: 2 }], [{ text: 'one' }, { text: 'two' }], [{ text: 'short' }], []]) {
+        const before = ledger.get('version'), changes = ledger.status().changes;
+        ledger.replaceExp('version', entries);
+        const after = ledger.get('version');
+        assert.equal(after.version, before.version + 1);
+        assert.notEqual(after.updatedAt, before.updatedAt);
+        assert.equal(ledger.status().changes, changes + 1);
+        assert.deepEqual(ledger.status().lastChange.fields, ['经历精简']);
+        const unchanged = ledger.exportAll().records, changeState = structuredClone(ledger.status());
+        ledger.replaceExp('version', entries);
+        assert.deepEqual(ledger.exportAll().records, unchanged);
+        assert.deepEqual(ledger.status(), changeState);
+    }
+    const restored = createNpcLedger(); restored.load(ledger.exportAll());
+    assert.deepEqual(restored.get('version'), ledger.get('version'));
+}
+
 // 7) 导出、再载入：档案不丢，字段还能对上。
 {
     const ledger = createNpcLedger();
@@ -249,6 +436,34 @@ import { createNpcLedger, favorLabel, normalizePatch, NPC_FIELDS, FAVOR_MIN, FAV
     const full = createNpcLedger();
     full.apply({ 人物: [{ 姓名: '萧炎', 身份: '少主', 性别: '男', 年龄: '十六', 境界: '斗者' }] }, { floor: 1, day: 1 });
     assert.ok(full.missing('萧炎').length < missing.length);
+}
+
+// —— 冷藏推进来源标签：logSrc 逐条盖章，load 重读后不丢 ——
+{
+    const coldLedger = createNpcLedger();
+    coldLedger.apply({ 人物: [{ 姓名: '刀疤武者', 身份: '加列家护卫头目' }] }, { floor: 13, day: 1, source: '正文' });
+    coldLedger.apply({ 人物: [{ 姓名: '刀疤武者', 位置: '中街迎宾客栈收货点', 正在做什么: '守点验私货', 流水: ['守在收货点验私货、断来路', '前日打折一名药贩的腿'] }] }, { floor: 19, day: 1, source: '冷藏推进', logSrc: '冷藏' });
+    const record = coldLedger.get('刀疤武者');
+    assert.equal(record.log[0].src, '冷藏', '冷藏推进的流水逐条带上自行活动标签');
+    assert.equal(record.log[1].src, '冷藏', '同一笔补丁里每条流水都有标签');
+    assert.equal(record.log[0].floor, 19);
+    assert.equal(record.log[0].day, 1);
+    assert.equal(record.location, '中街迎宾客栈收货点');
+    const reloaded = createNpcLedger();
+    reloaded.load([JSON.parse(JSON.stringify(record))]);
+    assert.equal(reloaded.get('刀疤武者').log[0].src, '冷藏', '读旧档时标签不能丢');
+    // 冷藏推进改的不止流水：动过的字段要盖章在档案上（coldTouch），读旧档不丢。
+    assert.ok(Array.isArray(record.coldTouch?.fields), '冷藏推进要在档案上记动过的字段');
+    assert.ok(record.coldTouch.fields.includes('所在位置'), '所在位置是被自行活动改过的');
+    assert.ok(record.coldTouch.fields.includes('正在做什么'), '正在做什么是被自行活动改过的');
+    assert.ok(record.coldTouch.fields.includes('流水'), '流水也算这次动过的内容');
+    assert.equal(record.coldTouch.floor, 19);
+    assert.equal(record.coldTouch.day, 1);
+    assert.equal(reloaded.get('刀疤武者').coldTouch.fields.includes('所在位置'), true, '重读后 coldTouch 不丢');
+    // 不带 logSrc 的普通记账不盖 coldTouch，也照旧不打标签。
+    coldLedger.apply({ 人物: [{ 姓名: '刀疤武者', 流水: ['又巡了一趟货栈'] }] }, { floor: 20, day: 1 });
+    assert.equal(coldLedger.get('刀疤武者').coldTouch.floor, 19, '正文记账不覆盖冷藏盖章');
+    assert.equal(coldLedger.get('刀疤武者').log.at(-1).src, undefined, '没传 logSrc 就不盖章');
 }
 
 console.log('npc-ledger 测试通过');

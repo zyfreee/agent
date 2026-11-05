@@ -48,4 +48,23 @@ assert.equal(changes.length, 5);
 assert.equal(changes.at(-1).type, 'status_changed');
 assert.equal(unsubscribe(), true);
 assert.equal(reviewedPlanner.adjustPlan({ sessionId: 's1', branchId: 'b1', stateVersion: 'v1', npcId: 'captain', planId: 'escort', baseVersion: 1, reason: '旧依据', goal: '错误版本' }).reason, 'plan_version_conflict');
+// OPT-055: no public mutator can resurrect terminal plans or write arbitrary states.
+for (const terminal of ['completed', 'cancelled']) {
+    const planner = createNpcAutonomyPlanner();
+    const scope = { sessionId: 's', branchId: 'b', stateVersion: 'v', npcId: 'n', planId: 'p' };
+    const events = []; planner.subscribePlanChanges(event => events.push(event));
+    planner.registerPlan({ ...scope, goal: 'first' });
+    const adjustment = { ...scope, goal: 'second', reason: 'fact', evidence: { factIds: ['f'], summary: 'known' } };
+    assert.throws(() => planner.adjustPlan({ ...adjustment, baseVersion: 1, status: 'invalid' }), /status/);
+    assert.throws(() => planner.registerPlan({ ...scope, goal: 'bad', status: 'invalid' }), /status/);
+    assert.equal(planner.adjustPlan({ ...adjustment, baseVersion: 1, status: 'active' }).status, 'adjusted');
+    planner.transitionPlan({ ...scope, baseVersion: 2, status: terminal, reason: 'done' });
+    const before = planner.getPlan(scope);
+    assert.equal(planner.adjustPlan({ ...adjustment, baseVersion: 3, status: 'active' }).reason, 'plan_terminal');
+    assert.equal(planner.transitionPlan({ ...scope, baseVersion: 3, status: 'active', reason: 'reopen' }).reason, 'plan_terminal');
+    assert.equal(planner.registerPlan({ ...scope, version: 3, goal: 'reopen' }).reason, 'plan_terminal');
+    assert.deepEqual(planner.getPlan(scope), before);
+    assert.equal(events.length, 3, 'rejections must not notify or advance versions');
+    assert.equal(planner.registerPlan({ ...scope, planId: 'new', goal: 'new plan' }).status, 'registered');
+}
 console.log('NPC autonomy planner tests passed');

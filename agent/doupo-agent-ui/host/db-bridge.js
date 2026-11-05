@@ -15,6 +15,7 @@
 
 import {
     ALL_TABLE_DEFS,
+    MEMORY_TABLE_DEFS,
     applyDesiredToView,
     desiredMemoryRows,
     desiredSelfRows,
@@ -25,26 +26,32 @@ import {
     selfStateFromTables,
 } from './db-tables.js';
 
-const WRITER_FLAG_MS = 30000;
 const EXTERNAL_DEBOUNCE_MS = 500;
 
 const DESIRED_BY_KIND = Object.freeze({ self: desiredSelfRows, memory: desiredMemoryRows });
 const DERIVE_BY_KIND = Object.freeze({ self: selfStateFromTables, memory: memoryStateFromTables });
 
-export function createDbBridge({ getSettings } = {}) {
+export function createDbBridge({ getSettings, capture = () => null, isCurrent = () => true } = {}) {
     let status = 'off'; // 'off' | 'missing' | 'ready' | 'error'
     let message = '';
     let ensuredForChat = false;
     let ensuring = null;
-    let writingUntil = 0;
+    let activeWriters = 0;
+    let mirrorQueue = Promise.resolve();
     let externalDebounce = null;
     let registeredCallback = null;
     let registeredOn = null;
     let externalHandler = null;
+    let epoch = 0;
+    const ownership = () => {
+        const token = capture();
+        const capturedEpoch = epoch;
+        return () => capturedEpoch === epoch && enabled() && isCurrent(token);
+    };
 
     function enabled() {
         const settings = typeof getSettings === 'function' ? getSettings() : null;
-        return !(settings && settings.enableDbBridge === false);
+        return settings?.enabled !== false && settings?.enableDbBridge !== false;
     }
 
     function locateApi() {
@@ -65,7 +72,8 @@ export function createDbBridge({ getSettings } = {}) {
     }
 
     /** 当前聊天确认桥接表都在；缺就 merge 导入（每个聊天至多一次）。 */
-    async function ensure() {
+    async function ensure(current = ownership()) {
+        if (!current()) return false;
         const api = locateApi();
         if (!api) {
             status = 'missing';
@@ -75,6 +83,7 @@ export function createDbBridge({ getSettings } = {}) {
         if (ensuredForChat) return true;
         if (ensuring) return ensuring;
         registerExternalCallback(api);
+        const ensureEpoch = epoch;
         ensuring = (async () => {
             try {
                 let currentTemplate = null;
@@ -83,8 +92,8 @@ export function createDbBridge({ getSettings } = {}) {
                 } catch (error) {
                     console.warn('[斗破Agent·数据库桥] 读取当前模板失败，按全量导入处理', error);
                 }
-                const { template, added, replaced, updated, removed } = mergeBridgeSheets(currentTemplate);
-                if (!added.length && !replaced.length && !updated.length && !removed.length) {
+                const { template, added, replaced, updated, removed, migrated } = mergeBridgeSheets(currentTemplate);
+                if (!added.length && !replaced.length && !updated.length && !removed.length && !migrated.length) {
                     ensuredForChat = true;
                     status = 'ready';
                     message = '桥接表就绪';
@@ -92,13 +101,16 @@ export function createDbBridge({ getSettings } = {}) {
                 }
                 // 数据库脚本的 merge 导入是整包替换：外来表必须随包携带才能留在聊天模板里，
                 // 而它又按「DDL 注释 = 表头（NFKC 归一后）」逐列校验整包——先把对不上的外来表 DDL 按表头重建。
+                if (!current()) return false;
                 const result = await api.importTemplateFromData(sanitizeForeignDdl(template), { scope: 'chat', dataMode: 'replace' });
+                if (!current()) return false;
                 if (result?.success) {
                     ensuredForChat = true;
                     status = 'ready';
                     const parts = [];
                     if (added.length) parts.push(`补 ${added.length} 张桥接表（${added.join('、')}）`);
                     if (replaced.length) parts.push(`替换 ${replaced.length} 张旧结构副本（${replaced.join('、')}）`);
+                    if (migrated.length) parts.push(`升级 ${migrated.length} 张旧结构表并保留原行（${migrated.join('、')}）`);
                     if (updated.length) parts.push(`刷新 ${updated.length} 张表的导出配置（${updated.join('、')}）`);
                     if (removed.length) parts.push(`移除退役桥接表（${removed.join('、')}）`);
                     message = `已向当前聊天${parts.join('，')}`;
@@ -107,7 +119,7 @@ export function createDbBridge({ getSettings } = {}) {
                 // 优雅降级：导入被数据库预检拒绝，但十张桥接表本身都已就位（无缺失、无过期结构）时
                 // 照样按就绪处理——数据镜像走 CRUD / 全量导入兜底，不依赖模板导入；模板级清理
                 // （退役表移除、导出配置刷新）留待数据库侧问题解除后的下次载入自动补做。
-                if (!added.length && !replaced.length) {
+                if (!added.length && !replaced.length && !migrated.length) {
                     ensuredForChat = true;
                     status = 'ready';
                     const reason = String(result?.message ?? '').slice(0, 120);
@@ -117,10 +129,10 @@ export function createDbBridge({ getSettings } = {}) {
                 markError(result?.message || '桥接表模板导入失败（scope=chat, dataMode=merge）');
                 return false;
             } catch (error) {
-                markError('桥接表模板导入抛异常', error);
+                if (current()) markError('桥接表模板导入抛异常', error);
                 return false;
             } finally {
-                ensuring = null;
+                if (ensureEpoch === epoch) ensuring = null;
             }
         })();
         return ensuring;
@@ -132,13 +144,14 @@ export function createDbBridge({ getSettings } = {}) {
         // 数据库脚本重载会换新的 API 实例（旧注册随之作废），按实例身份重挂。
         registeredOn = api;
         registeredCallback = (view, meta) => {
-            if (Date.now() < writingUntil) return;
+            const current = ownership();
+            if (!current() || activeWriters > 0) return;
             if (typeof externalHandler !== 'function') return;
             if (externalDebounce) clearTimeout(externalDebounce);
             externalDebounce = setTimeout(() => {
                 externalDebounce = null;
                 try {
-                    externalHandler(view && typeof view === 'object' ? view : null, meta ?? null);
+                    if (current()) externalHandler(view && typeof view === 'object' ? view : null, meta ?? null, { isCurrent: current });
                 } catch (error) {
                     console.warn('[斗破Agent·数据库桥] 外部表格变更处理失败', error);
                 }
@@ -151,13 +164,24 @@ export function createDbBridge({ getSettings } = {}) {
         return result === true || (typeof result === 'number' && result >= 0);
     }
 
+    /** 记忆表表头与当前定义不一致（旧版结构，如还带已了结/了结日列）时提示；镜像与收养均已自适应，只是可视化里多两列死列。
+     *  按表名找：旧聊天的镜像表 uid 是历史遗留（如 sheet_xiao_ji_yi），不能用当前 def.key 对号。 */
+    function memoryTableStructureStale(view) {
+        const sheets = view && typeof view === 'object' ? Object.values(view) : [];
+        return MEMORY_TABLE_DEFS.some(def => {
+            const sheet = sheets.find(item => item && typeof item === 'object' && item.name === def.name);
+            const headers = Array.isArray(sheet?.content?.[0]) ? sheet.content[0] : null;
+            return !!headers && headers.join('\u0001') !== def.headers.join('\u0001');
+        });
+    }
+
     /**
      * 镜像一份状态到表里。不抛异常：失败记进状态，调用方 fire-and-forget。
      * 返回 { ok, ops, fallback } 供测试与调试。
      */
-    async function mirror(kind, snapshot) {
-        if (!enabled() || !locateApi()) return { ok: false, skipped: true };
-        if (!(await ensure())) return { ok: false, skipped: true };
+    async function mirror(kind, snapshot, current = ownership()) {
+        if (!current() || !locateApi()) return { ok: false, skipped: true };
+        if (!(await ensure(current)) || !current()) return { ok: false, skipped: true };
         const api = locateApi();
         const desiredGroups = DESIRED_BY_KIND[kind](snapshot);
         let view;
@@ -173,45 +197,57 @@ export function createDbBridge({ getSettings } = {}) {
             markError(`桥接表缺失：${missingTables.join('、')}（模板导入可能未生效）`);
             return { ok: false, missingTables };
         }
-        if (!ops.length) return { ok: true, ops: 0, fallback: false };
+        if (!ops.length) {
+            status = 'ready';
+            message = memoryTableStructureStale(view)
+                ? '镜像已同步；记忆表还是旧版表头（含已了结列），可在数据库界面重建表'
+                : '镜像已同步（无变化）';
+            return { ok: true, ops: 0, fallback: false };
+        }
 
-        writingUntil = Date.now() + WRITER_FLAG_MS;
         let failures = 0;
         try {
             // 顺序必须保持：deleteRow（原索引从大到小）→ updateRow → insertRow。
             for (const op of ops.filter(op => op.kind === 'deleteRow')) {
+                if (!current()) return { ok: false, stale: true };
                 if (!opSucceeded(await api.deleteRow(op.table, op.rowIndex))) failures += 1;
+                if (!current()) return { ok: false, stale: true };
             }
             for (const op of ops.filter(op => op.kind === 'updateRow')) {
+                if (!current()) return { ok: false, stale: true };
                 if (!opSucceeded(await api.updateRow(op.table, op.rowIndex, op.data))) failures += 1;
+                if (!current()) return { ok: false, stale: true };
             }
             for (const op of ops.filter(op => op.kind === 'insertRow')) {
+                if (!current()) return { ok: false, stale: true };
                 if (!opSucceeded(await api.insertRow(op.table, op.data))) failures += 1;
+                if (!current()) return { ok: false, stale: true };
             }
         } catch (error) {
+            if (!current()) return { ok: false, stale: true };
             failures += 1;
             markError('表格 CRUD 写入抛异常', error);
-        } finally {
-            const release = () => { writingUntil = 0; };
-            setTimeout(release, 0);
         }
 
         if (!failures) {
             status = 'ready';
-            message = `镜像完成（${ops.length} 笔操作）`;
+            message = `镜像完成（${ops.length} 笔操作）${memoryTableStructureStale(view) ? '；记忆表还是旧版表头（含已了结列），可在数据库界面重建表' : ''}`;
             return { ok: true, ops: ops.length, fallback: false };
         }
         // CRUD 失败最常见于冷聊天没有楼层锚点：改走全量导入兜底（锚定最新 AI 楼层）。
         try {
+            if (!current()) return { ok: false, stale: true };
             const freshView = api.exportTableAsJson();
             const nextView = applyDesiredToView(freshView, desiredGroups);
             const imported = await api.importTableAsJson(JSON.stringify(nextView));
+            if (!current()) return { ok: false, stale: true };
             if (imported === true) {
                 status = 'ready';
                 message = 'CRUD 受阻，已用全量导入兜底完成镜像';
                 return { ok: true, ops: ops.length, fallback: true };
             }
         } catch (error) {
+            if (!current()) return { ok: false, stale: true };
             markError('全量导入兜底抛异常', error);
             return { ok: false, ops: ops.length, fallback: true };
         }
@@ -221,8 +257,9 @@ export function createDbBridge({ getSettings } = {}) {
 
     /** 从表里收养状态：表里非空才返回，空表返回 null（调用方保留本地状态）。 */
     async function adopt(kind) {
-        if (!enabled() || !locateApi()) return null;
-        if (!(await ensure())) return null;
+        const current = ownership();
+        if (!current() || !locateApi()) return null;
+        if (!(await ensure(current)) || !current()) return null;
         const api = locateApi();
         let view;
         try {
@@ -250,6 +287,10 @@ export function createDbBridge({ getSettings } = {}) {
 
     /** 换聊天/启动时重置：桥接表确认按新聊天重来。 */
     function onChatChanged() {
+        epoch += 1;
+        if (externalDebounce) clearTimeout(externalDebounce);
+        externalDebounce = null;
+        mirrorQueue = Promise.resolve();
         ensuredForChat = false;
         ensuring = null;
         message = '';
@@ -265,9 +306,23 @@ export function createDbBridge({ getSettings } = {}) {
         return { status, message, enabled: true, api: true, tables: ALL_TABLE_DEFS.length };
     }
 
+    function enqueueMirror(kind, snapshot) {
+        if (!enabled() || !locateApi()) return Promise.resolve({ ok: false, skipped: true });
+        const current = ownership();
+        const copy = JSON.parse(JSON.stringify(snapshot ?? {}));
+        const task = mirrorQueue.then(async () => {
+            if (!current()) return { ok: false, stale: true };
+            activeWriters += 1;
+            try { return await mirror(kind, copy, current); }
+            finally { activeWriters -= 1; }
+        });
+        mirrorQueue = task.catch(() => {});
+        return task;
+    }
+
     return Object.freeze({
-        mirrorSelf: snapshot => mirror('self', snapshot),
-        mirrorMemory: snapshot => mirror('memory', snapshot),
+        mirrorSelf: snapshot => enqueueMirror('self', snapshot),
+        mirrorMemory: snapshot => enqueueMirror('memory', snapshot),
         adoptSelf: () => adopt('self'),
         adoptMemory: () => adopt('memory'),
         onExternalChange,

@@ -42,25 +42,28 @@ export function createSandboxMode({ now = () => new Date().toISOString(), maxHis
             return { status: 'adopted', committed: false, ...structuredClone(record) };
         }
         if (prior.mode === mode) {
+            pending.delete(key);
             prior.inertia = level;
             prior.canonCharactersAutonomous = autonomous;
             return { status: 'unchanged', committed: false, ...structuredClone(prior) };
         }
         if (allowMidgameSwitch !== true) return { status: 'rejected', reason: 'midgame_switch_disabled', currentMode: prior.mode, requestedMode: mode };
-        const change = { from: prior.mode, to: mode, inertia: level, taskId: need(taskId, 'taskId'), stateVersion: need(stateVersion, 'stateVersion'), requestedAt: now() };
+        const change = { from: prior.mode, to: mode, inertia: level, canonCharactersAutonomous: autonomous, taskId: need(taskId, 'taskId'), stateVersion: need(stateVersion, 'stateVersion'), requestedAt: now() };
         pending.set(key, change);
         return { status: 'confirmation_required', committed: false, change: structuredClone(change), note: '切换不会回退已发生的事实、代价与关系，确认后才写入模式记录。' };
     }
 
-    function confirm({ sessionId, branchId, reason = '' } = {}) {
+    function confirm({ sessionId, branchId, taskId, stateVersion, reason = '' } = {}) {
         const key = keyOf({ sessionId, branchId });
         const change = pending.get(key);
         if (!change) return { status: 'rejected', reason: 'no_pending_switch' };
+        if (taskId !== change.taskId || stateVersion !== change.stateVersion) return { status: 'rejected', reason: 'stale_switch_context' };
         const record = records.get(key);
         change.at = now();
         change.reason = String(reason ?? '').trim().slice(0, 200);
         record.mode = change.to;
         record.inertia = change.inertia;
+        record.canonCharactersAutonomous = change.canonCharactersAutonomous;
         record.history.push(change);
         if (record.history.length > maxHistory) record.history.splice(0, record.history.length - maxHistory);
         pending.delete(key);
@@ -90,8 +93,34 @@ export function createSandboxMode({ now = () => new Date().toISOString(), maxHis
         return removed;
     }
 
+    /** Persist only this branch's confirmed state, never another chat or a pending authorization. */
+    function snapshot(scope) {
+        return { schemaVersion: 1, record: structuredClone(records.get(keyOf(scope)) ?? null) };
+    }
+
+    function restore(raw, scope) {
+        const key = keyOf(scope);
+        if (raw == null || (raw.schemaVersion === 1 && raw.record === null)) {
+            records.delete(key);
+            pending.delete(key);
+            return { status: 'empty' };
+        }
+        const record = raw?.record;
+        if (raw?.schemaVersion !== 1 || !record || !MODES.includes(record.mode)
+            || !INERTIAS.includes(record.inertia) || typeof record.canonCharactersAutonomous !== 'boolean'
+            || !Array.isArray(record.history) || record.history.some(change => !change || !MODES.includes(change.from)
+                || !MODES.includes(change.to) || typeof change.taskId !== 'string' || typeof change.stateVersion !== 'string')) {
+            return { status: 'rejected', reason: 'bad_snapshot' };
+        }
+        records.set(key, { mode: record.mode, inertia: record.inertia,
+            canonCharactersAutonomous: record.canonCharactersAutonomous,
+            history: structuredClone(record.history.slice(-maxHistory)) });
+        pending.delete(key);
+        return { status: 'restored', ...structuredClone(records.get(key)) };
+    }
+
     function clear() { records.clear(); pending.clear(); }
-    return Object.freeze({ read, sync, confirm, cancelSwitch, describe, invalidate, clear, modes: MODES, inertias: INERTIAS });
+    return Object.freeze({ read, sync, confirm, cancelSwitch, describe, invalidate, clear, snapshot, restore, modes: MODES, inertias: INERTIAS });
 }
 
 export { MODES as SANDBOX_MODES, INERTIAS as SANDBOX_INERTIAS, INERTIA_LABELS as SANDBOX_INERTIA_LABELS };

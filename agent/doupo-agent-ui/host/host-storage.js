@@ -1,5 +1,6 @@
 import { normalizeTheme } from './control-dashboard.js';
 import { normalizeInertia } from '../sandbox/sandbox-mode.js';
+import { normalizeApiPresets } from './api-presets.js';
 
 const SETTINGS_KEY = 'doupo_agent_ui';
 const CHAT_KEY = 'doupo_agent_state';
@@ -46,8 +47,16 @@ const DEFAULT_SETTINGS = Object.freeze({
         prompt: Object.freeze({}),
         // 玩家自定义判定：[{ id, name, prompt }]，页面"＋"按钮添加；只走提示词判定，脚本不做类别内复核。
         customCategories: Object.freeze([]),
+        // API设置方案绑定：填了方案 id 就整套走方案，下面的手动字段全部让位；空 = 手动配置（老行为）。
+        apiPreset: '',
+        // 行动结算·最终判定：生成前直判本轮行动结果并注入正文提示词（开关 + 独立方案绑定 + 提示词覆盖）。
+        resultEnabled: true, // 关掉就不判定也不注入；总开关 enableActionResolution 关了同样整路跳过
+        resultApiPreset: '', // API设置方案绑定：非空时最终判定整套走方案；空＝跟随酒馆主连接
+        resultPrompt: '', // 判定提示词覆盖，留空用内置默认
     }),
     llm: Object.freeze({
+        // API设置方案绑定：非空时正文/默认调用整套用方案（连接+参数+附加参数），手动字段让位。
+        apiPreset: '',
         provider: 'openai-compatible',
         baseUrl: '',
         apiKey: '',
@@ -60,6 +69,10 @@ const DEFAULT_SETTINGS = Object.freeze({
         presencePenalty: 0,
         frequencyPenalty: 0,
         useSillyTavernConnection: true,
+        // 空回重试：接口通但没内容时自动再问几次；0 = 不重试。间隔单位是秒，
+        // 站点有 RPM 限制就调大（总控页"模型调用体检"卡里改）。
+        emptyRetry: 1,
+        emptyRetryWait: 0.6,
         // 'tavern' = 直接用酒馆当前 API；'custom' = 走下面的独立接口。
         mode: 'tavern',
         // 全局统管：开着的期间，扩展发起的每一次模型调用都走这套全局自定义连接，
@@ -114,6 +127,8 @@ const DEFAULT_SETTINGS = Object.freeze({
         topP: 0,
         presencePenalty: 0,
         frequencyPenalty: 0,
+        // API设置方案绑定：非空时选条/卷外点选整套走方案。
+        apiPreset: '',
     }),
     injection: Object.freeze({
         enabled: true,
@@ -149,6 +164,7 @@ const DEFAULT_SETTINGS = Object.freeze({
         decideMaxFloors: 6, // 喂给决定模型的最近楼层数
         decideMaxEntries: 12, // 世界书相关条目上限
         decidePrompt: '', // 决定提示词，留空用内置默认
+        decideApiPreset: '', // API设置方案绑定：非空时世界决定整套走方案
     }),
     npc: Object.freeze({
         maxCandidates: 3,
@@ -172,6 +188,9 @@ const DEFAULT_SETTINGS = Object.freeze({
         ledgerPresencePenalty: 0, // 0 = 不指定
         ledgerFrequencyPenalty: 0, // 0 = 不指定
         ledgerPrompt: '', // 记录员提示词覆盖，留空用内置默认
+        ledgerApiPreset: '', // API设置方案绑定：非空时记录员整套走方案
+        extractApiPreset: '', // API设置方案绑定：非空时档案抄录整套走方案
+        expApiPreset: '', // API设置方案绑定：非空时经历精简整套走方案
         // 冷藏推进台：用户点扫描后才运行；只跟随正文世界日，不自动推进。
         coldMode: 'tavern',
         coldBaseUrl: '',
@@ -184,6 +203,7 @@ const DEFAULT_SETTINGS = Object.freeze({
         coldPresencePenalty: 0,
         coldFrequencyPenalty: 0,
         coldPrompt: '',
+        coldApiPreset: '', // API设置方案绑定：非空时冷藏推进员整套走方案
         // 经历精简提示词覆盖，留空用内置默认。
         expCondensePrompt: '',
     }),
@@ -191,22 +211,30 @@ const DEFAULT_SETTINGS = Object.freeze({
         // 纳戒注入：生成前把主角自身状态写进提示词。
         inject: true,
         injectBudget: 900, // 注入字数预算，0 = 内置默认
+        // 申报通道：inline=模型在正文末尾顺手输出变量申报（MVU 解析、仲裁器裁决，零额外请求）；
+        // independent=生成结束后扩展另发一次决定请求，正文保持干净。切换时同步启停世界书申报条目。
+        mvuChannel: 'inline',
         // LLM 决定：独立决定调用，读聊天记录+世界书+纳戒，输出严格 JSON 由脚本执行。
+        // 纳戒决定与记忆决定是两条独立调用，各用各的连接方案与喂料（模型设置页各一张卡）。
         decideEnabled: true,
         decideAuto: true, // 每轮生成后自动决定；关闭则只认正文里的 self 指令块
-        decideMerged: false, // 合并决定（纳戒+记忆共用一次调用）；开合并时召回归数据库条目，扩展自带记忆注入关闭
-        // 决定调用的连接与参数（decideMode/decideBaseUrl…）已与记忆合并成一套，统一存 memory.decide*，
-        // 模型设置页“纳戒与记忆 · 决定模型”一张卡管两个功能——这里只留开关与提示词。
+        decideApiPreset: '', // API设置方案绑定：非空时纳戒决定整套走方案；空＝跟随酒馆主连接
+        decideMaxFloors: 6, // 纳戒决定喂最近几楼聊天（与记忆决定各自一份）
+        decideMaxEntries: 12, // 纳戒决定的世界书相关条目上限
         decidePrompt: '', // 决定提示词，留空用内置默认
         guide: '', // 降级模式（关自动决定）随现状注入的指令指南，留空用内置默认
     }),
     memory: Object.freeze({
-        // 记忆注入：生成前把主角未了结的记忆写进提示词。
+        // 记忆注入：生成前把召回决定的挑选结果（或关键词兜底）写进提示词。
         inject: true,
         injectBudget: 800, // 注入字数预算，0 = 内置默认
         // LLM 决定：独立决定调用，读聊天记录+世界书+记忆总账，输出严格 JSON 由脚本执行。
         decideEnabled: true,
         decideAuto: true, // 每轮生成后自动决定；关闭则只认正文里的 memory 指令块
+        // LLM 召回：用户输入之后、生成之前，召回员按记忆目录+上下文挑要注入的旧记忆编号。
+        recallEnabled: true,
+        recallAuto: true, // 生成拦截器里自动召回；关闭则注入退回关键词匹配
+        recallPrompt: '', // 召回提示词，留空用内置默认
         consolidateAfter: 6, // 小记忆攒够这个数就自动总结成一条大记忆；0 = 关闭
         // 决定连接与参数：纳戒决定、记忆决定、合并决定、记忆总结共用这一套（模型设置页一张卡）。
         decideMode: 'tavern', // 'tavern' = 跟随酒馆当前设置；'custom' = 用下面这套自定义连接
@@ -219,10 +247,13 @@ const DEFAULT_SETTINGS = Object.freeze({
         decideTopP: 0, // 0 = 不指定
         decidePresencePenalty: 0, // 0 = 不指定
         decideFrequencyPenalty: 0, // 0 = 不指定
-        decideMaxFloors: 6, // 喂给决定模型的最近楼层数
+        decideMaxFloors: 6, // 喂给决定/召回模型的最近楼层数
         decideMaxEntries: 12, // 世界书相关条目上限
         decidePrompt: '', // 决定提示词，留空用内置默认
         guide: '', // 降级模式（关自动决定）随现状注入的指令指南，留空用内置默认
+        decideApiPreset: '', // API设置方案绑定：非空时记忆决定整套走方案
+        recallApiPreset: '', // API设置方案绑定：非空时记忆召回整套走方案
+        consolidateApiPreset: '', // API设置方案绑定：非空时记忆总结整套走方案
     }),
     impact: Object.freeze({
         trackResources: true,
@@ -266,6 +297,8 @@ const DEFAULT_SETTINGS = Object.freeze({
         decideFrequencyPenalty: 0, // 0 = 不显式指定
         prompt: '', // 记录员提示词，留空用内置默认
         injectPrompt: '', // 场记提示词，留空用内置默认
+        decideApiPreset: '', // API设置方案绑定：非空时记录员整套走方案
+        injectApiPreset: '', // API设置方案绑定：非空时场记整套走方案（shared 时随记录员绑定）
     }),
     sandbox: Object.freeze({
         inertia: 'medium',
@@ -285,7 +318,13 @@ const DEFAULT_SETTINGS = Object.freeze({
         x: null,
         y: null,
     }),
-    schemaVersion: 8,
+    // API设置：把接口配置（地址/密钥/模型/采样参数/附加参数）存成命名方案，
+    // 模型设置页各功能直接选。方案结构见 host/api-presets.js 的 normalizeApiPreset；
+    // 密钥只存扩展设置（本地 settings.json），与 llm.apiKey 同口径，不进聊天消息。
+    api: Object.freeze({
+        presets: Object.freeze([]),
+    }),
+    schemaVersion: 11,
 });
 
 function clone(value) {
@@ -293,15 +332,70 @@ function clone(value) {
 }
 
 // 纳戒与记忆合并共用的决定连接/参数键：统一存 memory.decide*，self 侧同名键已废弃。
+// （schemaVersion 11 起纳戒决定重新独立成路，见 migrateSelfDecideSplit；这里只负责清历史死键。）
 const SELF_DECIDE_SHARED_KEYS = Object.freeze([
     'decideMode', 'decideBaseUrl', 'decideApiKey', 'decideProvider', 'decideModel',
     'decideTemperature', 'decideMaxTokens', 'decideTopP', 'decidePresencePenalty', 'decideFrequencyPenalty',
-    'decideMaxFloors', 'decideMaxEntries',
 ]);
+// 合并决定（unifiedActive）已退役：纳戒走 MVU 变量通道，记忆走独立决定。旧开关键清掉。
+const SELF_RETIRED_KEYS = Object.freeze(['decideMerged']);
+
+/**
+ * 旧版手填连接字段 → API设置方案 的一次性迁移（schemaVersion 10 起，模型设置页不再有手填字段，
+ * 语义变为“每个功能选一个方案，不绑＝跟随酒馆主连接”）。
+ * 每张连接卡 mode=custom 且填了地址的，把整套字段搬成方案并绑定；字段完全相同的卡共用一个方案（按签名去重）。
+ * 幂等性靠“搬完把该组 mode 落回 tavern”保证：重跑时没有 mode=custom 的组，无事可做；
+ * 因此迁移一旦保存过，用户后来删掉的方案不会被重新造出来；已绑了方案的组也跳过（以绑定为准）。
+ */
+const LEGACY_API_GROUPS = Object.freeze([
+    { binding: 'llm.apiPreset', name: '全局连接（迁移）', group: 'llm', prefix: '', modeKey: 'mode' },
+    { binding: 'setting.apiPreset', name: '原著选条（迁移）', group: 'setting', prefix: '', modeKey: 'mode' },
+    { binding: 'settle.apiPreset', name: '行动结算判定（迁移）', group: 'settle', prefix: '', modeKey: 'mode' },
+    { binding: 'world.decideApiPreset', name: '世界决定（迁移）', group: 'world', prefix: 'decide', modeKey: 'decideMode' },
+    { binding: 'npc.ledgerApiPreset', name: '人物簿记录员（迁移）', group: 'npc', prefix: 'ledger', modeKey: 'ledgerMode' },
+    { binding: 'npc.coldApiPreset', name: '冷藏推进员（迁移）', group: 'npc', prefix: 'cold', modeKey: 'coldMode' },
+    { binding: 'memory.decideApiPreset', name: '纳戒与记忆决定（迁移）', group: 'memory', prefix: 'decide', modeKey: 'decideMode' },
+    { binding: 'impact.decideApiPreset', name: '影响记录员（迁移）', group: 'impact', prefix: 'decide', modeKey: 'decideMode' },
+    { binding: 'impact.injectApiPreset', name: '影响场记（迁移）', group: 'impact', prefix: 'inject', modeKey: 'injectMode', onlyWhenSplit: true },
+]);
+const LEGACY_PRESET_FIELDS = Object.freeze(['baseUrl', 'apiKey', 'provider', 'model', 'temperature', 'maxTokens', 'topP', 'presencePenalty', 'frequencyPenalty']);
+
+function migrateLegacyApiPresets(merged) {
+    const api = merged.api && typeof merged.api === 'object' ? merged.api : {};
+    const presets = Array.isArray(api.presets) ? api.presets.filter(item => item && typeof item === 'object') : [];
+    const bySignature = new Map();
+    for (const preset of presets) {
+        bySignature.set(LEGACY_PRESET_FIELDS.map(field => String(preset[field] ?? '')).join('|'), preset.id);
+    }
+    for (const spec of LEGACY_API_GROUPS) {
+        const cfg = merged[spec.group];
+        if (!cfg || typeof cfg !== 'object') continue;
+        if (spec.onlyWhenSplit && cfg.modelMode !== 'split') continue;
+        if (cfg[spec.modeKey] !== 'custom') continue;
+        const field = name => (spec.prefix ? cfg[`${spec.prefix}${name[0].toUpperCase()}${name.slice(1)}`] : cfg[name]);
+        const baseUrl = String(field('baseUrl') ?? '').trim();
+        if (!baseUrl) continue;
+        const [bindingGroup, bindingKey] = spec.binding.split('.');
+        if (merged[bindingGroup]?.[bindingKey]) continue; // 已绑了方案：以用户绑定为准，不动
+        const raw = { name: spec.name };
+        for (const fieldName of LEGACY_PRESET_FIELDS) raw[fieldName] = field(fieldName);
+        const signature = LEGACY_PRESET_FIELDS.map(name => String(raw[name] ?? '')).join('|');
+        let presetId = bySignature.get(signature);
+        if (!presetId) {
+            presetId = `pmig${Date.now().toString(36)}${presets.length.toString(36)}${Math.floor(Math.random() * 36).toString(36)}`;
+            presets.push({ id: presetId, ...raw });
+            bySignature.set(signature, presetId);
+        }
+        merged[bindingGroup][bindingKey] = presetId;
+        // 手填字段已经搬进方案：模式落回 tavern，旧值不再被任何兜底逻辑读到（字段值保留，方案里才是正本）。
+        cfg[spec.modeKey] = 'tavern';
+    }
+    merged.api.presets = presets;
+}
 
 function mergeSettings(current = {}) {
     const source = current && typeof current === 'object' ? current : {};
-    const nested = ['llm', 'budget', 'ui', 'facts', 'setting', 'injection', 'prompt', 'action', 'world', 'npc', 'impact', 'sandbox', 'status', 'settle', 'self', 'memory'];
+    const nested = ['llm', 'budget', 'ui', 'facts', 'setting', 'injection', 'prompt', 'action', 'world', 'npc', 'impact', 'sandbox', 'status', 'settle', 'self', 'memory', 'api'];
     const merged = { ...clone(DEFAULT_SETTINGS), ...source };
     for (const key of nested) {
         const incoming = source[key] && typeof source[key] === 'object' && !Array.isArray(source[key]) ? source[key] : {};
@@ -309,12 +403,9 @@ function mergeSettings(current = {}) {
     }
     merged.ui.theme = normalizeTheme(merged.ui.theme);
     merged.sandbox.inertia = normalizeInertia(merged.sandbox.inertia);
-    // 旧版只有 useSillyTavernConnection 开关：没写过 mode 的老配置按老开关迁移，避免默默跳回酒馆连接。
-    if (source.llm && typeof source.llm === 'object' && source.llm.mode === undefined && source.llm.useSillyTavernConnection === false) {
-        merged.llm.mode = 'custom';
-    }
     // 决定连接并成一套后，老配置纳戒侧单独填过、记忆侧还是默认值的，把纳戒那份搬过来当共用，
     // 免得升级后纳戒的连接悄悄丢掉；两侧都填过以记忆侧为准（集中页那张卡一直是它）。
+    // 必须跑在方案迁移之前：搬完 memory 侧才有 mode=custom + 地址，下面的方案迁移才接得住。
     // 搬完（或没得搬）都把纳戒侧的死键清掉：旧值不再躺在存档里，也不会下次加载又被搬一遍。
     const oldSelf = source.self && typeof source.self === 'object' ? source.self : {};
     for (const key of SELF_DECIDE_SHARED_KEYS) {
@@ -323,6 +414,24 @@ function mergeSettings(current = {}) {
             merged.memory[key] = oldSelf[key];
         }
         delete merged.self[key];
+    }
+    for (const key of SELF_RETIRED_KEYS) delete merged.self[key];
+    // 旧版只有 useSillyTavernConnection 开关：没写过 mode 的老配置按老开关迁移，避免默默跳回酒馆连接。
+    if (source.llm && typeof source.llm === 'object' && source.llm.mode === undefined && source.llm.useSillyTavernConnection === false) {
+        merged.llm.mode = 'custom';
+    }
+    // 旧手填连接搬成方案（只跑一次），再整体清洗：垃圾条目丢掉、id 去重、超上限截断。
+    if (!Array.isArray(merged.api.presets)) merged.api.presets = [];
+    migrateLegacyApiPresets(merged);
+    merged.api.presets = normalizeApiPresets(merged.api.presets);
+    // schemaVersion 11：纳戒决定从“与记忆共用一套”拆回独立一路（合并决定退役后就是两条独立调用）。
+    // 拆分前共用卡上的绑定与喂料复制给纳戒做起点，否则升级后纳戒决定会悄悄掉回跟随酒馆；
+    // 版本门保证只对老存档跑一次，之后两侧各改各的互不影响。
+    // 喂料以老存档 self 侧已填过的值为准（古档纳戒侧本来就有自己的数值），没有才从记忆侧带过来。
+    if (Number(source.schemaVersion ?? 0) < 11) {
+        merged.self.decideApiPreset = merged.self.decideApiPreset || merged.memory.decideApiPreset || '';
+        if (oldSelf.decideMaxFloors === undefined) merged.self.decideMaxFloors = merged.memory.decideMaxFloors;
+        if (oldSelf.decideMaxEntries === undefined) merged.self.decideMaxEntries = merged.memory.decideMaxEntries;
     }
     merged.schemaVersion = DEFAULT_SETTINGS.schemaVersion;
     return merged;
@@ -350,7 +459,7 @@ export function createHostStorage({ getContext } = {}) {
         if (!all || typeof all !== 'object') return { status: 'unavailable', value: clone(DEFAULT_SETTINGS) };
         const current = all[SETTINGS_KEY] && typeof all[SETTINGS_KEY] === 'object' ? all[SETTINGS_KEY] : {};
         const incoming = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : {};
-        const nested = ['llm', 'budget', 'ui', 'facts', 'setting', 'injection', 'prompt', 'action', 'world', 'npc', 'impact', 'sandbox', 'status', 'settle', 'self', 'memory'];
+        const nested = ['llm', 'budget', 'ui', 'facts', 'setting', 'injection', 'prompt', 'action', 'world', 'npc', 'impact', 'sandbox', 'status', 'settle', 'self', 'memory', 'api'];
         const mergedPatch = { ...current, ...incoming };
         for (const key of nested) {
             if (incoming[key] && typeof incoming[key] === 'object' && !Array.isArray(incoming[key])) {

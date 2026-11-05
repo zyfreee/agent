@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
+import test from 'node:test';
 import { createFactsIndex } from '../narrative/facts-index.js';
-import { buildSelectPrompt, createFactsSelector, parseLookupSelection, parseSelection, SELECT_SCHEMA } from '../narrative/facts-select.js';
+import { buildSelectPrompt, createFactsSelector, LOOKUP_RULES, parseLookupSelection, parseSelection, SELECT_RULES, SELECT_SCHEMA } from '../narrative/facts-select.js';
+
+// 选条口径：提到的就出（上下文+输入）、本卷故事线默认带、后续卷仍不选。
+assert.ok(SELECT_RULES.includes('玩家输入或最近对话里点到'), '选条规则要覆盖最近对话里提到的条目');
+assert.ok(SELECT_RULES.includes('当前卷的故事线是默认背景'), '锁卷就是为了让本卷故事线出场');
+assert.ok(!SELECT_RULES.includes('只选本轮回复必须用到的'), '旧的"必须用到"硬门槛要撤掉');
+assert.ok(SELECT_RULES.includes('后续卷的故事线'), '防剧透仍要挡后续卷故事线');
+assert.ok(LOOKUP_RULES.includes('提到了就要调'), '卷外点选同样按"提到就出"口径');
 
 const book = {
     entries: {
@@ -13,6 +21,13 @@ const book = {
 const index = createFactsIndex({ volumeIndex: { 1041: [2], 217: [1, 2], 42: [2], 88: [9] } });
 index.load(book);
 
+// OPT-062: a valid library UID omitted from the displayed catalog is unauthorized.
+const hiddenSelector = createFactsSelector({ index, maxRows: 1, complete: async () => JSON.stringify({ need: [{ uid: 1041 }, { uid: 217 }], no_match: false }) });
+const hiddenPicked = await hiddenSelector.select({ input: '目录预算夹具', volume: 2 });
+const displayed = new Set(index.catalogFor(2, { maxRows: 1 }).lines.map(line => Number(line.split('|')[0])));
+assert.ok(hiddenPicked.ids.every(uid => displayed.has(uid)));
+assert.ok(hiddenPicked.invalid.some(row => row.reason === 'not_in_catalog'));
+
 const prompt = buildSelectPrompt({
     input: '药老，这青莲地心火我能炼化吗',
     recentTexts: ['那团火到底是什么来路？', '你连它叫什么都不知道'],
@@ -20,7 +35,7 @@ const prompt = buildSelectPrompt({
     catalog: index.catalogFor(2).lines,
     maxPicks: 6,
 });
-assert.match(prompt.system, /最多 6 条/);
+assert.match(prompt.system, /取前 6 条/);
 assert.match(prompt.user, /【当前进度】卷02/);
 assert.match(prompt.user, /【最近对话】/);
 assert.match(prompt.user, /1041\|物品\|青莲地心火/);
@@ -109,6 +124,46 @@ const fallback = await selector.select({ input: '青莲地心火', volume: null 
 assert.equal(fallback.status, 'selected');
 assert.equal(fallback.meta.truncated, false);
 
+// 单次检索上限动态读取：设置页数字每次现读，规则文本的 MAX_PICKS 同步替换，超出的截断。
+const dynamicCalls = [];
+const dynamic = createFactsSelector({
+    index,
+    getMaxPicks: () => 2,
+    complete: async ({ system }) => {
+        dynamicCalls.push(system);
+        return '{"need":[{"uid":1041,"why":"异火"},{"uid":217,"why":"药老"},{"uid":42,"why":"故事线"}],"no_match":false}';
+    },
+});
+const dynamicPicked = await dynamic.select({ input: '青莲地心火和药老', volume: 2 });
+assert.equal(dynamicPicked.status, 'selected');
+assert.deepEqual(dynamicPicked.ids, [1041, 217], '模型给了 3 条，按动态上限 2 截断');
+assert.match(dynamicCalls.at(-1), /取前 2 条/, '规则文本的 MAX_PICKS 换成动态上限');
+assert.equal(dynamicPicked.meta.maxPicks, 2, 'meta 带出本次生效的上限');
+// 单次调用自带覆盖：优先生效，这次只留 1 条
+const overridePicked = await dynamic.select({ input: '青莲地心火', volume: 2, maxPicks: 1 });
+assert.deepEqual(overridePicked.ids, [1041], '单次覆盖上限优先生效');
+assert.equal(overridePicked.meta.maxPicks, 1);
+// 动态读取非法值（0/负数/非数字）回落默认 8
+const broken = createFactsSelector({
+    index,
+    getMaxPicks: () => 0,
+    complete: async () => '{"need":[{"uid":1041,"why":"异火"}],"no_match":false}',
+});
+const brokenPicked = await broken.select({ input: '青莲地心火', volume: 2 });
+assert.equal(brokenPicked.meta.maxPicks, 8, '非法上限回落默认 8');
+// 不设天花板：填 40 就是 40，不再钳到 24
+const free = createFactsSelector({
+    index,
+    getMaxPicks: () => 40,
+    complete: async ({ system }) => {
+        dynamicCalls.push(system);
+        return '{"need":[{"uid":1041,"why":"异火"}],"no_match":false}';
+    },
+});
+const freePicked = await free.select({ input: '青莲地心火', volume: 2 });
+assert.equal(freePicked.meta.maxPicks, 40, '上限不设天花板，按设置直通');
+assert.match(dynamicCalls.at(-1), /取前 40 条/, '规则文本同步换成 40');
+
 // 选条规则可改：设置页写入后每轮现读，MAX_PICKS 占位符要换成当前上限。
 const ruleCalls = [];
 const customRules = createFactsSelector({
@@ -175,5 +230,25 @@ const strict = createFactsSelector({
 const strictRun = await strict.select({ input: '药老，这火怎么炼', volume: 2 });
 assert.deepEqual(strictRun.ids, [], '模型没选就不注入');
 assert.equal(strictCalls[0].user.includes('直接收录'), false, '提示词里不再有强制层说明');
+
+test('malformed first-pass replies return unparsed without a lookup call', async () => {
+    for (const reply of ['模型拒绝了这次请求', '{"need":[', '', undefined]) {
+        let count = 0;
+        const malformed = createFactsSelector({ index, complete: async () => { count++; return reply; } });
+        const result = await malformed.select({ input: '青莲地心火', volume: 2 });
+        assert.equal(result.status, 'unparsed');
+        assert.deepEqual(result.ids, []);
+        assert.deepEqual(result.entries, []);
+        assert.deepEqual(result.invalid, []);
+        assert.equal(result.noMatch, false);
+        assert.equal(result.lookup, null);
+        assert.equal(result.inferredVolume, null);
+        assert.equal(result.secondCall, false);
+        assert.equal(count, 1);
+        assert.deepEqual(parseSelection(reply, { index }), {
+            status: 'unparsed', ids: [], entries: [], invalid: [], noMatch: false, lookup: [], volume: null,
+        });
+    }
+});
 
 console.log('facts select tests passed');

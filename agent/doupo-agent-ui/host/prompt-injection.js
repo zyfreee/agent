@@ -82,7 +82,8 @@ export function createPromptInjection({ getContext, key = DEFAULT_KEY, maxChars 
         if (!value) return { status: 'unsupported' };
         const body = readText(injection.text);
         if (!body) {
-            clear();
+            const cleared = clear();
+            if (cleared.status !== 'cleared') return cleared;
             last = { status: 'empty', at: stamp(), cleared: true };
             return { status: 'empty', key };
         }

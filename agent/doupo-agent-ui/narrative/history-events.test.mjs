@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createHistoryEventAdapter } from '../narrative/history-events.js';
+import { createHistoryEventAdapter, chatFloorShape, findDeletedFloor } from '../narrative/history-events.js';
 import { createTurnPipeline } from '../core/turn-pipeline.js';
 import { createStateStore } from '../core/state-store.js';
 import { createCommitRecovery } from '../core/commit-recovery.js';
@@ -82,5 +82,22 @@ eventSource.emit('edited', { messageId: 14 });
 assert.equal(unresolved.at(-1).event, 'history_changed_after_commit');
 committedHistoryAdapter.stop();
 assert.equal(committedInvalidation.requires_history_recovery, true);
+
+// —— 删楼定位：酒馆载荷是删后长度，被删楼号靠删前/删后指纹差分找回 ——
+{
+    const shape = m => chatFloorShape(m);
+    const A = { is_user: true, mes: '一', swipe_id: 0, send_date: '1' };
+    const B = { is_user: false, mes: '二二', swipe_id: 0, send_date: '2' };
+    const C = { is_user: false, mes: '三三三', swipe_id: 1, send_date: '3' };
+    assert.equal(shape(A), 'u|0|1|1');
+    assert.equal(shape(null), 'x', '异常消息给固定形状，不炸');
+    const full = [A, B, C].map(shape);
+    assert.equal(findDeletedFloor(full, [A, B].map(shape)), 2, '删末楼');
+    assert.equal(findDeletedFloor(full, [A, C].map(shape)), 1, '删中间楼');
+    assert.equal(findDeletedFloor(full, [B, C].map(shape)), 0, '删首楼');
+    assert.equal(findDeletedFloor(full, full), null, '长度没变不定楼');
+    assert.equal(findDeletedFloor(full, []), null, '一次删多楼不硬猜');
+    assert.equal(findDeletedFloor(null, [B, C].map(shape)), null, '快照缺失不硬猜');
+}
 
 console.log('history event adapter tests passed');

@@ -148,6 +148,7 @@ export function createTurnPipeline({ stages = {}, maxOutputBytes = MAX_OUTPUT_BY
                     return { status: task.status, stage: id, task: clone(task.public) };
                 }
                 if (outcome.kind === 'timeout') {
+                    controller.abort();
                     task.status = 'failed'; task.public.status = 'failed'; task.public.failedStage = id;
                     const totalBudget = timeoutMs === remainingMs;
                     const error = totalBudget ? 'total_budget_exhausted' : 'stage_timeout';

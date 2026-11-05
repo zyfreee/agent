@@ -33,4 +33,73 @@ assert.match(user, /【目标人物】/);
 assert.match(user, /第 3 天 → 第 4 天/);
 assert.match(user, /萧战收到族内急报/);
 assert.match(NPC_COLD_PROMPT, /单次最多 ±10/);
+// OPT-052: restoring pending IDs cannot overwrite unrelated drafts.
+{
+    const cold = createNpcColdRuntime();
+    const records = [{ name: 'A', version: 2 }, { name: 'B', version: 3 }];
+    cold.select(['A', 'B']);
+    cold.candidates({ day: 1, records });
+    for (const candidate of cold.candidates({ day: 2, records })) cold.rememberPreview(candidate);
+    const oldIds = cold.status().previews.map(item => item.id);
+    const next = createNpcColdRuntime();
+    next.restore(cold.snapshot());
+    for (const candidate of next.candidates({ day: 3, records })) next.rememberPreview(candidate);
+    assert.equal(new Set(next.status().previews.map(item => item.id)).size, 4);
+    assert.ok(oldIds.every(id => next.status().previews.some(item => item.id === id)));
+    next.restore(cold.snapshot()); // switching back to this chat is also collision-free
+    assert.ok(!oldIds.includes(next.candidates({ day: 4, records })[0].id));
+}
+// OPT-053: only the applied ID is confirmed; siblings become stale, never confirmed.
+for (const chosenDay of [2, 3]) {
+    const cold = createNpcColdRuntime();
+    const records = [{ name: 'A', version: 4 }];
+    cold.select('A'); cold.candidates({ day: 1, records });
+    for (const day of [2, 3]) cold.rememberPreview(cold.candidates({ day, records })[0]);
+    const drafts = cold.status().previews;
+    const chosen = drafts.find(item => item.toDay === chosenDay);
+    const other = drafts.find(item => item.id !== chosen.id);
+    assert.equal(cold.validatePreview(chosen.id, { recordVersion: 4 }).status, 'ready');
+    assert.equal(cold.validatePreview(chosen.id, { recordVersion: 5 }).reason, 'record_version_mismatch');
+    assert.equal(cold.mark('A', { day: 9 }).reason, 'ambiguous_preview');
+    assert.equal(cold.get('A').lastDay, 1);
+    assert.equal(cold.mark('B', { previewId: chosen.id }).status, 'rejected');
+    assert.equal(cold.mark('A', { previewId: chosen.id, day: 999 }).status, 'marked');
+    assert.equal(cold.get('A').lastDay, chosenDay, 'cursor derives from applied draft, not caller day');
+    assert.equal(cold.status().previews.find(item => item.id === chosen.id).status, 'confirmed');
+    assert.equal(cold.status().previews.find(item => item.id === other.id).status, 'stale');
+    assert.equal(cold.validatePreview(other.id).status, 'stale');
+    assert.equal(cold.mark('A', { previewId: chosen.id }).status, 'rejected');
+}
+{
+    const cold = createNpcColdRuntime();
+    cold.restore({ sync: { A: { lastDay: 3 } }, previews: [{ id: 'cold-9', name: 'A', fromDay: 1, toDay: 2, status: 'pending' }] });
+    assert.equal(cold.validatePreview('cold-9').reason, 'cursor_mismatch');
+    cold.restore({ sync: { A: { lastDay: 1 } }, previews: [{ id: 'cold-9', name: 'A', fromDay: 1, toDay: 2, status: 'pending' }] });
+    assert.equal(cold.validatePreview('cold-9').status, 'ready', 'legacy draft without record version');
+    cold.discard('cold-9');
+    assert.equal(cold.mark('A', { previewId: 'cold-9' }).status, 'rejected');
+    assert.equal(cold.get('A').lastDay, 1);
+}
+// OPT-053 closure: confirming one name never touches other names' drafts.
+{
+    const cold = createNpcColdRuntime();
+    const records = [{ name: 'A', version: 2 }, { name: 'B', version: 2 }];
+    cold.select(['A', 'B']); cold.candidates({ day: 1, records });
+    for (const day of [2, 3]) for (const candidate of cold.candidates({ day, records })) cold.rememberPreview(candidate);
+    const aDrafts = cold.status().previews.filter(item => item.name === 'A');
+    const bDrafts = cold.status().previews.filter(item => item.name === 'B');
+    assert.equal(aDrafts.length, 2); assert.equal(bDrafts.length, 2);
+    const chosen = aDrafts[0];
+    assert.equal(cold.mark('A', { previewId: chosen.id }).status, 'marked');
+    const after = cold.status().previews;
+    assert.equal(after.find(item => item.id === chosen.id).status, 'confirmed');
+    assert.equal(after.find(item => item.id === aDrafts[1].id).status, 'stale', 'same-name sibling becomes stale');
+    for (const draft of bDrafts) {
+        assert.equal(after.find(item => item.id === draft.id).status, 'pending', 'other-name draft stays pending');
+        assert.equal(cold.validatePreview(draft.id, { recordVersion: 2 }).status, 'ready', 'other-name draft still confirmable');
+    }
+    assert.equal(cold.mark('B', { previewId: bDrafts[1].id }).status, 'marked', 'other name confirms its own draft afterwards');
+    assert.equal(cold.status().previews.find(item => item.id === bDrafts[0].id).status, 'stale');
+    assert.equal(cold.status().previews.find(item => item.id === bDrafts[1].id).status, 'confirmed');
+}
 console.log('npc-cold-runtime: ok');

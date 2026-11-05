@@ -1,29 +1,38 @@
-const DEFAULT_MAX_PICKS = 6;
+export const DEFAULT_MAX_PICKS = 8;
 const DEFAULT_MAX_ROWS = 120;
 const MAX_LOOKUP = 5;
 
+/** 单次检索上限的取值：单次调用自带 > 动态读取（设置页数字） > 创建时默认；正数就用，不设天花板。 */
+function resolveMaxPicks({ override, getMaxPicks, fallback }) {
+    for (const candidate of [override, typeof getMaxPicks === 'function' ? getMaxPicks() : null, fallback]) {
+        const value = Number(candidate);
+        if (Number.isInteger(value) && value > 0) return value;
+    }
+    return DEFAULT_MAX_PICKS;
+}
+
 export const SELECT_RULES = [
-    '你是《斗破苍穹》同人剧情的事实检索员，只做一件事：判断本轮回复需要哪些原著条目。',
+    '你是《斗破苍穹》同人剧情的事实检索员，只做一件事：判断本轮要用哪些原著条目，把相关的原著背景带进本轮。',
     '',
     '规则：',
-    '1. 玩家输入里点到的人名、地名、物品、功法、势力、事件（本名、别名、常用简称都算），只要条目目录里有对应行，必须收进 need，一条都不许漏；“用不用得上”不归你判断，有就必须调。若因此超过 MAX_PICKS 条，按玩家提到的先后顺序取前 MAX_PICKS 条。',
-    '2. 除第 1 条外，只选本轮回复必须用到的条目，最多 MAX_PICKS 条。',
-    '3. 只是“相关”“大概有用”“可能以后会用”的，一律不选。',
-    '4. 会剧透当前进度的条目不要选；玩家这阶段还不知道的事，不算必须用到。',
-    '5. 只能从目录里挑，need 里只写每行开头的那串数字编号（目录行长得像 “534|人物|萧炎”，只写 534），不许自己编。',
-    '6. 目录里没有合适的条目就返回 {"need":[],"no_match":true}，不要拿相近的凑数。',
-    '7. 目录里没有、但你判断本轮必须用到的原著内容（人物、物品、能力、地点等），把它的名字或原文里出现过的关键词写进 "lookup"（最多 5 个，不要编造）；脚本会去全库搜出来再问你一次，卷外条目不会直接注入。',
+    '1. 玩家输入或最近对话里点到的人名、地名、物品、功法、势力、事件（本名、别名、常用简称都算），只要条目目录里有对应行，必须收进 need，一条都不许漏；"用不用得上"不归你判断，提到了就要调。条目多时按与本轮的相关度取前 MAX_PICKS 条。',
+    '2. 当前卷的故事线是默认背景：本卷目录里的故事线，只要与本轮上下文有交集（同人物、同地点、同事件、同物品），就要选上一到数条——玩家在设置里锁定当前卷，就是为了让本卷剧情背景每轮都在场，不要因为"不是必须"而漏掉。',
+    '3. 与本轮毫无交集的条目才不选；"可能有点用"但确实沾边的可以选。',
+    '4. 后续卷的故事线（承接的是还没演到的剧情转折）不要选；玩家这阶段还不知道的后续不注入。',
+    '5. 只能从目录里挑，need 里只写每行开头的那串数字编号（目录行长得像 "534|人物|萧炎"，只写 534），不许自己编。',
+    '6. 目录里实在没有合适条目才返回 {"need":[],"no_match":true}，不要拿相近的凑数。',
+    '7. 目录里没有、但本轮提到了的原著内容（人物、物品、能力、地点等），把它的名字或原文里出现过的关键词写进 "lookup"（最多 5 个，不要编造）；脚本会去全库搜出来再问你一次。',
     '8. 如果能判断剧情进行到第几卷，额外输出 "volume": 整数（1-21）；判断不了就省略，不要猜。',
     '9. 只输出 JSON，不要解释，不要 Markdown 代码块。',
 ].join('\n');
 
 export const LOOKUP_RULES = [
-    '你是《斗破苍穹》同人剧情的事实检索员。脚本按你给的名字，从目录外搜到了一些原著条目，你现在只做一件事：挑出本轮回复必须用到的。',
+    '你是《斗破苍穹》同人剧情的事实检索员。脚本按你给的名字，从目录外搜到了一些原著条目，你现在只做一件事：挑出本轮要用的。',
     '',
     '规则：',
-    '1. 玩家输入里点到的候选条目，即使标注「后续卷」，也必须选；有就必须调。',
-    '2. 除第 1 条外，只选真正必须用到的，最多 MAX_PICKS 条；只是“相关”“可能有用”的一律不选。',
-    '3. need 里只写候选每行开头的数字编号（行长得像 “42|故事线|…”，只写 42），不许自己编，也不许选候选以外的条目。',
+    '1. 玩家输入或最近对话里点到的候选条目，即使标注「后续卷」，也必须选；提到了就要调。',
+    '2. 除第 1 条外，与本轮上下文相关（同人物、同地点、同事件）的就可以选，最多 MAX_PICKS 条；毫无交集的才不选。',
+    '3. need 里只写候选每行开头的数字编号（行长得像 "42|故事线|…"，只写 42），不许自己编，也不许选候选以外的条目。',
     '4. 一条都不需要就返回 {"need":[],"no_match":true}。',
     '5. 只输出 JSON，不要解释，不要 Markdown 代码块。',
 ].join('\n');
@@ -113,9 +122,9 @@ function toUid(value) {
     return match ? Number(match[1]) : NaN;
 }
 
-export function parseSelection(reply, { index, volume = null, maxPicks = DEFAULT_MAX_PICKS } = {}) {
+export function parseSelection(reply, { index, volume = null, maxPicks = DEFAULT_MAX_PICKS, allowedUids } = {}) {
     const parsed = extractJson(reply);
-    if (!parsed || typeof parsed !== 'object') return { status: 'unparsed', ids: [], entries: [], invalid: [] };
+    if (!parsed || typeof parsed !== 'object') return { status: 'unparsed', ids: [], entries: [], invalid: [], noMatch: false, lookup: [], volume: null };
 
     const rawList = Array.isArray(parsed.need) ? parsed.need : Array.isArray(parsed.ids) ? parsed.ids : [];
     const invalid = [];
@@ -128,6 +137,7 @@ export function parseSelection(reply, { index, volume = null, maxPicks = DEFAULT
         if (!Number.isInteger(uid)) { invalid.push({ uid: null, reason: 'bad_uid' }); continue; }
         if (ids.length >= maxPicks) { invalid.push({ uid, reason: 'over_pick' }); continue; }
         if (seen.has(uid)) { invalid.push({ uid, reason: 'duplicate' }); continue; }
+        if (allowedUids && !allowedUids.has(uid)) { invalid.push({ uid, reason: 'not_in_catalog' }); continue; }
         const entry = index?.get?.(uid);
         if (!entry) { invalid.push({ uid, reason: 'unknown_uid' }); continue; }
         if (current !== null && !entry.volumes.includes(current)) { invalid.push({ uid, reason: 'other_volume' }); continue; }
@@ -185,7 +195,7 @@ export function parseLookupSelection(reply, { allowedUids, maxPicks = DEFAULT_MA
     return { status: ids.length ? 'selected' : (parsed.no_match === true ? 'no_match' : 'empty'), ids, invalid, noMatch: parsed.no_match === true };
 }
 
-export function createFactsSelector({ index, complete, maxPicks = DEFAULT_MAX_PICKS, maxRows = DEFAULT_MAX_ROWS, rules = SELECT_RULES, getRules = null, lookupRules = LOOKUP_RULES, getLookupRules = null } = {}) {
+export function createFactsSelector({ index, complete, maxPicks = DEFAULT_MAX_PICKS, maxRows = DEFAULT_MAX_ROWS, rules = SELECT_RULES, getRules = null, lookupRules = LOOKUP_RULES, getLookupRules = null, getMaxPicks = null } = {}) {
     if (!index || typeof index.catalogFor !== 'function') throw new TypeError('index 必须提供 catalogFor');
     if (typeof complete !== 'function') throw new TypeError('complete 必须是函数');
 
@@ -200,35 +210,38 @@ export function createFactsSelector({ index, complete, maxPicks = DEFAULT_MAX_PI
         return typeof live === 'string' && live.trim() ? live : lookupRules;
     }
 
-    async function select({ input, recentTexts = [], volume = null, signal } = {}) {
+    async function select({ input, recentTexts = [], volume = null, signal, maxPicks: perCallPicks } = {}) {
         const stats = index.stats();
         if (!stats.total) return { status: 'no_index', ids: [], entries: [], invalid: [], meta: { total: 0 } };
 
+        // 上限现读：设置页数字（getMaxPicks）每次选条都生效，单次调用还能自带覆盖。
+        const effectiveMaxPicks = resolveMaxPicks({ override: perCallPicks, getMaxPicks, fallback: maxPicks });
         const current = toVolume(volume);
         const built = current === null
             ? { lines: index.fullCatalog({ limit: maxRows }), firstCount: 0, prevCount: 0, truncated: stats.total > maxRows, total: stats.total }
             : index.catalogFor(current, { maxRows });
 
         // 只认模型结果：脚本不做名字命中、不做自动补选，模型没选就不注入。
-        const prompt = buildSelectPrompt({ input, recentTexts, volume: current, catalog: built.lines, maxPicks, rules: currentRules() });
+        const prompt = buildSelectPrompt({ input, recentTexts, volume: current, catalog: built.lines, maxPicks: effectiveMaxPicks, rules: currentRules() });
         let raw;
         try {
             raw = await complete({ system: prompt.system, user: prompt.user, jsonSchema: SELECT_SCHEMA, signal });
         } catch (error) {
             return { status: 'failed', ids: [], entries: [], invalid: [], error: error?.message ?? String(error), meta: { ...prompt.meta, total: stats.total } };
         }
-        const parsed = parseSelection(raw, { index, volume: current, maxPicks });
+        const allowedUids = new Set(built.lines.map(line => toUid(String(line).split('|')[0])).filter(Number.isInteger));
+        const parsed = parseSelection(raw, { index, volume: current, maxPicks: effectiveMaxPicks, allowedUids });
         // 卷外通道：只有模型主动给了 lookup 名字、且全库真搜到，才多问一次；否则本轮就一次调用。
         const lookup = parsed.lookup.length
-            ? await runLookup({ terms: parsed.lookup, input, current, taken: parsed.ids, signal })
+            ? await runLookup({ terms: parsed.lookup, input, current, taken: parsed.ids, signal, maxPicks: effectiveMaxPicks })
             : null;
         const ids = [];
         for (const uid of parsed.ids) {
-            if (ids.length >= maxPicks) break;
+            if (ids.length >= effectiveMaxPicks) break;
             if (!ids.includes(uid)) ids.push(uid);
         }
         for (const uid of lookup?.picked ?? []) {
-            if (ids.length >= maxPicks) break;
+            if (ids.length >= effectiveMaxPicks) break;
             if (!ids.includes(uid)) ids.push(uid);
         }
         const entries = ids.map(uid => index.get(uid)).filter(Boolean);
@@ -239,12 +252,12 @@ export function createFactsSelector({ index, complete, maxPicks = DEFAULT_MAX_PI
             lookup,
             secondCall: lookup?.secondCall === true,
             inferredVolume: parsed.volume ?? null,
-            meta: { ...prompt.meta, total: stats.total, firstCount: built.firstCount, prevCount: built.prevCount, truncated: built.truncated === true },
+            meta: { ...prompt.meta, total: stats.total, firstCount: built.firstCount, prevCount: built.prevCount, truncated: built.truncated === true, maxPicks: effectiveMaxPicks },
         };
     }
 
     /** 第二次调用：候选由脚本搜，选不选、选哪条由模型定；脚本只做 uid 白名单校验。 */
-    async function runLookup({ terms, input, current, taken, signal }) {
+    async function runLookup({ terms, input, current, taken, signal, maxPicks: lookupPicks = DEFAULT_MAX_PICKS }) {
         const hits = typeof index.searchByName === 'function' ? index.searchByName(terms, { limit: 12 }) : [];
         const info = {
             requested: terms.slice(),
@@ -260,7 +273,7 @@ export function createFactsSelector({ index, complete, maxPicks = DEFAULT_MAX_PI
             error: null,
         };
         if (!hits.length) { info.note = '全库没有搜到这些名字。'; return info; }
-        const room = maxPicks - taken.length;
+        const room = lookupPicks - taken.length;
         if (room <= 0) { info.note = '本轮名额已满，没有再问一次。'; return info; }
         const prompt = buildLookupPrompt({ input, volume: current, candidates: hits, maxPicks: room, rules: currentLookupRules() });
         try {

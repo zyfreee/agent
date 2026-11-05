@@ -20,7 +20,7 @@ import { registerDefaultContracts, createInitialState } from '../core/turn-state
 
 const enabled = ['facts-query', 'action-resolve', 'world-advance'];
 
-function buildHarness({ composeText = '院子里风停了。', deliver } = {}) {
+function buildHarness({ composeText = '院子里风停了。', deliver, save, load, interpret, placeholder, discardMessage } = {}) {
     const contracts = createDataContractRegistry();
     registerDefaultContracts(contracts);
     const coordinator = createAgentCoordinator({ dispatch: () => {} });
@@ -59,10 +59,11 @@ function buildHarness({ composeText = '院子里风停了。', deliver } = {}) {
         coordinator,
         stateStore,
         contracts,
-        settings: () => ({ enabled: true }),
-        interpret: async () => interpretation,
+        settings: () => ({ enabled: true, ui: { placeholder: Boolean(placeholder) } }),
+        interpret: interpret ?? (async () => interpretation),
+        placeholder, discardMessage,
         deliver: deliver ?? (async () => ({ ok: true, method: 'test', messageId: '42', observed: true })),
-        persistence: { load: () => ({ status: 'empty' }), save: (scope, snapshot) => { saved.push({ scope, snapshot }); return { status: 'saved' }; } },
+        persistence: { load: load ?? (() => ({ status: 'empty' })), save: save ?? ((scope, snapshot) => { saved.push({ scope, snapshot }); return { status: 'saved' }; }) },
         now: () => 1000,
     });
     return { orchestrator, stateStore, pipeline, coordinator, saved };
@@ -81,6 +82,16 @@ let interpretation = { type: 'conversation', task: 'ordinary_interaction', expli
     assert.equal(result.stateVersion, 'v2');
     assert.equal(saved.length, 1);
     assert.equal(stateStore.read(scope).stateVersion, 'v2');
+}
+
+// OPT-031: storage failures never claim saved, including throwing/async adapters.
+for (const save of [() => ({ status: 'failed' }), () => { throw new Error('disk fixture'); }, async () => ({ status: 'failed' })]) {
+    const { orchestrator, stateStore } = buildHarness({ save });
+    const result = await orchestrator.runTurn({ ...scope, input: '保存失败夹具。' });
+    assert.equal(result.status, 'save_uncertain');
+    assert.equal(stateStore.read(scope).stateVersion, 'v2', 'already committed action must not be replayed blindly');
+    assert.equal(result.persisted.status, 'failed');
+    assert.equal(result.retryActionAllowed, false);
 }
 
 // 2. 明确行动：效果经规则引擎结算，hp 从 100 走到 90，并且真的提交。
@@ -154,6 +165,48 @@ let interpretation = { type: 'conversation', task: 'ordinary_interaction', expli
     const result = await orchestrator.runTurn({ ...scope, input: '动手吧。' });
     assert.equal(result.status, 'needs_clarification');
     assert.equal(stateStore.read(scope).stateVersion, 'v1');
+}
+
+// OPT-082: one in-flight turn per scope; an external writer during delivery is uncertain.
+{
+    let release;
+    const pending = new Promise(resolve => { release = resolve; });
+    const harness = buildHarness({ interpret: async () => { await pending; return { type: 'conversation', task: 'ordinary_interaction', effects: [] }; } });
+    const first = harness.orchestrator.runTurn({ ...scope, input: '第一轮。' });
+    const second = await harness.orchestrator.runTurn({ ...scope, input: '并发轮。' });
+    assert.equal(second.status, 'busy');
+    release(); await first;
+}
+{
+    let harness;
+    harness = buildHarness({ interpret: async () => ({ type: 'conversation', task: 'ordinary_interaction', effects: [] }), deliver: async () => {
+        const record = harness.stateStore.read(scope);
+        harness.stateStore.commit({ ...scope, baseVersion: record.stateVersion, commitId: 'external-writer', candidate: { nextState: record.state }, messageId: 'other-message' });
+        return { ok: true, messageId: 'visible-fixture', observed: true };
+    } });
+    const result = await harness.orchestrator.runTurn({ ...scope, input: '交付间并发夹具。' });
+    assert.equal(result.status, 'save_uncertain');
+    assert.equal(result.retryActionAllowed, false);
+}
+
+// OPT-084: placeholders are removed on interpretation failure and route rejection.
+for (const interpret of [async () => { throw new Error('parse fixture'); }, async () => ({ type: 'explicit_action', task: 'explicit_action', explicitAction: true, playerAction: null, effects: [] })]) {
+    const removed = [];
+    const harness = buildHarness({ interpret, placeholder: async () => ({ ok: true, messageId: 'placeholder-fixture' }), discardMessage: async entry => removed.push(entry.messageId) });
+    await harness.orchestrator.runTurn({ ...scope, input: '早退占位夹具。' });
+    assert.deepEqual(removed, ['placeholder-fixture']);
+}
+
+// OPT-083: both restore entry points preserve the persisted original baseline.
+for (const explicit of [true, false]) {
+    const baseState = createInitialState();
+    const latest = structuredClone(baseState); latest.player.hp = 80;
+    const harness = buildHarness({ load: () => ({ status: 'loaded', snapshot: { stateVersion: 'v2', state: latest, baseVersion: 'v1', baseState, history: [] } }) });
+    if (explicit) harness.orchestrator.restore(scope);
+    else await harness.orchestrator.runTurn({ ...scope, input: '恢复夹具。' });
+    const rolled = harness.orchestrator.rollback({ ...scope, targetVersion: 'v1' });
+    assert.equal(rolled.status, 'rolled_back');
+    assert.equal(rolled.state.player.hp, 100);
 }
 
 // 7. 初始状态与合同字段一致。

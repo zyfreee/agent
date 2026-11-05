@@ -6,6 +6,16 @@ _inspection-context.txt
 .tmp-*.txt
 .tmp-*.json
 
+# 本地工具会话计划、截图转储与误生成的重定向文件
+.zcode/
+dev/shots/
+agent/doupo-agent-ui/nul
+
+# 审查工作区里的改动前快照与逐门禁日志（代码本身已在仓库内，快照重复且有数 MB）
+agent/review-2026-11-04/.tmpsnapshot/
+agent/review-2026-11-04/implementation-batch-a-2026-11-04/
+agent/review-2026-11-04/implementation-continuation/
+
 # 原著全文与本地工作产物（体积大、含受版权保护的原作正文），不随仓库发布
 原著分卷/
 世界书/

@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
 import { createUiState } from '../host/ui-state.js';
 
+// OPT-100: matching version is insufficient for mutating an unavailable projection.
+for (const readState of ['loading', 'empty', 'stale', 'failed']) {
+    const state = createUiState();
+    const scope = { sessionId: 's', branchId: 'b', stateVersion: 'v' };
+    state.updateProjection({ ...scope, readState });
+    for (const action of ['use_item', 'start_action', 'continue_action', 'interrupt_action']) assert.equal(state.requestAction({ ...scope, requestId: action, action, targetId: 'x' }).accepted, false);
+    assert.equal(state.requestAction({ ...scope, requestId: 'view', action: 'view_task', targetId: 'x' }).accepted, true);
+}
 const ui = createUiState({ maxVisibleChanges: 1 });
 const base = { sessionId: 's1', branchId: 'b1', stateVersion: 'v1' };
 const ready = ui.updateProjection({ ...base, readState: 'ready', data: { location: '城门', health: 8 }, source: { version: 'v1' }, visibleFactIds: ['fact-1'], changes: [{ id: 'c1', text: '道路关闭' }, { id: 'secret', text: '不应显示' }] });

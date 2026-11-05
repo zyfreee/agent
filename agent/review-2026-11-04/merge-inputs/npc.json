@@ -1,0 +1,488 @@
+{
+  "target": "agent/doupo-agent-ui/npc (all source and tests) + index NPC wiring symbols",
+  "root": "C:/Users/86158/Desktop/异界转生录/doupo",
+  "mode": "full-scan",
+  "focus": "general",
+  "snapshot": {
+    "date": "2026-11-04",
+    "head": "1dee86edb89a8f6efc4b8bbd8192a3a9c1017748",
+    "worktree": "dirty; review current worktree, do not attribute pre-existing changes"
+  },
+  "routing_decision": "AUDIT -> SWEEP -> REPORT; no CHANGE; only the two explicitly authorized reports were written",
+  "a0_receipt": {
+    "route": "code-quality-workflow",
+    "documents": [
+      "ST-A0",
+      "audit-and-sweep.md",
+      "plugin-runtime.md"
+    ],
+    "snapshot_version": "2026-08-18",
+    "candidates": [],
+    "red_lines": "No source/config/save edits, browser or LLM; only npc.json and npc.md",
+    "acceptance": "Per-file coverage, per-feature status, evidenced findings, smallest recommendations, gates, gaps"
+  },
+  "coverage": [
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-ledger.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 868 lines; traced normalize/apply/manual/load/exp/injection and favor bounds; in-memory null-date, injection-drop and unchanged-version repros."
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-ledger.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 282 lines and executed node successfully; asserts grouped patches, alias, favor, fillEmpty, source stamps, load and injection."
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-recorder.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 283 lines; prompt/schema, extract/record user builders, JSON parsing, exp condensation."
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-recorder.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 166 lines and executed node successfully; parser, prompt and request construction; no exp async lifecycle coverage."
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-cold-recorder.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 47 lines; target/time/event/floor prompt construction; tested indirectly by cold-runtime test."
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-cold-runtime.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 189 lines; selected/sync/event IDs, first baseline, previews, mark/discard/restore; collision and bulk-confirm memory repros."
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-cold-runtime.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 36 lines and executed node successfully; baseline/events/mark/restore and prompt assertions."
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-autonomy.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 131 lines; planning budgets/dedup, guard handoff, plan register/adjust/transition/listeners; terminal-plan revival repro."
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-autonomy.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 51 lines and executed node successfully; planning, review, plan updates, transition terminal check and observer events."
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-conflict.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 62 lines; authority/rank/represents/intent grouping; traced output into actual outcome bridge."
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-conflict.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 20 lines and executed node successfully; override, equal authority, missing/stale authority."
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-plan-reassessment.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 72 lines; evidence shape, plan versions, pending/cleared scopes, request/adjust/transition and audit hook."
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-plan-reassessment.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 39 lines and executed node successfully; duplicate/version/evidence/terminal/clear paths."
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-decision-guard.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 90 lines; authority, knowledge IDs, allowed intent/action, pause, replay, plan maps and clearBranch; cross-state replay repro."
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-decision-guard.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 43 lines and executed node successfully; hidden knowledge, authority, plan conflicts, action permission and clearBranch."
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-outcome-bridge.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 69 lines; coordinated action/world candidates, missing metadata and synthesized world process ID; in-memory bridge probes."
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-outcome-bridge.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 18 lines and executed node successfully; test supplies actionDefaults and manually restores process rather than actual direct chain."
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-commit-gate.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 45 lines; state/branch/candidate/plan version and active-status checks; no commit/persistence inside gate."
+    },
+    {
+      "path": "agent/doupo-agent-ui/npc/npc-commit-gate.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 17 lines and executed node successfully; state/plan version rejection and ready path."
+    },
+    {
+      "path": "agent/doupo-agent-ui/index.js",
+      "status": "partial",
+      "reason": "User requested necessary NPC wiring symbols only, not a full line-by-line index review.",
+      "evidence": "Read 127-145,215-242,280-399,480-500,2110-2530,3100-3173,4538-4586,6660-6702,6728-6748,7096-7125; searched all agentNpc/write/restore references; VM extracted original functions for exp/extract/reroll repro."
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/host-storage.js",
+      "status": "partial",
+      "reason": "Storage belongs to another slice; only NPC interfaces inspected.",
+      "evidence": "535-568: ledger/cold read and save via separate per-chat metadata keys, clone and saveMetadata."
+    },
+    {
+      "path": "agent/doupo-agent-ui/request/request-router.js",
+      "status": "partial",
+      "reason": "Router belongs to another slice; only conditional NPC commit gate inspected.",
+      "evidence": "99-115: gate.check only when candidate.npcCandidates is an array, before commitRecovery.prepare."
+    },
+    {
+      "path": "agent/doupo-agent-ui/request/request-router.npc-invalidation.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 24 lines; NOT executed. Plan-change invalidation only; not evidence of default autonomy execution."
+    }
+  ],
+  "findings": [
+    {
+      "id": "NPC-01",
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 3124,
+      "title": "旧聊天的经历精简回答可以覆盖当前聊天的同名人物",
+      "behavior": "经历精简异步请求与确认的聊天归属",
+      "trigger": "聊天A请求精简；回答前切B；B有同名人物；A回答回来后确认。",
+      "evidence": "3105-3129没有captureAgentContinuation，切聊天140-145虽清pending，旧await回来3129又填全局pending；3156-3162直接replaceExp当前全局账本。VM提取原函数+延迟Promise，切ledger后确认，B经历从other-chat-original变为from-old-chat。",
+      "risk": "跨聊天整单覆盖人物经历；同聊天期间新增或手改经历也能被旧草稿覆盖。",
+      "recommendation": "复用continuation；草稿记录聊天scope和经历版本/指纹；回答到达及确认时各校验一次；不匹配过期，取消清草稿。",
+      "verification": "延迟回答A→B、A→B→A、同名人物、请求中新增经历、取消、停用、双请求交错；旧结果不提供可确认草稿且不写账。",
+      "unverified": "No real host/browser/LLM/save; VM proves original function control flow with memory dependencies."
+    },
+    {
+      "id": "NPC-02",
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 2208,
+      "title": "世界书补全的目标绑定及重抽保护可被英文键和嵌套字段绕过",
+      "behavior": "目标人物及关系字段保护",
+      "trigger": "抽A，模型返回name:B和嵌套设定态度/在场，或favor英文键，overwrite=true。",
+      "evidence": "2208-2215只追加姓名:A并过滤顶层中文黑名单；ledger414首个名字键胜出，402-410展开组键且支持英文别名。VM原runNpcLedgerExtract收到{name:B,设定:{态度:unexpected,在场:true},favor:10}：A未改，B attitude=unexpected、favor=10、presence=在场。",
+      "risk": "重抽A却改到B；承诺好感/态度/在场不动失效。fillEmpty同样可能填错人。",
+      "recommendation": "先规范化patch，再强制规范name=目标，并在规范字段层过滤关系/在场/流水/经历与好感；不要继续扩充顶层字符串黑名单。",
+      "verification": "中英姓名键先后顺序、分组/fields嵌套、别名人物、多patch、overwrite开关矩阵；只能改目标允许的静态字段。",
+      "unverified": "仅原函数+模型stub内存复现，真实模型输出分布未验证。"
+    },
+    {
+      "id": "NPC-03",
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 2445,
+      "title": "人物记账只记楼层号，重生成后的旧人物变化不会撤回",
+      "behavior": "重生成/编辑/删楼后人物账本一致性",
+      "trigger": "floor1已记账，再于同floor重生成；或手动重记同一正文。",
+      "evidence": "2445-2446只比较index与lastNpcLedgerFloor；VM原runNpcLedgerRecord同floor新正文返回not_due。ledger562-577累加好感和追加流水，无按回复贡献替换；manual绕过not_due。",
+      "risk": "自动保留旧分支好感/流水/在场信息；手动补救会重复累加。continuation只能挡飞行中旧回复，不能撤销已提交账。",
+      "recommendation": "先明确NPC重roll契约；按回复身份作幂等键，并存可替换的楼层贡献或基线；不能仅重置游标后重新累加。",
+      "verification": "回复A记账后同floor改B、重roll、删楼续写、手动重复、重新加载；仅当前有效回复贡献一次。",
+      "unverified": "宿主历史适配及完整回滚未验；本分片未逐行审history目录。"
+    },
+    {
+      "id": "NPC-04",
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/npc/npc-cold-runtime.js",
+      "line": 82,
+      "title": "冷藏序号不持久化，恢复后新草稿覆盖旧草稿",
+      "behavior": "预览ID跨恢复唯一性",
+      "trigger": "有pending cold-1/cold-2的快照，新建runtime恢复再生成。",
+      "evidence": "82 sequence=0；127产生cold-${++sequence}；183 restore不恢复序号；144按id删旧项。内存restore后新B草稿用cold-1，旧A/cold-1消失。",
+      "risk": "刷新或恢复聊天后待确认草稿被无提示覆盖。",
+      "recommendation": "从恢复ID推导递增值或采用作用域唯一ID，旧草稿不得因无关人物新草稿碰撞删除。",
+      "verification": "两个pending保存→新runtime恢复→新候选，旧ID保留且新ID唯一；切聊天恢复同样验证。",
+      "unverified": "No real host restore; deterministic pure-library memory repro."
+    },
+    {
+      "id": "NPC-05",
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/npc/npc-cold-runtime.js",
+      "line": 161,
+      "title": "确认一份冷藏草稿把同人物其他草稿一并标为已确认",
+      "behavior": "单草稿确认范围",
+      "trigger": "同人物两个不同时段或patch的pending，仅确认一份。",
+      "evidence": "index2394-2402只按id应用一份patch，mark(name)却在runtime161将同名全部pending改confirmed。内存B/day2和B/day3，mark day2后两份都confirmed，游标仅2。",
+      "risk": "未应用草稿从待确认列表消失，确认历史与实际账本不符。",
+      "recommendation": "按previewId确认单份；其他草稿显式标superseded/stale而非confirmed，并校验基准游标/档案版本。",
+      "verification": "同人物双草稿按正序/倒序确认、放弃其一；只有实际应用ID可为confirmed。",
+      "unverified": "No browser confirmation; library state and index call path inspected."
+    },
+    {
+      "id": "NPC-06",
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/npc/npc-decision-guard.js",
+      "line": 31,
+      "title": "NPC决定重放键缺状态版本，v2可能返回v1决定",
+      "behavior": "decision-guard跨stateVersion重放",
+      "trigger": "相同session/branch/task/npc在v1审查后以v2再审。",
+      "evidence": "key31不含stateVersion，33直接重放；23只检查本次permission/envelope版本。内存v2提出refuse却收到stateVersion:v1、intent:wait、replayed:true。",
+      "risk": "调用者误以为新版本已审查，实际取得旧决定；目前仅公开API，非默认人物记录链。",
+      "recommendation": "把stateVersion纳入重放键，或重放前比较旧版本并返回stale_state；保持同版本幂等。",
+      "verification": "同task v1→v2、授权/知情版本变化、分支切换；不得重放跨版本决定。",
+      "unverified": "Default runtime caller not found; no actual commit effect claimed."
+    },
+    {
+      "id": "NPC-07",
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/npc/npc-autonomy.js",
+      "line": 95,
+      "title": "adjustPlan可以复活已取消或已完成计划",
+      "behavior": "autonomy终态约束",
+      "trigger": "transition为cancelled/completed后以当前baseVersion调用adjustPlan(status:active)。",
+      "evidence": "transitionPlan114拒绝终态；adjustPlan93-105只校验版本/原因/证据，不检查终态或状态集合。内存cancelled版本2，经adjustPlan(status:active,证据factIds:[f])成为active。",
+      "risk": "绕过终态契约和候选失效边界；也可写任意status。仅公开API。",
+      "recommendation": "adjustPlan复用终态/合法状态约束；重开需新planId或显式重开契约，不暗中复活。",
+      "verification": "completed/cancelled后adjust与transition均拒绝，非法status拒绝，活动计划正常修改与通知不变。",
+      "unverified": "No default planner execution or persistent plan path established."
+    },
+    {
+      "id": "NPC-08",
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/npc/npc-conflict.js",
+      "line": 38,
+      "title": "协调器丢动作和过程字段，outcome直接串联失败",
+      "behavior": "conflict到outcome数据契约",
+      "trigger": "含method/process的decision经coordinate后直接传outcome。",
+      "evidence": "38仅保留npcId/intent/targetId/rank/represents，丢method/actionId/attemptId/authorizedActions/process；outcome37需要method，52需要process。真实coordinator+bridge内存直连返回missing_action_method；测试第10行用actionDefaults、第15行手工补process掩盖断链。",
+      "risk": "动作方法丢失，世界过程原ID无法匹配；默认method可能把不同NPC动作折成同一种。当前非默认生成链。",
+      "recommendation": "定义最小共同决定形状，保留已审查action/process及来源版本，避免下游猜回字段。",
+      "verification": "guard/autonomy→conflict→outcome直连，多NPC不同method/process，不用actionDefaults或手补字段；只产生原授权动作。",
+      "unverified": "Resolver/simulator in repro were memory stubs; no real commit tested."
+    },
+    {
+      "id": "NPC-09",
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/npc/npc-outcome-bridge.js",
+      "line": 52,
+      "title": "未显式提出process的决定仍可凭合成ID进入世界候选",
+      "behavior": "world候选显式过程边界",
+      "trigger": "决定无process，但processes有decisionKey:npcId形式的ID。",
+      "evidence": "52-61无条件生成默认id；注释58说只有明确附带process才可进入；62仅比较id。内存无decision.process且processes:[{id:d:A}]仍调用worldSimulator.advance并返回candidate。",
+      "risk": "ID巧合批准未显式提出过程，来源不一致；未证明默认运行或正式提交。",
+      "recommendation": "先筛显式有效process，绑定session/branch/stateVersion与主体；无process返回missing_world_process。",
+      "verification": "无process+同名合成ID必须拒绝；显式正确scope可候选；错scope/重复ID拒绝。",
+      "unverified": "Only bridge selection logic reproduced with simulator stub."
+    },
+    {
+      "id": "NPC-10",
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/npc/npc-ledger.js",
+      "line": 282,
+      "title": "未知日期null规范化后变为第0天",
+      "behavior": "经历及流水空日期往返",
+      "trigger": "精简回答按提示返回day:null，或带null日期记录导出再载入。",
+      "evidence": "282 Number.isFinite(Number(item.day))将null转0；normalizeRecord354/363和coldTouch345同模式。内存apply经历{day:null,text:unknown day}后day=0；recorder251明确无日期写null。",
+      "risk": "未知时间伪装成第0天，影响排序和精简材料。",
+      "recommendation": "数字转换前排除null/undefined/空串，并按世界日契约验证合法天数；复用一个小日期规范化器。",
+      "verification": "null/缺失/空串/0/负数/合法天数的apply、精简、export→load、coldTouch矩阵；未知保持null。",
+      "unverified": "No actual timeline UI or model condensation checked."
+    },
+    {
+      "id": "NPC-11",
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/npc/npc-ledger.js",
+      "line": 760,
+      "title": "注入超预算的降级实际整个人物消失",
+      "behavior": "人物提示注入预算退化",
+      "trigger": "两名以上在场重要人物，全档总长度超budget。",
+      "evidence": "760-763 full.pop仅把名字放degraded，不放brief，与759降级成一行注释相反。内存A/B均重要在场、各200字符身份、budget300：degraded:[B],used:[A]，文本无B。测试只检查degraded非空。",
+      "risk": "重要在场人物从提示完全丢失；Map顺序也不等于最不重要/最久未出现顺序。",
+      "recommendation": "降级后放简档队列；不足以容纳时显式记录omitted而非degraded；used/counts与文本一致。",
+      "verification": "双重要人物应先都留简档；混合四象限、极小预算、maxFull/maxBrief边界；used反映实际可见人物。",
+      "unverified": "No real assembled prompt or model behavior measured."
+    },
+    {
+      "id": "NPC-12",
+      "severity": "P3",
+      "category": "Slimming Opportunities",
+      "file": "agent/doupo-agent-ui/npc/npc-ledger.js",
+      "line": 623,
+      "title": "等条数替换经历不更新版本和修改时间",
+      "behavior": "replaceExp变更元数据",
+      "trigger": "一条经历改为另一条，条数不变。",
+      "evidence": "622已替换record.exp，623只在before!==clean.length时更新version/updatedAt/changes；内存1→1不同内容version仍2。",
+      "risk": "元数据不反映实际修改，妨碍版本守卫/刷新/排查；UI确认仍persist，未证明该路径丢持久化。",
+      "recommendation": "用内容差异决定版本变化；完全相同内容保持不变。",
+      "verification": "等条数不同内容/相同内容/减少/空替换检查version、time、changes及UI保存。",
+      "unverified": "No downstream cache consumer failure reproduced."
+    }
+  ],
+  "feature_status": [
+    {
+      "feature": "人物簿写者与持久化",
+      "status": "默认接线，存在边界缺陷",
+      "evidence": "index380-384自动记录；2426-2431统一面板/正文/冷藏apply+保存；UI setFields/addExp/removeExp、load导入/clear也保存；2278-2306按聊天metadata恢复保存。",
+      "limits": "裸ledger及npcLedgerReplaceExp API不自动保存；保存Promise失败被吞；真实saveMetadata、保存竞态未验。"
+    },
+    {
+      "feature": "好感累加与限幅",
+      "status": "稳定/不动",
+      "evidence": "ledger157-168/562-570逐patch ±10，累计[-100,100]，理由15字、日志60；测试通过。",
+      "limits": "非逐回复事务/幂等；重复patch/手动重记仍累加，见NPC-03。"
+    },
+    {
+      "feature": "无依据输入",
+      "status": "明示宽松设计，不当作缺陷",
+      "evidence": "ledger6-10、recorder5-7明确不核依据/不拦上帝视角；提示词约束模型，解析不证实事实。",
+      "limits": "不保证无幻觉；decisionGuard只校验显式证据ID在调用者知情集合，允许空证据，不证明rationale文本。"
+    },
+    {
+      "feature": "档案补全/重抽",
+      "status": "已默认新建补空+手动接线；NPC-02",
+      "evidence": "index2498-2500新建后延迟补全；2163-2235世界书抄档，fillEmpty通常保护已有值。",
+      "limits": "顶层黑名单/姓名绑定绕过；overwrite仍传missing，完整重写行为未验。"
+    },
+    {
+      "feature": "经历精简/确认/取消",
+      "status": "已UI接线；NPC-01/10/12",
+      "evidence": "index3105-3169先预览再replaceExp；草稿内存单槽；取消仅modalClose属性。",
+      "limits": "不持久化精简草稿；缺scope和版本；关闭弹窗不等于取消在飞请求。"
+    },
+    {
+      "feature": "冷藏日期/事件/草稿",
+      "status": "手动扫描接线；NPC-04/05",
+      "evidence": "runtime106-139首次只建当天基线，姓名子串命中事件，去重eventIds最多120；index2342扫描、2394确认、2410放弃；台账与冷藏分开保存。",
+      "limits": "非自动自治，不排除在场人物；草稿无recordVersion；确认用当前worldDay而游标按toDay。延迟旧日事件/ID复用/丢弃重试未做完整矩阵。"
+    },
+    {
+      "feature": "重生成/跨聊天/取消",
+      "status": "局部守卫存在但未闭环",
+      "evidence": "index127-137比较epoch/scope/chat对象/回复文本/swipe；229切聊天使普通记录/补全/冷藏飞行结果stale并恢复分聊天数据。",
+      "limits": "精简漏守卫；已提交人物账无重roll回滚，NPC-03；GENERATION_STOPPED不等于取消所有在飞NPC任务。公共quiet/afterWorld问题归入口分片。"
+    },
+    {
+      "feature": "autonomy",
+      "status": "仅公开API/内存，不是默认NPC决策",
+      "evidence": "index459实例与4550/4555-4562暴露；计划版本通知488-495连到候选失效。生产JS检索未见默认plan/reviewCandidate/注册计划调用链。",
+      "limits": "无snapshot/restore；stateVersion进计划key，跨版本续期调用者负责；NPC-07。"
+    },
+    {
+      "feature": "conflict",
+      "status": "仅公开API；NPC-08",
+      "evidence": "index465/4552；同权复核，高权需代表范围完整，不盲从单人。",
+      "limits": "无默认调用；guard支持的intent集与coordinator任意非空intent不同，适配未闭环。"
+    },
+    {
+      "feature": "reassessment",
+      "status": "仅公开API/内存，局部约束稳定",
+      "evidence": "index464/4551/4559-4561；factIds非空、计划版本、同obstacle去重及终态清理有测试。",
+      "limits": "pending不持久化；未验证伪造/已clear的request重传，adjust/transition不核pending成员；factIds形状不代表事实已证实。"
+    },
+    {
+      "feature": "decision-guard",
+      "status": "仅公开API；NPC-06",
+      "evidence": "index458/4549；越界知识ID拒绝、权限/意图/动作/waiting_player/计划版本/clearBranch有测试。",
+      "limits": "不在默认人物记录链；guard计划与autonomy活动计划独立Map，不自动同步/保存。"
+    },
+    {
+      "feature": "outcome",
+      "status": "仅公开API；NPC-08/09",
+      "evidence": "index468/4553；仅候选committed:false，不正式提交。",
+      "limits": "planId/planVersion还需调用方补全，单测成功不证明完整自治可用。"
+    },
+    {
+      "feature": "commit-gate",
+      "status": "条件接线，非所有NPC写者通用门",
+      "evidence": "index472/487；request-router109仅存在npcCandidates数组才校验；状态版本/scope/计划版本/active检查局部稳定。",
+      "limits": "人物簿/精简/冷藏不走此门；ready不等于原子提交或持久化；不替调用者验证玩家暂停、执行结果和证据。"
+    }
+  ],
+  "refactor_signals": [
+    {
+      "module": "NPC async draft lifecycle",
+      "threshold": "One P1 lifecycle gap plus two independent cold-preview P2 defects",
+      "evidence": "精简全局槽与冷藏runtime分持草稿，scope/version校验不一致；NPC-01/04/05。"
+    },
+    {
+      "module": "NPC decision contract",
+      "threshold": "Cross-module I/O mismatch and duplicated plan ownership",
+      "evidence": "guard plans与autonomy plans各自Map；coordinator丢字段；outcome测试需手工修补输入。先补直接串联测试，无重写证据。"
+    }
+  ],
+  "slimming_themes": [
+    {
+      "pattern": "State Duplication",
+      "occurrences": 2,
+      "suggested_handling": "guard提案计划与autonomy活动计划暂不合并/删除；先定义提升契约和外部消费者。"
+    },
+    {
+      "pattern": "Patch Stacking",
+      "occurrences": 2,
+      "suggested_handling": "先修草稿scope/version/单份确认，不新增第三套编排框架。"
+    }
+  ],
+  "do_not_touch_yet": [
+    "好感逐patch限幅/总上限、字段表单一来源、宽松输入契约、单字段容错。",
+    "冷藏首次只建基线、不改世界时间、正常路径显式确认前不写人物簿。",
+    "conflict同权保守复核、知情ID越界拒绝、commit-gate版本/scope/active校验。",
+    "仅公开API不等于死代码；外部消费者未穷尽，禁止据此删除模块。"
+  ],
+  "verification_gates": [
+    {
+      "check": "Individually node-execute all nine npc/*.test.mjs using Python subprocess and absolute paths",
+      "scope": "All nine passed; top-level assert scripts, no host/browser/network/LLM/save."
+    },
+    {
+      "check": "Node memory probes and vm-extracted original index functions with memory stubs",
+      "scope": "Cross-chat exp overwrite, extract bypass, same-floor reroll; cold ID/mark, state replay, terminal revival, conflict/outcome mismatch, null day, injection omission, version metadata."
+    }
+  ],
+  "optimization_handoffs": [
+    {
+      "module": "index.js runExpCondense/confirmExpCondense",
+      "evidence": "NPC-01 original-function memory repro overwrites same-name character after switching chat",
+      "threshold": "Local Fix",
+      "suggested_gate_mode": "Local Fix Only",
+      "behavior_contract_hints": "Stale scope/version/cancelled exp draft must not become confirmable or mutate current ledger; valid draft still requires explicit confirmation.",
+      "patch_budget": "One path, 1-2 files, target under 80 changed lines; re-gate if larger; no implementation authorized now",
+      "pre_change_baseline": "Nine NPC scripts pass; cross-chat memory repro fails",
+      "verification_gate": "Delayed response plus A/B/A scope, concurrent exp edit, confirm and cancel matrix",
+      "deletion_safety": "No module deletion",
+      "forbidden_scope": "No NPC rewrite, prompt/favor contract changes, real save/config edits or broad persistence schema changes"
+    }
+  ],
+  "gate_recommendation": "Only NPC-01 selected as follow-up Local Fix Only candidate; other defects can be separately gated. No source fix or rewrite authorized.",
+  "residual_risk": [
+    "All 19 NPC files read completely; index/dependencies inspected only at necessary snippets, not a full entry review.",
+    "Dirty parallel worktree is not an immutable repository snapshot; reconcile source fingerprints before merging slices.",
+    "request-router NPC invalidation test read but not executed; no full repo tests/build/lint.",
+    "No real SillyTavern, browser, LLM or private config/chat save inspection; actual metadata durability and UI/manual acceptance remain unverified.",
+    "Existing tests passing only proves existing assertions; memory stubs prove local control flow, not host release acceptance."
+  ]
+}

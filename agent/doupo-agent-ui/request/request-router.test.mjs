@@ -63,6 +63,16 @@ assert.deepEqual(router.invalidateCandidate({ requestId: 'route-4', reason: 'his
 assert.equal(ledger.get('route-4').status, 'history_invalidated');
 assert.equal(router.revalidateCandidate({ requestId: 'route-4' }).status, 'missing_candidate');
 assert.equal(router.prepareCommit({ requestId: 'route-4', messageId: 'message-4', candidate }).status, 'missing_candidate');
+// OPT-088: public result/revalidation objects must not mutate the canonical candidate.
+const cloneRequest = { ...base, requestId: 'clone-integrity', playerConfirmed: true, interpretation: actionInput };
+const cloneRun = await router.run({ request: cloneRequest, taskId: 'clone-integrity', input: { intent: { method: 'use', targetId: 'medicine' }, commitCandidate: structuredClone(candidate) } });
+cloneRun.execution.results[0].value.candidate.nextState.hp = 999;
+const exposed = router.revalidateCandidate({ requestId: 'clone-integrity' });
+assert.equal(exposed.execution.results[0].value.candidate.nextState.hp, 8);
+exposed.execution.results[0].value.candidate.nextState.hp = 777;
+assert.equal(router.revalidateCandidate({ requestId: 'clone-integrity' }).execution.results[0].value.candidate.nextState.hp, 8);
+assert.equal(router.prepareCommit({ requestId: 'clone-integrity', messageId: 'clone-message', candidate: cloneRun.execution.results[0].value.candidate }).reason, 'candidate_tampered');
+
 const commitAction = { ...base, requestId: 'route-commit', playerConfirmed: true, interpretation: actionInput };
 assert.equal((await router.run({ request: commitAction, input: { actionId: 'c', attemptId: '1', intent: { method: 'use', targetId: 'medicine', explicit: true }, commitCandidate: candidate }, taskId: 'route-commit' })).status, 'executed');
 assert.equal(router.prepareCommit({ requestId: 'route-commit', messageId: 'message-commit', candidate }).status, 'prepared');
@@ -79,6 +89,13 @@ const staleNpcRequest = { ...npcBase, requestId: 'route-npc-stale', playerConfir
 assert.equal((await router.run({ request: staleNpcRequest, input: { actionId: 'npc-b', attemptId: '1', intent: { method: 'use', targetId: 'medicine', explicit: true }, commitCandidate: npcCandidate }, taskId: 'route-npc-stale' })).status, 'executed');
 npcPlanner.adjustPlan({ sessionId: 's1', branchId: 'npc', stateVersion: 'v1', npcId: 'n1', planId: 'p1', baseVersion: 1, reason: '道路封锁', goal: '转移', evidence: { factIds: ['road-blocked'], summary: '道路已封锁' } });
 assert.equal(router.prepareCommit({ requestId: 'route-npc-stale', messageId: 'message-stale', candidate: npcCandidate }).reason, 'npc_commit_gate_blocked');
+// OPT-089: prepared candidates remain tracked and the NPC gate is rechecked.
+assert.equal(router.confirmMessage({ requestId: 'route-npc-commit', messageId: 'message-npc', observed: true }).status, 'message_observed');
+assert.equal(router.commitCandidate({ requestId: 'route-npc-commit' }).status, 'save_uncertain');
+assert.equal(stateStore.read({ sessionId: 's1', branchId: 'npc' }).state.hp, 10);
+const invalidation = router.invalidateNpcPlanCandidates({ previousVersion: 1, plan: { npcId: 'n1', planId: 'p1', version: 2, sessionId: 's1', branchId: 'npc', stateVersion: 'v1' } });
+assert.ok(invalidation.invalidated.some(row => row.requestId === 'route-npc-commit'));
+
 const degradedCommitRequest = { ...base, requestId: 'route-degraded-commit', interpretation: actionInput, playerConfirmed: true };
 capabilities = { status: 'ready' };
 const degradedRun = await router.run({ request: degradedCommitRequest, input: { actionId: 'b', attemptId: '1', intent: { method: 'use', targetId: 'medicine', explicit: true }, commitCandidate: candidate }, taskId: 'route-degraded-commit' });

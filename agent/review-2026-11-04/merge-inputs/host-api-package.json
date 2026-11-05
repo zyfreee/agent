@@ -1,0 +1,444 @@
+{
+  "target": "C:/Users/86158/Desktop/异界转生录/doupo",
+  "mode": "full-scan",
+  "focus": "general",
+  "slice": "host-api-package",
+  "snapshot": {
+    "head": "1dee86edb89a8f6efc4b8bbd8192a3a9c1017748",
+    "worktree": "Existing modified and untracked files; reviewed live worktree, not HEAD-only. Other reviewers may be active; no immutable whole-tree snapshot claimed.",
+    "date": "2026-11-04"
+  },
+  "routing_decision": "Read-only AUDIT/SWEEP. Only these two explicitly authorized report files are written; implementation, archives, configuration and real user settings/secrets are untouched.",
+  "a0_receipt": {
+    "route": "code-quality-workflow",
+    "documents": [
+      "ST-A0"
+    ],
+    "snapshot_version": "2026-08-18",
+    "candidates": [],
+    "goal": "Bounded source audit and two reports",
+    "red_lines": "No implementation/configuration/private data changes; no browser/network/real LLM",
+    "acceptance": "Evidence-backed findings, explicit partial coverage and offline-only verification"
+  },
+  "coverage": [
+    {
+      "path": "agent/doupo-agent-ui/host/llm-client.js",
+      "status": "partial",
+      "reason": "Bounded continuation after provider interruptions; prompt/normalization section 111-189 not completely inspected.",
+      "evidence": "Inspected 1-110 and 190-726 including all connection, request, timeout, retry, sampling, model-list and logging paths; ran llm-client.test.mjs. Two cancellation/concurrency reproductions supplied as coordinator-reverified evidence, not rerun here."
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/llm-client.test.mjs",
+      "status": "partial",
+      "reason": "678 lines; selected source ranges and test labels inspected, not every assertion body.",
+      "evidence": "Executed successfully offline; inspected quiet lifecycle, raw generation, custom body timeout/cancel, parameter tests, extras and retry cases including intentionally uncapped retry contract at 560."
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/api-presets.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 310 lines; traced preset normalization, YAML/scalars/blocks/flow parsing, header and override conversion; reproduced malformed/flow YAML cases in memory."
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/api-presets.test.mjs",
+      "status": "partial",
+      "reason": "Selected/excerpted long assertion lines rather than every assertion in full.",
+      "evidence": "Inspected tests across 1-121 and ran module successfully; current tests cover simple YAML/JSON, IDs/limits, normalization, positive overrides and malformed first-line handling, not complete-consumption/flow-nested cases."
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/message-adapter.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 99 lines; inspected deliver/update/discard/canDeliver and fabricated acknowledgement paths; pure-memory send/update repros. No dedicated *message*test.mjs found under module tree."
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/prompt-injection.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 119 lines; channel/inspect/restore/clear/write, stable prompt key, depth/budget/scan flags; reproduced failed clear followed by falsely cleared metadata."
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/prompt-injection.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 73 lines and ran successfully; absence, flags, depth, truncation, clear and throwing-host tests. Missing empty-write clear-failure assertion."
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/capability-preflight.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 29 lines; required event surface, semver parsing and ready/degraded semantics. Version is descriptive, not compatibility enforcement."
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/capability-preflight.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 17 lines and ran successfully; missing host and malformed-version behavior intentionally tested."
+    },
+    {
+      "path": "manifest.json",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 22 lines; v0.2.1, minimum_client_version 1.18.0, root entry/style, interceptor global, hooks and empty dependencies."
+    },
+    {
+      "path": "index.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 12 lines; lifecycle named exports and modular re-export."
+    },
+    {
+      "path": "settings.html",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 15 lines; static root template and declared extension-settings storage; no actual user settings read."
+    },
+    {
+      "path": "INSTALL.md",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 34 lines; Git clone installation, template fallback and outdated current manifest references."
+    },
+    {
+      "path": "agent/doupo-agent-ui/extension-package.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 23 lines and ran successfully; referenced files, textual hooks and root/nested style equality only, not host import/runtime or private-data packaging."
+    },
+    {
+      "path": "agent/doupo-agent-ui/demo-turn.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 173 lines; static interpreter/composer and in-memory persistence; deliver acknowledgement is a synthetic stub. Not executed; does not validate live adapters."
+    },
+    {
+      "path": "agent/doupo-agent-ui/run-tests.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 32 lines; recursive sorted .test.mjs discovery, skips .tmp/node_modules, sequential dynamic imports, counts failures and sets exitCode. Whole runner not executed because unreviewed suites are outside this bounded slice."
+    },
+    {
+      "path": "README.md",
+      "status": "partial",
+      "reason": "Only connection, privacy, testing and version/release-relevant portions inspected.",
+      "evidence": "Reviewed 11, 19, 47, 51-53, 67-69; docs distinguish offline from runtime acceptance and claim API key is confined to extension settings."
+    },
+    {
+      "path": "agent/doupo-agent-ui/README.md",
+      "status": "partial",
+      "reason": "252 lines; reviewed connection/package-related portions, not unrelated gameplay documentation.",
+      "evidence": "Reviewed 74, 86, 170, 184-205, 226, 245-248; named preset contracts, overwrite order, stale createChatMessages description and explicit unexecuted runtime scenarios."
+    },
+    {
+      "path": "agent/doupo-agent-ui/index.js",
+      "status": "partial",
+      "reason": "8826-line integration entry outside full-file budget; only related callsites and lifecycle ranges inspected.",
+      "evidence": "Inspected getHostContext/continuations, event handling 245-320 and 379-399, adapter wiring 677-687, presetOverrides 559-566, interceptor 3589-3602, listModels UI 3845-3886, probe 4499-4520, disable lifecycle 7093-7136; keyword-located other injection callsites."
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/commit-recovery.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read all 82 lines solely to trace observed evidence contract: markMessage advances journal on observed=true; commit refuses unverified message."
+    },
+    {
+      "path": ".gitignore",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Inspected source release exclusions: .env/.env.*, original-work folders, dependencies/generated/local temporary artifacts. Ignore rules alone do not prove tracked contents or release payload are private-data-free."
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/host-storage.js",
+      "status": "unread",
+      "reason": "Owned by other slice; did not inspect actual settings, secrets, migration implementation or setting export/persistence consumers.",
+      "evidence": ""
+    },
+    {
+      "path": "agent/doupo-agent-ui/settings.html",
+      "status": "unread",
+      "reason": "Nested template consistency test and full model UI validation deferred; only root settings template was inspected.",
+      "evidence": ""
+    },
+    {
+      "path": "agent/doupo-agent-ui/settings-template.test.mjs",
+      "status": "unread",
+      "reason": "Not executed/read in this bounded slice; package test does not check template equality.",
+      "evidence": ""
+    },
+    {
+      "path": "dev/ and real user settings/secrets/archive contents",
+      "status": "excluded",
+      "reason": "User explicitly forbids private settings/secrets and archive changes; dev fixtures and tracked-log contents not inspected and no private-data findings inferred.",
+      "evidence": ""
+    }
+  ],
+  "findings": [
+    {
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "C:/Users/86158/Desktop/异界转生录/doupo/agent/doupo-agent-ui/host/message-adapter.js",
+      "line": 81,
+      "title": "Fallback delivery claims message observation without observing it",
+      "behavior": "Host narration delivery acknowledgement and downstream commit gate",
+      "evidence": "sendMessage and slash branches at 79-86 always return observed:true, even when result is undefined and no message is added; they synthesize IDs. Memory repro with chat:[], sendMessage:async()=>undefined returned ok:true/observed:true/local-ID while chat.length stayed 0. update at 37-44 also returns observed:true after render and save failures because it compares only its own array mutation. index.js 685 wires this adapter into orchestration; commit-recovery.js 35 and 55-56 permit commit based on observed.",
+      "risk": "A host no-op/failed render can be reported as delivered, bypassing the project's explicit no-message/no-state-commit contract. Update repro proves weak evidence, not actual persisted loss in a real host.",
+      "recommendation": "Require a stable host message identity and read-back confirmation; return unconfirmed/observed:false for unknown API results. Separate array mutation, display confirmation and save result rather than treating them as one acknowledgement.",
+      "verification": "Add dedicated adapter tests for no-op/undefined send and slash, render/save failure, missing API, successful append/update and concurrent appends. Verify commit gate rejects absent/unconfirmed messages; then separately accept supported host APIs at runtime."
+    },
+    {
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "C:/Users/86158/Desktop/异界转生录/doupo/agent/doupo-agent-ui/host/llm-client.js",
+      "line": 65,
+      "title": "Concurrent sampling overrides restore another call's temporary settings",
+      "behavior": "Overlapping Tavern quiet calls mutating shared chatCompletionSettings",
+      "evidence": "53-69 saves current global settings independently and unconditionally restores each saved value. 496-511 applies this around an awaited generation without ownership/serialization. Coordinator-reverified pure-memory repro: initial temperature .7, A overrides .2, B overrides .9; A finishes first, then B, final temperature becomes .2 instead of .7. This continuation checked source; it did not rerun that supplied repro.",
+      "risk": "Overlapping module calls contaminate each other's sampling and leave the host's session settings changed after completion; later main generation may use unintended values. No settings-file persistence claimed.",
+      "recommendation": "Give temporary sampling one owner and serialize the full mutation/generation/restoration window, or use a verified host-supported per-call override without shared mutation.",
+      "verification": "Regression both completion orders, partial-overlap parameter sets, rejection/timeout/cancel and a main-generation overlap; original values must be restored exactly and other calls must not inherit temporary values."
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "C:/Users/86158/Desktop/异界转生录/doupo/agent/doupo-agent-ui/host/llm-client.js",
+      "line": 504,
+      "title": "Quiet cancellation ends local bookkeeping but not the underlying generation",
+      "behavior": "Pre-aborted request and timeout/cancel quiet lifecycle",
+      "evidence": "generateQuietPrompt/generateRaw is invoked at 504 before withTimeout checks signal.aborted at 263. Quiet withTimeout call at 505 has no underlying cancellation callback; finally decrements busy and restores sampling at 509-511 even if generation remains unresolved. Coordinator-reverified pre-aborted repro observed generateQuietPrompt still started. Normal grace at 507 is skipped on rejection. index.js 277, 282 and 303 use isQuietBusy to classify host events. Retry sleep at 610 also does not subscribe to abort.",
+      "risk": "A cancelled request may still spend model work; late generation events can arrive after quiet busy becomes false and be treated as ordinary events. Actual late-event misclassification in installed SillyTavern is not runtime-reproduced here. Retry cancellation can wait until sleep ends.",
+      "recommendation": "Check abort before touching sampling or starting generation; bind supported cancellation to the actual quiet operation and retain ownership until it really settles. Make retry sleep abort-aware and distinguish request cancellation from underlying completion.",
+      "verification": "Pre-aborted input must launch zero generations; cancel/timeout a deferred quiet stub, deliver late events, and verify no ordinary-turn work/early sampling restore. Abort a long retry wait and require prompt rejection."
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "C:/Users/86158/Desktop/异界转生录/doupo/agent/doupo-agent-ui/host/llm-client.js",
+      "line": 294,
+      "title": "Case-sensitive object merge does not override HTTP header names",
+      "behavior": "Preset Authorization header overriding generated authentication",
+      "evidence": "Generated OpenAI header is lowercase authorization at 534 (and 316 for model lists); extras use Object.assign at 294 or spread at 324. YAML/parser test explicitly accepts Authorization capitalization (api-presets.test.mjs 34-37). Actual createLlmClient with stub fetch and Authorization extra produced new Headers(options.headers).get('authorization') = 'Bearer default-test, Bearer override-test', not the override alone. Current override test only covers lowercase authorization at llm-client.test.mjs 625/633.",
+      "risk": "Common capitalized authorization override becomes a duplicate/comma-combined credential value and may be rejected by gateways. This is a correctness finding; no real key exposure or network request was observed.",
+      "recommendation": "Merge headers with case-insensitive semantics, e.g. Headers.set for extras, both completion and model-list paths; preserve documented last-writer-wins behavior.",
+      "verification": "Test Authorization/authorization/AUTHORIZATION plus mixed-case x-api-key and listModels; serialized wire-equivalent Headers must contain one effective value per logical header."
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "C:/Users/86158/Desktop/异界转生录/doupo/agent/doupo-agent-ui/host/api-presets.js",
+      "line": 197,
+      "title": "YAML parsing accepts partial documents and silently changes flow values",
+      "behavior": "Additional body/header parameter parsing",
+      "evidence": "parseYamlBlock discards parseBlock's consumed index at 197. Memory results: '{top_k: 20, top_p: 0.9}' => {top_k:'20, top_p: 0.9'}; 'stop: [a, b]' => {stop:'[a, b]'}; 'top_k: 20\njunk\ntop_p: 0.9' => {top_k:20}. Thus unsupported or malformed tails are not rejected even though parse failure is documented to return null. Root flow object fallback at 179-181 recurses into a one-line scalar value instead of parsing commas.",
+      "risk": "UI shows configured values but requests silently omit parameters or send strings where numbers/arrays are intended; especially misleading under advertised Tavern-style YAML semantics.",
+      "recommendation": "Require full input consumption, reject unsupported shapes explicitly and surface a validation error, or use a maintained parser after an approved dependency gate. Do not silently interpret unsupported flow syntax as another type.",
+      "verification": "Fixtures for multi-key flow maps, nested flow arrays/maps, malformed trailing lines, continuation list-map items, escaped quotes/comments, scientific numeric notation and accepted documented subset; invalid inputs must never partially apply."
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "C:/Users/86158/Desktop/异界转生录/doupo/agent/doupo-agent-ui/host/llm-client.js",
+      "line": 326,
+      "title": "Model-list request has no deadline and its UI supplies no cancellation",
+      "behavior": "API preset model discovery",
+      "evidence": "listModels awaits fetch and response.json at 326-328 with only an optional caller signal; no timer/controller/deadline. index.js 3852 disables the button, calls listModels without a signal at 3855-3860 and only re-enables it in finally at 3884-3885. A never-settling fetch stub remained pending; the 25ms observation is not itself a timeout proof, missing deadline is source-proven.",
+      "risk": "A stalled gateway or body read leaves the model-discovery button disabled and status stuck indefinitely until the panel/page is recreated.",
+      "recommendation": "Apply a bounded configurable discovery deadline across headers and body; allow disposal/new-request cancellation and reset the UI deterministically.",
+      "verification": "Never-resolving fetch and json stubs must return a timeout status; cancellation/disposal must restore UI state and late responses must not update a replacement card."
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "C:/Users/86158/Desktop/异界转生录/doupo/agent/doupo-agent-ui/host/prompt-injection.js",
+      "line": 85,
+      "title": "Empty write reports cleared even when clearing failed",
+      "behavior": "Idempotent injection cleanup and settings status",
+      "evidence": "clear at 75-76 returns status:failed on host failure. Empty write ignores that result at 85 and overwrites last with cleared:true at 86. Memory host accepted 'old' then threw on empty text: write({text:' '}) returned status:empty and inspect().last.cleared=true while host container still held 'old'. Existing tests separately check clear failure but not this composition.",
+      "risk": "Stale prompt text can survive while the UI reports successful cleanup, hiding that later generations may reuse old injection.",
+      "recommendation": "Propagate failed/unsupported clear and preserve uncleared metadata until the host clear succeeds; do not overwrite failure with an empty-success record.",
+      "verification": "Write nonempty text, fail the empty clear, assert failure/cleared:false and retained diagnostic; retry successful clear, then assert empty/cleared:true. Also test repeated clear idempotency."
+    },
+    {
+      "severity": "P3",
+      "category": "Slimming Opportunities",
+      "file": "C:/Users/86158/Desktop/异界转生录/doupo/INSTALL.md",
+      "line": 19,
+      "title": "Installation guide names nested paths as current manifest targets",
+      "behavior": "Root extension package installation contract",
+      "evidence": "INSTALL.md 17-22 says current manifest references nested index.js and host/style.css. Actual manifest.json 8 and 19 reference root index.js and style.css; root index is a forwarding module and package test verifies root/nested style equality.",
+      "risk": "Troubleshooting and release packaging can target the wrong files, though existing forwarding keeps installation layout functional.",
+      "recommendation": "Describe the actual root entry/style and separately document their modular implementation/backup relationship; preserve root templates and public loading paths.",
+      "verification": "Compare guide targets against parsed manifest and run extension-package.test.mjs plus settings-template test after any separately authorized documentation correction."
+    }
+  ],
+  "function_status": [
+    {
+      "module": "llm-client",
+      "functions": "resolveConnection/configured/availableFor/describeConnection",
+      "status": "Source traced + current tests pass",
+      "details": "governAll complete global custom wins and clears all per-call overrides at 452; otherwise per-call hint then mode then legacy boolean. Per-call custom missing fields inherit global fields, including apiKey. Tavern missing quiet function can still be considered configured if context exists, or fall back to complete global endpoint. This is narrower than availability wording; runtime acceptance and no-bind/legacy-mode UI contract remain unverified."
+    },
+    {
+      "module": "llm-client",
+      "functions": "completeInner/readRequestExtras/applyRequestExtras",
+      "status": "Source traced; protocol fixtures pass; mixed-case header failure reproduced",
+      "details": "OpenAI appends /chat/completions to supplied base; Anthropic adds /v1/messages, x-api-key and standalone system, joins text content blocks. Extras body merge then exclusion then headers. No automatic provider detection beyond provider==='anthropic' observed; blank provider uses OpenAI. No network used."
+    },
+    {
+      "module": "llm-client",
+      "functions": "withTimeout/applyTavernSampling/isQuietBusy",
+      "status": "Custom timeout/body cancellation tests pass; quiet issues confirmed by source and supplied repro",
+      "details": "Custom path aborts its controller and covers response body; quiet path lacks underlying cancel and has shared sampling ownership race. Grace applies only to success."
+    },
+    {
+      "module": "llm-client",
+      "functions": "complete/emptyRetryPlan/callLog/clearCallLog",
+      "status": "Existing tests pass; boundedness/cancel gaps recorded",
+      "details": "Retries only empty-content failures; errors otherwise rethrow; logs capped at 80 and returned as copies. No numeric retry ceiling is intentional in test 560, so not reported as an independent defect. Wait has no abort listener and no upper wait ceiling. Error strings are logged; arbitrary remote error redaction not proven. No real secrets read."
+    },
+    {
+      "module": "llm-client",
+      "functions": "listModels",
+      "status": "Source-confirmed missing timeout; fixture tests pass",
+      "details": "GET /models with optional auth/extras/signal, supports data/models arrays, caps 200. No caller signal in UI."
+    },
+    {
+      "module": "llm-client",
+      "functions": "extractJson/normalizeInterpretation/buildInterpretPrompt/buildAdjudicatePrompt/buildComposePrompt/buildSettingSelectPrompt/interpret/adjudicateAction/selectSettings/compose",
+      "status": "Partial source review; complete client test module passed",
+      "details": "190-253 and 641-726 inspected; candidate IDs filtered and malformed selection returns empty; compose allows bounded raw-text fallback. Normalization/prompt sections 111-189 not fully covered; no claim of complete prompt/claims validation audit."
+    },
+    {
+      "module": "api-presets",
+      "functions": "parseYamlBlock/parseBlock/parseFlowArray/parseScalar/stripComment/splitKeyValue/keyName",
+      "status": "Complete source; simple fixtures pass; silent partial/flow parsing failures reproduced",
+      "details": "Full YAML compatibility is not established; nested flow values and whole-document validation are missing."
+    },
+    {
+      "module": "api-presets",
+      "functions": "normalizeApiPreset/normalizeApiPresets/presetToOverrides/headerEntries",
+      "status": "Source traced + test module passes",
+      "details": "Caps 20 presets, fields truncated, IDs regenerated on collisions; 0 means unspecified, preset penalties restricted nonnegative despite client's negative override support. Explicit existing normalization contract, not independently called a bug. Scheme/model/key fallback to global needs UI acceptance."
+    },
+    {
+      "module": "message-adapter",
+      "functions": "deliver/update/discard/canDeliver/indexOf",
+      "status": "Complete source; acknowledgement repro failed contract; host semantics unverified",
+      "details": "API precedence addOneMessage > sendMessage > slash; add branch checks length/text, fallback branches assume observed. update/discard act on numeric index without task ownership; stale-index/chat-switch acceptance is a required gate, not a separately proven caller defect. Dedicated adapter tests absent by filename inventory."
+    },
+    {
+      "module": "prompt-injection",
+      "functions": "channel/inspect/restore/write/clear",
+      "status": "Complete source + tests pass; composed empty-clear failure reproduced",
+      "details": "Stable key overwrites rather than appends; SYSTEM/IN_CHAT, scan=false, depth 0..100, used IDs cap 24. maxChars<=0 is intentionally unlimited; notice adds characters beyond cap. Clear event integration partly inspected only."
+    },
+    {
+      "module": "capability-preflight",
+      "functions": "probeHostCapabilities/getRequiredCapabilities/version/readPath",
+      "status": "Complete source + tests pass; runtime not accepted",
+      "details": "Checks getter, on/removeListener and event_types object; ready means basic event capability only, not LLM/message/injection support or minimum-version enforcement. Malformed semver becomes null while ready is intentionally tested. Getter throws are not caught here; no runtime throw observed."
+    },
+    {
+      "module": "package",
+      "functions": "root entry/manifest/settings template/install; extension-package test",
+      "status": "All scoped small files reviewed; static package check passes",
+      "details": "Hook names checked as text, not imported/executed in host; styles compared, templates not by this test; minimum version 1.18.0 vs generateRaw comment ST1.19 is a guarded optional feature, not a proven minimum-version bug."
+    },
+    {
+      "module": "runner/demo/docs",
+      "functions": "findTests/test import loop/demo run/connection and release docs",
+      "status": "Source reviewed or scoped partial as coverage indicates; whole runner/demo not run",
+      "details": "Runner shares process/global/module cache across suites and counts files, not individual assertions. Demo's synthetic observed:true cannot serve as adapter/runtime evidence. Nested README195 says createChatMessages but implementation uses different API precedence."
+    }
+  ],
+  "refactor_signals": [
+    {
+      "module": "host/llm-client.js",
+      "threshold": "Multiple lifecycle/parameter findings share mutable cross-call ownership",
+      "evidence": "Temporary host settings, quiet busy lifetime and cancellation are not owned by one settled underlying operation. Recommend Local Fix decisions per behavior, not a rewrite or broad new abstraction."
+    },
+    {
+      "module": "host/message-adapter.js",
+      "threshold": "Core acknowledgement contract fails pure-memory boundary test",
+      "evidence": "Delivery observation is asserted rather than measured on fallback branches; prioritize before cosmetic slimming."
+    }
+  ],
+  "slimming_themes": [
+    {
+      "pattern": "Duplicate Logic",
+      "occurrences": 2,
+      "suggested_handling": "Header normalization/merge duplicated between listModels and request extras, with case-insensitive merge bug in both. Gate a small shared case-insensitive merge only after focused fixtures; do not broaden provider abstraction."
+    },
+    {
+      "pattern": "Compatibility Path",
+      "occurrences": 3,
+      "suggested_handling": "Root forwarding entry, mirrored styles/templates, legacy connection fallbacks have active manifest/docs/test contracts. Do not delete based on duplication alone; no deletion safety proof in this slice."
+    }
+  ],
+  "stable_items": [
+    "Custom request deadline includes response.json and aborts controller, covered by existing tests.",
+    "Govern-all drops per-call body/model/auth overrides before using global endpoint; current regression test passes.",
+    "Stable prompt keys, scan=false, bounded depth and empty-success clearing provide basic idempotent injection behavior when host calls succeed.",
+    "Preset IDs/array cap and malformed shape filtering have fixtures; model and candidate lists are narrowed.",
+    "Root manifest paths exist, forwarding hooks are named, root/nested styles match in current package test.",
+    "Docs explicitly distinguish offline logic tests from real host acceptance; do not remove that boundary."
+  ],
+  "do_not_touch_yet": [
+    "Do not remove legacy mode/useSillyTavernConnection, optional raw generation guards, root forwarding files or mirrored templates/styles without reference and installed-host checks.",
+    "No independent finding for uncapped retry count: explicit current tests endorse it; cancellation responsiveness is still an actionable separate boundary.",
+    "Do not infer key leakage from global-key fallback alone: source comments/tests explicitly implement it. A switch of endpoint inherits key if preset key is blank; user-facing disclosure/opt-out needs separate contract decision.",
+    "No private-data exposure finding: real settings/secrets/log contents/release archive were deliberately not read. Git ignore patterns do not establish publication safety."
+  ],
+  "verification_gates": [
+    {
+      "check": "Five targeted ESM test modules executed successfully with only fixture/stub model calls",
+      "scope": "llm-client, api-presets, prompt-injection, capability-preflight, extension-package; 5/5 module files passed, not full repository suite."
+    },
+    {
+      "check": "Pure-memory reproductions performed in this slice",
+      "scope": "YAML flow/partial consumption, send/update false observation, failed empty-clear metadata, actual client case-folded Headers output; no network or private settings."
+    },
+    {
+      "check": "Coordinator-reverified reproductions accepted as external evidence",
+      "scope": "Pre-aborted quiet still launches; overlapping temperature overrides .7/.2/.9 restore final .2. Source cross-checked, not rerun here."
+    },
+    {
+      "check": "Add dedicated acknowledgement/commit integration regression",
+      "scope": "Unconfirmed send/slash/update must not open state commit gate."
+    },
+    {
+      "check": "Request lifetime regression",
+      "scope": "Underlying quiet settlement, pre-abort, late events, both overlap orders, retry wait abort; independent listModels fetch/body deadline and UI disposal."
+    },
+    {
+      "check": "Package acceptance in supported SillyTavern versions after separate authorization",
+      "scope": "Actual hook/interceptor registration, rendered message APIs, optional generateRaw, 1.18 minimum, event payloads, template fallbacks and disable/chat-switch cleanup. Prohibited in this task, therefore not run."
+    },
+    {
+      "check": "Release allowlist/private-data boundary validation without reading real secrets",
+      "scope": "Inspect intended tracked/published file inventory and source-only synthetic fixtures; package test currently has no release private-data assertion. No publish performed."
+    }
+  ],
+  "optimization_handoffs": [
+    {
+      "module": "host/message-adapter.js",
+      "evidence": "No-op sendMessage returns observed:true while chat is empty; commit-recovery accepts observed flag.",
+      "threshold": "Local Fix",
+      "suggested_gate_mode": "Local Fix Only",
+      "behavior_contract_hints": "Never claim a host message observed without identifiable host evidence; unconfirmed delivery must not permit state commit. Preserve successful supported delivery and placeholder updates.",
+      "patch_budget": "One acknowledgement path; normally 1-2 files, target under 80 changed lines; add focused adapter tests. No changes authorized by this audit.",
+      "pre_change_baseline": "Five targeted tests pass; dedicated no-op delivery repro currently demonstrates defect.",
+      "verification_gate": "No-op/throwing send/slash/render/update, positive append/update, and commit rejection on absent evidence; host API acceptance separately.",
+      "deletion_safety": "No deletion recommended; compatibility fallbacks must not be removed without callsite/runtime evidence.",
+      "forbidden_scope": "Settings, archives, root manifest/templates, unrelated core/game modules, provider migrations and actual user data."
+    }
+  ],
+  "gate_recommendation": "Select only delivery acknowledgement for the first Local Fix / Local Fix Only gate. Other findings remain evidence-backed backlog until separately authorized; Reject Optimization for broad rewriting/deletion.",
+  "residual_risk": [
+    "Scope inventory is recorded but partial/unread rows remain; this is not a completed repository-wide scan.",
+    "Full test runner and offline demo were not executed; adapter test discovery was filename-based, so indirect coverage may exist elsewhere.",
+    "No browser, network, real model, installed-host API reference or actual SillyTavern acceptance; do not infer event/version/API correctness from stubs.",
+    "Root/nested README read only in scoped relevant ranges; full release history, tracked artifact contents and private-data distribution boundary not validated.",
+    "Nested entry disable branch removes listeners and resets action adjudication; full interceptor/in-flight injection invalidation after disable remains an explicit unverified lifecycle gate, not a standalone confirmed finding.",
+    "No source/configuration changes made. Existing worktree modifications were present before this review; final report files are the only intentional writes."
+  ]
+}

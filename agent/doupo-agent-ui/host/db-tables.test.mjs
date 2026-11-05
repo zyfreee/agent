@@ -14,8 +14,30 @@ import {
     memoryStateFromTables,
     applyDesiredToView,
     sameSelfState,
+    preserveUnmappedSelfFields,
     sameMemoryState,
 } from './db-tables.js';
+
+// OPT-012: DB owns only its projected fields; stable IDs preserve hidden state.
+{
+    const current = {
+        gold: 10, skills: [{ id: 's1', name: '掌法', progress: '熟练', note: '师授' }],
+        items: [{ id: 'b1', name: '丹', count: 2, note: '留用' }],
+        crafts: [{ id: 'c1', name: '散', count: 7, note: '旧注' }],
+        goals: [{ id: 'g1', title: '旧', note: '自定', source: '手动' }],
+        _runtime: { version: 1, seq: 4, lastFloor: { floor: 3, undo: [{ op: 'setGold', amount: 0 }] } },
+    };
+    const projected = { gold: 10, skills: [{ id: 's1', name: '新掌法' }], items: [{ id: 'b1', name: '丹', count: 3 }], crafts: [{ id: 'c1', name: '散', note: 'DB注' }], goals: [{ id: 'g1', title: '新' }] };
+    const merged = preserveUnmappedSelfFields(projected, current);
+    assert.equal(merged.skills[0].progress, '熟练');
+    assert.equal(merged.items[0].note, '留用');
+    assert.equal(merged.crafts[0].count, 7);
+    assert.equal(merged.crafts[0].note, 'DB注');
+    assert.equal(merged.goals[0].source, '手动');
+    assert.deepEqual(merged._runtime, current._runtime);
+    assert.throws(() => preserveUnmappedSelfFields({ ...projected, gold: 20 }, current), error => error.code === 'db_runtime_conflict');
+    assert.equal(current.items[0].count, 2);
+}
 
 // ---------- 表定义不变量：表头与 DDL 注释必须一一对应，防止两边漂移 ----------
 
@@ -34,11 +56,11 @@ for (const def of ALL_TABLE_DEFS) {
 
 assert.equal(new Set(ALL_TABLE_DEFS.map(def => def.key)).size, ALL_TABLE_DEFS.length, '表键重复');
 assert.equal(new Set(ALL_TABLE_DEFS.map(def => def.name)).size, ALL_TABLE_DEFS.length, '表名重复');
-assert.equal(SELF_TABLE_DEFS.length, 8);
+assert.equal(SELF_TABLE_DEFS.length, 10);
 assert.equal(MEMORY_TABLE_DEFS.length, 2);
 assert.equal(new Set(MEMORY_TABLE_DEFS.map(def => def.name)).size, 2);
 assert.deepEqual(MEMORY_TABLE_DEFS.map(def => def.name), ['小记忆', '大记忆']);
-assert.equal(ALL_TABLE_DEFS.length, 10);
+assert.equal(ALL_TABLE_DEFS.length, 12);
 // 世界运转不连数据库：世界三表不在桥接定义里，只存在于退役名单（合并导入时剔除）
 assert.ok(!ALL_TABLE_DEFS.some(def => def.name.startsWith('世界·')), '世界表不得再进桥接定义');
 assert.deepEqual([...RETIRED_TABLE_NAMES].sort(), ['世界·事件', '世界·现状', '世界·任务'].sort());
@@ -183,13 +205,18 @@ const sampleSelf = {
     titles: ['乌坦城天才'],
     techniques: [{ id: 't1', name: '焚决', grade: '黄阶低级', type: '修炼功法', progress: '第三层', source: '药老所赠' }],
     skills: [{ id: 's1', name: '八极崩', grade: '黄阶高级', type: '攻击', source: '药老' }],
+    equipment: [{ id: 'e1', name: '复元甲', grade: '玄阶中品', type: '防具', source: '购置' }],
+    treasures: [{ id: 'z1', name: '青莲地心火', grade: '异火榜第十九', type: '异火', source: '塔戈沙漠所得' }],
     items: [
         { id: 'b1', name: '回气丹', category: '丹药', grade: '一品', count: 3, equipped: false, source: '购买' },
         { id: 'b2', name: '玄重尺', category: '武器', grade: '中品', count: 1, equipped: true, source: '家传' },
     ],
     recipes: [{ id: 'r1', name: '回气丹', craft: '炼药', grade: '一品', materials: '凝骨草等' }],
     crafts: [{ id: 'c1', name: '回气散', craft: '炼药', startDay: 10, endDay: 13, status: 'open', note: '缺一味凝骨草' }],
-    goals: [{ id: 'g1', text: '三年之约', priority: '主线', due: '三年后', done: false }],
+    goals: [
+        { id: 'g1', title: '三年之约雪前耻', name: '三年之约雪前耻', text: '三年之约，云岚宗一雪前耻，当众赢回萧家颜面', priority: '主线', due: '三年后', done: false },
+        { id: 'g2', text: '凑齐焚决后续功法', priority: '支线', due: '', done: false },
+    ],
     log: [{ floor: 5, note: '本地流水不进表' }],
     updatedAt: '2026-10-29T00:00:00.000Z',
 };
@@ -205,10 +232,14 @@ assert.ok(sameSelfState(derivedSelf.state, sampleSelf), '纳戒往返应等值�
 assert.equal(derivedSelf.state.gold, 3200);
 assert.equal(derivedSelf.state.day, 12);
 assert.equal(derivedSelf.state.profile.attribute, '火', '斗气属性列往返（dp_profile 第 8 列）');
+assert.equal(derivedSelf.state.equipment[0].name, '复元甲', '装备栏往返（dp_equipment）');
 assert.equal(derivedSelf.state.items[1].equipped, true);
 assert.equal(derivedSelf.state.items[0].count, 3);
 assert.equal(derivedSelf.state.crafts[0].status, 'open');
+assert.equal(derivedSelf.state.goals.length, 2, '两条目标都往返');
+assert.equal(derivedSelf.state.goals[0].title, '三年之约雪前耻', '显式短标题走标题列往返');
 assert.equal(derivedSelf.state.goals[0].done, false);
+assert.equal(derivedSelf.state.goals[1].title, '凑齐焚决后续功法', '无标题老目标解码时从内容补兼容短标题');
 assert.deepEqual(derivedSelf.state.log, [], '流水不镜像，收养时由调用方保留');
 
 // 空表判定：全空状态标 empty
@@ -237,6 +268,88 @@ assert.equal(emptySelf.empty, true);
     assert.equal(mergedAgain.added.length, 0);
 }
 
+// 旧表名改名升级：配方→炼丹、炼制台→炼器 原位改名，行与表头不动，幂等
+{
+    const legacyNames = {
+        mate: { type: 'chatSheets', version: 1 },
+        sheet_dpRecipesOld: {
+            name: '纳戒·配方',
+            content: [
+                ['row_id', '编号', '名称', '类别', '品阶', '材料'],
+                ['1', 'r1', '回气丹', '炼药', '一品', '凝骨草等'],
+            ],
+        },
+        sheet_dpCraftsOld: {
+            name: '纳戒·炼制台',
+            content: [
+                ['row_id', '编号', '名称', '类别', '开始日', '结束日', '状态', '备注'],
+                ['1', 'c1', '回气散', '炼药', '10', '13', '进行中', '缺一味凝骨草'],
+            ],
+        },
+    };
+    const merged = mergeBridgeSheets(legacyNames);
+    assert.ok(merged.migrated.includes('纳戒·配方') && merged.migrated.includes('纳戒·炼制台'), '改名要上报 migrated，调用方据此回导模板');
+    assert.ok(!merged.replaced.includes('纳戒·炼丹') && !merged.added.includes('纳戒·炼丹'), '改名后按新名命中，不补空表');
+    const recipes = Object.values(merged.template).find(sheet => sheet?.name === '纳戒·炼丹');
+    const crafts = Object.values(merged.template).find(sheet => sheet?.name === '纳戒·炼器');
+    assert.deepEqual(recipes.content[1], ['1', 'r1', '回气丹', '炼药', '一品', '凝骨草等'], '改名不动行');
+    assert.deepEqual(crafts.content[1], ['1', 'c1', '回气散', '炼药', '10', '13', '进行中', '缺一味凝骨草']);
+    const mergedAgain = mergeBridgeSheets(merged.template);
+    assert.deepEqual(mergedAgain.migrated, [], '改名后幂等');
+    assert.deepEqual(mergedAgain.added, []);
+}
+
+// 旧版目标表原位迁移：merge 时补「标题」列并从内容补兼容短标题，老行一条不丢，幂等
+{
+    const legacyGoals = {
+        mate: { type: 'chatSheets', version: 1 },
+        sheet_dpGoalsOld: {
+            name: '纳戒·目标',
+            content: [
+                ['row_id', '编号', '内容', '优先级', '期限', '达成'],
+                ['1', 'g1', '三年之约，云岚宗一雪前耻', '主线', '三年后', '否'],
+                ['2', 'g2', '凑齐焚决后续功法', '支线', '', ''],
+            ],
+        },
+    };
+    const merged = mergeBridgeSheets(legacyGoals);
+    assert.ok(!merged.replaced.includes('纳戒·目标'), '旧目标表原位迁移，不整表替换');
+    assert.ok(!merged.added.includes('纳戒·目标'), '同名表已在，不补新表');
+    assert.deepEqual(merged.migrated, ['纳戒·目标'], '迁移要单独上报，调用方据此回导模板');
+    const sheet = Object.values(merged.template).find(sheet => sheet?.name === '纳戒·目标');
+    assert.deepEqual(sheet.content[0], ['row_id', '编号', '标题', '内容', '优先级', '期限', '达成'], '原位补「标题」列');
+    assert.deepEqual(sheet.content[1], ['1', 'g1', '三年之约', '三年之约，云岚宗一雪前耻', '主线', '三年后', '否'], '老行保留，短标题从内容第一分句补出');
+    assert.deepEqual(sheet.content[2], ['2', 'g2', '凑齐焚决后续功法', '凑齐焚决后续功法', '支线', '', '']);
+    assert.ok(sheet.sourceData.ddl.includes('goal_title'), 'DDL 随迁移换成新结构，否则整包导入被校验器连坐拒绝');
+    const mergedAgain = mergeBridgeSheets(merged.template);
+    assert.deepEqual(mergedAgain.migrated, [], '迁移后表头吻合，幂等不再动表');
+    assert.deepEqual(mergedAgain.replaced, []);
+    assert.deepEqual(mergedAgain.added, []);
+    const sheetAgain = Object.values(mergedAgain.template).find(sheet => sheet?.name === '纳戒·目标');
+    assert.deepEqual(sheetAgain.content, sheet.content, '重复 merge 行内容一字不动');
+}
+
+// 目标表解码容忍旧结构：没跑过迁移的旧表（无标题列、行宽 6）也能读出来
+{
+    const oldView = {
+        sheet_dpGoalsOld: {
+            name: '纳戒·目标',
+            content: [
+                ['row_id', '编号', '内容', '优先级', '期限', '达成'],
+                ['1', 'g1', '三年之约，云岚宗一雪前耻', '主线', '三年后', '是'],
+                ['2', '', '手工加的行', '支线', '', ''],
+            ],
+        },
+    };
+    const decoded = selfStateFromTables(oldView);
+    assert.equal(decoded.state.goals.length, 2, '按表头找列，旧宽度行不丢');
+    assert.equal(decoded.state.goals[0].id, 'g1');
+    assert.equal(decoded.state.goals[0].title, '三年之约', '无标题列时从内容补兼容短标题');
+    assert.equal(decoded.state.goals[0].text, '三年之约，云岚宗一雪前耻');
+    assert.equal(decoded.state.goals[0].done, true);
+    assert.equal(decoded.state.goals[1].id, 'g2', '编号空的行按序补号');
+}
+
 // ---------- reconcile：最小差异 ----------
 
 const bridgeOnlyView = buildBridgeSheets(); // 只有表头行
@@ -245,7 +358,7 @@ const bridgeOnlyView = buildBridgeSheets(); // 只有表头行
 {
     const { ops, missingTables } = reconcileTables(bridgeOnlyView, desiredSelfRows(sampleSelf));
     assert.deepEqual(missingTables, [], '模板片段齐表时不应报缺表');
-    assert.equal(ops.filter(op => op.kind === 'insertRow').length, 9, '档案1+称号1+功法1+斗技1+行囊2+配方1+炼制1+目标1');
+    assert.equal(ops.filter(op => op.kind === 'insertRow').length, 12, '档案1+称号1+功法1+斗技1+装备1+天材地宝1+行囊2+配方1+炼制1+目标2');
 }
 
 // 2. 档案行更新：只产生一个 updateRow，data 只含变化的列
@@ -309,8 +422,8 @@ const bridgeOnlyView = buildBridgeSheets(); // 只有表头行
 {
     const { missingTables } = reconcileTables({}, desiredSelfRows(sampleSelf));
     assert.deepEqual(missingTables.sort(), [
-        '纳戒·主角档案', '纳戒·称号', '纳戒·功法', '纳戒·斗技',
-        '纳戒·行囊', '纳戒·配方', '纳戒·炼制台', '纳戒·目标',
+        '纳戒·主角档案', '纳戒·称号', '纳戒·功法', '纳戒·斗技', '纳戒·装备',
+        '纳戒·天材地宝', '纳戒·行囊', '纳戒·炼丹', '纳戒·炼器', '纳戒·目标',
     ].sort());
 }
 
@@ -329,16 +442,16 @@ const bridgeOnlyView = buildBridgeSheets(); // 只有表头行
 const sampleMemory = {
     schemaVersion: 2,
     entries: [
-        { id: 'm1', tier: 'small', text: '穆蛇在坊市被打跑', quote: '把灵石留下。', basis: '第 6 楼', related: ['穆蛇'], aliases: ['穆老大'], weight: 'minor', tag: '', day: 6, done: false, resolvedDay: null, note: '', recallCount: 2, lastRecallDay: 9 },
-        { id: 'm2', tier: 'small', text: '掌柜多找了一枚铜板', quote: '', basis: '第 8 楼', related: ['坊市掌柜'], aliases: [], weight: 'minor', day: 8, done: true, resolvedDay: 9, note: '', recallCount: 0, lastRecallDay: null },
-        { id: 'm3', tier: 'big', text: '欠药老一条命', quote: '这条命，是老夫捡回来的。', basis: '第 3 楼', related: ['药老'], aliases: ['药尘'], weight: 'major', tag: 'grudge', day: 3, done: false, resolvedDay: null, note: '', recallCount: 5, lastRecallDay: 12 },
-        { id: 'm4', tier: 'big', text: '云韵留了半句话', quote: '', basis: '第 9 楼', related: ['云韵'], aliases: [], weight: 'minor', tag: '', day: 9, done: false, resolvedDay: null, note: '', recallCount: 0, lastRecallDay: null },
+        { id: 'm1', tier: 'small', text: '穆蛇在坊市被打跑', quote: '把灵石留下。', basis: '第 6 楼', related: ['穆蛇'], aliases: ['穆老大'], weight: 'minor', tag: '', day: 6, note: '' },
+        { id: 'm2', tier: 'small', text: '掌柜多找了一枚铜板', quote: '', basis: '第 8 楼', related: ['坊市掌柜'], aliases: [], weight: 'minor', day: 8, note: '掌柜后来补了钱' },
+        { id: 'm3', tier: 'big', text: '欠药老一条命', quote: '这条命，是老夫捡回来的。', basis: '第 3 楼', related: ['药老'], aliases: ['药尘'], weight: 'major', tag: 'grudge', day: 3, note: '' },
+        { id: 'm4', tier: 'big', text: '云韵留了半句话', quote: '', basis: '第 9 楼', related: ['云韵'], aliases: [], weight: 'minor', tag: '', day: 9, note: '' },
     ],
     log: [{ note: '流水不镜像' }],
     updatedAt: '2026-10-29T00:00:00.000Z',
 };
 
-// 9. 状态 → 行 → 表 → 状态 往返：小/大分流、引文/别名/标签列、了结列都对得上；召回统计不镜像
+// 9. 状态 → 行 → 表 → 状态 往返：小/大分流、引文/别名/标签列都对得上；了结列已随概念删除
 {
     const groups = desiredMemoryRows(sampleMemory);
     assert.equal(groups.length, 2);
@@ -347,18 +460,39 @@ const sampleMemory = {
     const view = applyDesiredToView({}, groups);
     const derived = memoryStateFromTables(view);
     assert.equal(derived.empty, false);
-    assert.ok(sameMemoryState(derived.state, sampleMemory), '记忆往返应等值（召回统计不参与）');
+    assert.ok(sameMemoryState(derived.state, sampleMemory), '记忆往返应等值');
     assert.equal(derived.state.entries[0].tier, 'small');
     assert.equal(derived.state.entries[0].quote, '把灵石留下。');
     assert.deepEqual(derived.state.entries[0].aliases, ['穆老大']);
     assert.equal(derived.state.entries[2].tag, 'grudge');
     assert.equal(derived.state.entries[2].weight, 'major');
     assert.equal(derived.state.entries[2].quote, '这条命，是老夫捡回来的。');
-    assert.equal(derived.state.entries[1].done, true);
+    assert.equal(derived.state.entries[1].note, '掌柜后来补了钱');
+    assert.equal('done' in derived.state.entries[1], false, '已了结字段不再进出表');
     assert.deepEqual(derived.state.entries[0].related, ['穆蛇']);
 }
 
-// 10. 空账判定 + 同表 reconcile（了结一条：updateRow 只动已了结/了结日/备注）
+// 9½. 旧 12 列结构（含已了结/了结日）的表也能正确收养：列位按表头名定位，不写死下标
+{
+    const view = applyDesiredToView({}, desiredMemoryRows(sampleMemory));
+    const legacy = JSON.parse(JSON.stringify(view));
+    const smallKey = ALL_TABLE_DEFS.find(def => def.name === '小记忆').key;
+    const sheet = legacy[smallKey];
+    // 把表头插回已了结/了结日两列（新定义没有），行里补上旧值——模拟数据库里的旧版表
+    sheet.content[0] = ['row_id', '编号', '内容', '引文', '依据', '关联', '别名', '分量', '记于日', '已了结', '了结日', '备注'];
+    sheet.content[1].splice(9, 0, '否', '');
+    sheet.content[2].splice(9, 0, '是', '14');
+    const derived = memoryStateFromTables(legacy);
+    assert.equal(derived.empty, false);
+    const m1 = derived.state.entries.find(entry => entry.id === 'm1');
+    const m2 = derived.state.entries.find(entry => entry.id === 'm2');
+    assert.equal(m1.note, '', 'm1 备注按表头名读到正确的列');
+    assert.equal(m2.note, '掌柜后来补了钱', '备注读的是备注列本身，不是旁边的已了结列');
+    assert.equal(m2.text, '掌柜多找了一枚铜板', '正文列不受结构差异影响');
+    assert.equal('done' in m2, false, '已了结概念不复活');
+}
+
+// 10. 空账判定 + 同表 reconcile（改备注一条：updateRow 只动备注列；了结列已删除）
 {
     const bridgeView = buildBridgeSheets();
     const empty = memoryStateFromTables(bridgeView);
@@ -366,11 +500,10 @@ const sampleMemory = {
     const view = applyDesiredToView(bridgeView, desiredMemoryRows(sampleMemory));
     assert.equal(reconcileTables(view, desiredMemoryRows(sampleMemory)).ops.length, 0, '无变化零操作');
     const changed = JSON.parse(JSON.stringify(sampleMemory));
-    changed.entries[0].done = true;
-    changed.entries[0].resolvedDay = 14;
-    changed.entries[0].note = '此事翻篇';
+    changed.entries[0].note = '后来穆蛇带了人来报复';
+    changed.entries[0].weight = 'major';
     const { ops } = reconcileTables(view, desiredMemoryRows(changed));
-    assert.deepEqual(ops, [{ kind: 'updateRow', table: '小记忆', rowIndex: 1, data: { 已了结: '是', 了结日: '14', 备注: '此事翻篇' } }]);
+    assert.deepEqual(ops, [{ kind: 'updateRow', table: '小记忆', rowIndex: 1, data: { 分量: '重大', 备注: '后来穆蛇带了人来报复' } }]);
     // 层级迁移（转大）：小表删行 + 大表插行
     const promoted = JSON.parse(JSON.stringify(sampleMemory));
     promoted.entries[0].tier = 'big';
@@ -389,18 +522,24 @@ const sampleMemory = {
     assert.ok(!sameMemoryState(a, b));
 }
 
-// 12. 记忆表导出配置（数据库关键词召回）：小/大记忆都带 keyword 配置，触发词=关联,别名
+// 12. 记忆表导出配置：小/大记忆都带 keyword 配置（形状保留），但默认关闭——
+//     召回由扩展的召回决定负责，绿光条目开着会同一条记忆双份进提示词
 {
     const fragment = buildBridgeSheets();
     const small = fragment[ALL_TABLE_DEFS.find(def => def.name === '小记忆').key];
     const big = fragment[ALL_TABLE_DEFS.find(def => def.name === '大记忆').key];
     for (const sheet of [small, big]) {
-        assert.equal(sheet.exportConfig.enabled, true, '导出配置要启用');
+        assert.equal(sheet.exportConfig.enabled, false, '导出配置默认关闭（防双份注入）');
         assert.equal(sheet.exportConfig.entryType, 'keyword', '关键词召回');
         assert.equal(sheet.exportConfig.keywords, '关联,别名', '触发词列=关联,别名');
         assert.equal(sheet.exportConfig.splitByRow, true, '逐行一条目');
         assert.ok(sheet.exportConfig.injectionTemplate.includes('$1'), '注入模板带行内容占位');
     }
+    // 表头不再有已了结/了结日两列（表头在 content 首行）
+    const smallHeaders = small.content[0];
+    const bigHeaders = big.content[0];
+    assert.ok(!smallHeaders.includes('已了结') && !smallHeaders.includes('了结日'), '小记忆表无了结列');
+    assert.ok(!bigHeaders.includes('已了结') && !bigHeaders.includes('了结日'), '大记忆表无了结列');
 }
 
 // 13. 关联/别名镜像用逗号（数据库触发词拆分只认逗号），读取兼容顿号旧行
@@ -431,7 +570,8 @@ const sampleMemory = {
     assert.equal(merged.replaced.length, 0, '表头一致不替换');
     assert.equal(merged.updated.length, 1, '导出配置对不上要刷新');
     assert.equal(merged.updated[0], '大记忆');
-    assert.equal(merged.template[bigKey].exportConfig.enabled, true, '刷新成 keyword 配置');
+    assert.equal(merged.template[bigKey].exportConfig.entryType, 'keyword', '刷新成定义的 keyword 配置');
+    assert.equal(merged.template[bigKey].exportConfig.enabled, false, '刷新后仍是定义的默认关闭');
     assert.equal(merged.template[bigKey].exportConfig.keywords, '关联,别名');
     const mergedAgain = mergeBridgeSheets(merged.template);
     assert.equal(mergedAgain.updated.length, 0, '刷新后幂等');

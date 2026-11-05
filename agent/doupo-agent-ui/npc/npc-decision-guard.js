@@ -28,7 +28,8 @@ export function createNpcDecisionGuard({ maxEvidence = 12, maxPlans = 100 } = {}
         const allowedFacts = new Set(envelope.knownFactIds);
         const hidden = evidence.filter(id => !allowedFacts.has(id));
         if (hidden.length) return { status: 'rejected', reason: 'out_of_knowledge_scope', npcId, taskId, rejectedFactIds: hidden };
-        const key = `${sessionId}\u0000${branchId}\u0000${taskId}\u0000${npcId}`;
+        const scope = JSON.stringify([stateVersion, permission, envelope]);
+        const key = `${sessionId}\u0000${branchId}\u0000${taskId}\u0000${npcId}\u0000${scope}`;
         const previous = decisions.get(key);
         if (previous) return { ...structuredClone(previous), replayed: true };
         const base = { sessionId, branchId, taskId, stateVersion, npcId, intent: proposal.intent,
@@ -54,6 +55,20 @@ export function createNpcDecisionGuard({ maxEvidence = 12, maxPlans = 100 } = {}
         } else {
             base.status = proposal.requiresPlayerResponse === true ? 'waiting_player' : 'decision_proposed';
             base.pauseBeforeAction = proposal.requiresPlayerResponse === true;
+        }
+        base.authority = structuredClone(permission);
+        if (base.actionIntent) {
+            base.targetId = base.actionIntent.targetId;
+            base.method = base.actionIntent.method;
+            if (permission.allowedActions) base.authorizedActions = [...permission.allowedActions];
+            for (const field of ['actionId', 'attemptId']) if (proposal.action[field] !== undefined) base[field] = nonempty(proposal.action[field], `action.${field}`);
+        }
+        if (proposal.process !== undefined) {
+            const process = proposal.process;
+            if (!process || typeof process !== 'object' || Array.isArray(process) || typeof process.id !== 'string' || !process.id.trim()) return { status: 'needs_review', reason: 'invalid_world_process', npcId, taskId };
+            const scope = { sessionId, branchId, stateVersion, actorId: npcId };
+            if (Object.entries(scope).some(([field, value]) => process[field] !== undefined && process[field] !== value)) return { status: 'needs_review', reason: 'world_process_scope_mismatch', npcId, taskId };
+            base.process = { ...structuredClone(process), ...scope };
         }
         if (proposal.plan) {
             if (plans.size >= maxPlans && !plans.has(`${sessionId}\u0000${branchId}\u0000${npcId}\u0000${proposal.plan.id}`)) return { status: 'blocked', reason: 'plan_limit', npcId, taskId };

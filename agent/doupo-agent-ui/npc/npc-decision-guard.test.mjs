@@ -40,4 +40,21 @@ assert.equal(stalePermission.status, 'stale_state');
 assert.throws(() => guard.review({ ...base, taskId: 'turn-bad-knowledge', envelope: { npcId: 'captain', knownFactIds: [''] }, proposal: { intent: 'wait' } }), /knownFactIds/);
 assert.equal(guard.clearBranch('s1', 'b1') >= 1, true);
 assert.equal(guard.getPlan({ sessionId: 's1', branchId: 'b1', npcId: 'captain', planId: 'check-road' }), undefined);
+// OPT-054: replay is scoped to the current state and authority/knowledge envelope.
+{
+    const guard = createNpcDecisionGuard();
+    const input = { ...base, taskId: 'versioned', proposal: { intent: 'wait' } };
+    guard.review(input);
+    const v2 = guard.review({ ...input, stateVersion: 'v2', proposal: { intent: 'refuse' } });
+    assert.equal(v2.stateVersion, 'v2'); assert.equal(v2.intent, 'refuse');
+    assert.notEqual(v2.replayed, true);
+    assert.equal(guard.review({ ...input, stateVersion: 'v2', proposal: { intent: 'ask' } }).replayed, true);
+    const authorityChanged = guard.review({ ...input, permission: { ...base.permission, allowedIntents: ['ask'] }, proposal: { intent: 'ask' } });
+    assert.equal(authorityChanged.intent, 'ask'); assert.notEqual(authorityChanged.replayed, true);
+    const knowledgeChanged = guard.review({ ...input, envelope: { ...base.envelope, knownFactIds: ['new-fact'] }, proposal: { intent: 'refuse', evidenceFactIds: ['new-fact'] } });
+    assert.equal(knowledgeChanged.intent, 'refuse'); assert.notEqual(knowledgeChanged.replayed, true);
+    assert.notEqual(guard.review({ ...input, branchId: 'b2' }).replayed, true);
+    assert.equal(guard.review({ ...input, permission: { ...base.permission, stateVersion: 'v0' } }).status, 'stale_state');
+    assert.equal(guard.review({ ...input, envelope: { ...base.envelope, stateVersion: 'v0' } }).status, 'stale_state');
+}
 console.log('NPC decision guard tests passed');

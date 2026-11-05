@@ -12,7 +12,7 @@ const VOLUME_MARK = /^〔[^〕]*卷\s*0*([0-9]{1,2})/u;
  * 条目正文里带〔卷04 增补〕这类分段标记，当前只到卷 01 时后面的段全是剧透。
  * 按卷号机械裁剪（不判断内容），没有标记的条目原样返回。
  */
-function trimToVolume(content, volume) {
+export function trimToVolume(content, volume) {
     if (!Number.isInteger(volume) || volume < 1) return content;
     if (typeof content !== 'string' || !content.includes('〔')) return content;
     const kept = [];
@@ -49,16 +49,21 @@ function excerptOf(content) {
 }
 
 /** 预算放不下时按整句裁：优先在句号、叹号、问号、分号处断，不在词中间断。 */
-function fitBySentence(text, room) {
+function fitBySentence(text, room, countTokens) {
     if (!text || room <= 0) return '';
     let out = '';
     for (const part of text.split(/(?<=[。！？；])/u)) {
-        if ((out + part).length > room) break;
-        out += part;
+        const next = out + part;
+        if (countTokens(next.length < text.length ? `${next}…` : next) > room) break;
+        out = next;
     }
     if (out) return out.length < text.length ? `${out}…` : out;
-    if (room <= 24) return '';
-    return `${text.slice(0, room - 1)}…`;
+    if (room - countTokens('') <= 24) return '';
+    for (const char of text) {
+        if (countTokens(`${out}${char}…`) > room) break;
+        out += char;
+    }
+    return out ? `${out}…` : '';
 }
 
 /** Strips punctuation, whitespace and case so Chinese keys survive matched noise. */
@@ -258,18 +263,21 @@ export function createSettingSupply({ countTokens = estimateTokens } = {}) {
         const cap = unlimited ? Infinity : Math.floor(raw);
         const seen = new Set();
         const picked = [];
+        const lines = [];
         let used = 0;
         const dropped = [];
         const render = (entry, layer) => {
             if (layer === 'mention') return `[${entry.id}] ${entry.name}`;
             // 世界书条目只带正文、没有单独摘要；摘要层按正文剥标签后截，
             // 绝不能渲染成 undefined，也不能断在半句话上。
-            const fallback = layer === 'summary' ? excerptOf(entry.content) : '';
+            const content = trimToVolume(entry.content, volume);
+            const fallback = content === entry.content ? entry.summary : '';
             const body = layer === 'full'
-                ? trimToVolume(entry.content, volume)
-                : layer === 'summary' ? (excerptOf(entry.content) || entry.summary || fallback || entry.name) : entry.name;
+                ? content
+                : layer === 'summary' ? (excerptOf(content) || fallback || entry.name) : entry.name;
             return `[${entry.id}] ${entry.name}：${body}`;
         };
+        const tokensWith = line => countTokens([...lines, line].join('\n'));
         const queue = [];
         for (const item of Array.isArray(chosen) ? chosen : []) {
             const id = typeof item?.id === 'string' ? item.id : '';
@@ -288,20 +296,21 @@ export function createSettingSupply({ countTokens = estimateTokens } = {}) {
             for (const candidateLayer of ladder) {
                 const text = render(entry, candidateLayer);
                 // 标题行很小，只要整体还没超预算就保留，不能被均分额度挤掉。
-                const budgetOk = candidateLayer === 'mention' ? used + countTokens(text) <= cap : countTokens(text) <= allowance;
+                const cost = tokensWith(text);
+                const budgetOk = candidateLayer === 'mention' ? cost <= cap : cost - used <= allowance && cost <= cap;
                 if (budgetOk) { line = text; layer = candidateLayer; break; }
                 // 摘要层放不下时按整句裁，不设固定字数；裁不出可用内容再降到下一层。
                 if (candidateLayer === 'summary') {
                     const head = `[${entry.id}] ${entry.name}：`;
-                    const fitted = fitBySentence(excerptOf(entry.content), allowance - countTokens(head));
+                    const fitted = fitBySentence(excerptOf(trimToVolume(entry.content, volume)), used + allowance, body => tokensWith(`${head}${body}`));
                     if (fitted) { line = `${head}${fitted}`; layer = 'summary'; break; }
                 }
             }
             if (!line) { dropped.push({ id, reason: 'over_budget' }); continue; }
-            used += countTokens(line);
+            used = tokensWith(line);
+            lines.push(line);
             picked.push({ id, layer });
         }
-        const lines = picked.map(({ id, layer }) => render(entries.get(id), layer));
         return {
             text: lines.join('\n'),
             usedIds: picked.map(item => item.id),

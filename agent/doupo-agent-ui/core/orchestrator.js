@@ -59,6 +59,8 @@ export function createOrchestrator({
                     branchId,
                     stateVersion: loaded.snapshot.stateVersion ?? 'v1',
                     state: loaded.snapshot.state,
+                    ...(typeof loaded.snapshot.baseVersion === 'string' && loaded.snapshot.baseState && typeof loaded.snapshot.baseState === 'object' && !Array.isArray(loaded.snapshot.baseState)
+                        ? { baseVersion: loaded.snapshot.baseVersion, baseState: loaded.snapshot.baseState } : {}),
                     history: Array.isArray(loaded.snapshot.history) ? loaded.snapshot.history : [],
                 });
                 return stateStore.read({ sessionId, branchId });
@@ -86,12 +88,23 @@ export function createOrchestrator({
             branchId,
             stateVersion: loaded.snapshot.stateVersion ?? 'v1',
             state: loaded.snapshot.state,
+            ...(typeof loaded.snapshot.baseVersion === 'string' && loaded.snapshot.baseState && typeof loaded.snapshot.baseState === 'object' && !Array.isArray(loaded.snapshot.baseState)
+                ? { baseVersion: loaded.snapshot.baseVersion, baseState: loaded.snapshot.baseState } : {}),
             history: Array.isArray(loaded.snapshot.history) ? loaded.snapshot.history : [],
         });
         return { status: 'restored', stateVersion: loaded.snapshot.stateVersion ?? 'v1' };
     }
 
-    async function runTurn({ sessionId, branchId, input, triggerMessageId, signal } = {}) {
+    const runningScopes = new Set();
+    async function runTurn(options = {}) {
+        const key = JSON.stringify([options.sessionId, options.branchId].map(value => typeof value === 'string' ? value.trim() : value));
+        if (runningScopes.has(key)) return { status: 'busy', reason: 'turn_in_progress' };
+        runningScopes.add(key);
+        try { return await executeTurn(options); }
+        finally { runningScopes.delete(key); }
+    }
+
+    async function executeTurn({ sessionId, branchId, input, triggerMessageId, signal } = {}) {
         const currentSettings = settings?.() ?? {};
         if (currentSettings.enabled === false) return { status: 'disabled', message: '总控已关闭，本轮不执行。' };
         sessionId = needText(sessionId, 'sessionId');
@@ -116,6 +129,7 @@ export function createOrchestrator({
             } catch { placeholderMessage = null; }
         }
 
+        try {
         let interpretation;
         try {
             interpretation = await interpret({ input, state: record.state, allowedFields: contracts ? listWritableFields(contracts) : [], signal });
@@ -139,7 +153,6 @@ export function createOrchestrator({
             return { status: routed.status, reason: routed.reason, taskId, interpretation, classification: routed.classified };
         }
 
-        try {
         const playerAction = routed.authorization.playerAction;
         const run = await pipeline.run({
             taskId,
@@ -179,6 +192,11 @@ export function createOrchestrator({
             return { status: 'failed', stage: 'compose', reason: 'empty_text', taskId };
         }
 
+        if (stateStore.read({ sessionId, branchId }).stateVersion !== stateVersion) {
+            pipeline.cancel(taskId);
+            settle(taskId, 'failed_unapplied', { message: '状态版本已变化，旧候选不交付。', applied: '没有状态变更', nextStep: '基于当前状态重新运行。' });
+            return { status: 'failed', stage: 'prepare_commit', reason: 'stale_state', taskId };
+        }
         const delivery = await deliver({ text, taskId, messageId: placeholderMessage?.messageId });
         if (delivery?.ok) placeholderConsumed = true;
         if (!delivery?.ok) {
@@ -191,12 +209,15 @@ export function createOrchestrator({
         const prepared = pipeline.commitCandidate({ candidate, messageId: delivery.messageId });
         if (prepared?.status !== 'awaiting_message_evidence') {
             emit({ type: 'turn_failed', taskId, stage: 'prepare_commit', reason: prepared?.status ?? 'unknown' });
-            return { status: 'failed', stage: 'prepare_commit', reason: prepared?.reason ?? prepared?.status ?? 'prepare_failed', taskId, text, delivery };
+            settle(taskId, 'save_uncertain', { message: '正文已交付，但提交准备失败。', applied: '正文已显示；状态待核对', nextStep: '核对消息与当前状态，不要直接重跑行动。' });
+            return { status: 'save_uncertain', stage: 'prepare_commit', reason: prepared?.reason ?? prepared?.status ?? 'prepare_failed', taskId, text, delivery, retryActionAllowed: false };
         }
 
         const committed = pipeline.confirmMessageAndCommit({ taskId, messageId: delivery.messageId, observed: delivery.observed !== false });
         const snapshot = stateStore.read({ sessionId, branchId });
-        const persisted = persistence?.save?.({ sessionId, branchId }, snapshot);
+        let persisted;
+        try { persisted = await persistence?.save?.({ sessionId, branchId }, snapshot); }
+        catch (error) { persisted = { status: 'failed', reason: String(error?.message ?? error) }; }
 
         if (committed?.status !== 'committed' && committed?.status !== 'duplicate_commit') {
             settle(taskId, 'save_uncertain', {
@@ -206,6 +227,12 @@ export function createOrchestrator({
             });
             emit({ type: 'turn_uncertain', taskId, commit: committed?.status ?? 'unknown' });
             return { status: 'save_uncertain', taskId, text, stateVersion: snapshot?.stateVersion, commit: committed, persisted };
+        }
+
+        if (typeof persistence?.save === 'function' && persisted?.status !== 'saved') {
+            settle(taskId, 'save_uncertain', { message: '状态已提交，但持久化没有确认成功。', applied: '以当前状态版本为准；不要重复行动', nextStep: '核对存储后重试保存当前快照，不要重跑行动。' });
+            emit({ type: 'turn_uncertain', taskId, commit: committed.status, persisted: persisted?.status ?? 'unknown' });
+            return { status: 'save_uncertain', taskId, text, stateVersion: snapshot?.stateVersion, commit: committed, persisted: persisted ?? { status: 'unknown' }, retryActionAllowed: false };
         }
 
         settle(taskId, 'completed_saved', {

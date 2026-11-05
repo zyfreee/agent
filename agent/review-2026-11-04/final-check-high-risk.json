@@ -1,0 +1,357 @@
+{
+  "target": "C:/Users/86158/Desktop/异界转生录/doupo",
+  "mode": "diff-regression-scan",
+  "focus": "general",
+  "review_kind": "bounded-final-P1-verification",
+  "date": "2026-11-04",
+  "routing_decision": "AUDIT -> REPORT；只复核指定四报告的12个P1，不重新审仓、不进入CHANGE。",
+  "inputs": [
+    "C:/Users/86158/Desktop/异界转生录/doupo/agent/review-2026-11-04/core-request.json",
+    "C:/Users/86158/Desktop/异界转生录/doupo/agent/review-2026-11-04/npc.json",
+    "C:/Users/86158/Desktop/异界转生录/doupo/agent/review-2026-11-04/facts-settle-history.json",
+    "C:/Users/86158/Desktop/异界转生录/doupo/agent/review-2026-11-04/world-impact-sandbox.json"
+  ],
+  "coverage": [],
+  "findings": [],
+  "collection_semantics": "coverage/findings仅承载复核新增项，本轮均无；不继承原报告coverage，不在findings复制旧问题。reviewed_findings为逐项裁决。",
+  "snapshot": {
+    "head_from_input_reports": "1dee86edb89a8f6efc4b8bbd8192a3a9c1017748",
+    "basis": "实际复核当前dirty worktree；不是HEAD源码或不可变发布快照。未锁定并发写入。",
+    "write_boundary": "仅写本文件与同目录final-check-high-risk.md；不改原报告、源码、配置、存档或生成物。"
+  },
+  "summary": {
+    "reviewed_p1": 12,
+    "confirmed": 10,
+    "downgrade": 2,
+    "reject": 0,
+    "remaining_p1": 10,
+    "new_findings": 0,
+    "exact_duplicate_findings": 0,
+    "partial_claim_rejections": ["沙盒缺记录时采用全局设置本身是显式首次采用策略，不能仅凭未冻结方案推断已违反老档授权合同。"]
+  },
+  "reviewed_findings": [
+    {
+      "review_id": "FC-01",
+      "source_report": "core-request.json",
+      "source_finding_id": "CR-01",
+      "title": "持久化失败仍宣告已保存",
+      "original_severity": "P1",
+      "verdict": "confirmed",
+      "severity": "P1",
+      "file": "C:/Users/86158/Desktop/异界转生录/doupo/agent/doupo-agent-ui/core/orchestrator.js",
+      "line": 199,
+      "reason": "在可选legacy回合正常单次使用中成立。save返回失败后仍completed_saved，宿主保存适配器也确有返回failed的分支，非只存在于任意stub中的状态。不是默认酒馆正文持久化故障。",
+      "evidence": [
+        "core/orchestrator.js:197-211：先提交、读取快照、save，随后只检查committed，不检查persisted即completed_saved。",
+        "host/state-persistence.js:23-43：saveMetadata同步抛错返回failed；没有由调用方转成拒绝完成的保护。",
+        "index.js:686-688接入真实消息/持久化适配器；index.js:8778-8785明确ui.legacyTurn才走面板旧链。"
+      ],
+      "repro": "真实orchestrator+state-store+commit-recovery，替换流水线边界及保存为内存对象：save=>failed得到completed/failed/completed_saved。未调用真实宿主保存。",
+      "applicable_path": "ui.legacyTurn显式启用的回合、公开orchestrator/runTurn调用；不覆盖默认doupoFactsInterceptor正文链。",
+      "caller_defense": "面板按钮防连点与此单请求保存错误无关；没有上层结果校验替代该完成状态。",
+      "duplicate_of": null,
+      "acceptance_needed": "在实际legacy入口接真实state-persistence替身测saved/failed/unavailable/抛错及无保存器契约；失败不得completed_saved，保存重试不重复推进版本或行动。异步saveMetadata兑现与真实落盘另做宿主验收。"
+    },
+    {
+      "review_id": "FC-02",
+      "source_report": "core-request.json",
+      "source_finding_id": "CR-02",
+      "title": "正文先交付再准备提交导致可见消息与状态分裂",
+      "original_severity": "P1",
+      "verdict": "downgrade",
+      "severity": "P2",
+      "file": "C:/Users/86158/Desktop/异界转生录/doupo/agent/doupo-agent-ui/core/orchestrator.js",
+      "line": 182,
+      "reason": "交付后prepare失败的缺口真实，但已给证据是显式API并发/其他写者推进版本，不是默认或正常单面板并发。面板已禁双按钮，底层版本门也阻止重复状态提交；不应把它描述成默认链双重落账或无防护核心并发故障。保留P2，不删除legacy问题。",
+      "evidence": [
+        "core/orchestrator.js:182-194：deliver后才commitCandidate，prepare失败直接返回而不撤销已见正文。",
+        "core/commit-recovery.js:20-22：版本不符返回stale_state，保护状态不被旧候选覆盖。",
+        "index.js:8782-8789、8799-8802：面板运行中禁用run/retry；index.js:8771-8774的运行包装和公开API没有同分支队列。"
+      ],
+      "repro": "真实orchestrator+state-store+recovery配内存流水线，两个Promise并发：2份交付，1个completed，1个prepare_commit/stale_state，本次仅增加1条历史。",
+      "applicable_path": "可选legacy/公开runTurn同分支并发，或生成期间其他写者推进该stateStore版本；不适用于默认正文生成链。",
+      "caller_defense": "按钮防重入及CAS确实存在；仅缓解面板/保护状态，不补偿已经展示的正文。",
+      "duplicate_of": null,
+      "acceptance_needed": "补实际pipeline+消息适配器的屏障并发集成测试；同分支并发或外部写者推进时，失败正文必须撤销或明确待核对且不再充当已执行事实。先明确公开API是否承诺同分支串行；若正式支持该并发用法或实际入口可稳定触发，再升P1。"
+    },
+    {
+      "review_id": "FC-03",
+      "source_report": "npc.json",
+      "source_finding_id": "NPC-01",
+      "title": "旧聊天的经历精简回答可以覆盖当前聊天的同名人物",
+      "original_severity": "P1",
+      "verdict": "confirmed",
+      "severity": "P1",
+      "file": "C:/Users/86158/Desktop/异界转生录/doupo/agent/doupo-agent-ui/index.js",
+      "line": 3124,
+      "reason": "手动经历精简真实面板路径缺少请求及确认两处scope/档案版本检查；切聊天清草稿并不能挡晚到回复重新填槽。确认后整单替换当前人物经历，有明确跨聊天数据损害。",
+      "evidence": [
+        "index.js:140-145、228-240：切聊天使普通continuation过期并清pendingExpCondense。",
+        "index.js:3116-3129：精简await后未检查continuation，重新赋全局pendingExpCondense。",
+        "index.js:3156-3166：仅核人物名，直接replaceExp当前全局账本并保存。"
+      ],
+      "repro": "VM提取真实runExpCondense/confirmExpCondense，真实npc-ledger；请求A后换B账本并清pending，A晚回再确认，同名人物的B original被A condensed替换。DOM和持久化均为内存替身。",
+      "applicable_path": "人物簿手动经历精简->预览->确认；不是自治计划API。需用户确认，非无人值守自动覆盖。",
+      "caller_defense": "普通记录/补全的captureAgentContinuation不涵盖此函数；仅清pending不足。",
+      "duplicate_of": null,
+      "acceptance_needed": "实际入口延迟A->B、A->B->A、同名人物、请求中手改/新增经历、取消及双请求交错；旧草稿不再可确认，合法确认仍只写一次。真实UI确认与分聊天保存另验。"
+    },
+    {
+      "review_id": "FC-04",
+      "source_report": "npc.json",
+      "source_finding_id": "NPC-02",
+      "title": "世界书补全的目标绑定及重抽保护可被英文键和嵌套字段绕过",
+      "original_severity": "P1",
+      "verdict": "confirmed",
+      "severity": "P1",
+      "file": "C:/Users/86158/Desktop/异界转生录/doupo/agent/doupo-agent-ui/index.js",
+      "line": 2208,
+      "reason": "真实补全/重抽入口把追加中文姓名当作强制绑定，而ledger接受先出现的英文name；黑名单又只看顶层中文键。已有continuation检查只防陈旧响应，不防错目标及受保护字段。",
+      "evidence": [
+        "index.js:2205-2219：continuation校验后，用{...patch,姓名:record.name}并只过滤顶层NPC_EXTRACT_PROTECTED。",
+        "npc/npc-ledger.js:403-415：展开组字段，name首值胜出；:416-418、:444-448识别英文favor及在场。",
+        "npc/npc-ledger.js:550-575：overwrite路径允许关系字段/好感落账；fillEmpty限制好感，但不解决错目标及空字段写错人。",
+        "npc/npc-recorder.js:218-234：JSON解析不把输出先规范成限定目标白名单。"
+      ],
+      "repro": "VM执行真实runNpcLedgerExtract+真实parseNpcRecordReply/npc-ledger，overwrite抽A，stub返回{name:B,设定:{态度:unexpected,在场:true},favor:10}；A好感0，B好感10、态度unexpected、在场。",
+      "applicable_path": "人物簿世界书补档/手动overwrite重抽；需模型返回该受支持形状，不宣称正常模型必输出。",
+      "caller_defense": "continuation可防跨聊天；fillEmpty可挡已有字段与好感累加；两者都不是规范字段层的目标绑定。传递JSON schema不等于本地解析器强制验证。",
+      "duplicate_of": null,
+      "acceptance_needed": "姓名/name顺序、分组/fields、别名人物、多patch、overwrite/fillEmpty矩阵；规范化后只能写目标允许的静态字段。不得只追加更多顶层黑名单。"
+    },
+    {
+      "review_id": "FC-05",
+      "source_report": "facts-settle-history.json",
+      "source_finding_key": "index.js:3336 / 事实检索等待结束后可把旧会话资料写入新会话",
+      "title": "事实检索等待结束后可把旧会话资料写入新会话",
+      "original_severity": "P1",
+      "verdict": "confirmed",
+      "severity": "P1",
+      "file": "C:/Users/86158/Desktop/异界转生录/doupo/agent/doupo-agent-ui/index.js",
+      "line": 3336,
+      "reason": "默认生成前资料链的晚回副作用无所有权门。切聊天清通道、settle的token门及quiet类型早退均不能阻止这一路await后重新写当前全局通道。",
+      "evidence": [
+        "index.js:3588-3598：非quiet默认拦截器await prepareInjectionForPrompt，再调用结算。",
+        "index.js:3336-3340：await后直接写agentPromptInjection并保存last injection。",
+        "index.js:228-244：切聊天清理不取消未受门控的旧await；:149-156保存读取当下聊天metadata。",
+        "index.js:3558-3562的settle token/fresh保护属于另一函数，不保护facts副作用。"
+      ],
+      "repro": "VM真实prepareInjectionForPrompt+延迟resolveInjection；A等待后切内存scope到B，再释放A，writes=[[B,A private]]。未验证真实宿主会允许每一种切聊天/生成时序。",
+      "applicable_path": "启用原著资料的默认doupoFactsInterceptor及该准备函数；不是仅legacy。",
+      "caller_defense": "没有发现覆盖写入前提交点的外层scope/epoch门；generation end清理也可被晚回重新污染。",
+      "duplicate_of": null,
+      "acceptance_needed": "真实入口mock加延迟A->B->B完成->A返回、A->B->A、停止/禁用、同scope后发胜出；旧任务既不能write/persist也不能clear新通道。最后在宿主捕获实际提示词与metadata确认。"
+    },
+    {
+      "review_id": "FC-06",
+      "source_report": "facts-settle-history.json",
+      "source_finding_key": "index.js:8686 / 世界书异步重载没有提交所有权，旧书可覆盖新书索引",
+      "title": "世界书异步重载没有提交所有权，旧书可覆盖新书索引",
+      "original_severity": "P1",
+      "verdict": "confirmed",
+      "severity": "P1",
+      "file": "C:/Users/86158/Desktop/异界转生录/doupo/agent/doupo-agent-ui/index.js",
+      "line": 8686,
+      "reason": "设置去抖序号只控制调度与UI刷新，不控制sync内部索引提交。A晚回可覆盖已完成的B；切空名/失败保留旧库，后续检索也没有在此边界核对来源书名。",
+      "evidence": [
+        "index.js:8479-8488：sequence校验位于syncWorldbookIndex前后，内部副作用已发生才做后校验。",
+        "index.js:8683-8692：捕获书名后await，无书名/请求序号复核即clear/register/load。",
+        "index.js:8684、8687：空名或非ok直接返回，未使旧索引不可用。",
+        "index.js:217及:6950：启动与设置变更均可调度该读取。"
+      ],
+      "repro": "VM真实syncWorldbookIndex/splitPluginEntries，延迟loader：B(uid2)先完成、A(uid1)后完成，索引写序[2,1]；随后unset不写清空。",
+      "applicable_path": "默认世界书同步/设置更换书名；资料入口竞争，不是角色聊天存档写入竞争。",
+      "caller_defense": "500ms去抖减少请求但不取消在飞loader；外层sequence仅挡过期UI文案。",
+      "duplicate_of": null,
+      "acceptance_needed": "A慢B快、A失败B成功、A->空名/空书/不存在：supply与factsIndex同源且最后有效请求胜出；先确定失败时显式停用还是清库，不允许静默冒用旧来源。"
+    },
+    {
+      "review_id": "FC-07",
+      "source_report": "facts-settle-history.json",
+      "source_finding_key": "index.js:3507 / 结算上下文直接携带未来卷增补，绕开设定注入防剧透",
+      "title": "结算上下文直接携带未来卷增补，绕开设定注入防剧透",
+      "original_severity": "P1",
+      "verdict": "confirmed",
+      "severity": "P1",
+      "file": "C:/Users/86158/Desktop/异界转生录/doupo/agent/doupo-agent-ui/index.js",
+      "line": 3507,
+      "reason": "真实结算材料构造把条目卷归属过滤误当作正文分段裁剪；随后buildSettleResultUser只有长度裁剪。主facts的trimToVolume与settle fresh guard都不能消除此额外全文来源。保留P1，但不声称实际1111条资料中已查到泄露。",
+      "evidence": [
+        "index.js:3504-3509：matchTokens传volume，get后仍直接使用entry.content全文。",
+        "settle/settle-adjudicate.js:179-193：命中条目只做每条/总字数clip，不按卷裁正文。",
+        "narrative/setting-supply.js:15-26：已有按〔卷NN〕标记分段的裁剪策略；此调用链未复用。",
+        "index.js:3533、3556-3567：材料送结算模型，fresh只比较是否变化，不检查未来段。"
+      ],
+      "repro": "本轮直接调用真实buildSettleResultUser，合成早卷正文+后卷增补，最终请求仍含future-secret；matchTokens->get->content无裁剪由源码核实。没有重审真实世界书正文或重跑整条检索fixture。",
+      "applicable_path": "非沙盒、已载入资料且早卷能命中包含后卷增补的条目；标记位于clip保留范围。默认结算通道可达。",
+      "caller_defense": "entry.volumes过滤不是段落过滤；结算会话token防陈旧，不是防剧透门。",
+      "duplicate_of": null,
+      "acceptance_needed": "补真实collectSettleMaterials完整system/user的跨卷fixture：锁1不含卷9秘密、锁9可含；同时验证摘要/lookup/注入来源不会带回未来段。未知卷及无标记策略须显式确定。"
+    },
+    {
+      "review_id": "FC-08",
+      "source_report": "facts-settle-history.json",
+      "source_finding_key": "settle/settle-adjudicate.js:464 / 行动依据未绑定原文区间，重叠片段可重复收益且重复动作被误拒",
+      "title": "行动依据未绑定原文区间，重叠片段可重复收益且重复动作被误拒",
+      "original_severity": "P1",
+      "verdict": "confirmed",
+      "severity": "P1",
+      "file": "C:/Users/86158/Desktop/异界转生录/doupo/agent/doupo-agent-ui/settle/settle-adjudicate.js",
+      "line": 464,
+      "reason": "默认审核入口确实仅按摘录字符串去重，不按原文出现区间定位；脚本批准/拒绝结果与一次动作一次结算合同冲突。原报告将expectedState预测写成实际金币发放的表述应收窄，当前路径没有在review中直接改真实账本。",
+      "evidence": [
+        "settle/settle-adjudicate.js:451-465：indexOf首次位置与fingerprint Set，未跟踪区间占用/后续同文出现。",
+        "index.js:3565-3574：parse->review->render注入正文；不是review直接落玩家数值。",
+        "settle/settle-adjudicate.js:540-555：compareSettleState为只读核对，不是自动重复入账保护。"
+      ],
+      "repro": "真实parse/review：我打工获得报酬，证据我打工与打工获得报酬，两行动approved=true，expected gold=20；打工；打工，两证据同为打工，仅一次approved，expected gold=10。输入实际账本未改。",
+      "applicable_path": "默认v2多行动生成前结算审核；需模型给出该证据拆分，不要求外部API绕过。",
+      "caller_defense": "输入包含性、顺序、资源累计及行动原子门存在，但都不区分重叠证据与同文的独立出现。",
+      "duplicate_of": null,
+      "acceptance_needed": "证据区间重叠/包含最多授权一次；相同文字的两个独立位置可分别处理；逆序/前向依赖/同区间复用仍拒绝。验收批准结果与最终注入，不把expectedState当真实已保存状态。"
+    },
+    {
+      "review_id": "FC-09",
+      "source_report": "facts-settle-history.json",
+      "source_finding_key": "narrative/facts-library.js:129 / 人工复核拒绝的事实仍以supported返回",
+      "title": "人工复核拒绝的事实仍以 supported 返回",
+      "original_severity": "P1",
+      "verdict": "confirmed",
+      "severity": "P1",
+      "file": "C:/Users/86158/Desktop/异界转生录/doupo/agent/doupo-agent-ui/narrative/facts-library.js",
+      "line": 130,
+      "reason": "显式结构化资料API的可复现公共合同错误，不能仅因非默认世界书链就删除或一律降级。调用者已指定来源，但query并不排除被该API接受为rejected的事实。没有发现facts-query通用调用方替它过滤reviewStatus。",
+      "evidence": [
+        "narrative/facts-library.js:81-89：reviewFact接受并保存rejected。",
+        "narrative/facts-library.js:126-135、151-152：只排needs-review，rejected仍可参与结果和supported/conflict。",
+        "index.js:476：结构化库注册为facts-query来源；:4537公开doupoAgent.facts。"
+      ],
+      "repro": "真实createFactsLibrary注册来源/事实->reviewFact(rejected)->query，得到status=supported、result.reviewStatus=rejected。",
+      "applicable_path": "显式结构化facts库/启用对应模块并使用该已注册来源的API；不是默认世界书目录挑选和自动人工复核。",
+      "caller_defense": "sourceIds/作品线/realm范围限制不等于复核状态过滤；若外部消费者自行过滤可缓解，但不能修复此公共query合同。",
+      "duplicate_of": null,
+      "acceptance_needed": "普通query与queryForActor都不返回rejected/needs-review，也不让其生成supported或conflict；current/confirmed/corrected按明确合同保留。补facts-query适配器集成，不必借此重写资料库。"
+    },
+    {
+      "review_id": "FC-10",
+      "source_report": "world-impact-sandbox.json",
+      "source_finding_key": "index.js:3258 / 挂起的场记结果可在换聊天后写入新会话",
+      "title": "挂起的场记结果可在换聊天后写入新会话",
+      "original_severity": "P1",
+      "verdict": "confirmed",
+      "severity": "P1",
+      "file": "C:/Users/86158/Desktop/异界转生录/doupo/agent/doupo-agent-ui/index.js",
+      "line": 3258,
+      "reason": "默认生成准备链中场记挑选await后没有scope/epoch/版本复查。其他世界/影响记录员的continuation守卫不包围此通道；切聊天重置lastImpactInjection也可被晚回重建。",
+      "evidence": [
+        "index.js:3303-3306：默认prepare首先await writeImpactInjectionForPrompt。",
+        "index.js:3233、3258-3288：捕获旧snapshot，await后写全局缓存和agentImpactPromptInjection。",
+        "index.js:228-239、2050-2054：换聊天清通道、清缓存、恢复库，不能取消该局部旧snapshot。",
+        "index.js:4032、4405的continuation仅属决定/记录员，不是场记。"
+      ],
+      "repro": "VM真实writeImpactInjectionForPrompt，延迟picked结果；A捕获snapshot后切内存scope B，释放A得到writes=[[B,A world private]]。",
+      "applicable_path": "影响库启用且injectSmart等待选条的默认准备链及doupoAgent.impactInjection；纯同步script选条不存在该await窗口。",
+      "caller_defense": "记录员busy/continuation与prepare的顺序await不是提交所有权门；外层没有在该副作用之前重新校验。",
+      "duplicate_of": null,
+      "acceptance_needed": "真实入口延迟场记，切聊天恢复B后A结果应stale且不write/cache/clear；停用、改账、重roll、同scope两个请求及切模式同测，最后捕获实际提示词确认。"
+    },
+    {
+      "review_id": "FC-11",
+      "source_report": "world-impact-sandbox.json",
+      "source_finding_key": "impact/impact-runtime.js:681 / 存档恢复忽略归档最大编号导致影响ID碰撞",
+      "title": "存档恢复忽略归档最大编号导致影响ID碰撞",
+      "original_severity": "P1",
+      "verdict": "confirmed",
+      "severity": "P1",
+      "file": "C:/Users/86158/Desktop/异界转生录/doupo/agent/doupo-agent-ui/impact/impact-runtime.js",
+      "line": 681,
+      "reason": "真实影响runtime恢复后可把归档ID重新分给新记录，找回又允许同ID并存，破坏ref/parent及选择定位唯一性。真实restoreImpactFromChat直接走restore，没有调用方补大seq或找回冲突检查。",
+      "evidence": [
+        "impact/impact-runtime.js:679-684：seq仅扫描records，不扫描archive。",
+        "impact/impact-runtime.js:467-475：unarchive不检查活跃records已有同ID。",
+        "index.js:2050-2054：宿主聊天恢复直接agentImpactRuntime.restore(record.value)。"
+      ],
+      "repro": "真实runtime：record i1->forget->snapshot->新实例restore->record新条->unarchive i1；records的ID为[i1,i1]，无真实存档读写。",
+      "applicable_path": "当前默认影响账本的保存恢复/换聊天恢复后新增与手动找回；不是只有未接线旧API。",
+      "caller_defense": "恢复limits、标题相似去重、lastFloor重置均不保证归档与活跃共享ID命名空间。",
+      "duplicate_of": null,
+      "acceptance_needed": "最高ID仅在archive、空/非空records、反复保存恢复再新增/找回，全部ID唯一且旧parent/ref不变；碰撞老快照必须显式处理，不能静默重编号破坏引用。"
+    },
+    {
+      "review_id": "FC-12",
+      "source_report": "world-impact-sandbox.json",
+      "source_finding_key": "sandbox/sandbox-mode.js:24 / 正式沙盒口径仅存在内存且无记录时直接采用全局开关",
+      "title": "正式沙盒口径仅存在内存且无记录时直接采用全局开关",
+      "original_severity": "P1",
+      "verdict": "downgrade",
+      "severity": "P2",
+      "file": "C:/Users/86158/Desktop/异界转生录/doupo/agent/doupo-agent-ui/sandbox/sandbox-mode.js",
+      "line": 24,
+      "reason": "已确认分支模式/历史不跨重建保留，违反模块自身续聊一致性说明，保留缺陷；但未冻结方案的旧档mainline建议与代码显式首次按当前设置采用策略相冲突，不能把缺记录->全局开关单独定为未经授权的P1。常见同设置重载也未必改变实际模式，需正式持久化合同后再升严重性。",
+      "evidence": [
+        "sandbox/sandbox-mode.js:19-20同时说明续聊一致与首次按当前设置采用；:24-25仅Map，:39-42首次采用，:93-94无snapshot/restore。",
+        "index.js:7237-7245明确正式记录优先、缺记录回全局设置。",
+        "index.js:5720-5748、5763-5769按agentActiveScope同步正式记录；:6947仅设置变更触发同步，当前没有该模式宿主持久化接线。"
+      ],
+      "repro": "真实createSandboxMode：A从mainline申请并确认sandbox，同实例为sandbox；新实例read(A)=empty。只证明内存记录不跨重建，未把没有snapshot/restore凭空当真实宿主保存失败。",
+      "applicable_path": "已建立正式记录的显式任务scope/设置确认与模块重载；默认无正式记录时按全局开关是现行实现策略，而非自动证明权限漏洞。",
+      "caller_defense": "正式记录存在时sandboxModeActive确实优先读它；全局设置不是分支模式存储，也无法恢复确认历史。",
+      "partial_claim_rejected": "仅凭建议方案要求旧档默认mainline，断言当前无记录回全局必为未授权切换。该产品合同尚未冻结。",
+      "duplicate_of": null,
+      "acceptance_needed": "先冻结首次/旧档缺字段与分支持久化合同；A主线/B沙盒确认后重载和切聊天应保留各自模式/惯性/历史，再测全局开关相反及取消/未确认。无需为此恢复已删除sandbox模块或重做节点功能。"
+    }
+  ],
+  "deduplication": [
+    {
+      "members": ["FC-05", "FC-10"],
+      "decision": "same-pattern-not-duplicate",
+      "reason": "都缺异步提交所有权且共用prepare调用链，但facts与impact有不同await、不同缓存/通道和独立公开入口；修好facts后impact仍可独立写错会话，反之亦然。合并修复主题可，删一条不可。"
+    },
+    {
+      "members": ["FC-03", "FC-05", "FC-06", "FC-10"],
+      "decision": "same-pattern-distinct-owner",
+      "reason": "经历草稿、事实注入、来源索引、影响注入都是旧响应提交所有权缺口，但写者、数据和确认过程不同，不算四次重复计数。"
+    },
+    {
+      "members": ["FC-01", "FC-02"],
+      "decision": "not-duplicate",
+      "reason": "保存失败误报与交付后prepare失败处于不同失败边界，单请求保存修复不解决并发可见正文补偿。"
+    },
+    {
+      "members": ["FC-08"],
+      "decision": "already-one-finding",
+      "reason": "重叠摘录双批准与同文重复动作误拒来自同一证据身份规则，不拆成两个P1。"
+    }
+  ],
+  "verification": {
+    "executed": [
+      "读取四份指定JSON全部P1与必要源码片段，追踪默认拦截器、legacy面板按钮、真实保存适配器、恢复调用和continuation边界。",
+      "两个成功Node stdin批次：真实源函数VM+内存依赖，验证facts/impact跨scope晚写、世界书A/B竞争及unset、NPC旧精简草稿/补全绕过；直接ESM验证影响ID、rejected查询、模式重建、结算两种证据结果与正文保留。",
+      "真实orchestrator/state-store/commit-recovery搭配内存pipeline边界验证save failed仍完成、两并发交付仅一历史提交。",
+      "网络fetch为拒绝替身；未真实模型生成、浏览器、宿主存档或生成器。"
+    ],
+    "limits": [
+      "这不是全仓测试或原报告全部复现的独立重跑；P2/P3不裁决，未读scope以外源码不作通过声明。",
+      "初始stdin harness/命令受到Windows编码及字符串转义/命令长度限制，部分尝试失败；只有最终成功批次的结果计入证据，未把失败尝试算通过测试。",
+      "运行时依赖多数为内存替身；证明局部控制流/公共API行为，不等于真实酒馆的并发操作时序、消息证据或落盘验收。",
+      "本轮没有读取真实世界书正文，因此未来卷问题仅证明构造路径能泄露，不证明当前资料默认必触发。",
+      "没有因legacy/API不默认可达就删除缺陷；CR-01和结构化facts库保留P1公共合同错误，CR-02仅收窄为P2并发边界。",
+      "未修改任何源码/配置/存档；也未为复核创建repro脚本文件。工具输出临时日志由工具宿主管理，不是项目生成物。"
+    ]
+  },
+  "do_not_touch_yet": [
+    "原四报告、所有实现、配置、真实存档、生成物和已经删除的旧sandbox模块。",
+    "CAS/消息证据门、面板禁重入、正常continuation与settle token/fresh guard：确认它们的保护边界，不因局部缺口删除。",
+    "legacy/public API不是死代码；默认路径限定不是删除授权。"
+  ],
+  "gate_recommendation": "仅交付裁决与验收缺口，不实施修复，不重做审查或自动重写原报告。",
+  "a0_receipt": {
+    "route_id": "code-quality-workflow",
+    "loaded_document_ids": ["ST-A0", "audit-and-sweep.md", "plugin-runtime.md"],
+    "snapshot_version": "2026-08-18",
+    "proposed_candidate_ids": [],
+    "goal": "只复核四报告12个P1的实际路径、严重性与明显重复",
+    "red_lines": "不扩范围，不改源码/配置/存档/原报告，不运行生成器或真实模型；仅写final-check-high-risk.json和.md",
+    "acceptance": "12项逐一confirmed/downgrade/reject，源码file:line、调用方防护、补充验收；coverage/findings仅新增项且为空。"
+  }
+}

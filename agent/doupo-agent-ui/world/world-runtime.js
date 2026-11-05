@@ -14,14 +14,26 @@ const STANCES = Object.freeze(['hostile', 'wary', 'neutral', 'friendly', 'allied
 export const STANCE_LABELS = Object.freeze({ hostile: '敌对', wary: '警惕', neutral: '中立', friendly: '友好', allied: '同盟' });
 const MAX_EVENT_TEXT = 300;
 const MAX_EVENT_TITLE = 16;
+/** 新立任务的短标题上限；老存档可能存着更长的标题，恢复走 RESTORE_TASK_TITLE 不硬截。 */
+const MAX_TASK_TITLE = 20;
+const RESTORE_TASK_TITLE = 60;
+/** 事件标题的第一个分句就够当短标题了，遇到这些标点就断。 */
+const TITLE_BREAK_RE = /[，。；：！？、,.!?;:（(]/;
 const MAX_BASIS_TEXT = 80;
 const MAX_EVENT_DAYS = 90;
-const MAX_TASK_TITLE = 60;
 const MAX_TASK_DETAIL = 300;
 const MAX_TASKS = 30;
 const MAX_FACTIONS = 20;
 const MAX_PEOPLE = 30;
 const MAX_FACTION_NAME = 30;
+const MAX_FACTION_TYPE = 10;
+const MAX_FACTION_LEVEL = 20;
+const MAX_FACTION_LEADER = 30;
+const MAX_FACTION_ELDERS = 120;
+const MAX_FACTION_MEMBERS = 120;
+const MAX_FACTION_LOCATION = 40;
+const MAX_FACTION_ASSETS = 160;
+const MAX_FACTION_RELATIONS = 160;
 const MAX_PERSON_NAME = 20;
 const MAX_DYNAMICS_TEXT = 200;
 const MAX_ATTITUDE_TEXT = 80;
@@ -64,6 +76,36 @@ export function formatClock(clock = {}) {
     return `第 ${day} 天 ${pad2(Math.floor(minute / 60))}:${pad2(minute % 60)}`;
 }
 
+/**
+ * 事件短标题：模型给的 title 优先，没给就从正文第一个分句里截。
+ * 老存档（title 字段还没进运行时的年代）靠它补上标题，主页面才有短标题可看。
+ */
+export function deriveEventTitle(body) {
+    const source = text(body);
+    if (!source) return '';
+    const [first] = source.split(TITLE_BREAK_RE);
+    const head = text(first) || source;
+    return head.slice(0, MAX_EVENT_TITLE);
+}
+
+/**
+ * 事件行内简介：正文里标题没覆盖的那部分。
+ * 只有标题正好是正文第一个分句（后面紧跟标点）时才切掉它，避免把标题抄一遍；
+ * 标题只是正文开头几个字（如「迦南学院招生」对「迦南学院招生队进了乌坦城」）不算覆盖，
+ * 硬切会把词切断，宁可整段给出来。没有标题时返回空——那时标题位本身就是正文截断。
+ */
+export function eventIntro(title, body) {
+    const head = text(title);
+    const source = text(body);
+    if (!head || !source) return '';
+    if (source.startsWith(head)) {
+        const rest = source.slice(head.length);
+        if (!rest) return ''; // 标题就是整段正文，简介没什么可补的
+        if (TITLE_BREAK_RE.test(rest.slice(0, 1))) return rest.replace(/^[，。；：！？、,.!?;:（(\s]+/, '').trim();
+    }
+    return source;
+}
+
 function initialState(now) {
     return {
         schemaVersion: 1,
@@ -80,12 +122,34 @@ function initialState(now) {
     };
 }
 
+/**
+ * 势力档案字段：[key, 摘要中文名, 上限]。
+ * 一份势力＝态度（stance）+ 档案（这张表）+ 动向（dynamics）+ 依据（basis），
+ * 登记校验、留空保旧、变更检测、流水摘要都按这张表走。
+ */
+const FACTION_PROFILE_FIELDS = Object.freeze([
+    ['type', '类型', MAX_FACTION_TYPE],           // 宗门/家族/帝国/学院/佣兵团/商会/联盟…
+    ['level', '档次', MAX_FACTION_LEVEL],         // 实力档次：加玛帝国一流/中州顶尖…
+    ['leader', '首领', MAX_FACTION_LEADER],       // 名字 + 称谓境界：云韵（宗主·斗王）
+    ['elders', '高层', MAX_FACTION_ELDERS],       // 太上长老/大长老/长老/护法/客卿…
+    ['members', '成员', MAX_FACTION_MEMBERS],     // 成员构成与强者数量
+    ['location', '驻地', MAX_FACTION_LOCATION],   // 驻地/地盘
+    ['assets', '底蕴', MAX_FACTION_ASSETS],       // 传承功法/异火/拍卖行/附属势力
+    ['relations', '关系', MAX_FACTION_RELATIONS], // 与其他势力的世仇/依附/同盟
+]);
+
+/** 流水摘要里引用长文本时截短，防止一行流水吞掉小半屏。 */
+function clipText(value, cap = 24) {
+    const body = text(value);
+    return body.length > cap ? `${body.slice(0, cap)}…` : body;
+}
+
 /** 势力/人物是"按名字 upsert"的实体：同名就更新，不给新号。 */
 function normalizeOneFaction(raw) {
     if (!raw || typeof raw !== 'object') return null;
     const name = text(raw.name);
     if (!name) return null;
-    return {
+    const faction = {
         name: name.slice(0, MAX_FACTION_NAME),
         stance: STANCES.includes(raw.stance) ? raw.stance : 'neutral',
         dynamics: text(raw.dynamics).slice(0, MAX_DYNAMICS_TEXT),
@@ -93,6 +157,8 @@ function normalizeOneFaction(raw) {
         day: clampInt(raw.day, 1, 99999, 1),
         updatedDay: clampInt(raw.updatedDay, 1, 99999, null),
     };
+    for (const [key, , cap] of FACTION_PROFILE_FIELDS) faction[key] = text(raw[key]).slice(0, cap);
+    return faction;
 }
 
 function normalizeOnePerson(raw) {
@@ -115,7 +181,7 @@ function normalizeOneTask(raw, index) {
     if (!title) return null;
     return {
         id: text(raw.id) || `t${index}`,
-        title: title.slice(0, MAX_TASK_TITLE),
+        title: title.slice(0, RESTORE_TASK_TITLE),
         detail: text(raw.detail).slice(0, MAX_TASK_DETAIL),
         basis: text(raw.basis).slice(0, MAX_BASIS_TEXT),
         day: clampInt(raw.day, 1, 99999, 1),
@@ -140,6 +206,7 @@ function normalizeState(raw, now) {
                 id: text(item.id) || `e${seq}`,
                 scope,
                 day: clampInt(item.day, 1, 99999, 1),
+                title: text(item.title).slice(0, MAX_EVENT_TITLE) || deriveEventTitle(body),
                 text: body.slice(0, MAX_EVENT_TEXT),
                 location: text(item.location).slice(0, MAX_EVENT_LOCATION),
                 basis: text(item.basis).slice(0, MAX_BASIS_TEXT),
@@ -310,13 +377,16 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
             if (eventsOf(scope).some(event => !event.done && event.text === body)) return { ok: false, reason: 'duplicate_text' };
             const location = text(op.location).slice(0, MAX_EVENT_LOCATION);
             const basis = text(op.basis).slice(0, MAX_BASIS_TEXT);
-            const title = text(op.title).slice(0, MAX_EVENT_TITLE);
+            // title 必填，与世界影响同一套规矩：缺标题或超长整条拒绝，不再拿正文硬截。
+            const title = text(op.title);
+            if (!title) return { ok: false, reason: 'title_missing' };
+            if (title.length > MAX_EVENT_TITLE) return { ok: false, reason: 'title_too_long' };
             const event = { id: nextId(), scope, day, title, text: body, location, basis, endDay, weight: WEIGHTS.includes(op.weight) ? op.weight : 'minor', pinned: false, done: false, resolvedDay: null };
             eventsOf(scope).push(event);
             prune(scope);
             const expiryNote = endDay !== null ? `，有效至第 ${endDay} 天` : '';
             const locationNote = location ? `，地点：${location}` : '';
-            return { ok: true, id: event.id, summary: `${scope === 'world' ? '世界大事' : '身边事件'} +${event.id}（第 ${day} 天）：${body}${basis ? `（依据：${basis}）` : ''}${locationNote}${expiryNote}`, undo: { op: '_removeEvent', id: event.id } };
+            return { ok: true, id: event.id, summary: `${scope === 'world' ? '世界大事' : '身边事件'} +${event.id}（第 ${day} 天）「${event.title}」：${body}${basis ? `（依据：${basis}）` : ''}${locationNote}${expiryNote}`, undo: { op: '_removeEvent', id: event.id } };
         }
         if (kind === 'resolveEvent') {
             const event = findEvent(text(op.id));
@@ -380,17 +450,19 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
         if (kind === 'updateTask') {
             const task = findTask(text(op.id));
             if (!task) return { ok: false, reason: 'task_not_found' };
-            const beforeDetail = task.detail;
-            const beforeEndDay = task.endDay;
-            if (op.detail !== undefined) task.detail = text(op.detail).slice(0, MAX_TASK_DETAIL);
+            const before = { ...task };
+            const detail = op.detail === undefined ? task.detail : text(op.detail).slice(0, MAX_TASK_DETAIL);
+            let endDay = task.endDay;
             if (op.days !== undefined && op.days !== null) {
                 const span = intIn(op.days, 1, MAX_EVENT_DAYS);
                 if (span === null) return { ok: false, reason: 'bad_days' };
-                task.endDay = state.clock.day + span - 1;
+                endDay = state.clock.day + span - 1;
             }
-            const changed = task.detail !== beforeDetail || task.endDay !== beforeEndDay;
+            const changed = detail !== task.detail || endDay !== task.endDay;
             if (!changed) return { ok: false, reason: 'task_nothing_to_update' };
-            return { ok: true, id: task.id, summary: `任务更新 ${task.id}「${task.title}」`, undo: { op: 'updateTask', id: task.id, detail: beforeDetail } };
+            task.detail = detail;
+            task.endDay = endDay;
+            return { ok: true, id: task.id, summary: `任务更新 ${task.id}「${task.title}」`, undo: { op: '_setTaskRaw', task: before } };
         }
         // ── 势力与人物：按名字 upsert，剧情改变关系时更新 ──
         if (kind === 'setFaction') {
@@ -400,21 +472,40 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
             const stance = STANCES.includes(op.stance) ? op.stance : 'neutral';
             const dynamics = text(op.dynamics).slice(0, MAX_DYNAMICS_TEXT);
             const basis = text(op.basis).slice(0, MAX_BASIS_TEXT);
+            // 档案字段（类型/档次/首领/高层/成员/驻地/底蕴/关系）只在给了非空值时更新：
+            // 模型只补它知道的字段，留空的保持旧值，不会一轮把档案冲掉。
+            const profile = {};
+            for (const [key, , cap] of FACTION_PROFILE_FIELDS) {
+                if (op[key] !== undefined) profile[key] = text(op[key]).slice(0, cap);
+            }
             const existing = state.factions.find(item => item.name === name);
             if (existing) {
                 const before = { ...existing };
                 if (op.stance !== undefined) existing.stance = stance;
                 if (op.dynamics !== undefined) existing.dynamics = dynamics;
                 if (op.basis !== undefined && basis) existing.basis = basis;
+                for (const [key] of FACTION_PROFILE_FIELDS) {
+                    if (profile[key]) existing[key] = profile[key];
+                }
+                const changedKeys = ['stance', 'dynamics', 'basis', ...FACTION_PROFILE_FIELDS.map(([key]) => key)]
+                    .filter(key => existing[key] !== before[key]);
+                if (!changedKeys.length) return { ok: false, reason: 'faction_nothing_to_update' };
                 existing.updatedDay = state.clock.day;
-                const changed = existing.stance !== before.stance || existing.dynamics !== before.dynamics;
-                if (!changed) return { ok: false, reason: 'faction_nothing_to_update' };
-                return { ok: true, summary: `势力更新 ${name}：${STANCE_LABELS[existing.stance]}${existing.dynamics ? `（${existing.dynamics}）` : ''}`, undo: { op: '_setFactionRaw', faction: before } };
+                // 流水摘要：态度/动向照旧展示，档案变化逐项列出来（值截短防流水爆行）。
+                const head = `${STANCE_LABELS[existing.stance]}${existing.dynamics ? `（${existing.dynamics}）` : ''}`;
+                const profileNote = FACTION_PROFILE_FIELDS
+                    .filter(([key]) => changedKeys.includes(key))
+                    .map(([key, label]) => `${label} ${clipText(existing[key]) || '（清空）'}`)
+                    .join('、');
+                const summary = profileNote ? `势力更新 ${name}：${head}｜${profileNote}` : `势力更新 ${name}：${head}`;
+                return { ok: true, summary, undo: { op: '_setFactionRaw', faction: before } };
             }
             if (state.factions.length >= MAX_FACTIONS) return { ok: false, reason: 'factions_full' };
-            const faction = normalizeOneFaction({ name, stance, dynamics, basis, day: state.clock.day, updatedDay: state.clock.day });
+            const faction = normalizeOneFaction({ name, stance, dynamics, basis, day: state.clock.day, updatedDay: state.clock.day, ...profile });
             state.factions.push(faction);
-            return { ok: true, summary: `势力登记 ${name}：${STANCE_LABELS[faction.stance]}${dynamics ? `（${dynamics}）` : ''}`, undo: { op: '_removeFaction', name } };
+            const tag = profile.type ? `（${profile.type}）` : '';
+            const leaderNote = faction.leader ? `｜首领 ${faction.leader}` : '';
+            return { ok: true, summary: `势力登记 ${name}${tag}：${STANCE_LABELS[faction.stance]}${leaderNote}${dynamics ? `（${dynamics}）` : ''}`, undo: { op: '_removeFaction', name } };
         }
         if (kind === 'deleteFaction') {
             const name = text(op.name);
@@ -432,11 +523,12 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
             const basis = text(op.basis).slice(0, MAX_BASIS_TEXT);
             const existing = state.people.find(item => item.name === name);
             if (existing) {
+                const nextBasis = basis || existing.basis;
+                if (attitude === existing.attitude && nextBasis === existing.basis) return { ok: false, reason: 'person_nothing_to_update' };
                 const before = { ...existing };
                 existing.attitude = attitude;
-                if (basis) existing.basis = basis;
+                existing.basis = nextBasis;
                 existing.updatedDay = state.clock.day;
-                if (existing.attitude === before.attitude) return { ok: false, reason: 'person_nothing_to_update' };
                 return { ok: true, summary: `人物更新 ${name}：${attitude}`, undo: { op: '_setPersonRaw', person: before } };
             }
             if (state.people.length >= MAX_PEOPLE) return { ok: false, reason: 'people_full' };
@@ -471,6 +563,12 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
             if (!task) return { ok: false, reason: 'task_not_found' };
             task.status = 'active';
             task.doneDay = op.doneDay === null || op.doneDay === undefined ? null : intIn(op.doneDay, 1, 99999);
+            return { ok: true, summary: `恢复任务 ${task.id}` };
+        }
+        if (kind === '_setTaskRaw') {
+            const task = findTask(text(op.task?.id));
+            if (!task) return { ok: false, reason: 'task_not_found' };
+            Object.assign(task, op.task);
             return { ok: true, summary: `恢复任务 ${task.id}` };
         }
         if (kind === '_restoreTask') {
@@ -530,6 +628,7 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
         // 同一楼重新生成（重 roll/换 swipe）：先把上一版指令原样撤销，再执行新指令，避免重复记账。
         if (fromModel && floorKey !== null && lastFloor && lastFloor.floor === floorKey) {
             for (const undo of [...lastFloor.undo].reverse()) runOne(undo, 'revert');
+            opIdMemory = opIdMemory.filter(id => !lastFloor.opIds.includes(id));
             state.log.push({ at: now(), source: 'revert', summaries: [`第 ${floorKey + 1} 楼重新生成：已撤销上一版世界指令`], rejected: 0 });
             state.log = state.log.slice(-maxLog);
         }
@@ -537,6 +636,7 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
         const applied = [];
         const rejected = [];
         const undoSteps = [];
+        const opIds = [];
         const duplicate = [];
         for (const op of list) {
             const opId = text(op?.opId);
@@ -547,6 +647,7 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
             const result = runOne(op, source);
             if (result.ok) {
                 rememberOpId(opId);
+                if (opId) opIds.push(opId);
                 applied.push(result);
                 if (result.undo) {
                     if (Array.isArray(result.undo)) undoSteps.push(...result.undo);
@@ -556,7 +657,7 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
                 rejected.push({ op: text(op?.op), reason: result.reason });
             }
         }
-        if (fromModel && floorKey !== null) lastFloor = { floor: floorKey, undo: undoSteps };
+        if (fromModel && floorKey !== null) lastFloor = { floor: floorKey, undo: undoSteps, opIds };
         if (applied.length) {
             state.updatedAt = now();
             state.log.push({ at: now(), source, summaries: applied.map(item => item.summary), rejected: rejected.length });

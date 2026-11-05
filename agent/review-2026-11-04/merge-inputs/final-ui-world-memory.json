@@ -1,0 +1,887 @@
+{
+  "target": "C:/Users/86158/Desktop/异界转生录/doupo",
+  "date": "2026-11-04",
+  "mode": "read-only supplemental static UI review",
+  "routing_decision": "AUDIT -> REPORT。根据最后指令停止读取代码及运行验证，仅交接已有上下文；仅写指定报告，不修改源码、存档或配置。",
+  "completion": "partial",
+  "snapshot": {
+    "worktree": "首次读取git status时已有大量修改与未跟踪文件，均未改动。",
+    "revision": "未取得可确认的HEAD或文件哈希，不作补测。"
+  },
+  "coverage": [
+    {
+      "path": "agent/doupo-agent-ui/index.js",
+      "status": "reviewed",
+      "ranges": [
+        [
+          5259,
+          5594
+        ],
+        [
+          6507,
+          6659
+        ],
+        [
+          7290,
+          8158
+        ],
+        [
+          8159,
+          8646
+        ]
+      ],
+      "lines": 1846,
+      "evidence": "四个指定范围已读源码文本。7290-8158及8159-8646通过Read完整返回；HUD与按钮段通过持久化输出的Read返回。6507-6659为设置面板事件分支，无独立命名函数。",
+      "boundary": "仅静态代码审查，不表示DOM、交互、运行时、视觉或持久化验收。",
+      "reason": ""
+    },
+    {
+      "path": "agent/doupo-agent-ui/index.js",
+      "status": "partial",
+      "ranges": [
+        [
+          743,
+          747
+        ],
+        [
+          921,
+          926
+        ],
+        [
+          1243,
+          1247
+        ],
+        [
+          2061,
+          2064
+        ],
+        [
+          3644,
+          3649
+        ],
+        [
+          6180,
+          6263
+        ],
+        [
+          6300,
+          6506
+        ],
+        [
+          6840,
+          6875
+        ],
+        [
+          6880,
+          6908
+        ]
+      ],
+      "evidence": "补读保存包装函数、手动CRUD绑定、记忆分页与过滤输入事件；6300-6489大部分为纳戒相关分支，仅作为上下文，不认领纳戒完整审查。",
+      "unread": "主范围和上述明确摘录之外的index.js未在本报告完整复审。5993/6080/6083长HTML仅查看字段匹配/截取内容，不计完整模板已读。",
+      "reason": "补充分片明确标记partial；仅所列静态范围，无完整阅读或宿主验收。"
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/style.css",
+      "status": "partial",
+      "total_lines": 1003,
+      "ranges": [
+        [
+          1,
+          26
+        ],
+        [
+          94,
+          134
+        ],
+        [
+          165,
+          182
+        ],
+        [
+          267,
+          279
+        ],
+        [
+          310,
+          325
+        ],
+        [
+          463,
+          496
+        ],
+        [
+          563,
+          587
+        ],
+        [
+          607,
+          628
+        ],
+        [
+          686,
+          720
+        ],
+        [
+          752,
+          794
+        ],
+        [
+          806,
+          820
+        ],
+        [
+          855,
+          887
+        ],
+        [
+          917,
+          945
+        ],
+        [
+          966,
+          1003
+        ]
+      ],
+      "unread_ranges": [
+        [
+          27,
+          93
+        ],
+        [
+          135,
+          164
+        ],
+        [
+          183,
+          266
+        ],
+        [
+          280,
+          309
+        ],
+        [
+          326,
+          462
+        ],
+        [
+          497,
+          562
+        ],
+        [
+          588,
+          606
+        ],
+        [
+          629,
+          685
+        ],
+        [
+          721,
+          751
+        ],
+        [
+          795,
+          805
+        ],
+        [
+          821,
+          854
+        ],
+        [
+          888,
+          916
+        ],
+        [
+          946,
+          965
+        ]
+      ],
+      "evidence": "保守只计实际返回并读取的原始行范围。全文件Read因超过token限制被拒绝，后续压缩全量输出被持久化，不能把命令执行当作全文已读。",
+      "boundary": "仅静态布局/交互规则抽查；未启动浏览器或读图片，不能声称视觉验收。598-606及629-654虽曾计划补读，但命令语法失败，不能计入。",
+      "reason": "补充分片明确标记partial；仅所列静态范围，无完整阅读或宿主验收。"
+    },
+    {
+      "path": "agent/doupo-agent-ui/world/world-runtime.js",
+      "status": "partial",
+      "ranges": [
+        [
+          241,
+          269
+        ],
+        [
+          616,
+          655
+        ]
+      ],
+      "evidence": "确认运行时apply状态、maxOps截断、maxEvents配置夹取等合同；其他大输出未保守计入逐行覆盖。",
+      "reason": "补充分片明确标记partial；仅所列静态范围，无完整阅读或宿主验收。"
+    },
+    {
+      "path": "agent/doupo-agent-ui/memory/memory-runtime.js",
+      "status": "partial",
+      "ranges": [
+        [
+          180,
+          209
+        ]
+      ],
+      "evidence": "读取新增entry保存day/字段及promote路径；其余运行时依既有报告，不认领完整复审。",
+      "reason": "补充分片明确标记partial；仅所列静态范围，无完整阅读或宿主验收。"
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/host-storage.js",
+      "status": "partial",
+      "ranges": [
+        [
+          504,
+          513
+        ],
+        [
+          522,
+          531
+        ],
+        [
+          594,
+          603
+        ]
+      ],
+      "evidence": "读取world/impact/memory三条save函数：可返回unavailable、changed_not_saved，或await saveMetadata后saved，亦可能抛错。",
+      "reason": "补充分片明确标记partial；仅所列静态范围，无完整阅读或宿主验收。"
+    },
+    {
+      "path": "agent/review-2026-11-04/ui-dashboard.json; ui-dashboard.md; memory-unified.json; world-impact-sandbox.json; world-impact-sandbox.md; facts-settle-history.json",
+      "status": "partial",
+      "evidence": "读取UI报告coverage、feature_status、finding schema和旧问题标题/部分证据；定位其他报告既有问题用于去重，并非逐字重审所有报告。",
+      "reason": "补充分片明确标记partial；仅所列静态范围，无完整阅读或宿主验收。"
+    },
+    {
+      "path": "browser; images; real chat; LLM",
+      "status": "excluded",
+      "reason": "用户禁止。未启动浏览器、读取图片或发送LLM。",
+      "evidence": ""
+    }
+  ],
+  "coverage_summary": {
+    "requested_js_lines_read": 1846,
+    "requested_js_status": "static_reviewed",
+    "css_status": "partial",
+    "executed_tests": 0,
+    "visual_acceptance": false,
+    "host_runtime_acceptance": false,
+    "llm_calls": 0
+  },
+  "function_inventory": [
+    {
+      "line": 5260,
+      "name": "positionOrbListPopup"
+    },
+    {
+      "line": 5269,
+      "name": "toggleOrbNpcPopup"
+    },
+    {
+      "line": 5274,
+      "name": "closeOrbNpcPopup"
+    },
+    {
+      "line": 5280,
+      "name": "openOrbNpcPopup"
+    },
+    {
+      "line": 5293,
+      "name": "buildOrbNpcPopup"
+    },
+    {
+      "line": 5383,
+      "name": "positionOrbPopElement"
+    },
+    {
+      "line": 5401,
+      "name": "positionOrbNpcPopup"
+    },
+    {
+      "line": 5413,
+      "name": "popText"
+    },
+    {
+      "line": 5417,
+      "name": "popDueLabel"
+    },
+    {
+      "line": 5422,
+      "name": "toggleOrbItemPopup"
+    },
+    {
+      "line": 5429,
+      "name": "closeOrbItemPopup"
+    },
+    {
+      "line": 5435,
+      "name": "openOrbItemPopup"
+    },
+    {
+      "line": 5448,
+      "name": "buildOrbItemPopup"
+    },
+    {
+      "line": 5479,
+      "name": "buildOrbItemPopModel"
+    },
+    {
+      "line": 5590,
+      "name": "positionOrbItemPopup"
+    },
+    {
+      "line": 7291,
+      "name": "applyWorldOps"
+    },
+    {
+      "line": 7299,
+      "name": "worldApplyFromPanel"
+    },
+    {
+      "line": 7310,
+      "name": "worldAdvanceFromPanel"
+    },
+    {
+      "line": 7315,
+      "name": "worldAddFromPanel"
+    },
+    {
+      "line": 7344,
+      "name": "worldAddTaskFromPanel"
+    },
+    {
+      "line": 7363,
+      "name": "memoryApplyFromPanel"
+    },
+    {
+      "line": 7374,
+      "name": "memoryAddFromPanel"
+    },
+    {
+      "line": 7419,
+      "name": "renderMemoryEntryList"
+    },
+    {
+      "line": 7498,
+      "name": "renderMemoryInjectionCard"
+    },
+    {
+      "line": 7543,
+      "name": "refreshMemoryPage"
+    },
+    {
+      "line": 7651,
+      "name": "openReadonlyDetailModal"
+    },
+    {
+      "line": 7669,
+      "name": "capDetailTitle"
+    },
+    {
+      "line": 7675,
+      "name": "introText"
+    },
+    {
+      "line": 7681,
+      "name": "wireRowDetail"
+    },
+    {
+      "line": 7691,
+      "name": "renderWorldEventList"
+    },
+    {
+      "line": 7740,
+      "name": "worldSetFactionFromPanel"
+    },
+    {
+      "line": 7766,
+      "name": "worldSetPersonFromPanel"
+    },
+    {
+      "line": 7784,
+      "name": "renderWorldFactionList"
+    },
+    {
+      "line": 7842,
+      "name": "fillWorldFactionDock"
+    },
+    {
+      "line": 7863,
+      "name": "renderWorldPeopleList"
+    },
+    {
+      "line": 7896,
+      "name": "renderWorldTaskList"
+    },
+    {
+      "line": 7945,
+      "name": "journalSourceLabel"
+    },
+    {
+      "line": 7953,
+      "name": "refreshWorldPage"
+    },
+    {
+      "line": 8030,
+      "name": "impactFormField"
+    },
+    {
+      "line": 8035,
+      "name": "openImpactForm"
+    },
+    {
+      "line": 8062,
+      "name": "closeImpactForm"
+    },
+    {
+      "line": 8073,
+      "name": "saveImpactForm"
+    },
+    {
+      "line": 8129,
+      "name": "runImpactOp"
+    },
+    {
+      "line": 8144,
+      "name": "renderImpactArchive"
+    },
+    {
+      "line": 8193,
+      "name": "buildImpactItem"
+    },
+    {
+      "line": 8265,
+      "name": "renderImpactRecent"
+    },
+    {
+      "line": 8286,
+      "name": "renderImpactLibrary"
+    },
+    {
+      "line": 8356,
+      "name": "openImpactLedger"
+    },
+    {
+      "line": 8364,
+      "name": "renderFactsStatus"
+    },
+    {
+      "line": 8439,
+      "name": "renderFactsLastInjection"
+    },
+    {
+      "line": 8479,
+      "name": "scheduleWorldbookSync"
+    },
+    {
+      "line": 8494,
+      "name": "describeSyncResult"
+    },
+    {
+      "line": 8502,
+      "name": "refreshWorldbookStats"
+    },
+    {
+      "line": 8532,
+      "name": "renderFactsBrowser"
+    },
+    {
+      "line": 8602,
+      "name": "listWorldbookNames"
+    },
+    {
+      "line": 8616,
+      "name": "renderWorldbookPicker"
+    },
+    {
+      "line": 8639,
+      "name": "rememberWorldbookOptions"
+    }
+  ],
+  "findings": [
+    {
+      "id": "FWM-01",
+      "severity": "P2",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 7407,
+      "title": "校验拒绝后仍清空登记草稿",
+      "trigger": "记忆关联为空而其他字段已填，或世界事件、任务、势力、人物登记被运行时拒绝。",
+      "evidence": "7403-7405处理related_missing后，7407-7410仍无条件清空标题、正文、依据、关联、别名、原句、备注；7411仅控制成功关窗。世界事件7337-7339、任务7356-7358、势力7757-7761、人物7777-7779同样在检查成功状态前清空输入。",
+      "risk": "校验失败时已填写的正文和出处丢失。用户本只需补一项，却须重填整表。",
+      "recommendation": "仅确认登记成功时清空并关闭；拒绝时保留字段及选择，显示原因并聚焦问题字段。",
+      "verification": "静态确定路径；未运行VM、DOM或宿主验证。此前拟运行验证的整段命令在Python解析时失败，不能宣称验证通过。"
+    },
+    {
+      "id": "FWM-02",
+      "severity": "P2",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 7355,
+      "title": "非法时限被静默当成未填，用户设定期限被丢弃",
+      "trigger": "天数输入0、1.5或91后点击提交。",
+      "evidence": "7334-7337、7354-7356把非1-90整数映为undefined，仍继续worldApplyFromPanel。任务HTML摘录5993为type=button提交，帮助文字说明留空不限期；函数未对非空非法值报错。",
+      "risk": "用户有意设置的期限被丢弃，改按运行时未提供days的默认行为处理。任务可能因此不限期；实际默认分支未在本轮完整验证。",
+      "recommendation": "区分空字符串与非法输入；非空必须满足1-90整数，否则保留草稿、提示错误且不调用apply。",
+      "verification": "静态确定UI会省略非法值；未运行实际任务/事件提交，也未验证HTML宿主的约束行为。"
+    },
+    {
+      "id": "FWM-03",
+      "severity": "P2",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 8109,
+      "title": "影响保存仅调整状态筛选，仍可能被分量、性质或搜索隐藏",
+      "trigger": "账本分量筛选为大事时新增小事，或保存内容不匹配性质/关键词筛选。",
+      "evidence": "8108-8110仅修正data-impact-filter；8291-8309还按weight、kind、search过滤。8115-8116找不到被隐藏的行便直接放弃高亮。8107铺开全库也不能绕过这些过滤。",
+      "risk": "保存成功后看不到刚保存的记录，也不能滚动高亮；容易误认为失败并反复登记。",
+      "recommendation": "检查所有筛选是否匹配新记录；不匹配时提供查看刚保存项或明确解除相关筛选，而非仅设置无限显示量。",
+      "verification": "静态可达路径确认；未做DOM或隔离运行，不声称实际交互复现。"
+    },
+    {
+      "id": "FWM-04",
+      "severity": "P2",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 7600,
+      "title": "同日记忆按编号升序，最新预览可能优先显示旧条目",
+      "trigger": "同一世界日新增多条记忆，数量超过大记忆6条或小记忆8条的预览页大小。",
+      "evidence": "7559说明时间排序为新的在前；7600在day相同时使用a.id.localeCompare(b.id,'zh',{numeric:true})升序；7628-7637最新预览固定第一页。运行时180-195显示新记忆使用nextId和day，但nextId实现未在本轮完整重读。",
+      "risk": "按通常递增ID，刚登记的同日记忆可能被旧项挤出主页；完整库仍能翻页查找，不是存储丢失。",
+      "recommendation": "同日按创建顺序或编号倒序排列；与影响页8272的同日倒序口径一致。",
+      "verification": "比较表达式与预览截取的静态证据充分；未执行排序反例。递增ID依赖需随修复测试再次核实。"
+    }
+  ],
+  "deduplication": "旧ui-dashboard等JSON多数无id字段，使用report-name#1-based ordinal稳定引用；world-impact-sandbox使用其Markdown已有F编号。以下均为旧问题补证，不进入新findings。",
+  "existing_issue_references": [
+    {
+      "ref": "ui-dashboard#6",
+      "title": "悬浮详情条目不能用键盘激活",
+      "additional_evidence": "7681-7688的wireRowDetail也只绑定click，无tabIndex或Enter/Space处理；作为既有键盘问题的跨功能补证。"
+    },
+    {
+      "ref": "ui-dashboard#7",
+      "title": "弹窗缺少完整焦点与对话框语义",
+      "additional_evidence": "7651-7665只读详情沿用openAgentModal；本次不重复建立新发现。"
+    },
+    {
+      "ref": "ui-dashboard#5",
+      "title": "API方案保存失败被吞但界面宣称已保存",
+      "relation": "同类持久化反馈缺口跨功能补证，不宣称同一调用点。",
+      "additional_evidence": "persistWorld743-747、persistMemory921-926、persistImpact2061-2064 catch吞错。7291-7295、1243-1247、8100-8125/8136-8140不等saved；host-storage506-513/524-531/596-603可返回unavailable、changed_not_saved或抛错。UI成功落内存不等于已落盘。"
+    },
+    {
+      "ref": "ui-dashboard#10",
+      "title": "旧世界书读取结果可以覆盖新选择的索引",
+      "additional_evidence": "8479-8491只在await前后核sequence；提交所有权缺陷沿用旧报告，与facts-settle-history第2项同因。"
+    },
+    {
+      "ref": "MU-09",
+      "title": "注入记录保存裁剪前全集，写入失败也标成功",
+      "additional_evidence": "7498-7539信任record.entries/ids/status并标本轮已注入；UI不是独立实际注入证据。"
+    },
+    {
+      "ref": "MU-10",
+      "title": "预算装满正文再加抬头，最终写入从条目中间截断",
+      "additional_evidence": "UI不重算最终预算；沿用旧执行链审查。"
+    },
+    {
+      "ref": "world-impact-sandbox#F10",
+      "title": "schema同名level覆盖势力实力档次",
+      "additional_evidence": "7740-7757手动势力字段走runtime；原模型schema问题不重报。"
+    },
+    {
+      "ref": "world-impact-sandbox#F13",
+      "title": "对象预算与节点宽限设置没有现行链消费者",
+      "additional_evidence": "不能把页面存在预算设置当作现行执行链具备预算控制。"
+    }
+  ],
+  "feature_status": [
+    {
+      "feature": "HUD人物详情",
+      "status": "static_reviewed",
+      "lines": "5264-5403",
+      "fields": "名字/好感/别名称号/在场重要地点身份、NPC_FIELDS分组、近况经历流水。",
+      "save": "纯读ledger，无保存。",
+      "confirmation": "仅关闭；关闭按钮有aria-label。",
+      "budget": "近况/经历/流水各最多3条，正文无统一限字。",
+      "pagination": "无分页，不是完整人物历史入口。",
+      "readonly_boundary": "aside和文本节点展示，不写账；不是权限或防剧透边界。"
+    },
+    {
+      "feature": "HUD通用详情",
+      "status": "static_reviewed",
+      "lines": "5405-5594",
+      "fields": "事件/任务/势力/人物/记忆/影响/冷藏/原著8类ref，重取活数据，消失则不弹。",
+      "save": "snapshot/list/get，无保存。",
+      "confirmation": "同条切换收起；人物与通用详情互斥。",
+      "budget": "标题30字，正文未裁；JS按viewport夹取坐标。",
+      "pagination": "详情无分页；全部列表问题沿用旧报告。",
+      "readonly_boundary": "只读；原著全文读取不裁卷，不等于模型防剧透控制。"
+    },
+    {
+      "feature": "记忆/影响模型按钮和默认提示词",
+      "status": "partial",
+      "lines": "6507-6659",
+      "fields": "decide/recall/consolidate/impact-record及默认恢复。",
+      "save": "默认恢复dispatch input走保存通道；模型入口仅追绑定、未执行。",
+      "confirmation": "recall/impact按钮finally解禁；decide/consolidate本段不禁用。self reset另有confirm。",
+      "budget": "按钮本身不建立模型预算；重复调用/总控护栏归旧运行时审查。",
+      "pagination": "影响每次加100，档案加60。",
+      "readonly_boundary": "这些按钮可能调用模型并改账，不能称整页只读；本次未执行。"
+    },
+    {
+      "feature": "记忆手动登记",
+      "status": "defects",
+      "lines": "7363-7413",
+      "fields": "标题/正文/层级/标签/分量/原句/备注/依据/关联/别名。",
+      "save": "applyMemoryOps→persistMemory/镜像→刷新，不等待落盘。",
+      "confirmation": "显式提交；拒绝留窗却清草稿。",
+      "budget": "HTML摘录标题14/正文300；关联、别名各截4项；运行时其他限额未全重审。",
+      "pagination": "不适用。",
+      "readonly_boundary": "登记写入，与只读详情分离。",
+      "finding_refs": [
+        "FWM-01",
+        "ui-dashboard#5"
+      ]
+    },
+    {
+      "feature": "记忆列表、筛选、预览与详情",
+      "status": "defects",
+      "lines": "7415-7495;7543-7648;6490-6506",
+      "fields": "时间/分量/标签排序、recallKeys过滤、转大/改分量/删除。",
+      "save": "memoryApplyFromPanel统一保存。",
+      "confirmation": "删除无二次确认，当前范围未见回收站/撤销UI；转大与分量即时。此为验收边界，不另立缺合同的新bug。",
+      "budget": "分页前全量filter/sort/findMemoryConflicts；未测复杂度或CPU。",
+      "pagination": "大6/小8，夹页；过滤排序重置0，主页固定第一页。",
+      "readonly_boundary": "详情仅click，键盘问题沿用旧号；未见全文编辑入口。",
+      "finding_refs": [
+        "FWM-04",
+        "ui-dashboard#6",
+        "ui-dashboard#7"
+      ]
+    },
+    {
+      "feature": "记忆注入记录",
+      "status": "static_reviewed_with_known_defect",
+      "lines": "7498-7540",
+      "fields": "来源、条数字数时间、清理状态及entries详情。",
+      "save": "memoryLastInjectionView纯读。",
+      "confirmation": "无修改动作。",
+      "budget": "未重算真实通道字数，不验证实际注入成功。",
+      "pagination": "entries全列，无本地分页。",
+      "readonly_boundary": "本轮已注入是上游状态声明，不是独立运行时证据。",
+      "finding_refs": [
+        "MU-09",
+        "MU-10"
+      ]
+    },
+    {
+      "feature": "世界事件、时钟与信息",
+      "status": "defects",
+      "lines": "7290-7341;7691-7737;7953-8000;6180-6221",
+      "fields": "near/world、分量、标题正文依据地点时限、了结置顶、clock/info。",
+      "save": "apply→persistWorld→可见时refresh；拒绝原因进入流水。",
+      "confirmation": "了结、置顶、设时钟无二次确认；本段无事件全文编辑入口。",
+      "budget": "推进1-365整数；期限1-90非法转undefined；事件全铺；runtime maxEvents参数10-200已定位。",
+      "pagination": "事件无UI分页，流水8条。",
+      "readonly_boundary": "详情文本只读；表单按钮改账；传闻详情标未证实。",
+      "finding_refs": [
+        "FWM-01",
+        "FWM-02",
+        "ui-dashboard#5"
+      ]
+    },
+    {
+      "feature": "世界任务CRUD",
+      "status": "defects",
+      "lines": "7344-7359;7895-7942;6206-6210",
+      "fields": "标题详情依据期限、完成删除、逾期/完成日；未见编辑表单。",
+      "save": "统一世界保存；拒绝仍清草稿。",
+      "confirmation": "完成删除无确认；本范围没有用户撤销入口。",
+      "budget": "HTML标题20；非法期限被省略；正文无统一渲染预算。",
+      "pagination": "active优先全列，无分页。",
+      "readonly_boundary": "详情只读；不能声称任务完整可编辑CRUD。",
+      "finding_refs": [
+        "FWM-01",
+        "FWM-02",
+        "ui-dashboard#5"
+      ]
+    },
+    {
+      "feature": "世界势力CRUD",
+      "status": "static_reviewed_with_defects",
+      "lines": "7740-7763;7783-7860;6211-6213",
+      "fields": "name/stance/basis与9个档案字段；同名更新、编辑预填。",
+      "save": "统一世界保存；拒绝也清表。",
+      "confirmation": "删除无确认；改name按新名登记非rename；留空保持原值是明确文案合同。",
+      "budget": "全量sort/map；具体字段HTML上限未逐一复核。",
+      "pagination": "无分页。",
+      "readonly_boundary": "详情只读，编辑写账；不能清空可选档案与留空保持合同一致，不另报bug。",
+      "finding_refs": [
+        "FWM-01",
+        "world-impact-sandbox#F10"
+      ]
+    },
+    {
+      "feature": "世界人物态度CRUD",
+      "status": "static_reviewed_with_defects",
+      "lines": "7765-7781;7862-7893;6214-6216",
+      "fields": "name/attitude必填、basis；同名更新，无预填编辑按钮。",
+      "save": "统一世界保存；拒绝清字段。",
+      "confirmation": "删除即时无确认，恢复路径未覆盖。",
+      "budget": "updatedDay全量排序，无UI渲染上限。",
+      "pagination": "无分页。",
+      "readonly_boundary": "详情纯文本；同名登记更新非只读。",
+      "finding_refs": [
+        "FWM-01",
+        "ui-dashboard#5"
+      ]
+    },
+    {
+      "feature": "影响表单与状态操作",
+      "status": "defects",
+      "lines": "6577-6629;8002-8141",
+      "fields": "title/detail/target/kind/weight/certainty/evidence/eventId/canon/shift共10字段。",
+      "save": "仅applied才persist；拒绝保留并翻译原因；不等待持久保存。",
+      "confirmation": "收场、修复、删除、恢复无confirm；forget可从档案恢复。",
+      "budget": "错误字典说明20/240/40/120/60等限额交runtime；保存设impactShown=MAX_SAFE_INTEGER撤销100条DOM上限。",
+      "pagination": "保存后全铺；只调整state筛选。",
+      "readonly_boundary": "表单改账；详情非权限隔离；未做宿主操作。",
+      "finding_refs": [
+        "FWM-03",
+        "ui-dashboard#5"
+      ]
+    },
+    {
+      "feature": "影响列表、最近、档案与详情",
+      "status": "static_reviewed_with_gaps",
+      "lines": "8143-8362;6593-6604;6898",
+      "fields": "state/weight/kind/search、parent/children、楼层删除提示、注入徽标、归档原因。",
+      "save": "列表纯读；恢复调用runImpactOp。",
+      "confirmation": "直接状态操作；档案可恢复，容量/ID安全沿用旧报告。",
+      "budget": "最近默认5最多20；常规100+100；档案60+60；filter全量；保存可全铺。",
+      "pagination": "递增加载非页码；计数换聊天是否重置未追查。",
+      "readonly_boundary": "详情未展示evidence、canon原文与kind；归档详情更少。完整元数据文案需要澄清，未独立报bug。",
+      "finding_refs": [
+        "FWM-03",
+        "ui-dashboard#6",
+        "ui-dashboard#7"
+      ]
+    },
+    {
+      "feature": "原著状态、注入记录、扫描与选择",
+      "status": "static_reviewed_with_known_defects",
+      "lines": "8364-8522;8601-8646",
+      "fields": "世界书索引、卷、通道、搜索、API绑定、预算；手动卷优先。",
+      "save": "扫描只读；rememberWorldbookOptions更新配置且吞save错误。",
+      "confirmation": "不改世界书文件；选择改变配置/本地索引。",
+      "budget": "status全书limit120、stats limit160，仅各自统计口径，不等于全量总数。",
+      "pagination": "名称去重，无分页。",
+      "readonly_boundary": "读取源世界书不写源；异步索引所有权沿用旧问题。",
+      "finding_refs": [
+        "ui-dashboard#10",
+        "ui-dashboard#5"
+      ]
+    },
+    {
+      "feature": "原著本地浏览器与详情",
+      "status": "static_reviewed",
+      "lines": "8524-8599",
+      "fields": "name/aliases/summary/content包含过滤，category与volume，uid升序。",
+      "save": "纯本地索引读取，无LLM无save。",
+      "confirmation": "用户可选择全书，不是权限或剧透隔离。",
+      "budget": "硬上限80并告知命中总数/前80/收窄；过滤排序先全库，未测运行时成本。",
+      "pagination": "无下一页，依靠关键词、类别、卷缩小且明示截断。",
+      "readonly_boundary": "当前卷只筛entry.volumes，不裁entry.content；跨卷全文仍可见。手动浏览边界不能冒充模型防剧透保证。",
+      "finding_refs": [
+        "ui-dashboard#6",
+        "ui-dashboard#7"
+      ]
+    },
+    {
+      "feature": "host/style.css布局与交互规则",
+      "status": "partial",
+      "lines": "实际已读范围及未读范围见coverage",
+      "fields": "token作用域、hidden、断行、移动端、focus-visible、HUD状态/overflow、动效规则抽查。",
+      "save": "CSS不提供保存权限。",
+      "confirmation": "不能补足JS的焦点、键盘与确认合同。",
+      "budget": "viewport/overflow约束存在；orb touch-action:none作用于整体，其触摸滚动影响需实测，不能据静态样式断言失效。",
+      "pagination": "overflow不等于分页或DOM预算。",
+      "readonly_boundary": "不浏览器不图片；不作对比度、尺寸、溢出或视觉验收。未读段精确列出。",
+      "finding_refs": [
+        "ui-dashboard#6",
+        "ui-dashboard#7"
+      ]
+    }
+  ],
+  "verification": {
+    "executed_checks": [],
+    "not_executed": [
+      "isolated VM checks",
+      "repository tests",
+      "DOM/browser interaction",
+      "real host persistence",
+      "LLM",
+      "visual/contrast/touch/keyboard runtime acceptance"
+    ],
+    "failed_attempts": "数次终端大输出被持久化或受编码限制；最后两条试图验证并生成报告的大命令均在Python语法解析阶段失败，脚本未执行，未生成报告，也没有运行其中的VM测试。此前口头提及准备验证不构成验证完成。",
+    "latest_instruction": "用户要求不再读代码、不再验证，本次仅根据已有上下文写报告。"
+  },
+  "refactor_signals": [
+    {
+      "evidence": "无需据本审查重写UI。优先以现有函数最小修复拒绝清稿、非法期限、筛选反馈及同日排序。"
+    }
+  ],
+  "slimming_themes": [],
+  "do_not_touch_yet": [
+    "所有源码、存档、配置和原有dirty变更",
+    "旧报告正文与编号",
+    "未经额外授权的运行时及视觉验收"
+  ],
+  "verification_gates": [
+    {
+      "evidence": "拒绝时保留全部输入；保存失败不得提示已持久保存。"
+    },
+    {
+      "evidence": "非法非空期限必须阻止apply；合法留空保持原行为。"
+    },
+    {
+      "evidence": "所有筛选组合下可查看刚保存影响，避免以全铺代替定位。"
+    },
+    {
+      "evidence": "同日新增超页大小仍位于最新预览，核实nextId递增合同。"
+    },
+    {
+      "evidence": "另获授权后再做真实宿主、键盘、触摸与窄屏测试。"
+    }
+  ],
+  "gate_recommendation": {
+    "structural": "Local Fix",
+    "execution": "Local Fix Only",
+    "authorization": "仅报告，未授权实现。"
+  },
+  "unverified_boundaries": [
+    "CSS仍未读范围见coverage，不能声称完整1003行已审。",
+    "index.js指定四段之外仅列出的合同摘录已读；其他分片覆盖不自动算成本次覆盖。",
+    "5993/6080/6083长HTML仅字段/按钮摘录，未做完整模板审查。",
+    "memory/world/impact运行时其他行、实际预算执行器、模型、注入内部依旧报告，未重跑。",
+    "影响分页模块级计数在换聊天时是否重置未追查。",
+    "根style.css一致性沿用旧报告，本次不声称重新校验。",
+    "所有新发现只有静态证据，没有成功执行的测试或真实交互复现。"
+  ],
+  "a0_receipt": {
+    "primary_skill": "code-quality-workflow",
+    "loaded_skills": [
+      "code-quality-workflow",
+      "consult-tavernweave-library"
+    ],
+    "goal": "只读补齐其他UI功能并写两份指定报告。",
+    "red_lines": "不改源码、存档、配置；不浏览器、不图片、不发LLM。",
+    "acceptance": "逐功能字段/保存/确认/预算/分页/只读边界；旧问题去重，具体未读范围；静态不等于运行时或视觉验收。",
+    "reference_limit": "A0/plugin-runtime/frontend参考提取的大输出持久化，未声称完整阅读；确定性router未运行。",
+    "design_candidates": []
+  }
+}

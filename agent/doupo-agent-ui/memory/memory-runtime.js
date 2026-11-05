@@ -6,7 +6,7 @@
  * - big 大记忆：值得一直记住的事（恩怨/秘密/伏笔/大事），常驻注入；
  *   tag 是可选标签（恩怨/情报/伏笔/大事记），只便于查看，不影响记账。
  * - promote：小记忆后来发现分量够重，转入大记忆。
- * 了结（resolve）与删除（forget）只由书记官或玩家主动做，脚本从不自动动账。
+ * 删除（forget）只由书记官或玩家主动做，脚本从不自动动账；账本无上限，脚本绝不自动丢账。
  *
  * 所有权边界（防双写）：目标约定归纳戒、任务归世界台账、世界事件归世界、
  * NPC 档案与好感归人物簿、原著设定归事实库——记忆一律不碰。
@@ -21,14 +21,16 @@ export const TAG_LABELS = Object.freeze({ grudge: '恩怨', intel: '情报', thr
 const WEIGHTS = Object.freeze(['major', 'minor']);
 
 const MAX_TEXT = 300;
+/** 新记记忆的短标题上限；老存档可能存着更长的标题，恢复走 RESTORE_TITLE 不硬截。 */
+const MAX_TITLE = 14;
+const RESTORE_TITLE = 20;
 const MAX_BASIS = 80;
-const MAX_NOTE = 120;
+const MAX_NOTE = 200;
 const MAX_QUOTE = 60;
 const MAX_RELATED = 4;
 const MAX_ALIASES = 4;
 const MAX_RELATED_TEXT = 30;
 const MAX_DAY = 99999;
-const DEFAULT_MAX_ENTRIES = 60;
 const DEFAULT_MAX_LOG = 40;
 const DEFAULT_MAX_OPS = 8;
 const Opid_MEMORY = 200;
@@ -53,12 +55,15 @@ function initialState(now) {
         entries: [],
         log: [],
         retiredIds: [],
+        retiredSeqRanges: [],
+        externalRetiredIds: [],
+        legacy_gap: false,
         updatedAt: now(),
     };
 }
 
 /** 逐条清洗；text 缺失整条丢弃，坏字段截断而不是作废。 */
-function normalizeOneEntry(raw, seq) {
+function normalizeOneEntry(raw) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
     const body = text(raw.text);
     if (!body) return null;
@@ -68,9 +73,10 @@ function normalizeOneEntry(raw, seq) {
         .slice(0, MAX_RELATED);
     const tier = TIERS.includes(raw.tier) ? raw.tier : 'big';
     return {
-        id: text(raw.id) || `m${seq}`,
+        id: text(raw.id),
         tier,
         text: body.slice(0, MAX_TEXT),
+        title: text(raw.title).slice(0, RESTORE_TITLE),
         quote: text(raw.quote).slice(0, MAX_QUOTE),
         basis: text(raw.basis).slice(0, MAX_BASIS),
         related,
@@ -81,46 +87,99 @@ function normalizeOneEntry(raw, seq) {
         weight: WEIGHTS.includes(raw.weight) ? raw.weight : 'minor',
         tag: TAG_LABELS[raw.tag] ? raw.tag : '',
         day: clampInt(raw.day, 1, MAX_DAY, 1),
-        done: raw.done === true,
-        resolvedDay: clampInt(raw.resolvedDay, 1, MAX_DAY, null),
         note: text(raw.note).slice(0, MAX_NOTE),
-        // 召回统计：纯强度数据（排练效应），不镜像到数据库，随聊天存档走。
-        recallCount: Math.min(9999, Math.max(0, intIn(raw.recallCount, 0, 9999) ?? (Number(raw.recallCount) > 9999 ? 9999 : 0))),
-        lastRecallDay: clampInt(raw.lastRecallDay, 1, MAX_DAY, null),
+        // 记录来源楼层（聊天数组绝对位）：删楼时"对应的记忆跟着删、后续楼层前移"全靠它。
+        floor: Number.isInteger(raw.floor) && raw.floor >= 0 ? raw.floor : null,
     };
 }
 
 const MAX_RETIRED_IDS = 200;
 
+// Internal counter only: persisted IDs stay exact decimal strings, including legacy large IDs.
+function identitySequence(id) {
+    return /^m\d+$/.test(id) ? BigInt(id.slice(1)) : 0n;
+}
+
+function identityHighWater(ids) {
+    let high = 0n;
+    for (const id of ids) {
+        const value = identitySequence(id);
+        if (value > high) high = value;
+    }
+    return high;
+}
+
+function canonicalSequence(id) {
+    return typeof id === 'string' && /^m[1-9]\d*$/.test(id) ? id.slice(1) : null;
+}
+
+function tombstoneMetadata(source, ids) {
+    if (source.retiredSeqRanges !== undefined && !Array.isArray(source.retiredSeqRanges)) throw new Error('bad_retirement_metadata');
+    if (source.externalRetiredIds !== undefined && !Array.isArray(source.externalRetiredIds)) throw new Error('bad_retirement_metadata');
+    const ranges = [];
+    for (const pair of source.retiredSeqRanges ?? []) {
+        if (!Array.isArray(pair) || pair.length !== 2 || !pair.every(n => typeof n === 'string' && /^[1-9]\d*$/.test(n)) || BigInt(pair[0]) > BigInt(pair[1])) throw new Error('bad_retirement_metadata');
+        ranges.push(pair.map(n => BigInt(n)));
+    }
+    const external = new Set(source.externalRetiredIds ?? []);
+    if ([...external].some(id => typeof id !== 'string' || !id.trim() || id !== id.trim() || canonicalSequence(id))) throw new Error('bad_retirement_metadata');
+    for (const id of ids) {
+        const seq = canonicalSequence(id);
+        if (seq) ranges.push([BigInt(seq), BigInt(seq)]);
+        else external.add(id);
+    }
+    ranges.sort((a, b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0);
+    const merged = [];
+    for (const range of ranges) {
+        const last = merged.at(-1);
+        if (last && range[0] <= last[1] + 1n) { if (range[1] > last[1]) last[1] = range[1]; }
+        else merged.push([...range]);
+    }
+    if (merged.length > MAX_RETIRED_IDS || external.size > MAX_RETIRED_IDS) throw new Error('capacity_exceeded');
+    return { retiredSeqRanges: merged.map(pair => pair.map(String)), externalRetiredIds: [...external] };
+}
+
 function normalizeState(raw, now) {
     const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    // 账本无上限：条目全量保留，不做封顶清理。
     const entries = (Array.isArray(source.entries) ? source.entries : [])
-        .map((item, index) => normalizeOneEntry(item, index + 1))
-        .filter(Boolean)
-        .slice(-DEFAULT_MAX_ENTRIES);
+        .map(item => normalizeOneEntry(item))
+        .filter(Boolean);
     const retired = [];
     for (const id of Array.isArray(source.retiredIds) ? source.retiredIds : []) {
         const key = text(id);
         if (key && !retired.includes(key)) retired.push(key);
+    }
+    const metadata = tombstoneMetadata(source, retired);
+    let high = identityHighWater([...entries.map(entry => entry.id), ...retired, ...metadata.retiredSeqRanges.map(pair => `m${pair[1]}`)]);
+    const reserved = new Set([...entries.map(entry => entry.id), ...retired]);
+    const seen = new Set();
+    for (const entry of entries) {
+        if (!entry.id || seen.has(entry.id)) {
+            do { high += 1n; entry.id = `m${high}`; } while (reserved.has(entry.id));
+            reserved.add(entry.id);
+        }
+        seen.add(entry.id);
     }
     return {
         schemaVersion: 2,
         entries,
         log: (Array.isArray(source.log) ? source.log : []).slice(-DEFAULT_MAX_LOG),
         retiredIds: retired.slice(-MAX_RETIRED_IDS),
+        ...metadata,
+        legacy_gap: source.legacy_gap === true || !Array.isArray(source.retiredSeqRanges) || !Array.isArray(source.externalRetiredIds),
         updatedAt: text(source.updatedAt) || now(),
     };
 }
 
-export function createMemoryRuntime({ maxEntries = DEFAULT_MAX_ENTRIES, maxLog = DEFAULT_MAX_LOG, maxOps = DEFAULT_MAX_OPS, now = () => new Date().toISOString() } = {}) {
-    maxEntries = clampInt(maxEntries, 10, 200, DEFAULT_MAX_ENTRIES);
+export function createMemoryRuntime({ maxLog = DEFAULT_MAX_LOG, maxOps = DEFAULT_MAX_OPS, now = () => new Date().toISOString() } = {}) {
     maxLog = clampInt(maxLog, 5, 200, DEFAULT_MAX_LOG);
     maxOps = clampInt(maxOps, 1, 32, DEFAULT_MAX_OPS);
     let state = initialState(now);
-    let seq = 0;
+    let seq = 0n;
     let opIdMemory = [];
     let lastFloor = null;
-    // 记忆不自带时钟，记于日/到期扫尾都按调用方传入的世界天数（apply 的 day）。
+    // 记忆不自带时钟，记于日按调用方传入的世界天数（apply 的 day）。
     let currentDay = 1;
 
     function stateDay() {
@@ -131,25 +190,22 @@ export function createMemoryRuntime({ maxEntries = DEFAULT_MAX_ENTRIES, maxLog =
         return state.entries.find(entry => entry.id === id) ?? null;
     }
 
+    function isRetired(id) {
+        if (typeof id !== 'string') return false;
+        const canonical = canonicalSequence(id);
+        if (!canonical) return state.externalRetiredIds.includes(id);
+        const value = BigInt(canonical);
+        return state.retiredSeqRanges.some(([a, b]) => value >= BigInt(a) && value <= BigInt(b));
+    }
+
     function nextId() {
-        seq += 1;
-        return `m${seq}`;
+        let id;
+        do { seq += 1n; id = `m${seq}`; } while (findEntry(id) || isRetired(id));
+        return id;
     }
 
     function entriesOf(tier) {
         return state.entries.filter(entry => entry.tier === tier);
-    }
-
-    /** 上限清理：已了结的先走，小记忆比大记忆先走，一般比关键先走，最老先走。 */
-    function prune() {
-        if (state.entries.length <= maxEntries) return;
-        const ranked = [...state.entries].sort((a, b) =>
-            (b.done === true) - (a.done === true)
-            || (a.tier === 'big') - (b.tier === 'big')
-            || (b.weight === 'minor') - (a.weight === 'minor')
-            || a.day - b.day);
-        const doomed = new Set(ranked.slice(0, state.entries.length - maxEntries).map(entry => entry.id));
-        state.entries = state.entries.filter(entry => !doomed.has(entry.id));
     }
 
     function rememberOpId(opId) {
@@ -159,7 +215,7 @@ export function createMemoryRuntime({ maxEntries = DEFAULT_MAX_ENTRIES, maxLog =
     }
 
     /** 单条操作校验 + 执行；返回结果对象，绝不抛出。undo 供同楼重 roll 撤销。 */
-    function runOne(op) {
+    function runOne(op, floorKey = null) {
         if (!op || typeof op !== 'object' || Array.isArray(op)) return { ok: false, reason: 'bad_op_shape' };
         const kind = text(op.op);
         if (kind === 'remember' || kind === 'memorize') {
@@ -167,6 +223,8 @@ export function createMemoryRuntime({ maxEntries = DEFAULT_MAX_ENTRIES, maxLog =
             const body = text(op.text);
             if (!body) return { ok: false, reason: 'text_missing' };
             if (body.length > MAX_TEXT) return { ok: false, reason: 'text_too_long' };
+            // title 是列表主页面的短标题，必填：没给标题的条目不收。
+            const title = text(op.title);
             const related = (Array.isArray(op.related) ? op.related : [])
                 .map(item => text(item).slice(0, MAX_RELATED_TEXT))
                 .filter(Boolean)
@@ -174,6 +232,9 @@ export function createMemoryRuntime({ maxEntries = DEFAULT_MAX_ENTRIES, maxLog =
             // related 是日后"按需召回"的钥匙：没有关联的记忆永远召不回来。
             if (!related.length) return { ok: false, reason: 'related_missing' };
             if (Array.isArray(op.related) && op.related.length > MAX_RELATED) return { ok: false, reason: 'related_too_many' };
+            if (!title) return { ok: false, reason: 'title_missing' };
+            // 新记条目不收超长标题，也不静默截断——标题就是列表主页那一行。
+            if (title.length > MAX_TITLE) return { ok: false, reason: 'title_too_long' };
             const day = op.day === undefined ? stateDay() : intIn(op.day, 1, MAX_DAY);
             if (day === null) return { ok: false, reason: 'bad_day' };
             const tag = TAG_LABELS[op.tag] ? op.tag : '';
@@ -182,14 +243,15 @@ export function createMemoryRuntime({ maxEntries = DEFAULT_MAX_ENTRIES, maxLog =
                 .map(item => text(item).slice(0, MAX_RELATED_TEXT))
                 .filter(Boolean)
                 .slice(0, MAX_ALIASES);
-            // 同层同文的未了结条目不重记，防止模型一轮里反复登记同一件事。
-            if (state.entries.some(entry => entry.tier === tier && entry.done !== true && entry.text === body)) {
+            // 同层同文的条目不重记，防止模型一轮里反复登记同一件事。
+            if (state.entries.some(entry => entry.tier === tier && entry.text === body)) {
                 return { ok: false, reason: 'duplicate_text' };
             }
             const entry = {
                 id: nextId(),
                 tier,
                 text: body,
+                title,
                 quote,
                 basis: text(op.basis).slice(0, MAX_BASIS),
                 related,
@@ -197,14 +259,10 @@ export function createMemoryRuntime({ maxEntries = DEFAULT_MAX_ENTRIES, maxLog =
                 weight: WEIGHTS.includes(op.weight) ? op.weight : 'minor',
                 tag,
                 day,
-                done: false,
-                resolvedDay: null,
-                note: '',
-                recallCount: 0,
-                lastRecallDay: null,
+                note: text(op.note).slice(0, MAX_NOTE),
+                floor: Number.isInteger(floorKey) && floorKey >= 0 ? floorKey : null,
             };
             state.entries.push(entry);
-            prune();
             const relatedNote = `（关联：${related.join('、')}）`;
             return { ok: true, id: entry.id, summary: `${TIER_LABELS[tier]} +${entry.id}（第 ${day} 天）：${body}${relatedNote}`, undo: { op: '_removeMemory', id: entry.id } };
         }
@@ -227,32 +285,13 @@ export function createMemoryRuntime({ maxEntries = DEFAULT_MAX_ENTRIES, maxLog =
             entry.weight = weight;
             return { ok: true, id: entry.id, summary: `${entry.id} 分量改为${weight === 'major' ? '关键' : '一般'}`, undo: { op: '_restoreWeight', id: entry.id, ...before } };
         }
-        if (kind === 'resolveMemory') {
-            const entry = findEntry(text(op.id));
-            if (!entry) return { ok: false, reason: 'entry_not_found' };
-            if (entry.done) return { ok: false, reason: 'entry_already_done' };
-            const before = { done: entry.done, resolvedDay: entry.resolvedDay, note: entry.note };
-            entry.done = true;
-            entry.resolvedDay = stateDay();
-            entry.note = text(op.note).slice(0, MAX_NOTE);
-            const notePart = entry.note ? `（${entry.note}）` : '';
-            return { ok: true, id: entry.id, summary: `记忆了结 ${entry.id}：${entry.text}${notePart}`, undo: { op: '_restoreDone', id: entry.id, ...before } };
-        }
-        if (kind === 'reopenMemory') {
-            const entry = findEntry(text(op.id));
-            if (!entry) return { ok: false, reason: 'entry_not_found' };
-            if (!entry.done) return { ok: false, reason: 'entry_not_done' };
-            const before = { done: entry.done, resolvedDay: entry.resolvedDay, note: entry.note };
-            entry.done = false;
-            entry.resolvedDay = null;
-            return { ok: true, id: entry.id, summary: `记忆重开 ${entry.id}：${entry.text}`, undo: { op: '_restoreDone', id: entry.id, ...before } };
-        }
         if (kind === 'forgetMemory') {
             const id = text(op.id);
             const entry = findEntry(id);
             if (!entry) return { ok: false, reason: 'entry_not_found' };
+            const retired = retire([id]);
+            if (!retired.ok) return retired;
             state.entries = state.entries.filter(item => item.id !== id);
-            retire([id]);
             return { ok: true, id, summary: `忘记${TIER_LABELS[entry.tier]} ${id}：${entry.text}`, undo: { op: '_restoreEntry', entry } };
         }
         // 内部撤销操作：只由同楼重 roll 的回滚调用，不写进模型指南。
@@ -275,21 +314,15 @@ export function createMemoryRuntime({ maxEntries = DEFAULT_MAX_ENTRIES, maxLog =
             entry.weight = WEIGHTS.includes(op.weight) ? op.weight : entry.weight;
             return { ok: true, summary: `恢复 ${entry.id} 分量` };
         }
-        if (kind === '_restoreDone') {
-            const entry = findEntry(text(op.id));
-            if (!entry) return { ok: false, reason: 'entry_not_found' };
-            entry.done = op.done === true;
-            entry.resolvedDay = op.resolvedDay === null || op.resolvedDay === undefined ? null : intIn(op.resolvedDay, 1, MAX_DAY);
-            entry.note = text(op.note).slice(0, MAX_NOTE);
-            return { ok: true, summary: `恢复 ${entry.id} 了结状态` };
-        }
         if (kind === '_restoreEntry') {
-            const restored = normalizeOneEntry(op.entry, state.entries.length + 1);
+            const restored = normalizeOneEntry(op.entry);
             if (!restored) return { ok: false, reason: 'entry_not_found' };
-            if (findEntry(restored.id)) restored.id = nextId(); // 删除后同号已被占用，换号避免双份
+            if (!restored.id || findEntry(restored.id)) restored.id = nextId(); // 换号避免双份
+            const unretired = unretire(restored.id);
+            if (!unretired.ok) return unretired;
+            const restoredSequence = identitySequence(restored.id);
+            if (restoredSequence > seq) seq = restoredSequence;
             state.entries.push(restored);
-            state.retiredIds = state.retiredIds.filter(id => id !== restored.id); // 撤销删除＝解除退役登记
-            prune();
             return { ok: true, summary: `恢复记忆 ${restored.id}` };
         }
         return { ok: false, reason: 'unknown_op' };
@@ -297,22 +330,52 @@ export function createMemoryRuntime({ maxEntries = DEFAULT_MAX_ENTRIES, maxLog =
 
     /** 退役登记：被删除/被并入的编号记一笔，数据库存储帧重放把这些行复活时，收养守卫认得它们。 */
     function retire(ids) {
-        for (const id of Array.isArray(ids) ? ids : []) {
-            const key = text(id);
-            if (!key || state.retiredIds.includes(key)) continue;
-            state.retiredIds.push(key);
+        const keys = [...new Set((Array.isArray(ids) ? ids : []).map(text).filter(Boolean))];
+        let metadata;
+        try { metadata = tombstoneMetadata(state, keys); }
+        catch (error) { return { ok: false, reason: String(error?.message ?? error) }; }
+        Object.assign(state, metadata);
+        state.retiredIds = [...new Set([...state.retiredIds, ...keys])].slice(-MAX_RETIRED_IDS);
+        return { ok: true };
+    }
+
+    function unretire(id) {
+        const canonical = canonicalSequence(id);
+        const ranges = [];
+        for (const [a, b] of state.retiredSeqRanges) {
+            const value = canonical ? BigInt(canonical) : null;
+            if (value === null || value < BigInt(a) || value > BigInt(b)) ranges.push([a, b]);
+            else {
+                if (value > BigInt(a)) ranges.push([a, String(value - 1n)]);
+                if (value < BigInt(b)) ranges.push([String(value + 1n), b]);
+            }
         }
-        if (state.retiredIds.length > MAX_RETIRED_IDS) state.retiredIds = state.retiredIds.slice(-MAX_RETIRED_IDS);
+        if (ranges.length > MAX_RETIRED_IDS) return { ok: false, reason: 'capacity_exceeded' };
+        state.retiredSeqRanges = ranges;
+        state.externalRetiredIds = state.externalRetiredIds.filter(key => key !== id);
+        state.retiredIds = state.retiredIds.filter(key => key !== id);
+        return { ok: true };
     }
 
     function apply(operations, { source = 'llm', floor = null, day = null } = {}) {
         const floorKey = Number.isInteger(floor) && floor >= 0 ? floor : null;
         const fromModel = source === 'llm' || source === 'decide';
         const dayKey = intIn(day, 1, MAX_DAY);
+        const beforeDay = currentDay;
         if (dayKey !== null) currentDay = dayKey;
         // 同一楼重新生成（重 roll/换 swipe）：先把上一版指令原样撤销，再执行新指令，避免重复记账。
         if (fromModel && floorKey !== null && lastFloor && lastFloor.floor === floorKey) {
-            for (const undo of [...lastFloor.undo].reverse()) runOne(undo);
+            const beforeRollback = structuredClone(state);
+            const beforeSeq = seq;
+            for (const undo of [...lastFloor.undo].reverse()) {
+                if (!runOne(undo).ok) {
+                    state = beforeRollback;
+                    seq = beforeSeq;
+                    currentDay = beforeDay;
+                    return { status: 'rejected', applied: [], rejected: [{ op: 'revert', reason: 'rollback_failed' }], duplicate: [] };
+                }
+            }
+            opIdMemory = opIdMemory.filter(id => !lastFloor.opIds.includes(id));
             state.log.push({ at: now(), source: 'revert', summaries: [`第 ${floorKey + 1} 楼重新生成：已撤销上一版记忆指令`], rejected: 0 });
             state.log = state.log.slice(-maxLog);
         }
@@ -320,6 +383,7 @@ export function createMemoryRuntime({ maxEntries = DEFAULT_MAX_ENTRIES, maxLog =
         const applied = [];
         const rejected = [];
         const undoSteps = [];
+        const revertedOpIds = [];
         const duplicate = [];
         for (let op of list) {
             const opId = text(op?.opId);
@@ -337,11 +401,12 @@ export function createMemoryRuntime({ maxEntries = DEFAULT_MAX_ENTRIES, maxLog =
                     continue;
                 }
             }
-            const result = runOne(op);
+            const result = runOne(op, floorKey);
             if (result.ok) {
                 rememberOpId(opId);
                 applied.push(result);
                 if (result.undo) {
+                    if (opId) revertedOpIds.push(opId);
                     if (Array.isArray(result.undo)) undoSteps.push(...result.undo);
                     else undoSteps.push(result.undo);
                 }
@@ -349,7 +414,7 @@ export function createMemoryRuntime({ maxEntries = DEFAULT_MAX_ENTRIES, maxLog =
                 rejected.push({ op: text(op?.op), reason: result.reason });
             }
         }
-        if (fromModel && floorKey !== null) lastFloor = { floor: floorKey, undo: undoSteps };
+        if (fromModel && floorKey !== null) lastFloor = { floor: floorKey, undo: undoSteps, opIds: revertedOpIds };
         if (applied.length) {
             state.updatedAt = now();
             state.log.push({ at: now(), source, summaries: applied.map(item => item.summary), rejected: rejected.length });
@@ -371,6 +436,10 @@ export function createMemoryRuntime({ maxEntries = DEFAULT_MAX_ENTRIES, maxLog =
         const body = text(big?.text);
         if (!body) return { ok: false, reason: 'text_missing' };
         if (body.length > MAX_TEXT) return { ok: false, reason: 'text_too_long' };
+        // 大记忆的标题也必填：列表主页只显示标题，没有标题或超长的总结不收。
+        const bigTitle = text(big?.title);
+        if (!bigTitle) return { ok: false, reason: 'title_missing' };
+        if (bigTitle.length > MAX_TITLE) return { ok: false, reason: 'title_too_long' };
         // 同文大记忆不重记：同一天重跑总结的保险。
         if (state.entries.some(entry => entry.tier === 'big' && entry.text === body)) return { ok: false, reason: 'duplicate_text' };
         const unionKeys = [];
@@ -382,21 +451,30 @@ export function createMemoryRuntime({ maxEntries = DEFAULT_MAX_ENTRIES, maxLog =
         const chosenRelated = (Array.isArray(big?.related) ? big.related : [])
             .map(item => text(item).slice(0, MAX_RELATED_TEXT))
             .filter(Boolean);
+        const chosenAliases = (Array.isArray(big?.aliases) ? big.aliases : [])
+            .map(item => text(item).slice(0, MAX_RELATED_TEXT))
+            .filter(Boolean);
+        const allKeys = [...new Set([...chosenRelated, ...unionKeys, ...chosenAliases])];
+        // Bounded format: refusing the merge preserves all sources instead of losing recall paths.
+        if (allKeys.length > MAX_RELATED + MAX_ALIASES) return { ok: false, reason: 'recall_keys_overflow' };
         const related = [];
-        for (const key of [...chosenRelated, ...unionKeys]) {
+        for (const key of allKeys) {
             if (related.length >= MAX_RELATED) break;
             if (!related.includes(key)) related.push(key);
         }
         // 没有钥匙的大记忆永远召不回，跟 remember 一样不打收。
         if (!related.length) return { ok: false, reason: 'related_missing' };
-        const aliases = unionKeys.filter(key => !related.includes(key)).slice(0, MAX_ALIASES);
+        const aliases = allKeys.filter(key => !related.includes(key));
         const dayKey = intIn(day, 1, MAX_DAY) ?? stateDay();
         const idList = consumed.map(entry => entry.id);
         const basis = text(big?.basis).slice(0, MAX_BASIS) || `由 ${idList.join('、')} 总结`.slice(0, MAX_BASIS);
+        const retired = retire(idList);
+        if (!retired.ok) return retired;
         const entry = {
             id: nextId(),
             tier: 'big',
             text: body,
+            title: bigTitle,
             quote: text(big?.quote).slice(0, MAX_QUOTE),
             basis,
             related,
@@ -404,36 +482,15 @@ export function createMemoryRuntime({ maxEntries = DEFAULT_MAX_ENTRIES, maxLog =
             weight: WEIGHTS.includes(big?.weight) ? big.weight : 'major',
             tag: TAG_LABELS[big?.tag] ? big.tag : '',
             day: dayKey,
-            done: false,
-            resolvedDay: null,
             note: '',
-            recallCount: 0,
-            lastRecallDay: null,
         };
         state.entries = state.entries.filter(item => !idList.includes(item.id));
         state.entries.push(entry);
-        retire(idList);
-        prune();
         state.updatedAt = now();
         const summary = `小记忆 ×${idList.length}（${idList.join('、')}）总结成大记忆 ${entry.id}：${body}`;
         state.log.push({ at: now(), source: 'consolidate', summaries: [summary], rejected: 0 });
         state.log = state.log.slice(-maxLog);
         return { ok: true, id: entry.id, summary, consumed: idList, entry };
-    }
-
-    /** 召回记账：被想起过的记忆强度回涨（排练效应）；纯统计，不写流水、不镜像数据库。 */
-    function markRecalled(ids, { day = null } = {}) {
-        const dayKey = intIn(day, 1, MAX_DAY) ?? currentDay;
-        let touched = 0;
-        for (const id of Array.isArray(ids) ? ids : []) {
-            const entry = findEntry(text(id));
-            if (!entry) continue;
-            entry.recallCount = clampInt((entry.recallCount ?? 0) + 1, 0, 9999, 0);
-            entry.lastRecallDay = dayKey;
-            touched += 1;
-        }
-        if (touched) state.updatedAt = now();
-        return { status: 'marked', touched };
     }
 
     function snapshot() {
@@ -443,15 +500,17 @@ export function createMemoryRuntime({ maxEntries = DEFAULT_MAX_ENTRIES, maxLog =
     function status() {
         const byTier = {};
         for (const tier of TIERS) {
-            const list = entriesOf(tier);
-            byTier[tier] = { open: list.filter(entry => !entry.done).length, total: list.length };
+            byTier[tier] = { total: entriesOf(tier).length };
         }
-        return { byTier, open: state.entries.filter(entry => !entry.done).length, total: state.entries.length };
+        return { byTier, total: state.entries.length, legacy_gap: state.legacy_gap };
     }
 
     function restore(raw) {
-        state = normalizeState(raw, now);
-        seq = Math.max(0, ...state.entries.map(entry => Number(String(entry.id).replace(/\D/g, '')) || 0));
+        let restored;
+        try { restored = normalizeState(raw, now); }
+        catch (error) { return { status: 'rejected', reason: String(error?.message ?? error) }; }
+        state = restored;
+        seq = identityHighWater([...state.entries.map(entry => entry.id), ...state.retiredIds, ...state.retiredSeqRanges.map(pair => `m${pair[1]}`)]);
         opIdMemory = [];
         lastFloor = null;
         return { status: 'restored', ...status() };
@@ -459,7 +518,7 @@ export function createMemoryRuntime({ maxEntries = DEFAULT_MAX_ENTRIES, maxLog =
 
     function reset() {
         state = initialState(now);
-        seq = 0;
+        seq = 0n;
         opIdMemory = [];
         lastFloor = null;
         return { status: 'reset', ...status() };
@@ -472,5 +531,28 @@ export function createMemoryRuntime({ maxEntries = DEFAULT_MAX_ENTRIES, maxLog =
         return { status: 'noted' };
     }
 
-    return Object.freeze({ apply, consolidate, snapshot, status, restore, reset, note, markRecalled, tiers: TIERS, tierLabels: TIER_LABELS, tagLabels: TAG_LABELS, config: Object.freeze({ maxEntries, maxLog, maxOps }) });
+    /** 删楼层联动：该楼记的记忆跟着删，后面楼层的依据楼层整体前移。
+     *  lastFloor 指向被删楼时一并作废——回滚指针没了个体的落点，留着会撤错账。 */
+    function dropFloor(removedIndex) {
+        const index = Number.isInteger(removedIndex) && removedIndex >= 0 ? removedIndex : null;
+        if (index === null) return { status: 'rejected', removed: 0, shifted: 0 };
+        const removedEntries = state.entries.filter(entry => entry.floor === index);
+        const shiftedEntries = state.entries.filter(entry => Number.isInteger(entry.floor) && entry.floor > index);
+        if (!removedEntries.length && !shiftedEntries.length && !(lastFloor && Number.isInteger(lastFloor.floor) && lastFloor.floor >= index)) {
+            return { status: 'noop', removed: 0, shifted: 0 };
+        }
+        state.entries = state.entries
+            .filter(entry => entry.floor !== index)
+            .map(entry => Number.isInteger(entry.floor) && entry.floor > index ? { ...entry, floor: entry.floor - 1 } : entry);
+        if (lastFloor && Number.isInteger(lastFloor.floor)) {
+            if (lastFloor.floor === index) lastFloor = null;
+            else if (lastFloor.floor > index) lastFloor = { ...lastFloor, floor: lastFloor.floor - 1 };
+        }
+        state.log.push({ at: now(), source: 'floor_delete', summaries: [`第 ${index + 1} 楼已删：删除对应记忆 ${removedEntries.length} 条，${shiftedEntries.length} 条依据楼层前移`], rejected: 0 });
+        state.log = state.log.slice(-maxLog);
+        state.updatedAt = now();
+        return { status: 'applied', removed: removedEntries.length, shifted: shiftedEntries.length };
+    }
+
+    return Object.freeze({ apply, consolidate, dropFloor, snapshot, status, restore, reset, note, isRetired, tiers: TIERS, tierLabels: TIER_LABELS, tagLabels: TAG_LABELS, config: Object.freeze({ maxLog, maxOps }) });
 }

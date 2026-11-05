@@ -6,6 +6,9 @@ assert.ok(SELF_GUIDE.includes('```self'), '指南必须给出 fenced 块格式')
 assert.ok(SELF_GUIDE.includes('setRealm'), '指南必须列出境界操作');
 assert.ok(SELF_GUIDE.includes('startCraft') && SELF_GUIDE.includes('finishCraft'), '指南必须列出制作台操作');
 assert.ok(SELF_GUIDE.includes('addItem'), '指南必须写明炼成后补记行囊');
+assert.ok(SELF_GUIDE.includes('addEquipment') && SELF_GUIDE.includes('removeEquipment'), '指南必须列出装备栏操作');
+assert.ok(SELF_GUIDE.includes('addTreasure') && SELF_GUIDE.includes('removeTreasure'), '指南必须列出天材地宝操作');
+assert.ok(SELF_GUIDE.includes('装备栏'), '指南要写明装备进装备栏、行囊只放没在用的');
 assert.ok(SELF_HEADER.startsWith('【主角纳戒】'));
 
 // —— 注入文本：身份/境界/功法斗技/行囊/目标，一行一类 ——
@@ -17,6 +20,8 @@ const snapshot = {
     titles: ['萧家废物'],
     techniques: [{ id: 't1', name: '焚决', grade: '黄阶低级', progress: '第三层' }],
     skills: [{ id: 's1', name: '八极崩', grade: '黄阶高级' }, { id: 's2', name: '吸掌', grade: '玄阶低级', progress: '入门' }],
+    equipment: [{ id: 'e1', name: '复元甲', grade: '玄阶中品', type: '防具' }],
+    treasures: [{ id: 'z1', name: '青莲地心火', grade: '异火榜第十九', type: '异火' }],
     items: [
         { id: 'b1', name: '玄重尺', category: '武器', count: 1, equipped: true },
         { id: 'b2', name: '回气丹', category: '丹药', grade: '一品', count: 3 },
@@ -36,8 +41,20 @@ assert.ok(injection.includes('金币：3200'));
 assert.ok(injection.includes('称号：萧家废物'));
 assert.ok(injection.includes('功法：焚决（黄阶低级·第三层）'));
 assert.ok(injection.includes('斗技：八极崩（黄阶高级）、吸掌（玄阶低级·入门）'));
-assert.ok(injection.includes('装备中：玄重尺'), '装备中的单列');
+assert.ok(injection.includes('装备：复元甲（玄阶中品·防具）、玄重尺'), '装备栏单列，旧档遗留的 equipped 条目也归并进这一行');
+assert.ok(injection.includes('天材地宝：青莲地心火（异火榜第十九·异火）'), '天材地宝单列一行');
+assert.ok(injection.indexOf('装备：') < injection.indexOf('天材地宝：') < injection.indexOf('行囊：'), '装备、天材地宝排在行囊前面');
 assert.ok(!injection.includes('玄重尺×1'), '装备中不再进行囊');
+assert.ok(injection.indexOf('装备：') < injection.indexOf('行囊：'), '装备栏排在行囊前面');
+
+// —— withIds：决定模型视图带编号，update/remove 才有 id 可引用 ——
+const withIds = buildSelfInjection(snapshot, { withIds: true });
+assert.ok(withIds.includes('功法：t1·焚决'), '功法带编号');
+assert.ok(withIds.includes('装备：e1·复元甲'), '装备带编号');
+assert.ok(withIds.includes('b2·回气丹×3'), '行囊带编号');
+assert.ok(withIds.includes('c1·炼药·聚气散'), '进行中带编号');
+assert.ok(withIds.includes('g1·★三年之约'), '目标带编号');
+assert.ok(!injection.includes('t1·'), '正文注入默认不带编号');
 assert.ok(injection.includes('行囊：一阶魔核×5、回气丹×3'), '行囊按数量从大到小');
 assert.ok(injection.includes('进行中：炼药·聚气散（剩 2 天）'));
 assert.ok(injection.includes('目标：★三年之约，云岚宗一雪前耻（三年后）；·在乌坦城站稳脚跟'), '主线排前，已达成的不进');

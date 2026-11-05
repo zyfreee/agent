@@ -281,4 +281,70 @@ for (let index = 1; index <= 260; index++) {
 assert.equal(unlimited.status().total, 260);
 assert.equal(unlimited.status().archived, 0);
 
+// OPT-028: active and archived records share one stable ID namespace.
+for (const keepActive of [false, true]) {
+    const r = createImpactRuntime({ now });
+    r.apply([{ op: 'record', title: '旧账', detail: 'd', target: '旧城' }], { source: 'manual' });
+    r.apply([{ op: 'forget', ref: 'i1' }], { source: 'manual' });
+    if (keepActive) r.apply([{ op: 'record', title: '留存', detail: 'd', target: '别城' }], { source: 'manual' });
+    for (let pass = 0; pass < 2; pass++) {
+        r.restore(r.snapshot());
+        r.apply([{ op: 'record', title: `续账${pass}`, detail: 'd', target: `城${pass}` }], { source: 'manual' });
+    }
+    assert.equal(r.apply([{ op: 'unarchive', ref: 'i1' }], { source: 'manual' }).status, 'applied');
+    assert.equal(new Set(r.list().map(row => row.id)).size, r.list().length);
+    assert.equal(r.list().find(row => row.id === 'i1').title, '旧账');
+    r.apply([{ op: 'record', title: '下游', detail: 'd', target: '新城', parent: 'i1' }], { source: 'manual' });
+    assert.equal(r.list().find(row => row.title === '下游').parent, 'i1');
+    const before = r.snapshot();
+    const collision = { ...before, archive: [{ ...before.records[0], title: '冲突旧档' }] };
+    assert.equal(r.restore(collision).reason, 'duplicate_id');
+    assert.deepEqual(r.snapshot(), before, 'ambiguous old saves must reject without renumbering references');
+}
+
+// OPT-069: the same optional opId replaces one floor but remains deduplicated across floors.
+{
+    const r = createImpactRuntime({ now });
+    const op = { op: 'record', title: '旧版本', detail: 'd', target: 't', opId: 'stable' };
+    r.apply([op], { floor: 3 });
+    assert.equal(r.apply([op], { floor: 3 }).status, 'applied');
+    assert.equal(r.list().length, 1);
+    r.apply([{ ...op, title: '新版本' }], { floor: 3 });
+    assert.equal(r.list()[0].title, '新版本');
+    assert.deepEqual(r.apply([op], { floor: 4 }).duplicate, ['stable']);
+    assert.equal(r.list().length, 1);
+}
+
+// OPT-070: archive recovery and restore must scan overdue active records on the same day.
+{
+    const r = createImpactRuntime({ now });
+    r.apply([{ op: 'record', title: '到期旧账', detail: 'd', target: 't', ripen: 2 }], { source: 'manual', day: 1 });
+    r.apply([{ op: 'forget', ref: 'i1' }], { source: 'manual', day: 1 });
+    r.apply([], { source: 'manual', day: 5 });
+    assert.deepEqual(r.apply([{ op: 'unarchive', ref: 'i1' }], { source: 'manual', day: 5 }).due, ['i1']);
+    r.apply([], { source: 'manual', day: 5 });
+    assert.equal(r.list()[0].state, 'ripened');
+    const saved = r.snapshot();
+    saved.records[0].state = 'active';
+    saved.records[0].ripenedDay = null;
+    assert.equal(r.restore(saved).ripened, 1, 'restore must settle overdue records even if caller returns immediately');
+    assert.deepEqual(r.apply([], { source: 'manual', day: 5 }).due, []);
+    assert.deepEqual(r.apply([], { source: 'manual', day: 5 }).due, []);
+}
+
+// OPT-071: only maturity caused by the replaced floor rolls back with its clock.
+{
+    const r = createImpactRuntime({ now });
+    r.apply([{ op: 'record', title: '旧楼已熟', detail: 'd', target: 'a', ripen: 1 },
+        { op: 'record', title: '本楼待熟', detail: 'd', target: 'b', ripen: 4 }], { source: 'manual', day: 1 });
+    r.apply([], { floor: 2, day: 2 });
+    assert.equal(r.list().find(row => row.id === 'i1').state, 'ripened');
+    assert.deepEqual(r.apply([{ op: 'close', ref: 'i2' }], { floor: 3, day: 5 }).due, ['i2']);
+    r.apply([], { floor: 3, day: 2 });
+    assert.equal(r.list().find(row => row.id === 'i1').state, 'ripened');
+    assert.equal(r.list().find(row => row.id === 'i2').state, 'active');
+    assert.equal(r.list().find(row => row.id === 'i2').ripenedDay, null);
+    assert.deepEqual(r.apply([], { floor: 3, day: 5 }).due, ['i2']);
+}
+
 console.log('impact runtime tests passed');

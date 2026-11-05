@@ -14,7 +14,7 @@ const snapshot = {
     ],
     tension: "storm",
     factions: [
-        { name: '云岚宗', stance: 'hostile', dynamics: '因拒婚震怒', basis: '退婚现场', day: 1, updatedDay: 3 },
+        { name: '云岚宗', stance: 'hostile', dynamics: '因拒婚震怒', basis: '退婚现场', day: 1, updatedDay: 3, type: '宗门', location: '云岚宗山门', leader: '云韵（宗主）', elders: '老宗主云山、大长老云棱', members: '弟子千余', relations: '世仇萧家' },
         { name: '米特尔家族', stance: 'friendly', dynamics: '', day: 1, updatedDay: 2 },
     ],
     people: [
@@ -54,8 +54,8 @@ assert.ok(injected.includes('当前任务（进行中，达成用 completeTask�
 assert.ok(injected.includes('◆(t1 第1天接) 三年之约前变强：从三段斗之气到斗者（剩 8 天）（来源：与纳兰嫣然的约定）'), '任务行带详情/时限/来源');
 assert.ok(!injected.includes('已完成的旧任务'), '已完成任务不进注入');
 assert.ok(injected.includes('势力动向（改变态度或动向用 setFaction）'), '势力栏进注入');
-assert.ok(injected.includes('- 云岚宗：敌对（因拒婚震怒）（依据：退婚现场）'), '势力行带态度/动向/依据');
-assert.ok(injected.includes('- 米特尔家族：友好'), '友好势力也在');
+assert.ok(injected.includes('- 云岚宗（宗门·云岚宗山门）：敌对｜首领：云韵（宗主）｜高层：老宗主云山、大长老云棱｜成员：弟子千余｜关系：世仇萧家（因拒婚震怒）（依据：退婚现场）'), '势力行带类型/驻地/首领/高层/成员/关系档案');
+assert.ok(injected.includes('- 米特尔家族：友好'), '没填档案的势力保持老格式逐字不变');
 assert.ok(injected.includes('相关人物（改变态度用 setPerson）'), '人物栏进注入');
 assert.ok(injected.includes('- 药老：严厉但护短（依据：出手相护）'), '人物行带态度/依据');
 assert.ok(injected.includes('世界氛围：风波（危机频发）'), '氛围行进注入');
@@ -74,6 +74,19 @@ assert.ok(tiny.startsWith('时钟：'), tiny);
 assert.ok(tiny.length <= 200);
 assert.ok(!tiny.includes('身边事件'));
 assert.ok(!tiny.includes('世界大事'));
+
+// —— 势力逐条入列：超预算从尾部整条丢（敌对保住），栏头不孤 ——
+const tight = buildWorldInjection({
+    clock: { day: 1, minute: 480, label: '' },
+    info: {},
+    factions: [
+        { name: '甲宗', stance: 'hostile', dynamics: '动'.repeat(90) },
+        { name: '乙宗', stance: 'neutral', dynamics: '静'.repeat(90) },
+    ],
+}, { maxChars: 200 });
+assert.ok(tight.includes('势力动向（改变态度或动向用 setFaction）'), '势力栏头保住');
+assert.ok(tight.includes('- 甲宗：敌对'), '敌对势力排最前、被保住');
+assert.ok(!tight.includes('乙宗'), '超预算从尾部整条丢势力');
 
 // 空快照也有可用的时钟行（缺字段按 0 点渲染）
 const blank = buildWorldInjection({});

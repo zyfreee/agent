@@ -11,16 +11,17 @@ import { TIER_LABELS } from './memory-runtime.js';
 /** 默认总结提示词（system）。改写时保持"只输出 JSON"与字段名不变，否则解析不到。 */
 export const MEMORY_CONSOLIDATE_PROMPT = [
     '你是这部小说的「传记整理人」。记忆库里攒了一批小记忆（轻量近事），现在要把它们提炼成一条大记忆：合并重复、归并同一件事的多次进展、保留时间顺序和关键转折，让这一条大记忆能替代这批小记忆长期保存。',
-    '只输出一个 JSON 对象：{"text":"…","basis":"…","related":[…],"aliases":[…],"quote":"…","weight":"major|minor","tag":""}。不要输出解释、标题或代码块以外的文字。',
+    '只输出一个 JSON 对象：{"title":"…","text":"…","basis":"…","related":[…],"aliases":[…],"quote":"…","weight":"major|minor","tag":""}。不要输出解释、标题或代码块以外的文字。',
     '【规矩】',
-    '1. text ≤300 字：一段话说清"发生了什么、为什么值得长期记住"；关键人名、地名、恩怨对象与结果必须保留，不许丢。',
-    '2. related 必写 1-4 个：从这批小记忆的关联/别名里挑日后召回价值最高的钥匙（反复出现的人名/地名优先）。',
-    '3. aliases 可选（≤4 个）：没挤进 related 的其余钥匙放这里，召回时与 related 同权。',
-    '4. basis ≤80 字：写清"由哪些天的小记忆总结而来"。',
-    '5. quote 可选（≤60 字）：这批记忆里最有味道的一句原话，只准摘小记忆引文里真实出现过的对白，没有就空着。',
-    '6. weight：这批事够得上值得长期记住的大事就 major，只是一段有内容的经历就 minor。',
-    '7. tag 可选：grudge恩怨/intel情报/thread伏笔/milestone大事记，拿不准就空着。',
-    '8. 不许发明小记忆里没有的事；合并时以更晚的发展为准，但不要丢掉恩怨的起点。',
+    '1. title 必写：4~14 字短标题（名词短语，概括这批小记忆合成的这件大事，如「黑土坊交割首胜」）。记忆列表主页面只显示标题。',
+    '2. text ≤300 字：一段话说清"发生了什么、为什么值得长期记住"；关键人名、地名、恩怨对象与结果必须保留，不许丢。',
+    '3. related 必写 1-4 个：从这批小记忆的关联/别名里挑日后召回价值最高的钥匙（反复出现的人名/地名优先）。',
+    '4. aliases 可选（≤4 个）：没挤进 related 的其余钥匙放这里，召回时与 related 同权。',
+    '5. basis ≤80 字：写清"由哪些天的小记忆总结而来"。',
+    '6. quote 可选（≤60 字）：这批记忆里最有味道的一句原话，只准摘小记忆引文里真实出现过的对白，没有就空着。',
+    '7. weight：这批事够得上值得长期记住的大事就 major，只是一段有内容的经历就 minor。',
+    '8. tag 可选：grudge恩怨/intel情报/thread伏笔/milestone大事记，拿不准就空着。',
+    '9. 不许发明小记忆里没有的事；合并时以更晚的发展为准，但不要丢掉恩怨的起点。',
     '只输出 JSON。',
 ].join('\n');
 
@@ -28,6 +29,7 @@ export const MEMORY_CONSOLIDATE_PROMPT = [
 export const MEMORY_CONSOLIDATE_JSON_SCHEMA = Object.freeze({
     type: 'object',
     properties: {
+        title: { type: 'string', minLength: 1, maxLength: 14, pattern: '\\S' },
         text: { type: 'string' },
         basis: { type: 'string' },
         related: { type: 'array', items: { type: 'string' } },
@@ -36,7 +38,7 @@ export const MEMORY_CONSOLIDATE_JSON_SCHEMA = Object.freeze({
         weight: { type: 'string', enum: ['major', 'minor'] },
         tag: { type: 'string', enum: ['grudge', 'intel', 'thread', 'milestone'] },
     },
-    required: ['text'],
+    required: ['title', 'text'],
 });
 
 /** 组装发给模型的 user 内容：待总结的小记忆清单（带召回钥匙与引文）+ 世界天数。 */
@@ -48,12 +50,14 @@ export function buildConsolidateUser({ entries = [], day = null } = {}) {
         const keys = [...(Array.isArray(entry?.related) ? entry.related : []), ...(Array.isArray(entry?.aliases) ? entry.aliases : [])]
             .filter(key => typeof key === 'string' && key.trim());
         const basis = typeof entry?.basis === 'string' && entry.basis.trim() ? `（依据：${entry.basis.trim()}）` : '';
+        const title = typeof entry?.title === 'string' && entry.title.trim() ? `（标题：${entry.title.trim()}）` : '';
+        const note = typeof entry?.note === 'string' && entry.note.trim() ? `（细节：${entry.note.trim()}）` : '';
         const dayText = Number.isFinite(Number(entry?.day)) ? `第${Number(entry.day)}天` : '第?天';
-        return `${index + 1}. ${entry?.id ?? '?'}（${dayText}）[${tier}] ${typeof entry?.text === 'string' ? entry.text.trim() : ''}${quote}${keys.length ? ` 关联：${keys.join('、')}` : ''}${basis}`;
+        return `${index + 1}. ${entry?.id ?? '?'}（${dayText}）[${tier}] ${typeof entry?.text === 'string' ? entry.text.trim() : ''}${quote}${keys.length ? ` 关联：${keys.join('、')}` : ''}${basis}${title}${note}`;
     });
     blocks.push(lines.length ? `【待总结的小记忆】\n${lines.join('\n')}` : '【待总结的小记忆】\n（空的，没有可总结的小记忆）');
     if (Number.isFinite(Number(day))) blocks.push(`【世界时间】第 ${Number(day)} 天`);
-    blocks.push('请把它们提炼成一条大记忆，只输出 JSON：{"text":"…","basis":"…","related":[…],"aliases":[…],"quote":"…","weight":"major|minor","tag":""}。');
+    blocks.push('请把它们提炼成一条大记忆，只输出 JSON：{"title":"…","text":"…","basis":"…","related":[…],"aliases":[…],"quote":"…","weight":"major|minor","tag":""}。');
     return blocks.join('\n\n');
 }
 
@@ -76,6 +80,10 @@ export function parseConsolidation(raw) {
     const text = typeof object.text === 'string' ? object.text.trim() : '';
     if (!text) return { status: 'invalid', error: '总结缺少 text' };
     if (text.length > 300) return { status: 'invalid', error: '总结 text 超过 300 字' };
+    const title = typeof object.title === 'string' ? object.title.trim() : '';
+    if (!title) return { status: 'invalid', error: '总结缺少 title' };
+    // 超长标题整条打回（小记忆原样保留重试），不静默截断。
+    if (title.length > 14) return { status: 'invalid', error: '总结 title 超过 14 字' };
     const pickNames = value => (Array.isArray(value) ? value : [])
         .filter(item => typeof item === 'string' && item.trim())
         .map(item => item.trim())
@@ -83,6 +91,7 @@ export function parseConsolidation(raw) {
     return {
         status: 'ok',
         big: {
+            title,
             text,
             basis: typeof object.basis === 'string' ? object.basis.trim() : '',
             related: pickNames(object.related),

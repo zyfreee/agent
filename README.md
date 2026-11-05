@@ -33,7 +33,7 @@
 4. 安装完成后刷新页面，或重启 SillyTavern。
 5. 在扩展列表中确认“斗破同人 Agent · 运行反馈”已出现并启用。
 
-扩展入口是仓库根目录的 `manifest.json`；入口脚本和样式位于 `agent/doupo-agent-ui/`，标准设置模板位于仓库根目录 `settings.html`；入口目录另有一份相同内容作为相对路径备用模板。不要把仓库再套一层目录后手动移动文件，否则 `third-party/agent` 模板路径可能失效。
+仓库根目录 `manifest.json` 直接加载根 `index.js` 和 `style.css`：前者转发到 `agent/doupo-agent-ui/index.js`，后者与 `agent/doupo-agent-ui/host/style.css` 保持一致；标准模板是根 `settings.html`，模块备用模板是 `agent/doupo-agent-ui/settings.html`。`extension-package.test.mjs` 检查根入口/双 CSS，`settings-template.test.mjs` 检查双模板及加载路径（测试均在 `agent/doupo-agent-ui/`）；详见 [INSTALL.md](INSTALL.md)。不要把仓库再套一层目录后手动移动文件，否则 `third-party/agent` 模板路径可能失效。
 
 ## 使用与排错
 

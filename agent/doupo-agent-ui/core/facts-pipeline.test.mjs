@@ -4,6 +4,27 @@ import { createFactsSelector } from '../narrative/facts-select.js';
 import { createSettingSupply } from '../narrative/setting-supply.js';
 import { createTurnStages } from './turn-stages.js';
 
+// OPT-026/087: exercise the real assembly parser on both injection paths.
+for (const fallbackPath of [false, true]) {
+    const fixture = createSettingSupply({ countTokens: value => String(value).length });
+    fixture.register([{ id: 'volume-fixture', name: '卷段夹具', keys: ['卷段夹具'], phase: 1,
+        content: '〔卷01〕\n当前段内容。\n〔卷04 增补〕\n未来段夹具不可注入。' }]);
+    const updates = [];
+    const actualStages = createTurnStages({ runner: {}, actions: {}, world: {}, compose: async () => ({}), getState: () => ({}),
+        settings: fixture, catalogIndex: { stats: () => ({ total: 1 }), guessVolume: () => 4 },
+        catalogSelector: { select: async () => { if (fallbackPath) throw new Error('fixture fallback'); return { ids: ['volume-fixture'], inferredVolume: 4 }; } },
+        select: async () => ({ needs: [{ id: 'volume-fixture', layer: 'full' }] }),
+        getProgress: () => ({ volume: 1, source: 'manual' }), onVolumeInferred: (...args) => updates.push(args),
+        getSettingBudget: () => ({ injectionBudget: 2000, maxItems: 8 }),
+    });
+    const checked = await actualStages.resolveInjection({ input: '卷段夹具' });
+    assert.ok(checked.text.includes('当前段内容'), 'actual current-volume fixture remains');
+    assert.ok(!checked.text.includes('未来段夹具'), 'future fixture segment is trimmed by a scalar boundary');
+    assert.equal(checked.volume.next, 1, 'manual progress remains locked');
+    assert.equal(checked.volume.source, 'manual');
+    assert.deepEqual(updates, [], 'manual progress never writes automatic suggestions');
+}
+
 const BOOK = {
     entries: {
         1041: { uid: 1041, comment: '青莲地心火（物品-青莲地心火）', content: '【物品：青莲地心火】异火榜第十九。', key: ['青莲地心火'] },
@@ -137,5 +158,76 @@ const fromText = await guessStages.resolveInjection({ input: '刚才药老苏醒
 assert.equal(fromText.volume.next, 3, '标题命中同样推进一卷');
 assert.deepEqual(guessed, [[3, 'auto']], '标题命中也要写回自动值');
 assert.equal(progressIndex.guessVolume('随便聊聊萧炎'), null, '正文里没有故事线标题时不能瞎推');
+
+// 人物簿过滤：人物簿已建档的人物条目不再注入，故事线/物品等其它类别照常。
+// 模拟上层判定：档案记的是「药尘」，条目名带括号别名（药尘（药老））也要能拆开对上。
+const profiledPredicate = entry => {
+    if (entry?.category !== '人物') return false;
+    const candidates = [entry?.name, String(entry?.name ?? '').replace(/[（(][^（()）]*[)）]/gu, '').trim()].filter(Boolean);
+    return candidates.includes('药尘');
+};
+// 两条目同卷，避免「other_volume」白名单先拦，保证点名能走到人物簿过滤这一层。
+const gateIndex = createFactsIndex({ volumeIndex: { 1041: [2], 217: [2] } });
+gateIndex.load(BOOK);
+const gateSelector = createFactsSelector({
+    index: gateIndex,
+    complete: async () => JSON.stringify({ need: [{ uid: 1041, why: '玩家问火' }, { uid: 217, why: '药老也在场' }], no_match: false }),
+});
+const gateStages = createTurnStages({
+    runner: { execute: async () => ({ status: 'ok', entries: [] }) },
+    actions: {},
+    world: {},
+    compose: async () => ({ text: '', claims: [] }),
+    getState: () => ({}),
+    settings: supply,
+    catalogIndex: gateIndex,
+    catalogSelector: gateSelector,
+    skipProfiledEntry: profiledPredicate,
+    getSettingBudget: () => ({ maxCandidates: 40, maxItems: 8, injectionBudget: 1200 }),
+    getProgress: () => 2,
+});
+const gated = await gateStages.resolveInjection({ input: '药老，这青莲地心火我能炼化吗' });
+assert.deepEqual(gated.usedIds, ['1041'], '已建档人物条目要从注入里摘掉，物品条目保留');
+assert.ok(gated.text.includes('异火榜第十九'), '没建档的条目照常注入');
+assert.ok(!gated.text.includes('戒指里的灵魂体'), '已建档人物条目的正文不能混进提示词');
+assert.ok(gated.note.includes('药尘'), '状态行要写明跳过了谁');
+assert.ok(gated.note.includes('不注入'), '跳过原因要说清是人物簿过滤');
+
+// 点名的全部是已建档人物：本轮不注入，原因写人物簿过滤，而不是误报预算放不下。
+const gateAllSelector = createFactsSelector({ index: gateIndex, complete: async () => JSON.stringify({ need: [{ uid: 217, why: '药老' }], no_match: false }) });
+const gateAllStages = createTurnStages({
+    runner: { execute: async () => ({ status: 'ok', entries: [] }) },
+    actions: {},
+    world: {},
+    compose: async () => ({ text: '', claims: [] }),
+    getState: () => ({}),
+    settings: supply,
+    catalogIndex: gateIndex,
+    catalogSelector: gateAllSelector,
+    skipProfiledEntry: profiledPredicate,
+    getSettingBudget: () => ({ maxCandidates: 40, maxItems: 8, injectionBudget: 1200 }),
+    getProgress: () => 2,
+});
+const gatedAll = await gateAllStages.resolveInjection({ input: '药老在戒指里说话了' });
+assert.equal(gatedAll.status, 'not_found', '全被人物簿过滤时本轮不注入');
+assert.equal(gatedAll.text, '', '全被过滤时不能带出注入文本');
+assert.ok(gatedAll.note.includes('药尘'), '全被过滤时也要点名是哪位');
+
+// 没接 skipProfiledEntry 的实例行为不变：同样点 217 时照旧注入（对照前面 resolved 用例）。
+const unGatedSelector = createFactsSelector({ index: gateIndex, complete: async () => JSON.stringify({ need: [{ uid: 217, why: '药老' }], no_match: false }) });
+const unGatedStages = createTurnStages({
+    runner: { execute: async () => ({ status: 'ok', entries: [] }) },
+    actions: {},
+    world: {},
+    compose: async () => ({ text: '', claims: [] }),
+    getState: () => ({}),
+    settings: supply,
+    catalogIndex: gateIndex,
+    catalogSelector: unGatedSelector,
+    getSettingBudget: () => ({ maxCandidates: 40, maxItems: 8, injectionBudget: 1200 }),
+    getProgress: () => 2,
+});
+const unGated = await unGatedStages.resolveInjection({ input: '药老在戒指里说话了' });
+assert.deepEqual(unGated.usedIds, ['217'], '没接人物簿过滤时行为照旧');
 
 console.log('facts-pipeline.test.mjs 通过');

@@ -1,0 +1,124 @@
+import assert from 'node:assert/strict';
+import { buildRecallCatalog, buildRecallUser, parseRecallDecision, recallEntriesFromIds, MEMORY_RECALL_PROMPT, RECALL_JSON_SCHEMA } from './memory-recall.js';
+
+// —— 提示词与 schema：脚本解析依赖的契约必须齐 ——
+assert.ok(MEMORY_RECALL_PROMPT.includes('"ids"'), '提示词必须写明 ids 输出');
+assert.ok(MEMORY_RECALL_PROMPT.includes('只输出 JSON'));
+assert.ok(MEMORY_RECALL_PROMPT.includes('绝不编造编号'), '提示词必须防编号');
+assert.ok(MEMORY_RECALL_PROMPT.includes('不得与之矛盾'), '提示词要写明召回即硬约束');
+assert.ok(MEMORY_RECALL_PROMPT.includes('按顺序过三步'), '提示词要有三步判定法');
+assert.ok(MEMORY_RECALL_PROMPT.includes('【不要召回】'), '提示词要写明不召回清单');
+assert.ok(MEMORY_RECALL_PROMPT.includes('【优先带上】'), '提示词要写明优先级');
+assert.equal(RECALL_JSON_SCHEMA.required.includes('ids'), true);
+assert.equal(RECALL_JSON_SCHEMA.properties.ids.items.type, 'string');
+
+// —— 目录：大记忆在前、各层新→旧，行格式 编号|层|标题（钥匙）——
+const snapshot = {
+    entries: [
+        { id: 'm1', tier: 'big', title: '穆蛇坊市结怨', text: '正文一', related: ['穆蛇', '坊市'], aliases: [], day: 3 },
+        { id: 'm2', tier: 'big', title: '洗骨草扣货', text: '正文二', related: [], aliases: ['药老'], day: 6 },
+        { id: 'm3', tier: 'small', title: '坊市打听异火', text: '正文三', related: ['异火'], day: 5 },
+        { id: 'm4', tier: 'small', title: '', text: '无标题的小记忆', related: [], aliases: [], day: 2 },
+    ],
+};
+const catalog = buildRecallCatalog(snapshot);
+const catalogLines = catalog.split('\n');
+assert.deepEqual(catalogLines.map(line => line.replace(/^- /, '').split('|')[0]), ['m2', 'm1', 'm3', 'm4'], '大记忆按天新→旧在前，小记忆随后');
+assert.ok(catalogLines[0].includes('m2|大记忆|洗骨草扣货（药老）'), catalogLines[0]);
+assert.ok(catalogLines[2].includes('m3|小记忆|坊市打听异火（异火）'), catalogLines[2]);
+assert.ok(catalogLines[3].includes('m4|小记忆|无标题的小记忆'), '没标题回退正文');
+
+// 超预算从尾部丢，至少保住一行
+const fat = { entries: Array.from({ length: 50 }, (_, index) => ({ id: `m${index + 1}`, tier: 'big', title: `记忆${index}`, text: 'x', related: [], day: index + 1 })) };
+const tight = buildRecallCatalog(fat, { maxChars: 300 });
+assert.ok(tight.length <= 300);
+assert.equal(tight.split('\n').length < 50, true, '超预算要丢行');
+
+// OPT-049: scene matches in either tier survive flooded catalogs within the hard budget.
+const flooded = { entries: [
+    ...Array.from({ length: 300 }, (_, i) => ({ id: `b${i}`, tier: 'big', title: `无关大记忆${i}`, related: ['背景'], day: i + 2 })),
+    { id: 'old-big', tier: 'big', title: '旧约', related: ['古约'], day: 1 },
+    { id: 'new-small', tier: 'small', title: '新事', related: ['某人'], aliases: ['小名'], day: 999 },
+] };
+const relevantCatalog = buildRecallCatalog(flooded, { maxChars: 4000, sceneText: '小名回来追问古约。' });
+assert.ok(relevantCatalog.includes('- new-small|小记忆|'), 'unique relevant new small survives big flood');
+assert.ok(relevantCatalog.includes('- old-big|大记忆|'), 'unique relevant oldest big survives recency flood');
+assert.ok(relevantCatalog.length <= 4000);
+const fair = buildRecallCatalog(flooded, { maxChars: 200 });
+assert.ok(fair.includes('- new-small|小记忆|'), 'without scene reserve visibility for both tiers');
+assert.ok(fair.length <= 200);
+assert.ok(buildRecallUser({ snapshot: flooded, floors: [{ role: '玩家', text: '小名回来追问古约。' }] }).includes('- old-big|大记忆|'), 'user builder forwards bounded scene');
+const hugeLabels = { entries: [
+    { id: 'large-label', tier: 'big', title: '巨'.repeat(1000), related: [], day: 1 },
+    { id: 'small-label', tier: 'small', title: '小'.repeat(1000), related: [], day: 2 },
+] };
+const bounded = buildRecallCatalog(hugeLabels, { maxChars: 200, sceneText: '不相关' });
+assert.ok(bounded.length <= 200 && bounded.includes('- large-label|') && bounded.includes('- small-label|'), 'truncate labels, not complete ID prefixes');
+assert.ok(bounded.includes('…'));
+for (const maxChars of [NaN, Infinity, -1, 0, 'bad', 200.5]) {
+    assert.ok(buildRecallCatalog(flooded, { maxChars }).length <= 4000, 'invalid budget defaults to finite cap');
+}
+assert.equal(buildRecallCatalog({ entries: [{ id: 'x'.repeat(500), tier: 'big', title: 'a', related: [] }] }, { maxChars: 200 }), '', 'do not emit partial IDs when prefix cannot fit');
+// 空库
+assert.equal(buildRecallCatalog({}), '（记忆库还是空的）');
+
+// —— user 组装：三段式，楼层含最新玩家输入且旧→新 ——
+const floors = [
+    { role: '角色', text: '萧炎握紧了拳头。' },
+    { role: '玩家', text: '我去坊市找穆蛇算账。' },
+];
+const user = buildRecallUser({ snapshot, floors, worldbookLines: ['123|物品|青莲地心火|异火榜第十九'] });
+assert.ok(user.includes('【记忆目录'), user.slice(0, 60));
+assert.ok(user.includes('m2|大记忆'));
+assert.ok(user.includes('【命中的世界书条目（共 1 条）】'));
+assert.ok(user.includes('123|物品|青莲地心火|异火榜第十九'));
+assert.ok(user.includes('最后一楼是玩家刚发的新输入'));
+assert.ok(user.includes('[玩家] 我去坊市找穆蛇算账。'));
+assert.ok(user.indexOf('萧炎握紧了拳头') < user.indexOf('我去坊市找穆蛇算账'), '聊天旧→新');
+
+// 空输入也有可读结构
+const emptyUser = buildRecallUser({});
+assert.ok(emptyUser.includes('（记忆库还是空的）'));
+assert.ok(emptyUser.includes('（还没有聊天内容）'));
+
+// —— 解析：正常 / fenced / 坏 JSON / 非对象 / 超量截断 / 去重 / 坏类型丢弃 ——
+const good = parseRecallDecision('{"note":"穆蛇再登场","ids":["m1","m3"]}');
+assert.equal(good.status, 'ok');
+assert.equal(good.note, '穆蛇再登场');
+assert.deepEqual(good.ids, ['m1', 'm3']);
+
+const fenced = parseRecallDecision('说明\n```json\n{"note":"n","ids":["m2"]}\n```');
+assert.equal(fenced.status, 'ok');
+assert.deepEqual(fenced.ids, ['m2']);
+
+assert.equal(parseRecallDecision('完全不是 JSON').status, 'invalid');
+assert.equal(parseRecallDecision('["数组"]').status, 'invalid');
+assert.equal(parseRecallDecision('{"note":"没有要召回的","ids":[]}').status, 'empty');
+assert.equal(parseRecallDecision('{"note":"n"}').status, 'invalid', 'missing ids is not an explicit empty decision');
+for (const ids of [null, 42, 'm1', {}, [null, 7, '', '  ']]) {
+    assert.equal(parseRecallDecision(JSON.stringify({ ids })).status, 'invalid', `bad ids ${JSON.stringify(ids)}`);
+}
+assert.equal(parseRecallDecision('{"ids":["m99"]}', { snapshot }).status, 'invalid', 'all unknown IDs must trigger fallback');
+const mixed = parseRecallDecision('{"ids":["m99","m1","m1","m3"]}', { snapshot });
+assert.equal(mixed.status, 'ok');
+assert.deepEqual(mixed.ids, ['m1', 'm3']);
+assert.equal(mixed.dropped, 2);
+assert.equal(parseRecallDecision('{"ids":[]}', { snapshot: {} }).status, 'empty', 'explicit empty remains authoritative even with an empty ledger');
+assert.equal(parseRecallDecision('{"ids":["m1"]}', { snapshot: {} }).status, 'invalid');
+assert.equal(parseRecallDecision('{"ids":["m1"]}', { maxIds: -1 }).status, 'ok', 'invalid cap must not manufacture empty success');
+assert.deepEqual(parseRecallDecision('{"ids":["m99","m1"]}', { snapshot, maxIds: 1 }).ids, ['m1'], 'unknown IDs do not consume known-ID capacity');
+
+const overflow = parseRecallDecision(JSON.stringify({ note: 'n', ids: Array.from({ length: 30 }, (_, index) => `m${index + 1}`) }));
+assert.equal(overflow.ids.length, 25, '编号上限 25');
+assert.equal(overflow.dropped, 5);
+
+const deduped = parseRecallDecision('{"note":"n","ids":["m1","m1","m2","",7,null]}');
+assert.deepEqual(deduped.ids, ['m1', 'm2'], '去重、空串与非字符串丢弃');
+assert.equal(deduped.dropped, 4);
+
+// —— 编号对账：账里没有的编号丢弃，顺序保持模型给的 ——
+const picked = recallEntriesFromIds(snapshot, ['m3', 'm99', 'm1', 'm3']);
+assert.deepEqual(picked.map(entry => entry.id), ['m3', 'm1'], '坏号跳过、重复由 parse 去重后这里也不重复');
+assert.equal(recallEntriesFromIds(snapshot, []).length, 0);
+
+console.log('memory recall tests passed');

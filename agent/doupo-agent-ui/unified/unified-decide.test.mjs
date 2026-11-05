@@ -10,11 +10,13 @@ assert.ok(UNIFIED_DECIDE_PROMPT.includes('setProfile'), '纳戒操作字典要�
 assert.ok(UNIFIED_DECIDE_PROMPT.includes('remember'), '记忆操作字典要在提示词里');
 assert.ok(UNIFIED_DECIDE_PROMPT.includes('你没有 memorize/promote 这类操作'), '大记忆不归决定管要写明');
 assert.ok(UNIFIED_DECIDE_PROMPT.includes('related 必写 1-4'), 'related 规则要带上');
+assert.ok(UNIFIED_DECIDE_PROMPT.includes('title 必写'), '记忆短标题规则要带上（主页面只显示标题）');
 
 const selfItem = UNIFIED_JSON_SCHEMA.properties.self.properties.ops.items;
 const memoryItem = UNIFIED_JSON_SCHEMA.properties.memory.properties.ops.items;
 assert.ok(selfItem.properties.op.enum.includes('setRealm'), 'self 桶 schema 带纳戒操作枚举');
 assert.ok(memoryItem.properties.op.enum.includes('remember'), 'memory 桶 schema 带记忆操作枚举');
+assert.ok('title' in memoryItem.properties, 'memory 桶 schema 要放行 title 字段');
 assert.equal(UNIFIED_JSON_SCHEMA.properties.cited.type, 'array');
 
 // ---------- parseUnifiedDecision ----------

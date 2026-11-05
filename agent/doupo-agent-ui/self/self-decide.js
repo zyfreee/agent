@@ -19,7 +19,7 @@ const MAX_OPS = 12;
 export const SELF_DECIDE_PROMPT = [
     '你是《斗破苍穹》同人角色卡的贴身账房。你只做一件事：读聊天记录、世界书资料和纳戒（主角的自身状态与随身之物），决定主角这一轮之后自身发生了什么变化，输出能被脚本严格执行的 JSON。',
     '只输出一个 JSON 对象：{"note":"一句话说明为什么这么决定","ops":[…]}。不要输出解释、标题或代码块以外的文字。',
-    '纳戒只记主角自己：身份信息（姓名/性别/年龄/种族/出身/所属/斗气属性/天赋/外貌）、境界与段位、金币、称号、功法、斗技、行囊物品、炼药炼器的配方与进度、目标约定。世界的事件、别人的档案不归你管，一律不记。',
+    '纳戒只记主角自己：身份信息（姓名/性别/年龄/种族/出身/所属/斗气属性/天赋/外貌）、境界与段位、金币、称号、功法、斗技、装备栏（穿戴中的武器/防具/饰品）、天材地宝（异火、妖丹、灵矿、先天灵物之类）、行囊物品、炼药炼器的配方与进度、目标约定。世界的事件、别人的档案不归你管，一律不记。',
     '可用操作（脚本逐条校验，写错字段或越界的条目会被丢弃，不影响其他条目）：',
     '- {"op":"setProfile","field":"name|gender|age|race|origin|affiliation|attribute|talent|appearance","text":"≤60字，attribute（斗气属性）≤12字"}：身份信息。年龄只在剧情明确过去了一段时间后才改，不要每轮硬加。斗气属性（火/风/雷/冰/水/土/木/暗/毒/无属性等）不轻易变；无属性与特殊体质只在剧情真正揭示时写。',
     '- {"op":"setRealm","realm":"斗者","stage":"三星"}：境界突破。斗气大陆的阶梯是 斗之气(一~九段)→斗者→斗师→大斗师→斗灵→斗王→斗皇→斗宗→斗尊→斗圣→斗帝(各一~九星)；境界必须剧情真到位才写，一场战斗一次突破就够了。',
@@ -27,10 +27,12 @@ export const SELF_DECIDE_PROMPT = [
     '- {"op":"addTitle","text":"≤16字"} / {"op":"removeTitle","text":"…"}：称号得失。',
     '- {"op":"addTechnique","name":"焚决","grade":"黄阶低级","type":"修炼功法","progress":"第三层","source":"药老所赠"}：获得功法（含身法、炼药术）；{"op":"updateTechnique","id":"t1","progress":"第四层"}：进阶；{"op":"removeTechnique","id":"t1"}：废弃或被夺。',
     '- {"op":"addSkill","name":"八极崩","grade":"黄阶高级","type":"攻击","source":"…"}：获得斗技；updateSkill/removeSkill 同上。',
-    '- {"op":"addItem","name":"回气丹","category":"丹药","grade":"一品","count":3,"source":"…"}：获得物品（category：丹药|材料|武器|防具|杂物|关键物）；{"op":"updateItem","id":"b1","count":2} 或 {"op":"removeItem","id":"b1","count":1}：消耗；{"op":"updateItem","id":"b1","equipped":true}：穿上/脱下装备。同名同类别会自动并账。',
-    '- {"op":"addRecipe","name":"回气丹","craft":"炼药","grade":"一品","materials":"…"}：掌握配方；{"op":"removeRecipe","id":"r1"}。',
+    '- {"op":"addItem","name":"回气丹","category":"丹药","grade":"一品","count":3,"source":"…"}：获得物品（category：丹药|材料|武器|防具|杂物|关键物）；{"op":"updateItem","id":"b1","count":2} 或 {"op":"removeItem","id":"b1","count":1}：消耗。同名同类别会自动并账；已经穿上/佩戴的装备改用 addEquipment 记装备栏，不要留在行囊里。',
+    '- {"op":"addEquipment","name":"玄重尺","grade":"玄阶中品","type":"武器","source":"…"}：获得并穿上装备（type：武器|防具|饰品|其他，进装备栏）；{"op":"updateEquipment","id":"e1","grade":"…"}：精炼、改装、修复；{"op":"removeEquipment","id":"e1"}：脱下、损毁或被夺（想收进行囊就再补一条 addItem）。',
+    '- {"op":"addTreasure","name":"青莲地心火","grade":"异火榜第十九","type":"异火","source":"塔戈沙漠地底收服"}：获得天材地宝（type：异火|灵物|矿石|其他，进天材地宝栏）；{"op":"updateTreasure","id":"z1","grade":"…"}：进阶、驯化；{"op":"removeTreasure","id":"z1"}：易主、耗尽或被夺。',
+    '- {"op":"addRecipe","name":"回气丹","craft":"炼药","grade":"一品","materials":"…"}：掌握丹方；{"op":"removeRecipe","id":"r1"}。',
     '- {"op":"startCraft","name":"回气散","craft":"炼药","days":3,"note":"缺一味凝骨草"}：开工炼制；{"op":"finishCraft","id":"c1","result":"success","note":"成丹三枚"}：出炉（fail=炸炉）。炼成后必须再补一条 addItem 把成品记进行囊。',
-    '- {"op":"addGoal","text":"三年之约，云岚宗一雪前耻","priority":"主线","due":"三年后"}：立下目标或约定；{"op":"finishGoal","id":"g1"}：达成；{"op":"removeGoal","id":"g1"}：放弃或作废。',
+    '- {"op":"addGoal","title":"三年之约雪前耻","text":"三年之约，云岚宗一雪前耻，当众赢回萧家颜面","priority":"主线","due":"三年后"}：立下目标或约定。title 必写——不超过 20 字短标题，一眼看懂要做什么；完整内容放 text（≤80字），两者不要重复；缺 title 或超过 20 字的条目会被脚本整条拒绝。{"op":"finishGoal","id":"g1"}：达成；{"op":"removeGoal","id":"g1"}：放弃或作废。',
     '记账规则：变化必须从最近剧情里有依据地长出来（战斗获胜、交易成交、有人赠予、炼制出炉），id 只能用纳戒清单里已有的编号；没有依据的不要记，也不要照搬原著桥段——剧情真走到那一步才记。',
     '- 一次最多 12 条操作，写不下就留到下一轮。',
     '主角这一轮自身没有变化就输出 {"note":"本轮纳戒无变化","ops":[]}，绝不为凑数而记账。',
@@ -46,7 +48,7 @@ export const SELF_JSON_SCHEMA = Object.freeze({
             items: {
                 type: 'object',
                 properties: {
-                    op: { type: 'string', enum: ['setProfile', 'setRealm', 'setGold', 'addGold', 'addTitle', 'removeTitle', 'addTechnique', 'updateTechnique', 'removeTechnique', 'addSkill', 'updateSkill', 'removeSkill', 'addItem', 'updateItem', 'removeItem', 'addRecipe', 'removeRecipe', 'startCraft', 'finishCraft', 'addGoal', 'finishGoal', 'removeGoal'] },
+                    op: { type: 'string', enum: ['setProfile', 'setRealm', 'setGold', 'addGold', 'addTitle', 'removeTitle', 'addTechnique', 'updateTechnique', 'removeTechnique', 'addSkill', 'updateSkill', 'removeSkill', 'addEquipment', 'updateEquipment', 'removeEquipment', 'addTreasure', 'updateTreasure', 'removeTreasure', 'addItem', 'updateItem', 'removeItem', 'addRecipe', 'removeRecipe', 'startCraft', 'finishCraft', 'addGoal', 'finishGoal', 'removeGoal'] },
                     field: { type: 'string' },
                     text: { type: 'string' },
                     realm: { type: 'string' }, stage: { type: 'string' },
@@ -58,17 +60,29 @@ export const SELF_JSON_SCHEMA = Object.freeze({
                     id: { type: 'string' }, result: { type: 'string', enum: ['success', 'fail'] },
                     days: { type: 'number' },
                     priority: { type: 'string', enum: ['主线', '支线'] }, due: { type: 'string' },
+                    title: { type: 'string', minLength: 1, maxLength: 20, pattern: '\\S' },
                 },
                 required: ['op'],
+                // 只对 addGoal（立目标）强制非空短标题；金币/删除/完成等按字段或编号操作不强制。
+                anyOf: [
+                    {
+                        properties: { op: { enum: ['addGoal'] }, title: { type: 'string', minLength: 1, maxLength: 20, pattern: '\\S' } },
+                        required: ['op', 'title'],
+                    },
+                    {
+                        properties: { op: { enum: ['setProfile', 'setRealm', 'setGold', 'addGold', 'addTitle', 'removeTitle', 'addTechnique', 'updateTechnique', 'removeTechnique', 'addSkill', 'updateSkill', 'removeSkill', 'addEquipment', 'updateEquipment', 'removeEquipment', 'addTreasure', 'updateTreasure', 'removeTreasure', 'addItem', 'updateItem', 'removeItem', 'addRecipe', 'removeRecipe', 'startCraft', 'finishCraft', 'finishGoal', 'removeGoal'] } },
+                        required: ['op'],
+                    },
+                ],
             },
         },
     },
     required: ['ops'],
 });
 
-/** 组装发给模型的 user 内容：纳戒现状 + 相关世界书条目 + 最近聊天（旧→新）。 */
+/** 组装发给模型的 user 内容：纳戒现状（带编号，供 update/remove 引用）+ 相关世界书条目 + 最近聊天（旧→新）。 */
 export function buildSelfDecideUser({ snapshot = {}, floors = [], worldbookLines = [] } = {}) {
-    const selfBlock = buildSelfInjection(snapshot, { maxChars: 1600 });
+    const selfBlock = buildSelfInjection(snapshot, { maxChars: 1600, withIds: true });
     const bookLines = (Array.isArray(worldbookLines) ? worldbookLines : [])
         .filter(line => typeof line === 'string' && line.trim())
         .slice(0, MAX_BOOK_LINES);
@@ -90,7 +104,7 @@ export function buildSelfDecideUser({ snapshot = {}, floors = [], worldbookLines
         `【最近聊天记录（旧 → 新，共 ${chat.length} 楼）】`,
         chat.length ? chat.join('\n') : '- （还没有聊天内容）',
         '',
-        '请决定主角自身的变化，只输出 JSON：{"note":"…","ops":[…]}。',
+        '请决定主角自身的变化，只输出 JSON：{"note":"…","ops":[…]}。纳戒现状里条目前的编号（如 t1、s2、e1、z1、b3、c1、g1）就是 update/remove 要用的 id，只能用清单里已有的。',
     ].join('\n');
 }
 

@@ -33,11 +33,11 @@ export const OPS_GUIDE = [
     '{"op":"addEvent","scope":"near","title":"城东连环失窃","text":"城东连着三家铺子夜里失窃","basis":"最近几楼提到的失窃传闻，主角今早又看见巡卫盘查"}',
     '{"op":"addEvent","scope":"world","title":"炼药师大会提前","text":"皇室宣布炼药师大会提前","basis":"上楼贵族宾客的谈话里放出风声","day":6,"weight":"major","days":10}',
     '```',
-    '可用操作：advance(days≤365,minutes≤1439)；setClock(day,minute,label)；addTask(title≤20字短标题,detail≤300字完整内容,basis,days=时限≤90)；completeTask(id)；deleteTask(id)；updateTask(id,detail)；setFaction(name,stance:敌对hostile|警惕wary|中立neutral|友好friendly|同盟allied,dynamics动向,basis)；deleteFaction(name)；setPerson(name,attitude态度,basis)；deletePerson(name)；addEvent(scope:near|world,title≤16字短标题（如“乌坦城集市风波”，一眼看懂）,text≤120字完整内容,basis≤80字,day,location=事发地点≤40字,weight:minor|major|rumor,days=有效天数≤90，到期自动了结)；setTension(level:calm平静|rising升温|storm风波)；resolveEvent(id)；pinEvent(id)；setInfo(field:weather|location|era|reputation|wanted,text≤80字)。id 用上面事件列表里的编号。',
+    '可用操作：advance(days≤365,minutes≤1439)；setClock(day,minute,label)；addTask(title必写≤20字短标题,detail≤300字完整内容,basis,days=时限≤90)；completeTask(id)；deleteTask(id)；updateTask(id,detail)；setFaction(name,stance:敌对hostile|警惕wary|中立neutral|友好friendly|同盟allied,type类型:宗门|家族|帝国|学院|佣兵团|商会|联盟,level实力档次,leader首领,elders高层阵容,members成员构成,location驻地,assets底蕴产业,relations势力关系,dynamics动向,basis；档案字段留空保留旧值，首次登记尽量写全)；deleteFaction(name)；setPerson(name,attitude态度,basis)；deletePerson(name)；addEvent(scope:near|world,title必写≤16字短标题（如“乌坦城集市风波”，一眼看懂）,text≤120字完整内容,basis≤80字,day,location=事发地点≤40字,weight:minor|major|rumor,days=有效天数≤90，到期自动了结)；setTension(level:calm平静|rising升温|storm风波)；resolveEvent(id)；pinEvent(id)；setInfo(field:weather|location|era|reputation|wanted,text≤80字)。id 用上面事件列表里的编号。',
     '任务规则：玩家承诺或接下的事、人物托付、剧情给出的明确目标才立任务（addTask），detail 写清目标、背景与现状；任务达成后及时 completeTask，作废用 deleteTask；进展变化用 updateTask 更新详情。不要把每件小事都立成任务。',
     '地点与氛围：事件必须符合所在地特征（魔兽山脉是兽袭与药草，帝都是权贵与阴谋），跨地发生的大事写明 location；setTension 管「世界氛围」——大事临近升 rising、风波不断升 storm、风波平息回落 calm，氛围决定这轮投放事件的频率和烈度。',
         '季节与日程：一年 360 天四季轮转（春/夏/秋/冬），环境描写、药草收成、衣着起居要跟季节对上；固定的大会、仪式、约期用 addEvent 带未来的 day 登记成预定事件，到日子再 resolveEvent。',
-        '事件取材规则：事件从最近剧情里有依据地长出来——正在发生的事、玩家行动引出的动静、所在地点此时合理的动态，内容不拘一格（市井琐事、势力动作、传闻都行），但 basis 必须一句话写清它从哪来（哪楼/谁/什么事引出的）；没有依据的事不记，也不要把原著桥段照搬成事件，原著只在正文需要引用时用。rumor=传闻（未证实消息，正文不得当事实写，查证后 resolveEvent 了结并另记真相或戳穿）；有时限的事（限期比武、悬赏、药效、期限任务）务必带上 days，注入列表会显示剩余天数，正文里的时间压力要和它对得上。机遇与危机（拍卖会、药草成熟、仇家寻上门、势力清洗）属于世界主动投放的大事，偶尔来一件、必须有依据，不要每轮都发；名声（reputation）与通缉度（wanted）只在剧情真有对应行为时更新。',
+        '事件取材规则：事件从最近剧情里有依据地长出来——正在发生的事、玩家行动引出的动静、所在地点此时合理的动态，内容不拘一格（市井琐事、势力动作、传闻都行），但 basis 必须一句话写清它从哪来（哪楼/谁/什么事引出的）；title 必写——4~16 字名词短语，一眼看懂是哪件事，缺标题或超长的条目会被脚本整条丢弃；没有依据的事不记，也不要把原著桥段照搬成事件，原著只在正文需要引用时用。rumor=传闻（未证实消息，正文不得当事实写，查证后 resolveEvent 了结并另记真相或戳穿）；有时限的事（限期比武、悬赏、药效、期限任务）务必带上 days，注入列表会显示剩余天数，正文里的时间压力要和它对得上。机遇与危机（拍卖会、药草成熟、仇家寻上门、势力清洗）属于世界主动投放的大事，偶尔来一件、必须有依据，不要每轮都发；名声（reputation）与通缉度（wanted）只在剧情真有对应行为时更新。',
     '没有需要记下的变化就完全不要输出这个区块；正文照常写给玩家看，指令只是记账。',
 ].join('\n');
 
@@ -63,13 +63,15 @@ function eventLine(event, today) {
     const scheduled = Number.isInteger(today) && event.day > today ? `（预定：第${event.day}天）` : '';
     const where = text(event.location) ? `（地点：${text(event.location)}）` : '';
     const rumor = event.weight === 'rumor' ? '（传闻·未证实）' : '';
+    // 标题 + 正文一起注入：模型改写事件时要认得这一条是哪件事，光看正文容易重记。
+    const title = text(event.title) ? `「${text(event.title)}」` : '';
     let due = '';
     if (event.endDay !== null && event.endDay !== undefined && event.done !== true) {
         const todayNum = Number.isInteger(today) ? today : 1;
         const left = event.endDay - todayNum + 1;
         due = left > 0 ? `（剩 ${left} 天）` : '（今日到期）';
     }
-    return `${mark}(${event.id} 第${event.day}天) ${event.text}${where}${scheduled}${due}${rumor}${basis}${pinned}`;
+    return `${mark}(${event.id} 第${event.day}天) ${title}${event.text}${where}${scheduled}${due}${rumor}${basis}${pinned}`;
 }
 
 /** 世界快照 → 注入文本；超预算时优先保住时钟，事件从末尾往上丢。 */
@@ -97,10 +99,14 @@ lines.push(`时钟：${formatClock(clock)}（${seasonOf(today2)}季）${textOr(c
     if (near.length) lines.push(`身边事件（未了结，可被剧情推进或 resolveEvent）：\n${near.map(event => eventLine(event, today)).join('\n')}`);
     if (world.length) lines.push(`世界大事（未了结）：\n${world.map(event => eventLine(event, today)).join('\n')}`);
     // 势力与人物：敌对优先，最近更新的在前；只列剧情真正接触过的。
+    // 势力逐条入列：超预算时从尾部整条丢（敌对排序保住要紧的），不再整块消失。
     const stanceRank = { hostile: 0, wary: 1, allied: 2, friendly: 3, neutral: 4 };
     const factions = (Array.isArray(snapshot.factions) ? snapshot.factions : [])
         .slice().sort((a, b) => (stanceRank[a.stance] ?? 2) - (stanceRank[b.stance] ?? 2) || (b.updatedDay ?? 0) - (a.updatedDay ?? 0)).slice(0, FACTION_LIMIT);
-    if (factions.length) lines.push(`势力动向（改变态度或动向用 setFaction）：\n${factions.map(f => factionLine(f)).join('\n')}`);
+    if (factions.length) {
+        lines.push('势力动向（改变态度或动向用 setFaction）：');
+        for (const faction of factions) lines.push(factionLine(faction));
+    }
     const people = (Array.isArray(snapshot.people) ? snapshot.people : [])
         .slice().sort((a, b) => (b.updatedDay ?? 0) - (a.updatedDay ?? 0)).slice(0, PEOPLE_LIMIT);
     if (people.length) lines.push(`相关人物（改变态度用 setPerson）：\n${people.map(p => personLine(p)).join('\n')}`);
@@ -118,10 +124,19 @@ const TASK_LIMIT = 8;
 const FACTION_LIMIT = 8;
 const PEOPLE_LIMIT = 10;
 
+/** 势力行：类型·驻地·档次做括号标签，首领/高层/成员/底蕴/关系逐段跟上；没填的整段跳过（老格式逐字不变）。 */
 function factionLine(faction) {
+    const tag = [text(faction.type), text(faction.location), text(faction.level)].filter(Boolean).join('·');
+    const profile = [
+        text(faction.leader) ? `首领：${text(faction.leader)}` : '',
+        text(faction.elders) ? `高层：${text(faction.elders)}` : '',
+        text(faction.members) ? `成员：${text(faction.members)}` : '',
+        text(faction.assets) ? `底蕴：${text(faction.assets)}` : '',
+        text(faction.relations) ? `关系：${text(faction.relations)}` : '',
+    ].filter(Boolean).join('｜');
     const dynamics = text(faction.dynamics) ? `（${text(faction.dynamics)}）` : '';
     const basis = text(faction.basis) ? `（依据：${text(faction.basis)}）` : '';
-    return `- ${faction.name}：${STANCE_LABELS[faction.stance] ?? '中立'}${dynamics}${basis}`;
+    return `- ${faction.name}${tag ? `（${tag}）` : ''}：${STANCE_LABELS[faction.stance] ?? '中立'}${profile ? `｜${profile}` : ''}${dynamics}${basis}`;
 }
 
 function personLine(person) {

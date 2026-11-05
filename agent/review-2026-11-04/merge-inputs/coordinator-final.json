@@ -1,0 +1,112 @@
+{
+  "target": "Coordinator final integration review",
+  "mode": "full-scan",
+  "focus": "general",
+  "coverage": [
+    {
+      "path": "README.md",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read complete 1-74; compared current settings/default runtime and package docs."
+    },
+    {
+      "path": "agent/doupo-agent-ui/README.md",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read 1-240 in inventory stage and 234-253 at final review; contradictory legacy/unified/DB authority and past acceptance wording retained as documentation finding."
+    },
+    {
+      "path": "agent/doupo-agent-ui/.tmp-hub.txt",
+      "status": "excluded",
+      "reason": "Full old static settings fragment read and scoped reference search found no production consumer; excluded from runtime audit, deletion not authorized or proven externally safe.",
+      "evidence": "Read 1-151; old per-card connection fields; scoped production reference search for .tmp-hub had no matches."
+    },
+    {
+      "path": "agent/doupo-agent-ui/host/llm-client.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Final coordinator read 106-192 supplements owner read1-110 and190-726; all source sections covered. No real API calls."
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/turn-stages.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Owner read complete source; coordinator independently reviewed90-115,140-175,190-269 and reproduced real resolveInjection→gather→assemble volume mismatch."
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/setting-supply.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Owner full source review, coordinator checked trimToVolume1-27, assemble260 and direct scalar/object fixtures."
+    },
+    {
+      "path": "agent/doupo-agent-ui/index.js",
+      "status": "partial",
+      "reason": "8826-line integration includes markup not all read line-by-line. Domain paths reviewed by assigned owners; long settings markup is structurally inventoried, not full manual review.",
+      "evidence": "Final read5880-5936,6925-6962,8647-8778; structurally extracted all13 sections and unique data-setting keys from5937-6100 (94521chars). Added default master-off, overlap, dependency and client cancel/sampling offline reproductions."
+    },
+    {
+      "path": "agent/doupo-agent-ui/index-lifecycle.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read complete1-20 and ran full module runner."
+    },
+    {
+      "path": "agent/doupo-agent-ui/index-chat-lifecycle.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read complete1-145 and ran full module runner; covers swipe-aware continuation, contradicting one raw report feature-status statement."
+    },
+    {
+      "path": "agent/doupo-agent-ui/run-tests.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read complete, ran baseline and final77/77 file-level module imports."
+    },
+    {
+      "path": "agent/doupo-agent-ui/extension-package.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "Read complete, package checks executed as full baseline and final runner."
+    }
+  ],
+  "findings": [
+    {
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/core/turn-stages.js",
+      "line": 172,
+      "title": "默认设定主链把卷号对象传给整数裁剪器，未来卷分段实际未裁剪",
+      "behavior": "Default resolveInjection and fallback volume trimming integration",
+      "trigger": "Selected entry contains later-volume sections; current progress is a known integer.",
+      "evidence": "resolveVolume returns {current,next,source}; gatherSettings172 sends this object as volume, while setting-supply15-16 only trims Number.isInteger(volume). Actual createTurnStages.resolveInjection fixture current1, entry〔卷01〕公开/〔卷05〕未来秘密 returns leakedFuture=true even suggestedVolume1. Fallback226 omits volume entirely and also bypasses trim. Component scalar tests pass but do not cover the integrated call shape.",
+      "risk": "Later-volume supplements enter default prompt despite user volume lock; independent settle context leak in facts report is another consumer and not the same callsite.",
+      "recommendation": "Pass a deliberately chosen scalar current/next bound at both normal and fallback assembly; keep progress provenance separate; require explicit manual-lock semantics. Do not weaken component trimming or change original content.",
+      "verification": "Real stages.resolveInjection with current1/suggested1 and mixed volume fixture must exclude卷05 in full/summary/fitted normal and selector-failure fallback; manual1/suggested10 stays1; auto advance tested separately.",
+      "confidence": "coordinator_reproduced_offline"
+    }
+  ],
+  "refactor_signals": [
+    {
+      "module": "default injection integration",
+      "threshold": "Component contract passes but caller type/omitted option violates it",
+      "evidence": "Direct scalar trimming tests cannot establish actual stage call safety; add caller/callee integration gates before broader performance work."
+    }
+  ],
+  "slimming_themes": [],
+  "verification_gates": [
+    {
+      "check": "node --check each frozen JS/MJS",
+      "scope": "158/158 syntax pass, including77 test modules and generated index; not runtime proof"
+    },
+    {
+      "check": "node agent/doupo-agent-ui/run-tests.mjs",
+      "scope": "77/77 module files pass; no extra assertion-coverage claim; ~13.53s"
+    },
+    {
+      "check": "SHA256 against inventory.json",
+      "scope": "All172 input artifacts unchanged as of final coordination check; repeat before delivery"
+    }
+  ],
+  "optimization_handoffs": []
+}

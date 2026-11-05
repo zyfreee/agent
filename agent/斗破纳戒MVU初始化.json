@@ -1,0 +1,48 @@
+{
+ "entries": {
+  "0": {
+   "key": [
+    "纳戒",
+    "斗破纳戒",
+    "变量初始化"
+   ],
+   "keysecondary": [],
+   "comment": "[InitVar]纳戒初始变量",
+   "content": "{\n \"姓名\": [\n  \"\",\n  \"主角姓名，身份变化时更新\"\n ],\n \"性别\": [\n  \"\",\n  \"主角性别\"\n ],\n \"年龄\": [\n  \"\",\n  \"主角年龄，剧情时间真实流逝后更新\"\n ],\n \"种族\": [\n  \"\",\n  \"主角种族，默认人族\"\n ],\n \"出身\": [\n  \"\",\n  \"主角出身背景\"\n ],\n \"所属\": [\n  \"\",\n  \"主角当前所属势力，加入/叛离时更新\"\n ],\n \"斗气属性\": [\n  \"\",\n  \"主角斗气属性（火/风/雷/冰/水/土/木/暗/毒/无属性），觉醒/变异时更新\"\n ],\n \"天赋\": [\n  \"\",\n  \"主角天赋评价\"\n ],\n \"外貌\": [\n  \"\",\n  \"主角外貌，容貌变化时更新\"\n ],\n \"境界\": [\n  \"\",\n  \"斗之气→斗者→斗师→大斗师→斗灵→斗王→斗皇→斗宗→斗尊→斗圣→斗帝，突破时更新\"\n ],\n \"段位\": [\n  \"\",\n  \"斗之气一~九段，斗者及以上一~九星\"\n ],\n \"功法\": [\n  \"\",\n  \"已修功法，名·品级·进度 用、分隔，整张清单\"\n ],\n \"斗技\": [\n  \"\",\n  \"已习斗技，名·品级·类型 用、分隔，整张清单\"\n ],\n \"装备\": [\n  \"\",\n  \"穿戴中装备，名·品级·类型 用、分隔，整张清单\"\n ],\n \"行囊\": [\n  \"\",\n  \"随身物品，名[×数量] 用、分隔，整张清单\"\n ],\n \"称号\": [\n  \"\",\n  \"已获称号，整张清单\"\n ],\n \"丹方\": [\n  \"\",\n  \"已掌握丹方（炼药），名·品级，整张清单\"\n ],\n \"器谱\": [\n  \"\",\n  \"已掌握器谱（炼器），名·品级，整张清单\"\n ],\n \"炼制\": [\n  \"\",\n  \"进行中炼制，名[×数量]（剩N天），整张清单\"\n ],\n \"目标\": [\n  \"\",\n  \"未完成目标，★主线/·支线+标题（期限）：内容，整张清单\"\n ],\n \"金币\": [\n  0,\n  \"金币数目，整数，收支时更新\"\n ],\n \"更新时间\": [\n  \"\",\n  \"系统维护字段，不要更新\"\n ]\n}",
+   "constant": false,
+   "vectorized": false,
+   "selective": true,
+   "selectiveLogic": 0,
+   "addMemo": true,
+   "order": 200,
+   "position": 1,
+   "disable": true,
+   "excludeRecursion": true,
+   "preventRecursion": true,
+   "matchPersonaDescription": false,
+   "matchCharacterDescription": false,
+   "matchCharacterPersonality": false,
+   "matchCharacterDepthPrompt": false,
+   "matchScenario": false,
+   "matchCreatorNotes": false,
+   "delayUntilRecursion": false,
+   "probability": 100,
+   "useProbability": true,
+   "depth": 4,
+   "group": "",
+   "groupOverride": false,
+   "groupWeight": 100,
+   "scanDepth": null,
+   "caseSensitive": null,
+   "matchWholeWords": null,
+   "useGroupScoring": null,
+   "automationId": "",
+   "role": null,
+   "sticky": 0,
+   "cooldown": 0,
+   "delay": 0,
+   "uid": 0,
+   "displayIndex": 0
+  }
+ }
+}

@@ -6,9 +6,11 @@ assert.ok(SELF_DECIDE_PROMPT.includes('"note"') && SELF_DECIDE_PROMPT.includes('
 assert.ok(SELF_DECIDE_PROMPT.includes('斗之气'), '默认提示词给出境界阶梯');
 assert.ok(SELF_DECIDE_PROMPT.includes('addItem'), '炼成后要补记行囊');
 assert.ok(SELF_DECIDE_PROMPT.includes('有依据'), '默认提示词要求变化有依据');
-for (const op of ['setProfile', 'setRealm', 'setGold', 'addGold', 'addTitle', 'removeTitle', 'addTechnique', 'updateTechnique', 'removeTechnique', 'addSkill', 'updateSkill', 'removeSkill', 'addItem', 'updateItem', 'removeItem', 'addRecipe', 'removeRecipe', 'startCraft', 'finishCraft', 'addGoal', 'finishGoal', 'removeGoal']) {
+for (const op of ['setProfile', 'setRealm', 'setGold', 'addGold', 'addTitle', 'removeTitle', 'addTechnique', 'updateTechnique', 'removeTechnique', 'addSkill', 'updateSkill', 'removeSkill', 'addEquipment', 'updateEquipment', 'removeEquipment', 'addItem', 'updateItem', 'removeItem', 'addRecipe', 'removeRecipe', 'startCraft', 'finishCraft', 'addGoal', 'finishGoal', 'removeGoal']) {
     assert.equal(SELF_JSON_SCHEMA.properties.ops.items.properties.op.enum.includes(op), true, `schema 缺操作 ${op}`);
 }
+assert.ok(SELF_DECIDE_PROMPT.includes('addEquipment'), '决定提示词必须列出装备栏操作');
+assert.ok(SELF_DECIDE_PROMPT.includes('装备栏'), '决定提示词要写明装备栏归属');
 assert.deepEqual(SELF_JSON_SCHEMA.required, ['ops']);
 
 // —— 上下文组装：纳戒现状 + 世界书条目 + 聊天记录（旧→新），楼数与每楼长度受限 ——

@@ -14,6 +14,7 @@
     --dai-muted: #a2937c;
     --dai-border: #3b332a;
     --dai-accent: #d9a72b;
+    --dai-check: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='1.5%202.5%2017%2015.5'%3E%3Cpath%20d='M4%2010.6L8.6%2015.2L16%205'%20fill='none'%20stroke='%23d9a72b'%20stroke-width='3.6'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E");
     --dai-tint: #2e250d;
     --dai-good: #8fbe8f;
     --dai-good-bg: #1c2a1b;
@@ -49,6 +50,7 @@
     --dai-muted: #8d95a3;
     --dai-border: #282d35;
     --dai-accent: #2fbf9d;
+    --dai-check: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='1.5%202.5%2017%2015.5'%3E%3Cpath%20d='M4%2010.6L8.6%2015.2L16%205'%20fill='none'%20stroke='%232fbf9d'%20stroke-width='3.6'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E");
     --dai-tint: #10241f;
     --dai-good: #43b06d;
     --dai-good-bg: #112219;
@@ -75,6 +77,7 @@
     --dai-muted: #7a6a52;
     --dai-border: #d3c3a4;
     --dai-accent: #b4452f;
+    --dai-check: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='1.5%202.5%2017%2015.5'%3E%3Cpath%20d='M4%2010.6L8.6%2015.2L16%205'%20fill='none'%20stroke='%23b4452f'%20stroke-width='3.6'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E");
     --dai-tint: #f6e3da;
     --dai-good: #4c7442;
     --dai-good-bg: #e6ecd4;
@@ -120,8 +123,6 @@
 .dai-inline-description { margin: 0.35rem 0 0.65rem; opacity: 0.78; font-size: var(--dai-fs-md); }
 .dai-inline-actions { display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap; }
 .dai-inline-status { opacity: 0.7; font-size: var(--dai-fs-md); }
-.dai-settings-button { min-height: 2.2rem; margin: 0.2rem; padding: 0.45rem 0.8rem; border: 1px solid var(--SmartThemeBorderColor, #777); border-radius: var(--dai-radius-field); color: var(--SmartThemeBodyColor, #f2f2f2); background: var(--SmartThemeBlurTintColor, #252934); cursor: pointer; font: inherit; }
-.dai-settings-button:hover, .dai-settings-button:focus-visible { outline: 2px solid var(--dai-accent); outline-offset: 2px; }
 .dai-settings-panel { position: fixed; z-index: 10001; inset: 0; display: grid; place-items: center; }
 .dai-settings-panel[hidden] { display: none; }
 .dai-settings-panel *, .dai-settings-panel *::before, .dai-settings-panel *::after { box-sizing: border-box; }
@@ -165,11 +166,14 @@
 .dai-overview-switch, .dai-feature-toggle { display: flex; align-items: center; gap: 0.9rem; min-height: 2.9rem; padding: 0.5rem 0.2rem; border: 0; border-bottom: 1px solid var(--dai-border); border-radius: 0; background: transparent; }
 .dai-overview-switch > span, .dai-feature-toggle > span:nth-child(2) { display: grid; flex: 1; gap: 0.2rem; }
 .dai-overview-switch small, .dai-feature-toggle small, .dai-card-heading small { color: var(--dai-muted); font-size: var(--dai-fs-md); }
-/* 开关：滑块轨道替代原生勾选框；appearance:none 后各端用 ::before 画圆点 */
-.dai-overview-switch input, .dai-feature-toggle input, .dai-setting-toggle input[type="checkbox"] { appearance: none; -webkit-appearance: none; box-sizing: border-box; flex: none; position: relative; width: 2.35rem; height: 1.3rem; margin: 0; padding: 0; border: 1px solid var(--dai-border); border-radius: 999px; background: var(--dai-field); cursor: pointer; transition: background 0.15s ease, border-color 0.15s ease; }
-.dai-overview-switch input::before, .dai-feature-toggle input::before, .dai-setting-toggle input[type="checkbox"]::before { content: ''; position: absolute; top: 50%; left: 0.12rem; transform: translateY(-50%); width: 0.95rem; height: 0.95rem; border-radius: 50%; background: var(--dai-muted); transition: left 0.15s ease, background 0.15s ease; }
-.dai-overview-switch input:checked, .dai-feature-toggle input:checked, .dai-setting-toggle input[type="checkbox"]:checked { background: var(--dai-accent); border-color: var(--dai-accent); }
-.dai-overview-switch input:checked::before, .dai-feature-toggle input:checked::before, .dai-setting-toggle input[type="checkbox"]:checked::before { left: calc(100% - 1.08rem); background: var(--dai-on-accent); }
+/* 勾选框：小正方形，不填充底色，勾本身用红色（选中画红勾、未选中留空）。 */
+/* 勾选框：小正方形，未勾留空；勾用背景图直接画在 input 上——input 是替换元素，
+   Chrome 不渲染它的 ::before/::after（mask、字形方案全都因此失效过）。
+   勾的颜色跟主题走：每个主题块定义 --dai-check（内嵌 SVG，色值与 --dai-accent 一致）。 */
+.dai-overview-switch input, .dai-feature-toggle input, .dai-setting-toggle input[type="checkbox"] { appearance: none; -webkit-appearance: none; box-sizing: border-box; flex: none; position: relative; width: 1.15rem; height: 1.15rem; margin: 0; padding: 0; border: 1px solid var(--dai-border); border-radius: 0.2rem; background: var(--dai-field) center / 100% 100% no-repeat; cursor: pointer; transition: border-color 0.12s ease; }
+.dai-overview-switch input:hover, .dai-feature-toggle input:hover, .dai-setting-toggle input[type="checkbox"]:hover { border-color: var(--dai-accent); }
+.dai-overview-switch input:checked, .dai-feature-toggle input:checked, .dai-setting-toggle input[type="checkbox"]:checked { background-image: var(--dai-check, none); }
+.dai-overview-switch input:focus-visible, .dai-feature-toggle input:focus-visible, .dai-setting-toggle input[type="checkbox"]:focus-visible { outline: 2px solid var(--dai-accent); outline-offset: 2px; }
 .dai-overview-switch input:focus-visible, .dai-feature-toggle input:focus-visible, .dai-setting-toggle input[type="checkbox"]:focus-visible { outline: 2px solid var(--dai-accent); outline-offset: 2px; }
 .dai-feature-icon { display: grid; width: 2rem; height: 2rem; place-items: center; border-radius: var(--dai-radius-card); color: var(--dai-accent); background: var(--dai-tint); }
 .dai-settings-card { margin-bottom: 0.7rem; padding: 0.75rem 0.9rem; border: 1px solid var(--dai-border); border-radius: var(--dai-radius-card); background: var(--dai-surface); }
@@ -185,7 +189,9 @@
 .dai-setting-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.35rem 1rem; }
 .dai-setting-grid[hidden] { display: none; }
 .dai-setting-grid .dai-setting-row { display: grid; align-items: start; }
-.dai-setting-grid .dai-setting-row input, .dai-setting-grid .dai-setting-row select { width: 100%; }
+/* 网格里的开关行要回到“文字左、勾选框右”的一行式，别让勾选框被 width:100% 拉成通栏。 */
+.dai-setting-grid .dai-setting-row.dai-setting-toggle { display: flex; justify-content: space-between; align-items: center; }
+.dai-setting-grid .dai-setting-row input:not([type="checkbox"]), .dai-setting-grid .dai-setting-row select { width: 100%; }
 .dai-setting-grid > .dai-secondary-button, .dai-setting-grid > .dai-button, .dai-setting-grid > button { align-self: end; justify-self: start; min-width: 4.75rem; }
 /* 模型设置页：参数区压成小格子，一屏能看全，不再一条参数占一行 */
 [data-settings-section="hub"] .dai-settings-card { padding: 0.6rem 0.75rem; }
@@ -324,8 +330,6 @@
 .dai-pager { display: flex; align-items: center; justify-content: flex-end; gap: 0.45rem; margin-top: 0.55rem; }
 .dai-pager .dai-secondary-button { min-height: 1.9rem; padding: 0.15rem 0.65rem; font-size: var(--dai-fs-sm); }
 .dai-pager-label { color: var(--dai-muted); font-size: var(--dai-fs-sm); }
-.dai-memory-strength { flex: none; padding: 0.08rem 0.4rem; border: 1px solid var(--dai-border); border-radius: 999px; color: var(--dai-accent); font-size: var(--dai-fs-xs); font-variant-numeric: tabular-nums; }
-.dai-memory-card[data-stale="true"] { opacity: 0.82; border-style: dashed; }
 .dai-run-button.is-secondary { background: transparent; color: var(--dai-accent); }
 .dai-version-list { display: flex; flex-wrap: wrap; gap: 0.35rem; }
 .dai-version-button { padding: 0.2rem 0.55rem; border: 1px solid var(--dai-border); border-radius: 999px; background: transparent; color: var(--dai-muted); font-size: var(--dai-fs-sm); cursor: pointer; }
@@ -370,6 +374,8 @@
 .dai-world-event-head b { color: var(--dai-text); font-size: var(--dai-fs-md); line-height: 1.5; word-break: break-word; }
 .dai-world-event-head small { flex-shrink: 0; color: var(--dai-muted); font-size: var(--dai-fs-sm); }
 .dai-world-event-basis { color: var(--dai-muted); font-size: var(--dai-fs-sm); line-height: 1.45; word-break: break-word; }
+/* 事件行内简介：短标题下面那一句，正文全文只在详情弹窗里。 */
+.dai-world-event-intro { color: var(--dai-text); opacity: 0.82; font-size: var(--dai-fs-sm); line-height: 1.5; word-break: break-word; }
 .dai-world-event-actions { display: flex; gap: 0.4rem; }
 .dai-world-event-actions .dai-secondary-button { min-height: 1.9rem; padding: 0.15rem 0.7rem; font-size: var(--dai-fs-sm); }
 /* 行内简介 + 点开弹详情：与人物簿一致的点击观感 */
@@ -387,6 +393,35 @@
 .dai-status-list li[data-tone="warn"] { border-color: var(--dai-accent); }
 .dai-facts-injection { display: grid; gap: 0.45rem; }
 .dai-facts-injection-list { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+/* 检索库条目浏览：固定高度内滚动，条目再多也不撑长页面；滑到底后滚轮接着滚主界面。 */
+.dai-facts-browser { display: grid; gap: 0.4rem; max-height: 24rem; overflow-y: auto; padding: 0.4rem; border: 1px solid var(--dai-border); border-radius: var(--dai-radius-card); background: var(--dai-surface); }
+.dai-facts-browser::-webkit-scrollbar { width: 0.5rem; }
+.dai-facts-browser::-webkit-scrollbar-track { background: transparent; }
+.dai-facts-browser::-webkit-scrollbar-thumb { border-radius: 999px; background: var(--dai-border); }
+.dai-facts-browser::-webkit-scrollbar-thumb:hover { background: var(--dai-muted); }
+/* 长清单统一收进固定高度内滚动（检索库·条目浏览同款体验）：
+   纳戒各清单/主角面板/流水、世界页事件任务势力人物、人物簿格子、
+   记忆大小清单——条目再多也只在盒内滑，页面不再被撑长；
+   不许用 contain 挡滚动链（overscroll-behavior）：清单滑到底后滚轮要交出去——
+   index.js 的滚轮接力（relayWheelToInterface）把剩余滚动量逐层往外分：
+   清单→.dai-settings-body 主区→主界面（酒馆聊天区 #chat），一路滚到底不卡死。 */
+.dai-self-entries, .dai-self-panel, .dai-world-events, .dai-world-tasks,
+.dai-world-factions, .dai-world-people, .dai-world-journal, .dai-npc-grid {
+    max-height: 24rem;
+    overflow-y: auto;
+}
+.dai-self-entries::-webkit-scrollbar, .dai-self-panel::-webkit-scrollbar, .dai-world-events::-webkit-scrollbar,
+.dai-world-tasks::-webkit-scrollbar, .dai-world-factions::-webkit-scrollbar, .dai-world-people::-webkit-scrollbar,
+.dai-world-journal::-webkit-scrollbar, .dai-npc-grid::-webkit-scrollbar { width: 0.5rem; }
+.dai-self-entries::-webkit-scrollbar-track, .dai-self-panel::-webkit-scrollbar-track, .dai-world-events::-webkit-scrollbar-track,
+.dai-world-tasks::-webkit-scrollbar-track, .dai-world-factions::-webkit-scrollbar-track, .dai-world-people::-webkit-scrollbar-track,
+.dai-world-journal::-webkit-scrollbar-track, .dai-npc-grid::-webkit-scrollbar-track { background: transparent; }
+.dai-self-entries::-webkit-scrollbar-thumb, .dai-self-panel::-webkit-scrollbar-thumb, .dai-world-events::-webkit-scrollbar-thumb,
+.dai-world-tasks::-webkit-scrollbar-thumb, .dai-world-factions::-webkit-scrollbar-thumb, .dai-world-people::-webkit-scrollbar-thumb,
+.dai-world-journal::-webkit-scrollbar-thumb, .dai-npc-grid::-webkit-scrollbar-thumb { border-radius: 999px; background: var(--dai-border); }
+.dai-self-entries::-webkit-scrollbar-thumb:hover, .dai-self-panel::-webkit-scrollbar-thumb:hover, .dai-world-events::-webkit-scrollbar-thumb:hover,
+.dai-world-tasks::-webkit-scrollbar-thumb:hover, .dai-world-factions::-webkit-scrollbar-thumb:hover, .dai-world-people::-webkit-scrollbar-thumb:hover,
+.dai-world-journal::-webkit-scrollbar-thumb:hover, .dai-npc-grid::-webkit-scrollbar-thumb:hover { background: var(--dai-muted); }
 .dai-facts-chip { padding: 0.18rem 0.5rem; border: 1px solid var(--dai-border); border-radius: 999px; color: var(--dai-text); background: var(--dai-field-hover); font-size: var(--dai-fs-sm); }
 
 /* 纳戒页：子页签、清单条目与称号标签 */
@@ -554,7 +589,11 @@
 .dai-orb-row-value { text-align: right; overflow-wrap: anywhere; }
 .dai-orb-row[data-tone="warn"] .dai-orb-row-value { color: var(--dai-warn); }
 .dai-orb-group { display: grid; gap: 0.35rem; margin-top: 0.7rem; }
+.dai-orb-group-head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; }
 .dai-orb-group-title { color: var(--dai-muted); font-size: var(--dai-fs-sm); font-weight: 600; }
+/* 栏目标题右边的「全部」：主窗只铺最新几条，点它弹这一栏的全量副窗。 */
+.dai-orb-group-all { flex: none; padding: 0.1rem 0.45rem; border: 1px solid var(--dai-border); border-radius: 999px; color: var(--dai-accent); background: transparent; cursor: pointer; font-size: var(--dai-fs-xs); line-height: 1.5; }
+.dai-orb-group-all:hover { color: var(--dai-text); border-color: var(--dai-accent); background: var(--dai-tint); }
 .dai-orb-entry { display: grid; gap: 0.15rem; padding: 0.45rem 0.55rem; border: 1px solid var(--dai-border); border-radius: var(--dai-radius-row); background: var(--dai-field-hover); }
 .dai-orb-entry.is-clickable { cursor: pointer; }
 .dai-orb-entry.is-clickable:hover { border-color: var(--dai-accent); color: var(--dai-text); }
@@ -578,6 +617,9 @@
 .dai-orb-pop-group > b { color: var(--dai-muted); font-size: var(--dai-fs-xs); font-weight: 700; letter-spacing: 0.04em; }
 .dai-orb-pop-group .dai-profile-row { padding: 0.22rem 0.4rem; font-size: var(--dai-fs-md); }
 .dai-orb-pop-entry { margin: 0; padding: 0.3rem 0.4rem; border-radius: var(--dai-radius-field); background: var(--dai-field-hover); font-size: var(--dai-fs-sm); line-height: 1.5; overflow-wrap: anywhere; }
+/* 「全部」副窗：跟主信息窗并排的一列，抬头固定、清单自己在里面滑。 */
+.dai-orb-pop-list { width: min(23rem, calc(100vw - 2rem)); max-height: min(34rem, calc(100dvh - 2rem)); overflow: hidden; }
+.dai-orb-pop-list-body { display: grid; gap: 0.35rem; flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-right: 0.15rem; }
 @media (prefers-reduced-motion: reduce) {
     .dai-orb-capsule, .dai-orb-ball, .dai-orb-icon { transition: none !important; }
 }
@@ -763,3 +805,199 @@
 .custom-dpz-round-head i { font-style: normal; font-weight: 400; font-size: 0.72em; opacity: 0.75; letter-spacing: 0; text-indent: 0; }
 .dpz-round-text,
 .custom-dpz-round-text { margin: 0; font-size: 1em; line-height: 1.75; overflow-wrap: anywhere; }
+
+/* ---- 楼层美化 · 旧楼层隐去（留近三楼） ----
+   host/display-regex.js 的「旧楼层隐去」给每一楼开头钉一个空的 .dpz-floor-veil 标记，
+   内容原样保留；收不收在这里按位置动态决定：带标记、又不在最近三块里的整楼 display:none。
+   不按渲染时刻算深度——酒馆出新楼不重渲染旧楼，按位置算新楼追加/删楼都自动重算，永不漂移。
+   要改保留楼数：改下面两处 -n+3 的 3（仓库与部署两份 style.css 记得同步）。
+   要看全史：正则面板关掉「斗破Agent · 旧楼层隐去」再重进聊天即可，存档一字不动。 */
+#chat > .mes:has(.dpz-floor-veil):not(:nth-last-child(-n+3)),
+#chat > .mes:has(.custom-dpz-floor-veil):not(:nth-last-child(-n+3)) {
+    display: none;
+}
+
+/* ---- 纳戒·制作台画面：炼丹锅 + 炼器台 ----
+   纯 CSS 画的两台小场景，摆在制作台两张卡片的标题下面，纯装饰（aria-hidden）。
+   配色走 --dai- 主题：暗底金描边，火光用暖橙；动画都是 2 秒级小循环，
+   prefers-reduced-motion 下一律停帧。 */
+.dai-forge-scene {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 10px 12px 12px;
+    border-bottom: 1px dashed var(--dai-border, #3b332a);
+    margin-bottom: 10px;
+}
+.dai-forge-scene__caption { min-width: 0; }
+.dai-forge-scene__caption b {
+    display: block;
+    color: var(--dai-accent, #d9a72b);
+    font-family: var(--dai-font-display, "Noto Serif SC", serif);
+    font-size: 0.92em;
+    letter-spacing: 0.22em;
+}
+.dai-forge-scene__caption small { display: block; margin-top: 2px; color: var(--dai-muted, #a2937c); }
+
+.dai-cauldron, .dai-anvil { position: relative; flex: 0 0 auto; width: 88px; height: 68px; }
+.dai-cauldron i, .dai-anvil i { position: absolute; display: block; }
+
+/* —— 三足丹炉：炉耳、炉口、炉身、三足、炉火与丹气 —— */
+.dai-cauldron .dai-cauldron__body {
+    left: 16px; top: 18px; width: 56px; height: 28px;
+    background: linear-gradient(180deg, #2e2822 0%, #17130f 100%);
+    border: 2px solid #4d4133;
+    border-radius: 8px 8px 30px 30px / 8px 8px 34px 34px;
+    box-shadow: inset 0 -6px 10px rgba(217, 167, 43, 0.1);
+}
+.dai-cauldron .dai-cauldron__rim {
+    left: 12px; top: 12px; width: 64px; height: 12px;
+    background: linear-gradient(180deg, #6b5a41, #2c251d);
+    border-radius: 50%;
+    box-shadow: 0 1px 0 #0b0908;
+}
+.dai-cauldron .dai-cauldron__ear {
+    top: 6px; width: 11px; height: 11px;
+    border: 2px solid #4d4133; border-radius: 50%;
+}
+.dai-cauldron .dai-cauldron__ear--l { left: 9px; }
+.dai-cauldron .dai-cauldron__ear--r { right: 9px; }
+.dai-cauldron .dai-cauldron__leg {
+    top: 44px; width: 6px; height: 13px;
+    background: linear-gradient(180deg, #4d4133, #241e18);
+    border-radius: 0 0 3px 3px;
+}
+.dai-cauldron .dai-cauldron__leg--l { left: 22px; transform: skewX(7deg); }
+.dai-cauldron .dai-cauldron__leg--m { left: 41px; height: 15px; }
+.dai-cauldron .dai-cauldron__leg--r { right: 22px; transform: skewX(-7deg); }
+.dai-cauldron .dai-cauldron__fire {
+    left: 26px; bottom: 1px; width: 36px; height: 13px;
+    background: radial-gradient(ellipse at 50% 100%, #ffb347 0%, #d9722b 45%, rgba(217, 114, 43, 0) 75%);
+    border-radius: 50% 50% 40% 40%;
+    filter: blur(1px);
+    animation: dai-forge-fire 1.6s ease-in-out infinite alternate;
+}
+.dai-cauldron .dai-cauldron__bub {
+    left: 40px; top: 8px; width: 6px; height: 6px; border-radius: 50%;
+    background: rgba(233, 200, 120, 0.75);
+    animation: dai-forge-bub 2.4s linear infinite;
+}
+.dai-cauldron .dai-cauldron__bub--2 { left: 29px; top: 10px; width: 4px; height: 4px; animation-delay: 0.8s; }
+.dai-cauldron .dai-cauldron__bub--3 { left: 50px; top: 9px; width: 5px; height: 5px; animation-delay: 1.5s; }
+
+/* —— 炼器台：鸭嘴砧、砧座、木墩、余烬与火星 —— */
+.dai-anvil .dai-anvil__top {
+    left: 16px; top: 14px; width: 56px; height: 12px; border-radius: 3px;
+    background: linear-gradient(180deg, #6a615a, #2a2622);
+    box-shadow: inset 0 1px 0 rgba(236, 225, 205, 0.18);
+}
+.dai-anvil .dai-anvil__horn {
+    left: 5px; top: 16px; width: 13px; height: 8px;
+    background: #4c443d;
+    clip-path: polygon(100% 0, 100% 100%, 0 50%);
+}
+.dai-anvil .dai-anvil__waist { left: 32px; top: 26px; width: 24px; height: 8px; background: #332d27; }
+.dai-anvil .dai-anvil__base {
+    left: 24px; top: 34px; width: 40px; height: 9px; border-radius: 2px;
+    background: linear-gradient(180deg, #4c443d, #221e1a);
+}
+.dai-anvil .dai-anvil__log {
+    left: 16px; top: 43px; width: 56px; height: 13px; border-radius: 3px 3px 5px 5px;
+    background: repeating-linear-gradient(90deg, #4a3826 0 9px, #3a2c1e 9px 18px);
+    box-shadow: inset 0 2px 0 rgba(0, 0, 0, 0.35);
+}
+.dai-anvil .dai-anvil__ember {
+    left: 20px; bottom: 0; width: 48px; height: 9px;
+    background: radial-gradient(ellipse at 50% 100%, rgba(255, 150, 60, 0.55), rgba(255, 150, 60, 0) 70%);
+    animation: dai-forge-fire 2.2s ease-in-out infinite alternate;
+}
+.dai-anvil .dai-anvil__spark {
+    left: 66px; top: 10px; width: 3px; height: 3px; border-radius: 50%;
+    background: #ffcf6e;
+    animation: dai-forge-spark 1.8s ease-out infinite;
+}
+.dai-anvil .dai-anvil__spark--2 { left: 58px; top: 12px; animation-delay: 0.6s; }
+.dai-anvil .dai-anvil__spark--3 { left: 72px; top: 8px; animation-delay: 1.2s; }
+
+@keyframes dai-forge-fire {
+    from { opacity: 0.7; transform: scaleX(1); }
+    to { opacity: 1; transform: scaleX(1.12); }
+}
+@keyframes dai-forge-bub {
+    0% { transform: translateY(0) scale(0.6); opacity: 0; }
+    25% { opacity: 0.9; }
+    100% { transform: translateY(-11px) scale(1.15); opacity: 0; }
+}
+@keyframes dai-forge-spark {
+    0% { transform: translate(0, 0) scale(1); opacity: 1; }
+    100% { transform: translate(7px, -17px) scale(0.4); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .dai-cauldron i, .dai-anvil i { animation: none !important; }
+}
+
+/* ---- 纳戒·装备槽位图：不画人形，格子按人身上的位置摆 ----
+   头在上、身体居中（胸甲位）、饰品/武器在肩侧、手/腰在侧下、足在最底；
+   穿戴中的装备名称直接写进对应部位的格子，品级染左缘，配色走 --dai- 主题。 */
+.dai-body-figure { padding: 12px 6px 8px; border-bottom: 1px dashed var(--dai-border, #3b332a); margin-bottom: 10px; }
+.dai-body-slots {
+    display: grid;
+    grid-template-columns: 1fr 1.2fr 1fr;
+    gap: 6px;
+    width: min(22rem, 100%);
+    margin: 0 auto;
+}
+.dai-body-slot {
+    display: grid;
+    gap: 0.15rem;
+    justify-items: center;
+    align-content: center;
+    min-height: 3.2rem;
+    padding: 0.4rem 0.55rem;
+    border: 1px solid var(--dai-border, #3b332a);
+    border-left-width: 3px;
+    border-radius: 10px;
+    background: var(--dai-surface, rgba(23, 19, 15, 0.5));
+    text-align: center;
+}
+.dai-body-slot__label { color: var(--dai-muted, #a2937c); font-size: 0.72em; white-space: nowrap; }
+.dai-body-slot__items { display: grid; gap: 0.1rem; justify-items: center; }
+.dai-body-slot__name { margin: 0; color: var(--dai-accent, #d9a72b); font-size: 0.84em; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
+button.dai-body-slot__name { cursor: pointer; font: inherit; background: none; border: none; padding: 0; }
+button.dai-body-slot__name:hover { text-decoration: underline; }
+/* 空槽位的「＋ 装备」：虚线下划线弱化，悬停点亮 */
+.dai-body-slot__add { color: var(--dai-muted, #a2937c); font-weight: 400; text-decoration: underline dotted; }
+.dai-body-slot__add:hover { color: var(--dai-accent, #d9a72b); text-decoration: underline solid; }
+/* 品级染左缘：天阶金、地阶紫、玄阶蓝、黄阶翠、杂品灰 */
+.dai-body-slot.is-gold { border-left-color: #e8b84b; }
+.dai-body-slot.is-violet { border-left-color: #b48ce8; }
+.dai-body-slot.is-azure { border-left-color: #7ab8e8; }
+.dai-body-slot.is-jade { border-left-color: #a8c86b; }
+.dai-body-slot.is-dull { border-left-color: #8a8378; }
+/* 空槽：虚线框 + 灰名，示意这个部位还空着 */
+.dai-body-slot.is-empty { border-style: dashed; border-left-width: 1px; background: transparent; }
+.dai-body-slot.is-empty .dai-body-slot__name { color: var(--dai-muted, #a2937c); font-weight: 400; }
+.dai-body-figure__foot { margin-top: 6px; text-align: center; color: var(--dai-muted, #a2937c); font-size: 0.86em; }
+/* 悬浮球「全部」副窗里的小型版 */
+.dai-body-figure--compact .dai-body-slots { width: 100%; gap: 4px; }
+.dai-body-figure--compact .dai-body-slot { min-height: 2.6rem; padding: 0.3rem 0.4rem; }
+.dai-body-figure--compact .dai-body-slot__name { font-size: 0.76em; }
+
+/* ===== API设置：接口方案编辑卡（复用 dai-settle-category 折叠卡骨架） ===== */
+/* 三段附加参数是 YAML/JSON 文本：等宽字号缩一档，跟酒馆附加参数抽屉的观感对齐 */
+.dai-api-preset textarea[data-api-preset-field="includeBody"],
+.dai-api-preset textarea[data-api-preset-field="excludeBody"],
+.dai-api-preset textarea[data-api-preset-field="headers"] {
+    font-family: ui-monospace, SFMono-Regular, Consolas, "Courier New", monospace;
+    font-size: 0.86em;
+    line-height: 1.5;
+}
+/* 方案卡摘要行：右侧补一个「已绑定」提示位（绑定信息由下拉行承担，这里只管视觉紧凑） */
+.dai-api-preset > summary { gap: 0.55rem; }
+.dai-api-preset .dai-settle-category-body { display: grid; gap: 0.55rem; }
+
+/* ---- 开放世界：本局口径切换待确认提示条 ---- */
+.dai-sandbox-pending { margin-top: 0.7rem; padding: 0.6rem 0.75rem; border: 1px solid var(--dai-accent, #d9a72b); border-radius: var(--dai-radius-row, 8px); background: var(--dai-tint, rgba(217, 167, 43, 0.12)); }
+.dai-sandbox-pending p { margin: 0 0 0.45rem; }
+.dai-sandbox-pending b { display: block; font-size: var(--dai-fs-md, 0.9rem); }
+.dai-sandbox-pending small { color: var(--dai-muted, #a2937c); }

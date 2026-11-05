@@ -84,7 +84,9 @@ export function createFactsLibrary({ onRegister } = {}) {
         const sourceRevision = sourceHistory.get(fact.sourceId).at(-1).revision;
         if (expectedSourceRevision !== sourceRevision) return { accepted: false, reason: 'revision_mismatch', currentRevision: sourceRevision };
         if (!['confirmed', 'corrected', 'rejected'].includes(decision)) throw new TypeError('复核 decision 必须是 confirmed、corrected 或 rejected');
-        const next = Object.freeze({ ...fact, reviewStatus: decision, reviewNote: String(note), sourceRevision });
+        const source = sources.get(fact.sourceId);
+        const next = Object.freeze({ ...fact, continuity: source.continuity, realm: source.realm,
+            sourceLabel: `${source.title} · ${source.edition}`, reviewStatus: decision, reviewNote: String(note), sourceRevision });
         facts.set(id, next);
         return { accepted: true, fact: { ...next } };
     }
@@ -116,23 +118,27 @@ export function createFactsLibrary({ onRegister } = {}) {
             .map(part => (typeof part === 'string' ? part : String(part ?? '')))
             .map(part => part.toLocaleLowerCase());
     }
-    function query({ query, sourceIds, continuity, realm, asOf, limit = 12 } = {}) {
+    function query({ query, sourceIds, continuity, realm, asOf, limit = 12 } = {}, knowledge = null) {
         const needle = requireText(query, '查询词').toLocaleLowerCase();
         if (!Array.isArray(sourceIds) || sourceIds.length === 0) return { status: 'needs_scope', results: [], conflicts: [], note: '必须由调用方明确提供允许查询的来源范围。' };
         if (!Number.isInteger(limit) || limit < 1 || limit > 50) throw new RangeError('limit 必须为 1 到 50');
         const allowed = new Set(sourceIds);
         const tokens = queryTokens(needle);
         const matches = [];
+        let hiddenCount = 0;
         for (const fact of facts.values()) {
             if (!allowed.has(fact.sourceId)) continue;
             if (continuity && fact.continuity !== continuity) continue;
             if (realm && fact.realm !== realm) continue;
-            if (fact.reviewStatus === 'needs-review') continue;
+            if (!['current', 'confirmed', 'corrected'].includes(fact.reviewStatus)) continue;
             if (Number.isInteger(asOf) && (fact.phase === null || fact.phase > asOf)) continue;
             const texts = factTexts(fact);
             let score = texts.some(text => text.includes(needle)) ? 5 : 0;
             for (const token of tokens) if (texts.some(text => text.includes(token))) score += 1;
-            if (score > 0) matches.push({ fact, score });
+            if (score > 0) {
+                if (knowledge && !knowledge.has(fact.id)) hiddenCount += 1;
+                else matches.push({ fact, score });
+            }
         }
         matches.sort((left, right) => right.score - left.score || String(left.fact.id).localeCompare(String(right.fact.id)));
         const groups = new Map();
@@ -149,21 +155,17 @@ export function createFactsLibrary({ onRegister } = {}) {
             return { id, title: source.title, edition: source.edition, continuity: source.continuity, realm: source.realm, provenance: source.provenance, coveredThrough: source.coveredThrough, missing: [...source.missing], revision: sourceHistory.get(id).at(-1).revision };
         });
         const status = matches.length > limit ? 'partial' : matches.length ? (conflicts.length ? 'conflict' : 'supported') : 'not_found';
-        return { status, query: needle, results, conflicts, sources: sourceInfo,
+        return { status, query: needle, results, conflicts, sources: sourceInfo, ...(knowledge ? { hiddenCount } : {}),
             note: status === 'not_found' ? '当前允许来源范围内未检索到；不表示原著中不存在。' : status === 'partial' ? '结果受数量上限截断。' : '' };
     }
     function queryForActor({ actorId, knownFactIds, ...scope } = {}) {
         actorId = requireText(actorId, 'actorId');
         if (!Array.isArray(knownFactIds) || knownFactIds.length > 10000 || knownFactIds.some(id => typeof id !== 'string' || !id.trim())) throw new TypeError('knownFactIds 必须是有界文本数组');
         const knowledge = new Set(knownFactIds);
-        const result = query(scope);
-        if (!result.results.length) return { ...result, actorId, results: [] };
-        const allowedResults = result.results.filter(fact => knowledge.has(fact.id));
-        const hiddenCount = result.results.length - allowedResults.length;
-        const allowedIds = new Set(allowedResults.map(fact => fact.id));
-        const conflicts = result.conflicts.map(conflict => ({ ...conflict, factIds: conflict.factIds.filter(id => allowedIds.has(id)) })).filter(conflict => conflict.factIds.length > 1);
-        return { ...result, actorId, status: allowedResults.length ? (conflicts.length ? 'conflict' : 'supported') : 'not_known_to_actor', results: allowedResults, conflicts, hiddenCount,
-            note: allowedResults.length ? result.note : '允许来源中可能存在匹配资料，但提供的角色已知事实列表不包含它们；不得向该角色泄露。' };
+        const result = query(scope, knowledge);
+        if (result.results.length || !result.hiddenCount) return { ...result, actorId };
+        return { ...result, actorId, status: 'not_known_to_actor',
+            note: '允许来源中可能存在匹配资料，但提供的角色已知事实列表不包含它们；不得向该角色泄露。' };
     }
     function listFactsNeedingReview() {
         return [...facts.values()].filter(fact => fact.reviewStatus === 'needs-review').map(fact => ({ ...fact }));

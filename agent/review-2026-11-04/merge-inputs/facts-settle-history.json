@@ -1,0 +1,608 @@
+{
+  "target": "C:/Users/86158/Desktop/异界转生录/doupo",
+  "mode": "full-scan",
+  "focus": "general",
+  "slice": "facts-settle-history",
+  "routing_decision": "AUDIT -> SWEEP -> REPORT；只读源码审查。仅授权生成本 JSON 与同名 Markdown。未进入 CHANGE。",
+  "snapshot": {
+    "date": "2026-11-04",
+    "head": "1dee86edb89a8f6efc4b8bbd8192a3a9c1017748",
+    "source": "当前 dirty worktree，不是仅 HEAD；settle/ 为原有未跟踪目录。并行审计可能改变工作区，结论绑定所读内容而非发布快照。",
+    "source_hashes": {
+      "agent/doupo-agent-ui/narrative/facts-index.js": "457602a018ec1fa5f69924319a76a8e55848428e8dfca99c1c2c6afe44010030",
+      "agent/doupo-agent-ui/narrative/facts-library.js": "217d5904739d6639a39532c871b3d5627a3dfb7ef4ea70ea35a5160bfb6678b2",
+      "agent/doupo-agent-ui/narrative/facts-select.js": "4b08dd55ad5445011ad4862ee2479d843042aa05e0cb5c2bf4c4d5dc9df62d4b",
+      "agent/doupo-agent-ui/narrative/history-events.js": "b2d40af052de1c04d68c8413136196ad95142daa6f00eb60f216cd908f9654ef",
+      "agent/doupo-agent-ui/narrative/history-operation.js": "207381ec8466487d365e01c9004a92f16d0c1d2fc5aa29fa17805a3b41db0396",
+      "agent/doupo-agent-ui/narrative/history-restore.js": "1ca8943242396b3241f4a4efae0542f076d2537852d92bb68b74c297e6865faa",
+      "agent/doupo-agent-ui/narrative/narrative-guard.js": "69b752e7c635c09bf7d55091bcbd89cf32a77513c29456dd633734be023f84af",
+      "agent/doupo-agent-ui/narrative/setting-supply.js": "4bc6d3bcf2921ac12be34aa479fc897720e261daef27f5c0ecada0c068e24fd5",
+      "agent/doupo-agent-ui/narrative/volume-index.generated.js": "26b508435e9950ad1292378f42cc955164050444450aa1350346d773bde1afe3",
+      "agent/doupo-agent-ui/narrative/worldbook-source.js": "b1f365e14b69a9a996109fa826aa6739220f9fa0fb6b0d403c440b08ff82491b",
+      "agent/doupo-agent-ui/settle/settle-adjudicate.js": "7bf452642c74f7c11be8749b9c291b97b31a20075ba67b4b5857e03329ee73eb",
+      "agent/doupo-agent-ui/settle/settle-session.js": "4b19f5a166a7b9527be80b230416829fe060f9da6468c624da7b16008698bb2f"
+    }
+  },
+  "a0_receipt": {
+    "route_id": "code-quality-workflow",
+    "loaded_document_ids": [
+      "ST-A0"
+    ],
+    "snapshot_version": "2026-08-18",
+    "proposed_candidate_ids": [],
+    "goal": "逐功能审查指定叙事/结算/历史边界，输出证据，不修复",
+    "red_lines": "不修改源码、原著、世界书、真实存档、配置；不浏览器、不发模型；不运行生成器 --write",
+    "acceptance": "逐文件 coverage、逐功能状态、缺陷证据与最小建议、离线复现和未验证边界；仅写两个指定报告",
+    "unresolved": [
+      "真实酒馆版本事件载荷和浏览器生命周期验收未执行"
+    ]
+  },
+  "coverage": [
+    {
+      "path": "agent/doupo-agent-ui/narrative/facts-index.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "通读 1-362；索引、嵌套注释、别名、卷归属、catalog/search/matchTokens；catalog 截断内存复现。"
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/facts-index.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "读取 1-66；离线执行通过；覆盖嵌套名、卷回退、重载清空。"
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/facts-library.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "通读 1-175；来源登记/修订、复核、范围查询、角色已知限制；3 个独立内存复现。"
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/facts-library.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "读取 1-55；离线通过；未覆盖 rejected 排除、修订来源元数据刷新、过滤前 limit。"
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/facts-select.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "通读 1-292；规则/schema/解析/目录调用/二次 lookup/预算；未展示 UID 内存复现。"
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/facts-select.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "审查断言与场景并离线执行 247 行测试文件通过；动态 picks、目录外白名单和 malformed 防御。"
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/history-events.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "通读 1-125；载荷、失效、已提交分支、scope 刷新、解绑；旧 scope 内存复现。"
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/history-events.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "读取 1-86 并离线通过；事件 mock、候选失效、切分支、提交后 unresolved。"
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/history-operation.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "通读 1-41；显式 rewrite/reevaluate 与 mappingEvidence；未知事件拒绝。"
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/history-operation.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "读取 1-23 并离线通过；显式分类与 payload/context 拒绝。"
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/history-restore.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "通读 1-64；分支隔离、版本门、克隆、checkpoint 上限、恢复日志阻挡；确认仅内存候选恢复。"
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/history-restore.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "读取 1-31 并离线通过；实际 createStateStore 内存 capture/restore/stale/recovery gate。"
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/narrative-guard.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "通读 1-78；claims 引用范围、任务/状态缓存、NPC计划版本失效；明确非自然语言语义证明。"
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/narrative-guard.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "完整读取 35 行并离线通过；缓存重放为测试明确契约、隐藏事实拒绝、清理。"
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/setting-supply.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "通读 1-344；召回、按卷裁剪、逐层预算、整句裁剪、audit；预算测试与消费者接线核查。"
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/setting-supply.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "审查测试场景与断言并离线执行通过；含 5 个 node:test 用例，非线性 counter、separator、ellipsis、未来卷摘要与无限预算。"
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/volume-index.generated.js",
+      "status": "reviewed",
+      "reason": "按用户限定仅格式、来源、消费者，不审资料正文或逐条归卷真实性",
+      "evidence": "读生成头；1111 个 uid→卷数组，整数卷 1-21、升序无重复、格式坏行 0；来源世界书/tools/build-volume-index.mjs；消费者 facts-index.js。"
+    },
+    {
+      "path": "agent/doupo-agent-ui/narrative/worldbook-source.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "通读 1-97；loader.call(context)、异常/空名/不存在降级、MAX_ENTRIES、native/disabled 分流；无独立同名测试。"
+    },
+    {
+      "path": "agent/doupo-agent-ui/settle/settle-adjudicate.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "通读 1-597；输入/上下文预算、JSON抽取、v1/v2、结构诊断、行动原子审核、物品身份、累计资源/境界、渲染、reconcile；重复/重叠 evidence 内存复现。"
+    },
+    {
+      "path": "agent/doupo-agent-ui/settle/settle-adjudicate.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "审查测试用例与断言并离线执行，44 cases 全通过；缺 evidence 区间/重复动作场景。"
+    },
+    {
+      "path": "agent/doupo-agent-ui/settle/settle-integration.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "读取实际入口 fixture 与完整集成断言 1-381，内存宿主测试通过；显式 fetch 拒绝且 networkCalls=0；preview/cache/scope/live state/STOPPED/reconcile。"
+    },
+    {
+      "path": "agent/doupo-agent-ui/settle/settle-session.js",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "通读 1-53；epoch/sequence/token 引用、busy/cache/force/fail、quiet end helper；不承担事实注入所有权。"
+    },
+    {
+      "path": "agent/doupo-agent-ui/settle/settle-session.test.mjs",
+      "status": "reviewed",
+      "reason": "",
+      "evidence": "审查场景与断言并离线通过；同长度 fingerprint、A晚于B、force、失败释放、调用方 fresh guard。"
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/settle-categories.js",
+      "status": "partial",
+      "reason": "依分工仅协作接线，core 主体由其他审查者负责",
+      "evidence": "读取 1-236；追踪 reviewEffect→checkEffects/realmStep、未知类别处理与 settle 本地 fail-closed 覆盖；未重复登记 core 主体缺陷。"
+    },
+    {
+      "path": "agent/doupo-agent-ui/index.js",
+      "status": "partial",
+      "reason": "只审 facts injection/settle/history 所需接线，不代表 8800+ 行入口全量覆盖",
+      "evidence": "149-168,226-250,270-407,450-480,535-630,848-855,3303-3648,3890-3919,4508-4530,4620/4637-4638,7180-7233,8364-8392,8479-8502,8673-8728；源函数提取 vm 内存复现 facts stale 和 worldbook race。"
+    },
+    {
+      "path": "agent/doupo-agent-ui/core/turn-stages.js",
+      "status": "partial",
+      "reason": "只看 narrative 消费者与 fallback 卷号透传；core 主体/手动卷锁写回由 core 审查者报告",
+      "evidence": "120-269；catalog→assemble 透传 volume，fallback assemble 226 未传 volume；此处作为跨模块 verification handoff，不占 core 归属。"
+    },
+    {
+      "path": "世界书/tools/build-volume-index.mjs",
+      "status": "reviewed",
+      "reason": "只审生成来源和格式，不执行读资料/写回生成器",
+      "evidence": "读取生成脚本 1-169；输入斗破世界书.json/分卷标题，--write 才写产物；仅 format/provenance contract。"
+    },
+    {
+      "path": "世界书/斗破世界书.json",
+      "status": "excluded",
+      "reason": "用户明确资料正文不属于完整审计；未人工审查条目真实性、归卷、版本来源",
+      "evidence": "仅由生成头/生成器引用识别为来源，没有读取资料正文。"
+    },
+    {
+      "path": "世界书/卷NN-世界书.md",
+      "status": "excluded",
+      "reason": "原著/世界书资料正文排除；不人工全文审资料",
+      "evidence": "仅定位生成器标题匹配输入模式。"
+    },
+    {
+      "path": "原著及其他资料正文、真实存档、配置、.tmp备份及发布副本",
+      "status": "excluded",
+      "reason": "不属于当前所有权范围，禁止改动；备份不计当前源码 coverage",
+      "evidence": "未纳入此 slice 的完整审计或运行验收。"
+    }
+  ],
+  "findings": [
+    {
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 3336,
+      "title": "事实检索等待结束后可把旧会话资料写入新会话",
+      "behavior": "facts 注入的异步所有权",
+      "evidence": "3336 await resolveInjection 后 3337-3340 无 session/branch/chat/epoch 检查，直接写全局 agentPromptInjection；226-244 切聊天只清通道，不能取消旧 continuation。将真实 prepareInjectionForPrompt 源函数提取到 vm，A 请求挂起后 scope 改 B，再 resolve A，writes=[[B,A专属资料]]。settle 路径已有 token+fresh guard，facts 没有。",
+      "trigger": "检索未返回时切聊天/分支、禁用功能或启动另一轮；旧请求稍后完成。",
+      "risk": "新会话提示词被旧聊天资料污染；后到旧响应覆盖新响应；旧结果还会保存到当下聊天的 last injection。",
+      "recommendation": "复用现有 continuation/epoch 机制，在开始时捕获 scope/chat/开关和请求 token；await 后及持久化前只允许当前请求写入。旧请求不能 clear 新通道。",
+      "verification": "延迟 A→切B→B完成→A返回，B 的 prompts/metadata 不变；禁用与 stopped 后 A 也不写；同 scope 后发请求胜出。",
+      "certainty": "高；真实源函数+内存宿主确定性复现，无浏览器或模型。"
+    },
+    {
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 8686,
+      "title": "世界书异步重载没有提交所有权，旧书可覆盖新书索引",
+      "behavior": "世界书读取与索引生命周期",
+      "evidence": "syncWorldbookIndex 8683 捕获名字，8686 await 后 8688-8692 无名字/序号校验即 clear/register/load。scheduleWorldbookSync 8484/8486 的 sequence 检查在 sync 内部副作用之前/之后，不能保护其提交。真实源函数 vm：A慢→设置B并载入B→A返回，索引写入顺序 B(uid2),A(uid1)，当前名字仍B。另 8684 unset/8687非ok 直接返回，既有A索引不会清掉。",
+      "trigger": "快速更改世界书、启动同步并行，或从已有A切到空名/不存在/空世界书。",
+      "risk": "设置显示B但实际检索A，卷号、人物和剧情均可能串库；失败后陈旧数据无明确失效。",
+      "recommendation": "在唯一索引拥有者上校验 request epoch+请求书名后再原子替换 supply/index/native count；empty/unset/failed 应明确绑定旧数据来源并停止新检索，或清空成不可用，避免静默复用。",
+      "verification": "A慢B快、A失败B成功、A→空名、A→空书测试；两份索引始终同一来源且最后有效请求胜出。",
+      "certainty": "高；竞争已用真实函数内存复现；空/失败保留是直接可达分支。"
+    },
+    {
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 3507,
+      "title": "结算上下文直接携带未来卷增补，绕开设定注入防剧透",
+      "behavior": "锁卷下行动结算读世界书",
+      "evidence": "3505 matchTokens 按 entry.volumes 包含当前卷过滤，但 3507 取 entry.content 全文；settle-adjudicate 183-188 只 clip 不裁卷。setting-supply 15-26/273 的 trimToVolume 仅用于主 facts 注入。合成条目 volumes=[1,9]、〔卷01〕当前事实/〔卷09 增补〕未来秘密，锁1后沿相同 matchTokens→buildSettleResultUser 路径，最终 user 仍 includes(未来秘密)=true。",
+      "trigger": "早卷可见的跨卷条目正文带后卷增补，并在结算相关词中命中。",
+      "risk": "主 facts 通道虽裁过卷，结算模型仍看见后续剧情/能力，并可能提前据此批准行动、透露结果。",
+      "recommendation": "结算资料取正文前使用与 facts 同一可测的卷裁剪策略；不要把按条目卷归属过滤误当作正文段落已裁剪。未知卷策略须明确。",
+      "verification": "锁1的完整结算 system/user 不含卷9秘密；锁9才含；lookup条目、摘要和六路注入均保持相同边界。",
+      "certainty": "高；本地合成资料确定性复现；未审真实资料内容。"
+    },
+    {
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/settle/settle-adjudicate.js",
+      "line": 464,
+      "title": "行动依据未绑定原文区间，重叠片段可重复收益且重复动作被误拒",
+      "behavior": "多行动拆分与禁止重复结算",
+      "evidence": "451 使用 indexOf 首次位置；464-465 只按去标点后的 evidence 字符串 Set 去重。输入“我打工获得报酬”，a1 evidence=我打工、a2 evidence=打工获得报酬，两行动均批准，gold 0→20；实际只有一次动作。反向输入“打工；打工”，两行动 evidence=打工，第二次被拒，gold仅10。现有44 cases只验证同一字符串复用，没有区间/重复出现定位。",
+      "trigger": "模型给同一行动的不同重叠摘录，或玩家一轮重复执行同文字动作。",
+      "risk": "同一动作能重复发放收益/扣费；合法重复行动又会被误阻断，依赖链随之错误。",
+      "recommendation": "保留连续原文证据但绑定明确出现位置/区间；按顺序消耗匹配区间，禁止重叠区间重复结算；允许同文本在后续位置的独立出现。不要扩展成自然语言关键词猜测。",
+      "verification": "重叠/包含区间最多一次授权；“打工；打工”两处可分别处理；逆序、前向依赖、相同区间复用仍拒绝；成本/收益保持行动级原子。",
+      "certainty": "高；直接调用真实 parse/review 两组确定性复现。"
+    },
+    {
+      "severity": "P1",
+      "category": "Must Fix Now",
+      "file": "agent/doupo-agent-ui/narrative/facts-library.js",
+      "line": 129,
+      "title": "人工复核拒绝的事实仍以 supported 返回",
+      "behavior": "结构化资料库复核后查询",
+      "evidence": "reviewFact 85-87 接受 decision=rejected 并保存；query 129 只排 needs-review，不排 rejected。内存注册 f 后 reviewFact(rejected)，query 仍返回 f，status=supported、reviewStatus=rejected。index453/476/4537及core模块登记暴露该库；它是显式结构化资料库，不是默认世界书选条通道。",
+      "trigger": "调用结构化资料库 API 复核事实为 rejected 后再次查询或 facts-query模块使用该来源。",
+      "risk": "已判不可信的事实再次进入事实结果，甚至形成冲突或被当作支持证据。",
+      "recommendation": "将可检索复核状态改成显式允许集合，至少排除 rejected 和 needs-review；拒绝记录保留审计历史，不删除资料。",
+      "verification": "current/confirmed/corrected 按既定契约可检索；rejected 在普通和角色查询中均不返回，不产生 supported/conflict。",
+      "certainty": "高；直接 API 内存复现。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/narrative/facts-library.js",
+      "line": 75,
+      "title": "来源修订并确认事实后，检索仍使用旧的作品线与原作等级",
+      "behavior": "来源元数据传播与限定查询",
+      "evidence": "normalizeFact 32-33 把 sourceLabel/continuity/realm 复制进 fact；updateSource 75 和 reviewFact 86 只改 reviewStatus/sourceRevision，不重建这些派生字段。将 source canon/canon/edition1 改 other/fanon/edition2 并 confirmed 后，query realm=canon continuity=canon 仍命中，results旧元数据与sources新元数据同响应矛盾。",
+      "trigger": "修订已登记来源的 realm、continuity、title 或 edition，并重新确认既有事实。",
+      "risk": "改编/同人来源继续冒充原著，范围查询错误，来源版本证据相互矛盾。",
+      "recommendation": "明确来源作为唯一元数据拥有者，在查询或复核提交时从当前来源派生这些字段；保留历史来源快照用于审计但不能混成当前标签。",
+      "verification": "canon→fanon、continuity变更、edition改名后复核，旧范围不命中、新范围命中，result/source元数据一致。",
+      "certainty": "高；直接 API 内存复现。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/narrative/facts-library.js",
+      "line": 158,
+      "title": "角色已知事实在全局 limit 之后过滤，可误报角色不知情",
+      "behavior": "queryForActor 的排序与数量预算",
+      "evidence": "queryForActor 158 先 query(scope)，query 145 已 slice(0,limit)，160 才 filter knownFactIds。两条同分事实 f1/f2，角色仅知 f2、limit=1，返回 not_known_to_actor/results=[]，而 f2 真实存在且应符合查询。sources/status也来自过滤前结果。",
+      "trigger": "更高排序的未知事实占满 limit，角色实际已知的匹配事实排在 limit 后。",
+      "risk": "无法取到角色已知资料，把结果截断误解释成角色不知情；状态/来源说明不准确。",
+      "recommendation": "在同一查询过程里先施加角色 knowledge 范围再排序/limit，并由允许结果计算 conflicts、sources 和 partial。",
+      "verification": "已知 f2 排在未知 f1 后仍能在 limit1 返回；超过limit的已知结果为partial；未知事实不泄露。",
+      "certainty": "高；直接 API 内存复现。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/narrative/facts-select.js",
+      "line": 139,
+      "title": "第一次选条校验整库而非本次已展示目录白名单",
+      "behavior": "目录截断后的 UID 授权",
+      "evidence": "SELECT_RULES 21 说只能从目录挑，parseSelection 139-141 只检查 index.get 和卷包含。maxRows=1 时目录只展示uid1，mock回答need:[2]（uid2也属卷1）仍 picked=[2]。二次 lookup 177-191 已有 allowedUids 白名单，第一次没有。",
+      "trigger": "目录受 maxRows 截断或 catalogFor 不展示某条，模型却返回整库内的该 UID。",
+      "risk": "脚本接受未展示候选，绕开目录范围/预算和只认目录的契约；不能靠提示词阻止模型猜编号。",
+      "recommendation": "select 持有 built.lines 对应 UID 集合并交给 parseSelection，先校验本次目录白名单，再校验索引/卷；lookup维持其独立白名单。",
+      "verification": "同卷但未展示uid被标 not_in_catalog；展示uid正常；二次lookup可显式加入其候选；截断统计不改变授权范围。",
+      "certainty": "高；真实 selector + mock complete 内存复现。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 4518,
+      "title": "历史事件适配器使用任务缓存 scope，宿主换聊天不会使旧任务失效",
+      "behavior": "legacy 候选的历史失效接线",
+      "evidence": "initializeHistoryEvents getScope只返回agentActiveScope；7202-7215仅beginAgentTask/setAgentHistoryScope更新它；CHAT_CHANGED 228-246只清dashboardScope等，未更新agentActiveScope。adapter59-79只有getScope前后变化才失效。内存真实adapter：scope固定A，emit CHAT_CHANGED→invalidations=[]；新聊天随后edit(1)却 invalidate A的t。默认doupoFactsInterceptor/settleAdjudicate未注册该任务，因此不能宣称默认主链历史恢复或失效已覆盖。",
+      "trigger": "显式任务API运行中的legacy候选从A切到B，但调用者没有同步setAgentHistoryScope。",
+      "risk": "A候选仍可存活；B同楼号编辑可能反向作废A任务。默认运行链与内存候选链边界易被误解。",
+      "recommendation": "由宿主scope作为唯一真值驱动adapter，换聊天时刷新/清空活动scope并失效previous任务；解绑再注册不能丢previous scope；显式说明legacy API与默认主链分界。",
+      "verification": "真实入口mock：begin A候选→宿主切B并emit CHAT_CHANGED，A立即invalidated；B编辑不触A；已提交只报recovery_required、不伪回滚；默认主链不声称有legacy checkpoint。",
+      "certainty": "高：接线可达路径+真实adapter复现；未在真实酒馆验证事件载荷。"
+    },
+    {
+      "severity": "P2",
+      "category": "Refactor Signals",
+      "file": "agent/doupo-agent-ui/index.js",
+      "line": 3328,
+      "title": "事实输入定位被最近两条角色消息提前终止",
+      "behavior": "多回复或续写时的 facts 上下文提取",
+      "evidence": "3328 for 条件 recent.length<2；只有3331遇到玩家楼才赋input。若最近一次玩家楼之后已有两条AI/角色消息，循环收满两条即退出，3335认为no_input并清facts通道。collectSettleMaterials3489独立findLastIndex玩家，反而仍能读取同输入。",
+      "trigger": "同一玩家输入后两次续写/多角色回复，再重新生成或继续生成。",
+      "risk": "明明有玩家输入却静默停用本轮原著检索；facts和settle使用不同本轮定义。",
+      "recommendation": "先单独定位最近玩家楼，再明确选择它之前/之后的最近对话；不要用recent条数控制是否找到玩家输入。",
+      "verification": "0/1/2/3条AI在最近玩家楼之后都能得到预定输入；system跳过；正常末尾玩家输入无回归；对重新生成的旧答案是否允许入上下文须给明确契约。",
+      "certainty": "高；直接循环可达性，不涉及模型质量。"
+    },
+    {
+      "severity": "P3",
+      "category": "Slimming Opportunities",
+      "file": "agent/doupo-agent-ui/narrative/facts-index.js",
+      "line": 348,
+      "title": "前情上限已经丢行时目录仍报告未截断",
+      "behavior": "catalogFor 的预算可观测性",
+      "evidence": "348先prev.slice(0,maxPrev)，355仅比较rows与lines，遗漏prev裁剪。两条前情、maxPrev=1/maxRows=100时 lines1、total2、truncated=false。当前实测前情是否超过默认60未通过资料审计确认；缺陷可由公开选项稳定触发。",
+      "trigger": "前情行数超过maxPrev，且最终rows没有再超过maxRows。",
+      "risk": "调用方看不到第一次裁剪，目录预算诊断不可信；不是已证明当前资料默认必触发。",
+      "recommendation": "truncated同时计入prev.length>maxPrev，必要时分开报告省略来源；无需重写目录策略。",
+      "verification": "maxPrev截断、maxRows截断、两者均不截断分别断言truncated；firstCount/prevCount/total说明一致。",
+      "certainty": "高；直接内存复现，默认生产触发率未验证。"
+    }
+  ],
+  "feature_status": [
+    {
+      "feature": "世界书读取/原生与插件分流",
+      "status": "有缺陷",
+      "evidence": "worldbook-source58-88只读load；index8673-8696将disable=true交插件，避免与原生重复；异步所有权和失败失效有缺陷。",
+      "verification": "静态+vm竞争复现；真实loader载荷未验"
+    },
+    {
+      "feature": "uid/别名/类别/卷索引",
+      "status": "基本稳定，有可观测性小缺陷",
+      "evidence": "facts-index嵌套括号与重载清空测试通过；1111行generated结构全通过；catalogFor前情truncated漏报。",
+      "verification": "离线+格式全量；资料真实性exclude"
+    },
+    {
+      "feature": "卷防剧透",
+      "status": "组件有效，跨通道不闭合",
+      "evidence": "setting-supply full/summary/fitted按〔卷NN〕裁剪测试通过；settle直接取全文；core fallback226未透传volume交core负责人。",
+      "verification": "单元测试+合成secret fixture；未审实际正文"
+    },
+    {
+      "feature": "目录/lookup/候选授权",
+      "status": "二次lookup稳定，首次目录白名单缺失",
+      "evidence": "lookup最多5词、12候选、剩余picks与allowedUids有效；首选同卷未展示uid仍可被接受。",
+      "verification": "selector mock离线，未发模型"
+    },
+    {
+      "feature": "注入预算/降层/整句裁剪",
+      "status": "已执行离线基线稳定",
+      "evidence": "separator和自定义counter按整段计数、ellipsis和prefix测试通过；预算0/非有限无限为明确契约，不报无上限缺陷。目录本身无字符预算，按行数是已知边界。",
+      "verification": "setting-supply5个node:test+既有断言通过；未测真实tokenizer"
+    },
+    {
+      "feature": "facts注入/清理/缓存持久化",
+      "status": "生命周期存在缺陷",
+      "evidence": "结束/停止/换聊天显式clear存在；3336等待后缺所有权，可重新污染已清容器；最近2条角色消息会阻断找玩家输入。",
+      "verification": "真实源函数vm确定性复现，未浏览器"
+    },
+    {
+      "feature": "行动拆分/JSON解析/限量",
+      "status": "既有基线稳定，语义由模型承担",
+      "evidence": "v1/v2兼容、think/围栏/尾变量patch、6行动/8单项/24总量、12k输入/30k上下文、fatal/原子阻断44cases通过。",
+      "verification": "离线44cases；真实模型质量未验证"
+    },
+    {
+      "feature": "行动批准/效果",
+      "status": "资源和类别防线有效，证据去重有P1",
+      "evidence": "真实字段、itemId/category/count、不造新ID、缺hp/douqi/reputation不补值、gold/realm累计与原子回滚均有测试；证据未绑定区间。",
+      "verification": "44cases+2组对抗内存样例"
+    },
+    {
+      "feature": "多行动依赖/局部失败",
+      "status": "数值依赖稳定，动作身份存在缺陷",
+      "evidence": "前向/循环/重复ID、失败跳过、partial实际资源审核测试通过；相同文本两次动作被误拒，重叠片段能重复获批。",
+      "verification": "离线测试+直接review复现"
+    },
+    {
+      "feature": "settle session/缓存/预览/异步所有权",
+      "status": "已执行离线基线稳定",
+      "evidence": "token引用+epoch、force/fail、preview不注入、等长变更、切聊天/禁用/stopped过期均实际入口mock通过；预测不落真实账。",
+      "verification": "settle session及integration通过，networkCalls0"
+    },
+    {
+      "feature": "reconcile生成后只读核对",
+      "status": "已执行离线基线稳定，非自动修账",
+      "evidence": "expected仅受影响字段、真实reply变化/用户楼/scope门、物品ID重建唯一映射、歧义不分配、matched/mismatch/pending/not_applicable测试通过。",
+      "verification": "真实入口内存fixture；真实纳戒落账时序未验"
+    },
+    {
+      "feature": "历史操作分类",
+      "status": "显式API稳定，不是自动宿主映射",
+      "evidence": "仅rewrite/reevaluate和显式eventMap；必须mappingEvidence；未知swipe/regenerate不猜。index4637-4638导出，不自动绑定到默认主链操作。",
+      "verification": "分类测试通过；宿主版本映射未验证"
+    },
+    {
+      "feature": "历史恢复",
+      "status": "受限内存边界稳定，不恢复酒馆或默认账本",
+      "evidence": "history-restore只写agentStateStore的新版本，需observed/版本/已见message与journal门；index4620只显式导出；未自动capture正式主链。",
+      "verification": "内存stateStore测试通过；真实存档/消息恢复故意未验"
+    },
+    {
+      "feature": "历史失效",
+      "status": "模块测试有效，宿主scope接线有缺陷",
+      "evidence": "adapter解绑、消息触发候选失效、已提交unresolved通过；index getScope未跟随宿主CHAT_CHANGED。",
+      "verification": "adapter内存复现；默认主链没有任务登记，不能泛称已覆盖"
+    },
+    {
+      "feature": "结构化资料库/叙事claims守卫",
+      "status": "资料复核与角色检索有缺陷；claims结构检查稳定",
+      "evidence": "rejected仍supported、source元数据陈旧、actor limit过早；narrative-guard按任务缓存和claims范围符合测试契约，不保证正文语义与claims一一相符。",
+      "verification": "资料库3组repro；守卫测试通过"
+    }
+  ],
+  "refactor_signals": [
+    {
+      "module": "agent/doupo-agent-ui/index.js facts/worldbook 边界",
+      "threshold": "两个独立异步拥有者缺少提交前scope/source验证",
+      "evidence": "事实注入和世界书索引均能晚回覆盖；settle session已有可借鉴guard。先局部修一个路径，不建议入口整文件重写。"
+    },
+    {
+      "module": "agent/doupo-agent-ui/narrative/facts-library.js",
+      "threshold": "当前元数据/事实复核/已知范围在查询链顺序上可分离验证",
+      "evidence": "三项已复现缺陷集中在可检索集合的构造；先修rejected过滤，再单独gate来源元数据与actor预算。"
+    },
+    {
+      "module": "agent/doupo-agent-ui/settle/settle-adjudicate.js",
+      "threshold": "行动身份契约缺少区间，叠加字符串补丁无法保证一次动作一次结算",
+      "evidence": "重叠片段漏拦与重复出现误拒同根；应补证据位置契约，而非增加更多关键词。"
+    }
+  ],
+  "slimming_themes": [
+    {
+      "pattern": "Dead Code",
+      "occurrences": 5,
+      "suggested_handling": "facts-index CATALOG_SUMMARY_CHARS、catalogFor maxSummaryChars；setting-supply DEFAULT_BUDGET/SUMMARY_FALLBACK/EXCERPT_CHARS为未使用常量/选项信号。常量可单独低风险gate；公开maxSummaryChars参数不要假定可删，先搜索外部调用/契约。当前不改。"
+    },
+    {
+      "pattern": "Duplicate Logic",
+      "occurrences": 2,
+      "suggested_handling": "facts-index和生成器parseComment相似，但生成器独立运行是合理边界；未完成外部消费者删除安全核查，不合并或删除。"
+    },
+    {
+      "pattern": "Duplicate Logic",
+      "occurrences": 2,
+      "suggested_handling": "facts-index与setting-supply的摘要标签表重复，且目录摘要与注入正文有不同目的。可用共同fixtures防漂移，不能直接把两个摘要函数替换成同一实现。"
+    },
+    {
+      "pattern": "Compatibility Path",
+      "occurrences": 3,
+      "suggested_handling": "v1单行动、显式history API、setting keyword fallback均有测试或公开导出，Do Not Touch Yet；不因当前默认主链不使用而删。"
+    },
+    {
+      "pattern": "Generated Noise",
+      "occurrences": 1,
+      "suggested_handling": "volume-index.generated.js仅审格式/来源/消费者，不手改、不人工复审资料、不复制到维护代码。"
+    }
+  ],
+  "stable_items": [
+    {
+      "module": "settle-session + index settle path",
+      "evidence": "异步token/完整fingerprint、fresh reassembly、预览与正式缓存隔离、写失败不缓存、禁用/切聊天/stopped后旧结果不覆盖；实际入口内存集成通过。"
+    },
+    {
+      "module": "settle effects/reconcile",
+      "evidence": "原子拒绝、真实字段、已存ID和类别、资源累计、整轮境界限制、核对只读且不修账；44cases与集成测试通过。"
+    },
+    {
+      "module": "setting-supply budget/trim",
+      "evidence": "按整段counter核算、summary保留拟合结果、未来卷分段裁剪与fallback摘要禁用均有执行证据；不扩大成所有消费通道安全结论。"
+    },
+    {
+      "module": "history-operation/history-restore/narrative-guard",
+      "evidence": "未知操作不猜、恢复只内存且有版本门、claims守卫只做结构与范围检查；边界清晰，不应宣传成默认主链或语义事实担保。"
+    }
+  ],
+  "verification_gates": [
+    {
+      "check": "已执行：按文件名动态import narrative/*.test.mjs 与 settle/*.test.mjs，全部11文件通过",
+      "scope": "8 narrative测试文件+3 settle测试文件；settle adjudicate44cases；node:test6 tests通过；integration网络替身拒绝网络且断言0调用。未执行全仓测试。"
+    },
+    {
+      "check": "已执行：真实源函数vm + 直接ESM API内存对抗复现",
+      "scope": "facts跨scope、worldbook A/B race、settle未来段、重叠/重复行动、rejected/source metadata/actor limit、未展示UID、history旧scope、前情truncated。无真实存档/模型调用。"
+    },
+    {
+      "check": "已执行：VOLUME_INDEX1111行结构检查，invalid0",
+      "scope": "仅格式与来源消费者；不证明1111行资料归卷正确，不替代原著审查。"
+    },
+    {
+      "check": "后续修复必须补：facts/source延迟竞态、证据区间、rejected/来源修订、actor budget、catalog whitelist与history scope接线回归",
+      "scope": "优先离线确定性fixture，不通过浏览器或真实模型弥补可离线验证的缺口。"
+    },
+    {
+      "check": "未执行：真实酒馆事件载荷/版本、提示词实际插入顺序、模型遵循、存档落盘/reconcile时序与人工验收",
+      "scope": "用户禁止浏览器/发模型；不得将本次离线通过称为真实运行或发布验收。"
+    }
+  ],
+  "optimization_handoffs": [
+    {
+      "module": "agent/doupo-agent-ui/index.js prepareInjectionForPrompt",
+      "evidence": "A检索晚回写入B全局提示词，真实函数内存复现",
+      "threshold": "Local Fix",
+      "suggested_gate_mode": "Local Fix Only",
+      "behavior_contract_hints": "当前scope/epoch/chat/feature仍匹配且请求未被后发替代才可写/清/保存facts；旧任务不碰新会话，quiet调用不误使正式任务失效。",
+      "patch_budget": "一个行为路径，1-2文件，目标小于80改动行；仅建议，未授权实施",
+      "pre_change_baseline": "当前11文件离线测试全通过，跨scope对抗repro失败",
+      "verification_gate": "新增真实入口延迟facts fixture，切scope/禁用/stop/同scope后发均断言旧响应零副作用；重跑相关生命周期与facts测试",
+      "deletion_safety": "不需要删模块或兼容代码；不改变世界书/存档schema",
+      "forbidden_scope": "原著、世界书、真实存档、配置、core主体、无关重构、生成物、真实模型调用"
+    }
+  ],
+  "cross_owner_handoffs": [
+    {
+      "owner": "core reviewer",
+      "evidence": "core/turn-stages.js226 fallback settings.assemble(needs,{budget})未传volume；catalog路径172已传。",
+      "status": "需归属core报告；不在本slice重复登记finding；手动卷锁onVolumeInferred问题由core负责人审查。"
+    },
+    {
+      "owner": "coordinator",
+      "evidence": "historyRestore只导出显式API，非默认纳戒/世界账本恢复；getScope依赖agentActiveScope而非当前宿主scope。",
+      "status": "合并时保持可达性限定，避免把legacy能力说成默认主链自动回滚。"
+    }
+  ],
+  "do_not_touch_yet": [
+    {
+      "area": "原著/世界书资料和generated索引归卷",
+      "reason": "用户exclude全文资料审计；不能根据格式通过声称内容正确，更不能手改生成结果。"
+    },
+    {
+      "area": "v1结果兼容、history显式API、claims缓存重放",
+      "reason": "已有测试明确契约；本次无删除安全与迁移授权。"
+    },
+    {
+      "area": "默认关闭/预算0无限、未提供的HP/Douqi等字段",
+      "reason": "0无限和未知数值不补默认是当前明确契约，不按审美改成任意上限/默认值。"
+    },
+    {
+      "area": "core主体及其他审查者模块",
+      "reason": "仅协作接线；不覆盖或重复其完整审计结论。"
+    }
+  ],
+  "optimization_eligibility": "Eligible for Gate Review：仅优先facts异步所有权局部修复；其余独立backlog。无重写理由，无任何源码修改授权。",
+  "residual_risk": [
+    "这是约定slice的文件审查，不是全仓完成声明；index/core仅部分协作接线，其他模块由其他审查者负责。",
+    "没有浏览器、真实模型、真实存档或配置操作；离线mock运行不等于宿主运行验收。",
+    "facts格式/UID卷关联缺少来源书指纹，切其他世界书后generated UID同号是否仍可信需要单独契约确认；本次不人工核资料。",
+    "worldbook-source最多2000个有效entry，而facts-index最多4000条raw；大书截断后的supply/index集合一致性未做真实大型来源验证。",
+    "资料正文不属于完整审计，按卷标记之外的自然语言剧透、事实真假、改编混入、来源许可均未验证。",
+    "narrative-guard检查claims结构/引用范围，无法证明未申报正文事实；不把该设计边界当作已实现语义防火墙。",
+    "本报告记录当前读取快照；并行工作区改动应由协调者在合并时对行号/哈希和去重键复核。"
+  ]
+}

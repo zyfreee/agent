@@ -27,8 +27,11 @@
     agent.worldRuntime.restore({
         clock: { day: 5, minute: 510, label: '' },
         info: { era: '斗气大陆', location: '乌坦城', weather: '晴', reputation: '乌坦城小有名气', wanted: '' },
-        nearEvents: [{ id: 'e1', text: '坊市集市开张', day: 4, weight: 'minor', basis: '酒馆听说', endDay: 6 }],
-        worldEvents: [{ id: 'e2', text: '迦南学院招生队路过', day: 3, weight: 'major', endDay: 9, pinned: true }],
+        nearEvents: [
+            { id: 'e1', title: '坊市开市', text: '坊市集市开张，摊位从街口一直摆到河桥，人挤得走不动', day: 4, weight: 'minor', basis: '酒馆听说', location: '乌坦城·坊市', endDay: 6 },
+            { id: 'e3', text: '城东连着三家铺子夜里失窃，巡卫封了街口盘查（老数据，没有标题）', day: 5, weight: 'minor', basis: '亲眼所见' },
+        ],
+        worldEvents: [{ id: 'e2', title: '迦南学院招生', text: '迦南学院招生队路过乌坦城，在广场当街考校少年斗气', day: 3, weight: 'major', basis: '城门守卫闲聊', location: '乌坦城广场', endDay: 9, pinned: true }],
         tasks: [{ id: 't1', title: '去坊市买药材', status: 'active', day: 4, endDay: 8, detail: '凑齐三阶魔核的材料', basis: '药老托付' }],
         factions: [{ name: '云岚宗', stance: 'wary', dynamics: '退婚使者常驻乌坦城' }],
         people: [{ name: '药老', attitude: '亦师亦父', basis: '第二楼出手相护' }],

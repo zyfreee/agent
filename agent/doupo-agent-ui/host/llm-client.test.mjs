@@ -92,6 +92,22 @@ assert.deepEqual(busySamples, [true, true], '调用全程标志为真');
 await new Promise(resolve => setTimeout(resolve, 700));
 assert.equal(quietClient.isQuietBusy(), false, '收尾加事件缓冲后标志回落');
 
+// 独立裁判不套主聊天预设，沿用同一酒馆连接和静默生命周期标记。
+let rawOptions;
+const isolated = createLlmClient({
+    getSettings: () => ({ llm: { mode: 'tavern', timeoutMs: 5000 } }),
+    getContext: () => ({
+        generateQuietPrompt() { throw new Error('裁判不应走角色预设'); },
+        generateRaw(options) { rawOptions = options; assert.equal(isolated.isQuietBusy(), true); return '{"version":2,"actions":[]}'; },
+    }),
+});
+assert.equal(await isolated.complete({ rawPrompt: true, system: '裁判规则', user: '本轮行动' }), '{"version":2,"actions":[]}');
+assert.deepEqual(rawOptions.prompt, [{ role: 'system', content: '裁判规则' }, { role: 'user', content: '本轮行动' }]);
+assert.equal(rawOptions.quietToLoud, false);
+assert.equal(rawOptions.trimNames, false);
+assert.equal(isolated.isQuietBusy(), false);
+await assert.rejects(() => viaTavern.complete({ rawPrompt: true, system: 's', user: 'u' }), /generateRaw/);
+
 const calls = [];
 const fakeFetch = async (url, options) => {
     calls.push({ url, options });
@@ -297,6 +313,46 @@ assert.equal(leftoverCalls.length, 0, '劫持路径一次都不该发起');
     assert.equal(await fallback.complete({ system: 's', user: 'u', overrides: { connection: 'tavern' } }), 'from-tavern', '全局没配齐应回落原逻辑');
 }
 
+// 全局统管不能把其他方案的模型、附加请求体或认证标头带到全局端点。
+{
+    let sent;
+    const client = createLlmClient({
+        getSettings: () => ({ llm: { mode: 'custom', governAll: true, baseUrl: 'https://global.example/v1', apiKey: 'global-only', model: 'global-model' } }),
+        fetchImpl: async (url, options) => {
+            sent = { url, headers: options.headers, body: JSON.parse(options.body) };
+            return { ok: true, json: async () => ({ choices: [{ message: { content: 'ok' } }] }) };
+        },
+    });
+    await client.complete({ system: 's', user: 'u', overrides: { model: 'preset-model', extraBody: { model: 'extra-model' }, excludeBody: ['messages'], headers: { authorization: 'Bearer preset-only' } } });
+    assert.equal(sent.body.model, 'global-model');
+    assert.equal(sent.headers.authorization, 'Bearer global-only');
+    assert.ok(Array.isArray(sent.body.messages));
+}
+
+// 自定义请求的截止时间与取消必须覆盖响应体读取，而不只等 HTTP 响应头。
+{
+    let fetchSignal;
+    const client = createLlmClient({
+        getSettings: () => ({ llm: { mode: 'custom', baseUrl: 'https://slow.example/v1', model: 'slow', timeoutMs: 1000 } }),
+        fetchImpl: async (_url, options) => {
+            fetchSignal = options.signal;
+            return { ok: true, json: () => new Promise(() => {}) };
+        },
+    });
+    const result = await Promise.race([
+        client.complete({ system: 's', user: 'u' }).then(() => 'unexpected success', error => error.message),
+        new Promise(resolve => setTimeout(() => resolve('body read never timed out'), 1500)),
+    ]);
+    assert.match(result, /超过 1000ms/);
+    assert.equal(fetchSignal.aborted, true);
+    const controller = new AbortController();
+    const cancelled = client.complete({ system: 's', user: 'u', signal: controller.signal });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    controller.abort();
+    const cancellation = await Promise.race([cancelled.then(() => 'unexpected success', error => error.message), new Promise(resolve => setTimeout(() => resolve('body read ignored abort'), 100))]);
+    assert.match(cancellation, /取消/);
+}
+
 const noEndpoint = createLlmClient({
     getSettings: () => ({ llm: { mode: 'tavern' } }),
     getContext: () => ({ generateQuietPrompt: async () => 'x' }),
@@ -460,5 +516,163 @@ assert.equal(globalSamplingCalls[0].presence_penalty, undefined, '存在惩罚 0
 assert.equal(globalSamplingCalls[0].frequency_penalty, -0.5, '负数频率惩罚可用');
 await globalSamplingClient.complete({ system: 's', user: 'u', overrides: { topP: 0.5 } });
 assert.equal(globalSamplingCalls[1].top_p, 0.5, '单次覆盖优先于全局兜底');
+
+// —— 瞬时空返回重试：第一返回空、第二次成功 → complete 返回成功，日志只记一笔 ——
+const retryCalls = [];
+let emptyFirst = true;
+const retryClient = createLlmClient({
+    getSettings: () => ({ llm: { useSillyTavernConnection: false, baseUrl: 'https://api.example.com/v1', model: 'demo-model' } }),
+    fetchImpl: async url => {
+        retryCalls.push(url);
+        const content = emptyFirst ? '' : '{"text":"重试后有了。","claims":[]}';
+        emptyFirst = false;
+        return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content } }] }) };
+    },
+});
+const retried = await retryClient.compose({ input: '我看看四周' });
+assert.equal(retried.text, '重试后有了。', '空返回自动重试一次后成功');
+assert.equal(retryCalls.length, 2, '空返回确实多问了一次');
+const retryLog = retryClient.callLog().at(-1);
+assert.equal(retryLog.ok, true, '重试成功记成功一笔');
+assert.match(retryLog.error, /空回重试1次后成功/, '日志标注这是重试后成功');
+
+// —— 两次都空才真失败；玩家取消不重试 ——
+const alwaysEmpty = createLlmClient({
+    getSettings: () => ({ llm: { useSillyTavernConnection: false, baseUrl: 'https://api.example.com/v1', model: 'demo-model' } }),
+    fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '' } }] }) }),
+});
+await assert.rejects(alwaysEmpty.complete({ system: 's', user: 'u' }), /模型返回内容为空/, '两次都空才上抛');
+assert.equal(alwaysEmpty.callLog().at(-1).ok, false);
+
+// —— 空回重试次数/间隔走设置（llm.emptyRetry / llm.emptyRetryWait），每次调用现读 ——
+// 没填设置：按默认重试 1 次，共 2 发（默认间隔 0.6 秒）
+let defaultEmptyCalls = 0;
+const defaultRetryClient = createLlmClient({
+    getSettings: () => ({ llm: { useSillyTavernConnection: false, baseUrl: 'https://api.example.com/v1', model: 'demo-model' } }),
+    fetchImpl: async () => {
+        defaultEmptyCalls += 1;
+        return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '' } }] }) };
+    },
+});
+await assert.rejects(defaultRetryClient.complete({ system: 's', user: 'u' }), /模型返回内容为空/);
+assert.equal(defaultEmptyCalls, 2, '没填设置时空回按默认重试 1 次');
+
+// 填 3、间隔 0.01 秒：一直空也连问 4 发——次数按设置直通，不设天花板
+let tripleCalls = 0;
+const tripleClient = createLlmClient({
+    getSettings: () => ({ llm: { useSillyTavernConnection: false, baseUrl: 'https://api.example.com/v1', model: 'demo-model', emptyRetry: 3, emptyRetryWait: 0.01 } }),
+    fetchImpl: async () => {
+        tripleCalls += 1;
+        return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '' } }] }) };
+    },
+});
+await assert.rejects(tripleClient.complete({ system: 's', user: 'u' }), /模型返回内容为空/);
+assert.equal(tripleCalls, 4, '空回重试 3 次共 4 发，间隔按秒换算');
+
+// 填 2：第三发才给内容 → 成功，日志标注第 2 次重试后成功
+const thirdCalls = [];
+const thirdTryClient = createLlmClient({
+    getSettings: () => ({ llm: { useSillyTavernConnection: false, baseUrl: 'https://api.example.com/v1', model: 'demo-model', emptyRetry: 2, emptyRetryWait: 0.01 } }),
+    fetchImpl: async () => {
+        thirdCalls.push(1);
+        const content = thirdCalls.length >= 3 ? '第三次有了。' : '';
+        return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content } }] }) };
+    },
+});
+assert.equal(await thirdTryClient.complete({ system: 's', user: 'u' }), '第三次有了。', '重试次数内拿到内容就成功');
+assert.equal(thirdCalls.length, 3);
+assert.match(thirdTryClient.callLog().at(-1).error, /空回重试2次后成功/, '日志标注第几次重试后成功');
+
+// 填 0（清空输入框存的就是 0）：不重试，只发 1 发
+let zeroCalls = 0;
+const zeroRetryClient = createLlmClient({
+    getSettings: () => ({ llm: { useSillyTavernConnection: false, baseUrl: 'https://api.example.com/v1', model: 'demo-model', emptyRetry: 0, emptyRetryWait: 0.01 } }),
+    fetchImpl: async () => {
+        zeroCalls += 1;
+        return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '' } }] }) };
+    },
+});
+await assert.rejects(zeroRetryClient.complete({ system: 's', user: 'u' }), /模型返回内容为空/);
+assert.equal(zeroCalls, 1, '空回重试 0 次就是不重试');
+
+// 非法次数（负数/小数）回落默认 1，间隔非法回落 0.6 秒
+let invalidCalls = 0;
+const invalidRetryClient = createLlmClient({
+    getSettings: () => ({ llm: { useSillyTavernConnection: false, baseUrl: 'https://api.example.com/v1', model: 'demo-model', emptyRetry: -2, emptyRetryWait: -1 } }),
+    fetchImpl: async () => {
+        invalidCalls += 1;
+        return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '' } }] }) };
+    },
+});
+await assert.rejects(invalidRetryClient.complete({ system: 's', user: 'u' }), /模型返回内容为空/);
+assert.equal(invalidCalls, 2, '负数次数/间隔回落默认（重试 1 次）');
+
+// —— 附加参数（API设置方案带来）：extraBody 最后展开、excludeBody 删顶层键、headers 覆盖请求头 ——
+// 顺序对齐酒馆服务端：先并进主体，再排除（能删掉附加进来的键），最后标头覆盖（可覆盖 authorization）。
+const extrasCalls = [];
+const extrasClient = createLlmClient({
+    getSettings: () => ({ llm: { mode: 'custom', baseUrl: 'https://api.example.com/v1', apiKey: 'sk-x', model: 'demo-model', frequencyPenalty: 0.3, topP: 0.8 } }),
+    fetchImpl: async (url, options) => {
+        extrasCalls.push({ url, headers: options.headers, body: JSON.parse(options.body) });
+        return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'ok' } }] }) };
+    },
+});
+await extrasClient.complete({
+    system: 's', user: 'u',
+    overrides: {
+        extraBody: { top_k: 20, injected: 'yes' },
+        excludeBody: ['frequency_penalty', 'injected'],
+        headers: { 'X-Gate': 'open', authorization: 'Bearer preset-key' },
+    },
+});
+assert.equal(extrasCalls[0].body.top_k, 20, 'extraBody 并进请求体');
+assert.equal(extrasCalls[0].body.injected, undefined, 'excludeBody 能删掉 extraBody 刚附加的键（酒馆同序：排除最后执行）');
+assert.equal(extrasCalls[0].body.frequency_penalty, undefined, 'excludeBody 删掉标准采样字段');
+assert.equal(extrasCalls[0].body.top_p, 0.8, '没被排除的标准字段保留');
+assert.equal(extrasCalls[0].headers['X-Gate'], 'open', '方案标头并进请求头');
+assert.equal(extrasCalls[0].headers.authorization, 'Bearer preset-key', '方案标头可覆盖 authorization（酒馆同语义）');
+// 坏形状的附加参数直接忽略，不报错
+await extrasClient.complete({ system: 's', user: 'u', overrides: { extraBody: 'junk', excludeBody: 'junk', headers: [1, 2] } });
+assert.equal(extrasCalls[1].body.top_k, undefined, '坏形状 extraBody 忽略');
+assert.equal(extrasCalls[1].headers['X-Gate'], undefined, '坏形状 headers 忽略');
+
+// 跟随酒馆路径忽略附加参数（酒馆自己的管线没有这些落点），正常返回
+const extrasTavern = createLlmClient({
+    getSettings: () => ({ llm: { mode: 'tavern' } }),
+    getContext: () => ({ generateQuietPrompt: async () => 'from-tavern' }),
+});
+assert.equal(await extrasTavern.complete({ system: 's', user: 'u', overrides: { connection: 'tavern', extraBody: { top_k: 20 }, headers: { 'X-Gate': 'open' } } }), 'from-tavern');
+
+// listModels 带上方案标头
+const headerModelCalls = [];
+const listedWithHeaders = await listModels({
+    baseUrl: 'https://api.example.com/v1',
+    apiKey: 'sk-model',
+    headers: { 'X-Gate': 'open', empty: null },
+    fetchImpl: async (url, options) => {
+        headerModelCalls.push({ url, headers: options.headers });
+        return { ok: true, status: 200, json: async () => ({ data: [{ id: 'model-a' }] }) };
+    },
+});
+assert.equal(listedWithHeaders.status, 'ok');
+assert.equal(headerModelCalls[0].headers['X-Gate'], 'open', '拉模型同样带方案标头');
+assert.equal(headerModelCalls[0].headers.authorization, 'Bearer sk-model', '鉴权头保留');
+
+// interpret 透传 overrides（API设置页给“全局连接”绑方案时，意图解析也要走方案）；
+// 不传 overrides 时保持旧行为（跟随酒馆）。
+const passthroughCalls = [];
+const passthrough = createLlmClient({
+    getSettings: () => ({ llm: { mode: 'tavern', baseUrl: 'https://global.example/v1', model: 'global-model' } }),
+    getContext: () => ({ generateQuietPrompt: async () => '{"type":"unclear","task":"unclear","effects":[]}' }),
+    fetchImpl: async (url, options) => {
+        passthroughCalls.push({ url, body: JSON.parse(options.body) });
+        return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '{"type":"unclear","task":"unclear","effects":[]}' } }] }) };
+    },
+});
+await passthrough.interpret({ input: '我看看四周', state: {}, allowedFields: [], overrides: { connection: 'custom', custom: { baseUrl: 'https://alt.example/v1', apiKey: 'alt-key', provider: 'openai' }, model: 'alt-model' } });
+assert.equal(passthroughCalls[0].url, 'https://alt.example/v1/chat/completions', 'interpret 的 overrides 生效');
+assert.equal(passthroughCalls[0].body.model, 'alt-model');
+await passthrough.interpret({ input: '我看看四周', state: {}, allowedFields: [] });
+assert.equal(passthroughCalls.length, 1, '不传 overrides 不发起自定义请求');
 
 console.log('llm client tests passed');
