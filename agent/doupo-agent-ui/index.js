@@ -4049,8 +4049,12 @@ async function copyApiPreset(panel, id) {
 }
 
 function updateApiPresetField(id, field, value) {
-    const presets = (currentSettings().api?.presets ?? []).map(item => (item?.id === id ? { ...item, [field]: value } : item));
-    return saveApiPresets(presets);
+    const presets = currentSettings().api?.presets ?? [];
+    // 卡片上那张方案的 id 已经不在表里（被清成垃圾、被别的窗口改掉、或链接到旧渲染）：
+    // 这时绝不能拿整表回写——那会把这一次输入悄悄丢掉，界面还报「方案已保存」。
+    // 返回 missing 让上层把列表重画一遍，玩家看到的是「这条不在了」，而不是以为存上了。
+    if (!presets.some(item => item?.id === id)) return { status: 'missing' };
+    return saveApiPresets(presets.map(item => (item?.id === id ? { ...item, [field]: value } : item)));
 }
 
 /** 方案卡上的“拉取模型”：读这张卡自己填的地址/密钥/协议/请求标头（方案标头一并带上），候选填进模型输入框。 */
@@ -7307,6 +7311,13 @@ function createSettingsPanel() {
                 const field = presetField.dataset.apiPresetField;
                 const sequence = ++settingsSaveSequence;
                 const result = updateApiPresetField(holder.dataset.apiPresetId, field, presetField.value);
+                if (result.status === 'missing') {
+                    const missingStatus = panel.querySelector('[data-api-preset-status]');
+                    if (missingStatus) missingStatus.textContent = '这条方案已经不在了，已按存储重画列表，请重新填一次。';
+                    renderApiPresets(panel);
+                    renderApiPresetSelects(panel);
+                    return;
+                }
                 if (field === 'name') {
                     const title = holder.querySelector('summary b');
                     if (title) title.textContent = presetField.value.trim() || '未命名方案';

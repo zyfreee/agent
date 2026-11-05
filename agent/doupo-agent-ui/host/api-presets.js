@@ -272,7 +272,8 @@ export function normalizeApiPreset(raw) {
 }
 
 /** 清洗方案数组：垃圾条目丢掉、id 去重（撞了重发）、超上限截断；
- *  名字/地址/密钥/模型全空的对象（存储里混进来的垃圾）直接丢弃，不生成一排“未命名方案”。 */
+ *  名字/地址/密钥/模型全空**且没有 id** 的对象（存储里混进来的垃圾）直接丢弃，不生成一排“未命名方案”；
+ *  带 id 的是界面里建的正牌方案，全空也要留（玩家正在改名字，见下面的逐条说明）。 */
 export function normalizeApiPresets(list) {
     const source = Array.isArray(list) ? list : [];
     const seen = new Set();
@@ -280,7 +281,12 @@ export function normalizeApiPresets(list) {
     for (const raw of source) {
         const preset = normalizeApiPreset(raw);
         if (!preset) continue;
-        if (!preset.name && !preset.baseUrl && !preset.apiKey && !preset.model) continue;
+        // 名字/地址/密钥/模型全空：只丢「来路不明」的垃圾（原始条目连 id 都没有）。
+        // 界面里新建的方案一保存就带 id，玩家把默认名「新方案」清空、准备改成自己的名字时，
+        // 这一条必须留住——否则清空名称的那一次 input 就把整条删掉，接下来填的地址、密钥、
+        // 模型全写在一张空表上，切页重画后方案就"消失"了。
+        const anonymous = !(raw && typeof raw === 'object' && typeof raw.id === 'string' && raw.id.trim());
+        if (anonymous && !preset.name && !preset.baseUrl && !preset.apiKey && !preset.model) continue;
         while (seen.has(preset.id)) preset.id = makePresetId();
         seen.add(preset.id);
         presets.push(preset);

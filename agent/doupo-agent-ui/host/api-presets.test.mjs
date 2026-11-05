@@ -74,6 +74,10 @@ assert.deepEqual(normalizeApiPresets('junk'), []);
 // 名字/地址/密钥/模型全空的对象是存储垃圾，直接丢弃；有名字的新建空方案保留
 assert.equal(normalizeApiPresets([{ nope: true }]).length, 0);
 assert.equal(normalizeApiPresets([{ name: '新方案' }]).length, 1);
+// 已经有 id 的方案是界面里新建、玩家正在填的那一条：把默认名清空改成自己的名字后字段会短暂全空，
+// 这时必须留着，否则清空名称的那一次写入就把整条删掉，之后填的地址/密钥全落在空表上（切页即消失）。
+assert.equal(normalizeApiPresets([{ id: 'pkeep' }]).length, 1, '带 id 的全空方案不丢');
+assert.equal(normalizeApiPresets([{ id: 'pkeep' }])[0].id, 'pkeep');
 
 // ---------- presetToOverrides：空/不可用 ----------
 assert.equal(presetToOverrides(null), null);
