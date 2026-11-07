@@ -99,7 +99,8 @@ assert.equal(transformUserFloor('你好，喝杯茶再走。'), `${VEIL_MARK}\n\
 assert.equal(transformUserFloor(''), '');
 
 // 帷幕收口规则必须真的在 style.css 里：带标记又不在最近三块的整楼 display:none，位置动态算。
-const css = readFileSync(new URL('./style.css', import.meta.url), 'utf8');
+// 归一化行尾：Windows 检出（autocrlf）会把样式变 CRLF，样式文本断言按 LF 写，先统一。
+const css = readFileSync(new URL('./style.css', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 assert.ok(
     css.includes('#chat > .mes:has(.dpz-floor-veil):not(:nth-last-child(-n+3))'),
     '收口规则应按位置动态隐藏（:has + :nth-last-child）',

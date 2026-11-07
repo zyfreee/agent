@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 
-const source = readFileSync(new URL('./index.js', import.meta.url), 'utf8');
+// 归一化行尾：Windows 检出（autocrlf）会把源码变 CRLF，源码文本断言按 LF 写，先统一。
+const source = readFileSync(new URL('./index.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const start = 'const BODY_FIGURE_SLOTS = Object.freeze([';
 const end = '/** 空槽位 →';
 for (const marker of [start, end]) assert.equal(source.split(marker).length, 2, `unique extraction boundary: ${marker}`);

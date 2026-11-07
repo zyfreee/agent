@@ -5,7 +5,8 @@ import { runInNewContext } from 'node:vm';
 import { trimToVolume } from './narrative/setting-supply.js';
 import { renderMemoryEntries, renderMemoryEntriesDetail } from './memory/memory-ops.js';
 
-const source = readFileSync(new URL('./index.js', import.meta.url), 'utf8');
+// 归一化行尾：Windows 检出（autocrlf）会把源码变 CRLF，源码文本断言按 LF 写，先统一。
+const source = readFileSync(new URL('./index.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const extract = (start, end) => {
     const from = source.indexOf(start), to = source.indexOf(end, from);
     assert.ok(from >= 0 && to > from, `extract ${start}`);

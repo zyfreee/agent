@@ -4,7 +4,8 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { createSandboxMode } from './sandbox/sandbox-mode.js';
 
-const source = readFileSync(new URL('./index.js', import.meta.url), 'utf8');
+// 归一化行尾：Windows 检出（autocrlf）会把源码变 CRLF，源码文本断言按 LF 写，先统一。
+const source = readFileSync(new URL('./index.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const names = ['currentAgentScope', 'sandboxModeActive', 'confirmSandboxSwitch', 'persistSandboxMode', 'restoreSandboxFromChat'];
 const extracted = names.map(name => source.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`))?.[0]).filter(Boolean);
 for (const name of names.slice(0, 3)) assert.ok(extracted.some(code => code.includes(`function ${name}(`)), `actual index function ${name}`);

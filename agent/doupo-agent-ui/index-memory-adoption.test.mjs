@@ -6,7 +6,8 @@ import { createMemoryRuntime } from './memory/memory-runtime.js';
 import { sameMemoryState } from './host/db-tables.js';
 
 // Exercise actual entry functions, not copies of the intended adoption algorithm.
-const source = readFileSync(new URL('./index.js', import.meta.url), 'utf8');
+// 归一化行尾：Windows 检出（autocrlf）会把源码变 CRLF，源码文本断言按 LF 写，先统一。
+const source = readFileSync(new URL('./index.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 function extract(start, end) {
     assert.equal(source.split(start).length, 2, `unique entry declaration: ${start}`);
     const from = source.indexOf(start), to = source.indexOf(end, from);

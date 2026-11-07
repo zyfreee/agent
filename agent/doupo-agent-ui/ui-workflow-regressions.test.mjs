@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { test } from 'node:test';
-const source = readFileSync(new URL('./index.js', import.meta.url), 'utf8');
+// 归一化行尾：Windows 检出（autocrlf）会把源码变 CRLF，源码文本断言按 LF 写，先统一。
+const source = readFileSync(new URL('./index.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const code = name => { const start = source.search(new RegExp(`(?:async )?function ${name}\\(`)); assert.ok(start >= 0, name); return source.slice(start, source.indexOf('\n}', start) + 2); };
 const load = (name, env = {}) => vm.runInNewContext(`${code(name)}; ${name}`, { captureAgentContinuation: () => ({ current: () => true }), agentModalCurrent: () => true, awaitPanelPersistence: async () => true, ...env });
 class Element {
