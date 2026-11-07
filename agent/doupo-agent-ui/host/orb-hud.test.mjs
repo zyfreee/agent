@@ -388,7 +388,7 @@ assert.match(buildJournalPanel({}).summary, /还没有运行流水/);
     assert.match(turnJournal.lists[0].all[6].meta, /inline/, '申报通道进 stage 位');
 }
 
-// —— 总控：模块行照搬仪表盘视图 ——
+// —— 总控：模块行照搬仪表盘视图；没跑过的旧管线「暂无记录」不再占位 ——
 const overview = buildOverviewPanel({
     dashboard: {
         enabled: true, taskLabel: '已完成并保存',
@@ -400,6 +400,52 @@ const overview = buildOverviewPanel({
 });
 assert.match(overview.summary, /总控已开启 · 最近任务：已完成并保存/);
 assert.equal(overview.rows[0].value, '已开启 · 已返回');
+assert.equal(overview.rows[1].value, '已开启', 'idle 模块只报开关状态，不再挂死「暂无记录」');
+assert.equal(overview.rows.length, 2, '总控行数=模块行数：调用状态改挂行尾，不再铺底部列表');
+
+// —— 总控：调用标记直接挂模块行尾——在途转圈、✓、✗、没调过「无」；已关闭的模块不挂 ——
+const now = new Date().toISOString();
+const statusView = buildOverviewPanel({
+    dashboard: {
+        enabled: true, taskLabel: '暂无任务',
+        modules: [
+            { id: 'self', title: '纳戒', configuration: '已开启', enabled: true, state: 'idle', label: '暂无记录' },
+            { id: 'memory', title: '记忆', configuration: '已开启', enabled: true, state: 'idle', label: '暂无记录' },
+            { id: 'world', title: '世界运转', configuration: '已开启', enabled: true, state: 'idle', label: '暂无记录' },
+            { id: 'action', title: '行动结算', configuration: '已关闭', enabled: false, state: 'idle', label: '暂无记录' },
+            { id: 'llm', title: '模型与连接', configuration: '使用酒馆连接', enabled: null, state: 'idle', label: '暂无记录' },
+        ],
+    },
+    calls: [
+        { at: now, label: '纳戒决定', ok: true },
+        { at: now, label: '世界决定', ok: false, error: 'HTTP 503' },
+        { at: now, label: '档案抄录', ok: true },
+    ],
+    active: ['记忆召回'],
+});
+const marksOf = title => statusView.rows.find(item => item.label === title)?.marks;
+assert.deepEqual(marksOf('纳戒决定'), undefined, '行标签是模块名，渠道标记在 marks 里');
+const selfMarks = marksOf('纳戒');
+assert.equal(selfMarks?.length, 1, '纳戒行挂一个渠道标记');
+assert.equal(selfMarks[0].label, '纳戒决定');
+assert.equal(selfMarks[0].status, 'ok', '最近一次成功 → 打勾');
+assert.match(selfMarks[0].detail, /^\d{2}:\d{2}:\d{2}/, '成功标记带时间，悬停可看');
+const memoryMarks = marksOf('记忆');
+assert.equal(memoryMarks?.length, 2, '记忆行并排挂召回+决定两个标记');
+assert.deepEqual(memoryMarks.map(item => item.label), ['记忆召回', '记忆决定']);
+assert.equal(memoryMarks[0].status, 'running', '在途 → 转圈');
+assert.equal(memoryMarks[1].status, 'none', '没调过的渠道 → 无');
+const worldMarks = marksOf('世界运转');
+assert.equal(worldMarks[0].status, 'failed', '最近一次失败 → 打叉');
+assert.match(worldMarks[0].detail, /HTTP 503/, '失败标记带原因');
+assert.deepEqual(marksOf('行动结算'), [], '已关闭的模块不显示记号，但保留空槽位对齐「已开启」列');
+assert.deepEqual(marksOf('模型与连接'), [], '没有渠道的模块保留空槽位');
+assert.equal(statusView.rows.find(item => item.label === '档案抄录'), undefined, '渠道清单之外的调用不占模块行');
+assert.match(statusView.summary, /正在调用：记忆召回/, '摘要行播报在途调用（含渠道外调用也照播）');
+const idleView = buildOverviewPanel({ dashboard: { enabled: true, taskLabel: '暂无任务', modules: [] } });
+assert.doesNotMatch(idleView.summary, /正在调用/, '没有在途调用时不播报');
+assert.equal(idleView.rows.every(item => !item.marks?.some(mark => mark.status === 'running')), true, '无在途时没有转圈标记');
+assert.equal(idleView.rows.every(item => !Array.isArray(item.marks) || item.marks.every(mark => mark.status === 'none')), true, '没有任何调用时全部标「无」');
 
 // —— 主窗预览 / 副窗全量：items 只给几条，all 收全量，total 报总数 ——
 const many = Array.from({ length: 40 }, (_, i) => ({ id: `e${i}`, text: `事件${i}`, day: 1, done: false, weight: 'minor' }));

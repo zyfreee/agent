@@ -1030,11 +1030,24 @@ function persistMemory() {
 let memoryRecallCache = { key: '', ids: [], note: '' };
 let memoryRecallRunning = false;
 
-/** 缓存键：聊天长度 + 最新玩家输入 + 账本更新时间——三者任一变化就重新召回。 */
+/** 一轮身份：楼层数 + 最新玩家输入。重 roll 换的只是 AI 楼层内容，这两样不变——
+ *  召回缓存与场记挑选签名靠它做到「重 roll 复用备料结果，不重复调用」；玩家改口、
+ *  楼层增删、换聊天都会换键，照常重新备料。 */
+function roundKeyOf(chat) {
+    const list = Array.isArray(chat) ? chat : [];
+    let lastUser = '';
+    for (let index = list.length - 1; index >= 0; index -= 1) {
+        const message = list[index];
+        if (message?.is_user === true && typeof message.mes === 'string' && message.mes.trim()) { lastUser = message.mes.trim(); break; }
+    }
+    return [list.length, lastUser];
+}
+
+/** 缓存键 = 聊天作用域 + 一轮身份 + 设置。按一轮缓存：同一轮（含重 roll）命中同一份
+ *  召回结果，零调用零等待；玩家发新消息/改口/删楼才重新召回。 */
 function memoryRecallCacheKey(chat) {
     const list = Array.isArray(chat) ? chat : [];
-    return JSON.stringify([settleScopeKey(), agentContinuationEpoch, agentMemoryRuntime.snapshot(), currentSettings(),
-        list.map(message => [message?.is_user, message?.is_system, message?.mes, message?.swipe_id])]);
+    return JSON.stringify([settleScopeKey(), roundKeyOf(list), currentSettings()]);
 }
 
 function setMemoryRecallStatus(message) {
@@ -1059,7 +1072,7 @@ function renderMemoryRecallResult(selection) {
 
 /**
  * 记忆召回决定：把「记忆目录（标题+钥匙）+ 最近聊天（含最新玩家输入）+ 世界书命中」交给
- * 召回模型挑编号，脚本按编号取条目（坏号跳过）。结果按楼层缓存，重 roll 不重复调用。
+ * 召回模型挑编号，脚本按编号取条目（坏号跳过）。结果按一轮缓存，重 roll 不重复调用。
  * 失败/关闭/模型忙时返回失败——由注入路径退回关键词兜底，绝不阻塞生成。
  */
 async function runMemoryRecall({ source = 'manual', chat = null } = {}) {
@@ -1193,6 +1206,10 @@ async function writeMemoryInjectionForPrompt({ chat = null } = {}) {
     let picked = [];
     if (settings.recallEnabled && settings.recallAuto) {
         const recalled = await runMemoryRecall({ source: 'inject', chat });
+        // 备料失败要登记：拦截器会因此终止本次正文调用，残缺提示词不去生成。
+        if (recalled.status === 'failed' || recalled.status === 'invalid' || recalled.status === 'not_configured') {
+            registerPregenFailure('记忆召回', recalled.reason ?? recalled.error ?? recalled.status);
+        }
         if (!current()) return { status: 'stale' };
         if (recalled.status === 'ok' || recalled.status === 'empty' || recalled.status === 'cached' || recalled.status === 'empty-cached') {
             pickedSource = 'recall';
@@ -3346,7 +3363,7 @@ function impactConversation(chat, limit = 6) {
     return { draft, floors };
 }
 
-let lastImpactInjection = null; // { signature, text, status, via, usedIds }：同一轮只挑一次，避免拦截器重复调用白花钱
+let lastImpactInjection = null; // { signature, text, status, via, usedIds }：按一轮缓存，重 roll 复用不重挑
 /** 最近一本轮真的进了正文的编号：账本页据此标“本轮已注入”。 */
 let lastInjectedIds = [];
 // 账本页面分页：库不设上限，页面上先画这么多，点“显示更多”再续，避免一次塞几千条把面板拖慢。
@@ -3398,8 +3415,7 @@ async function writeImpactInjectionForPrompt({ chat } = {}) {
     const sourceChat = Array.isArray(chat) ? chat : (getHostContext()?.chat ?? []);
     const { draft, floors } = impactConversation(sourceChat);
     const plan = impactModelPlan(settings);
-    const signatureOf = () => JSON.stringify([settleScopeKey(), agentContinuationEpoch, agentImpactRuntime.snapshot(),
-        agentWorldRuntime.snapshot(), currentSettings(), sourceChat.map(message => [message?.is_user, message?.is_system, message?.mes, message?.swipe_id])]);
+    const signatureOf = () => JSON.stringify([settleScopeKey(), roundKeyOf(sourceChat), currentSettings()]);
     const signature = signatureOf();
     if (lastImpactInjection && lastImpactInjection.signature === signature) {
         if (!lastImpactInjection.text) { agentImpactPromptInjection.clear(); return { status: lastImpactInjection.status, via: lastImpactInjection.via, usedIds: [] }; }
@@ -3428,7 +3444,10 @@ async function writeImpactInjectionForPrompt({ chat } = {}) {
                 agentImpactPromptInjection.clear();
                 return { status: 'skipped', via: 'llm', note: picked.note, usedIds: [] };
             }
-        } catch { /* 挑选失败回落到脚本挑选，正文不能因此丢掉世界线 */ }
+        } catch (error) {
+            registerPregenFailure('场记挑选', error?.message ?? error);
+            /* 挑选失败回落到脚本挑选；拦截器会因备料失败终止本次正文调用 */
+        }
     }
     if (!continuation.current() || signature !== signatureOf()) return { status: 'stale' };
     if (!text) {
@@ -3497,7 +3516,13 @@ async function prepareInjectionForPrompt({ chat } = {}) {
         if (recent.length < 2) recent.unshift(message.mes);
     }
     if (!input) { agentPromptInjection.clear(); return { status: 'no_input' }; }
-    const resolved = await agentTurnStages.resolveInjection({ input, recentTexts: recent, ...currentAgentScope() });
+    let resolved = null;
+    try {
+        resolved = await agentTurnStages.resolveInjection({ input, recentTexts: recent, ...currentAgentScope() });
+    } catch (error) {
+        // 选条 API 挂了也要登记：拦截器会终止本次正文调用，不能拿没有原著设定的提示词硬生成。
+        registerPregenFailure('原著选条', error?.message ?? error);
+    }
     if (!continuation.current()) return { status: 'stale' };
     lastLookupInfo = resolved?.lookup ? { ...resolved.lookup, secondCall: resolved.secondCall === true } : null;
     if (!resolved?.text) { agentPromptInjection.clear(); persistFactsLastInjection(); return { status: resolved?.status ?? 'empty' }; }
@@ -3703,7 +3728,16 @@ async function writeSettleAdjudicationForPrompt({ chat = null, force = false, pr
             recordSettleAdjudication({ status: 'no_input', actions: [], at: Date.now(), cleared: cleared.status === 'cleared', scope });
             return { status: 'no_input' };
         }
-        const attempt = settleSession.begin({ scope, fingerprint: `${preview ? 'preview' : 'inject'}|${materials.fingerprint}`, force });
+        // 轮次键（结算可见历史＝用户楼层及之前的逐层内容）进会话缓存：重roll或备料重试时
+        // 这段没变就直接复用，指纹里的账本漂移（上轮后置链落账）与换 swipe 不再触发重调
+        // ——判定属于玩家输入及其上下文，不属于正文。
+        const settleRoundChat = Array.isArray(chat) ? chat : (getHostContext()?.chat ?? []);
+        const attempt = settleSession.begin({
+            scope,
+            fingerprint: `${preview ? 'preview' : 'inject'}|${materials.fingerprint}`,
+            roundKey: `${preview ? 'preview' : 'inject'}|${settleRoundKeyOf(settleRoundChat, materials.userFloor)}`,
+            force,
+        });
         if (attempt.status === 'busy') return { status: 'busy' };
         const applyResult = (record, text) => {
             const written = preview ? { status: 'preview' } : text
@@ -3751,9 +3785,36 @@ async function writeSettleAdjudicationForPrompt({ chat = null, force = false, pr
     }
 }
 
+// —— 备料失败登记：用户输入后的备料 API（记忆召回/原著选条/场记挑选/行动结算）若失败，
+//  直接终止本次正文调用，绝不让残缺提示词去生成；页面上不弹报错，状态看悬浮球总控
+//  （失败那路打叉）。重试入口就是再发一次消息或再重roll：已成功的备料走轮次缓存复用，
+//  只重调失败的那几路，全部成功才放行正文。每次生成的拦截器开头清空。 ——
+let pregenFailures = [];
+
+function registerPregenFailure(channel, reason) {
+    pregenFailures.push({ channel, reason: String(reason ?? '').slice(0, 160) });
+}
+
+/**
+ * 结算的轮次键：只取结算真正会读的那段历史（用户楼层及之前）的逐层内容。
+ * 重roll换的是用户输入之后的正文——结算从不读它，键不变，直接复用判定；
+ * 改历史楼层或改输入则键变，正常重跑。单槽内存缓存，直接存 JSON，不做哈希。
+ */
+function settleRoundKeyOf(chat, userFloor) {
+    const list = Array.isArray(chat) ? chat : [];
+    const visible = list.slice(0, Math.max(0, userFloor + 1));
+    return JSON.stringify(visible.map(message => [
+        message?.is_user === true,
+        message?.is_system === true,
+        typeof message?.mes === 'string' ? message.mes : '',
+        message?.swipe_id ?? null,
+    ]));
+}
+
 /** SillyTavern calls this global (declared in manifest.json) before every real generation. */
 globalThis.doupoFactsInterceptor = async function doupoFactsInterceptor(chat, contextSize, abort, type) {
     if (type === 'quiet') return;
+    pregenFailures = [];
     try {
         await prepareInjectionForPrompt({ chat, contextSize });
     } catch (error) {
@@ -3763,10 +3824,25 @@ globalThis.doupoFactsInterceptor = async function doupoFactsInterceptor(chat, co
     try {
         const settleOutcome = await writeSettleAdjudicationForPrompt({ chat });
         try { recordAgentAudit({ event: 'turn_settle_adjudicate', outcome: `${settleOutcome?.status ?? 'unknown'}${Number.isInteger(settleOutcome?.actions) ? `·${settleOutcome.actions}项` : ''}` }); } catch { /* 审计失败不影响结算 */ }
+        if (settleOutcome?.status === 'error' || settleOutcome?.status === 'write_failed') {
+            registerPregenFailure('行动结算', settleOutcome.error ?? settleOutcome.status);
+        }
     } catch (error) {
+        registerPregenFailure('行动结算', error?.message ?? error);
         try { recordAgentAudit({ event: 'turn_settle_adjudicate', outcome: 'error' }); } catch { /* 审计失败不影响结算 */ }
         try { console.warn(`[${EXTENSION_ID}] 行动结算失败`, error); } catch { /* 记录失败不影响生成 */ }
     }
+    // 备料有失败：调用酒馆的 abort 通道直接终止本次正文，页面不弹报错（状态在悬浮球总控看），
+    // 等重新生成（再发/重roll）时复用已成功的备料、只重调失败的，全部成功才放行。
+    if (pregenFailures.length) {
+        const detail = pregenFailures.map(item => `${item.channel}：${item.reason}`).join('；');
+        try { recordAgentAudit({ event: 'turn_pregen_abort', outcome: detail.slice(0, 200) }); } catch { /* 审计失败不影响终止 */ }
+        try { console.warn(`[${EXTENSION_ID}] 备料失败，已终止本次正文调用：${detail}`); } catch { /* 记录失败不影响终止 */ }
+        pregenFailures = [];
+        abort(true);
+        return;
+    }
+    pregenFailures = [];
 };
 
 /**
@@ -5190,6 +5266,7 @@ function handleStatusEvent(event) {
 
 let orbDragMoved = false;
 let orbResizeBound = false;
+let orbLlmActivityBound = false;
 
 /** 把设置里记下的位置贴到球上；没记过（x/y 是 null）就留在 CSS 默认的右侧。 */
 function applyOrbPosition() {
@@ -5410,6 +5487,14 @@ function mountOrbHud() {
         orbResizeBound = true;
         window.addEventListener('resize', () => { applyOrbPosition(); positionOrbNpcPopup(); positionOrbItemPopup(); positionOrbListPopup(); positionOrbSelfInitPopup(); });
     }
+    // 总控窗开着时，任何一路模型调用起飞/落地都就地重画：转圈与打勾不用轮询。
+    if (!orbLlmActivityBound) {
+        orbLlmActivityBound = true;
+        agentLlmClient.onActivity?.(() => {
+            if (!orbElement || orbState.collapsed || orbState.panelId !== 'overview') return;
+            refreshOpenOrbPanel();
+        });
+    }
     syncOrbHud();
     applyOrbPosition();
 }
@@ -5464,6 +5549,7 @@ function collectOrbData() {
     const volume = manualVolume ?? autoVolume;
     return {
         calls: safe(() => agentLlmClient.callLog()) ?? [],
+        active: safe(() => agentLlmClient.activeLabels()) ?? [],
         dashboard: buildControlDashboard({
             settings,
             records: safe(() => agentAuditLog.list({ limit: 2000 })) ?? [],
@@ -5585,8 +5671,32 @@ function buildOrbPanelControls(title, id) {
     return strip.children.length ? strip : null;
 }
 
-function renderOrbPanel(panel, id) {
-    const view = buildOrbPanels(collectOrbData())[id];
+/** 总控窗调用状态记号：在途转圈、✓/✗/无，纯展示，状态值来自 orb-hud 的行投影。 */
+function buildOrbCallStatusMark(status) {
+    if (status === 'running') return makeElement('span', 'dai-orb-spin');
+    const mark = makeElement('span', 'dai-orb-mark', status === 'ok' ? '✓' : status === 'failed' ? '✗' : '无');
+    mark.classList.add(`is-${status}`);
+    return mark;
+}
+
+/**
+ * 模块行尾的调用标记组：每个标记悬停能看渠道名+状态详情；一行挂多个渠道时
+ * （记忆＝召回+决定）在记号前补短名，免得看不出哪个勾是哪路的。
+ */
+function buildOrbRowMarks(marks) {
+    const host = makeElement('span', 'dai-orb-row-marks');
+    const multi = Array.isArray(marks) && marks.length > 1;
+    for (const item of Array.isArray(marks) ? marks : []) {
+        if (!item || typeof item.status !== 'string') continue;
+        const chip = makeElement('span', 'dai-orb-channel-mark', multi ? String(item.label ?? '').replace(/^记忆/, '') : '');
+        chip.title = `${item.label ?? ''}：${item.detail ?? ''}`;
+        chip.append(buildOrbCallStatusMark(item.status));
+        host.append(chip);
+    }
+    return host;
+}
+
+function renderOrbPanel(panel, id) {    const view = buildOrbPanels(collectOrbData())[id];
     if (!view) { panel.hidden = true; return; }
     const heading = makeElement('header', 'dai-orb-panel-head');
     const titleBox = makeElement('div');
@@ -5611,7 +5721,10 @@ function renderOrbPanel(panel, id) {
     for (const row of view.rows) {
         const line = makeElement('p', 'dai-orb-row');
         if (row.tone) line.dataset.tone = row.tone;
-        line.append(makeElement('span', 'dai-orb-row-label', row.label), makeElement('span', 'dai-orb-row-value', row.value));
+        const labelSpan = makeElement('span', 'dai-orb-row-label', row.label);
+        if (row.status) labelSpan.prepend(buildOrbCallStatusMark(row.status));
+        line.append(labelSpan, makeElement('span', 'dai-orb-row-value', row.value));
+        if (Array.isArray(row.marks)) line.append(buildOrbRowMarks(row.marks));
         body.append(line);
     }
     view.lists.forEach((group, index) => {

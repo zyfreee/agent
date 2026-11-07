@@ -34,7 +34,8 @@ for (const [event, outcome] of [
 ]) {
     turnLog.record({ taskId: 'turn-fixture', sessionId: 's', branchId: 'b', stateVersion: 'v1', event, outcome });
 }
-assert.equal(turnLog.list({ taskId: 'turn-fixture' }).length, 7, '七个回合事件全部入账');
+turnLog.record({ taskId: 'turn-fixture', sessionId: 's', branchId: 'b', stateVersion: 'v1', event: 'turn_pregen_abort', outcome: '记忆召回：预设连接失败' });
+assert.equal(turnLog.list({ taskId: 'turn-fixture' }).length, 8, '备料中止事件入账');
 assert.equal(turnLog.list({ taskId: 'turn-fixture' })[0].outcome, 'applied·帧未动兜底', '兜底标记照原样入账');
 assert.throws(() => turnLog.record({ taskId: 'x', sessionId: 's', branchId: 'b', stateVersion: 'v1', event: 'turn_bogus' }), /不允许/, '未登记的回合事件仍被拒');
 console.log('audit log tests passed');

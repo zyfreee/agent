@@ -705,7 +705,7 @@ svg.dai-svg { width: 1em; height: 1em; flex: none; display: inline-block; vertic
 .dai-orb-action:disabled { opacity: 0.55; cursor: progress; }
 .dai-orb-row { display: flex; justify-content: space-between; gap: 0.8rem; margin: 0; padding: 0.3rem 0; border-bottom: 1px dashed var(--dai-line); }
 .dai-orb-row-label { flex: none; color: var(--dai-muted); }
-.dai-orb-row-value { text-align: right; overflow-wrap: anywhere; }
+.dai-orb-row-value { flex: 1 1 auto; text-align: right; overflow-wrap: anywhere; }
 .dai-orb-row[data-tone="warn"] .dai-orb-row-value { color: var(--dai-warn); }
 .dai-orb-group { display: grid; gap: 0.35rem; margin-top: 0.7rem; }
 .dai-orb-group-head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; }
@@ -749,9 +749,24 @@ svg.dai-svg { width: 1em; height: 1em; flex: none; display: inline-block; vertic
 .dai-orb-pop-init .dai-setting-row select { width: 100%; min-height: 2rem; padding: 0.22rem 0.45rem; font-size: var(--dai-fs-md); }
 .dai-orb-init-actions { align-items: center; margin-top: 0.65rem; }
 .dai-orb-init-actions .dai-turn-result { flex: 1 1 auto; min-width: 0; font-size: var(--dai-fs-sm); }
+/* 总控窗调用状态记号：在途转圈（尺寸对齐行内文字）、✓/✗/无。 */
+.dai-orb-spin { display: inline-block; width: 0.7rem; height: 0.7rem; margin-right: 0.35rem; border: 2px solid var(--dai-accent); border-top-color: transparent; border-radius: 50%; vertical-align: -0.02rem; animation: dai-orb-spin 0.8s linear infinite; }
+@keyframes dai-orb-spin { to { transform: rotate(360deg); } }
+.dai-orb-mark { display: inline-block; min-width: 0.7rem; margin-right: 0.35rem; font-weight: 700; line-height: 1; }
+.dai-orb-mark.is-ok { color: var(--dai-ok, #2f6b46); }
+.dai-orb-mark.is-failed { color: var(--dai-warn, #a33c2f); }
+.dai-orb-mark.is-none { color: var(--dai-muted); font-weight: 400; }
+/* 模块行尾的调用标记组：紧跟开关状态，多个渠道（记忆＝召回+决定）并排带短名。
+ * 槽宽固定（够放两个标记），空槽也占位——总控每行的「已开启」右缘因此对齐。 */
+.dai-orb-row-marks { display: inline-flex; align-items: center; justify-content: flex-start; gap: 0.55rem; margin-left: 0.6rem; flex-shrink: 0; min-width: 6.4rem; }
+.dai-orb-channel-mark { display: inline-flex; align-items: center; gap: 0.15rem; cursor: help; }
+.dai-orb-channel-mark small { color: var(--dai-muted); font-size: 0.72rem; line-height: 1; }
+.dai-orb-channel-mark .dai-orb-spin { margin-right: 0; }
+.dai-orb-channel-mark .dai-orb-mark { margin-right: 0; }
 @media (prefers-reduced-motion: reduce) {
     .dai-orb-capsule, .dai-orb-ball, .dai-orb-icon { transition: none !important; }
     .dai-orb-ball svg { animation: none !important; }
+    .dai-orb-spin { animation: none !important; border-top-color: var(--dai-accent); }
 }
 
 /* ---- 弹窗：添加/编辑/详情统一收进居中弹层 ---- */

@@ -2,6 +2,7 @@
 const MODULES = Object.freeze([
     { id: 'facts', title: '原著设定', setting: 'setting.enabled', stage: 'facts-query' },
     { id: 'action', title: '行动结算', setting: 'enableActionResolution', stage: 'action-resolve' },
+    { id: 'memory', title: '记忆', setting: 'enableMemoryLedger' },
     { id: 'world', title: '世界运转', setting: 'world.eventEnabled', stage: 'world-advance' },
     { id: 'npc', title: 'NPC 决策', setting: 'enableNpcAutonomy' },
     { id: 'self', title: '纳戒', setting: 'enableSelfLedger' },
@@ -67,6 +68,7 @@ export function buildControlDashboard({ settings = {}, records = [], tasks = [],
             : module.id === 'llm' ? '本轮还没有发出模型请求。' : '当前会话暂无该功能的运行记录。';
         return {
             id: module.id, title: module.title,
+            enabled,
             configuration: enabled === null ? (settings.llm?.useSillyTavernConnection !== false ? '使用酒馆连接' : '使用独立连接')
                 : enabled ? (settings.enabled === false ? '已开启 · 总控已暂停' : '已开启') : '已关闭',
             state: state?.[0] ?? 'idle', label: state?.[1] ?? '暂无记录',

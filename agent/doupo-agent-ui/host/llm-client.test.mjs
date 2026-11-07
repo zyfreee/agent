@@ -286,6 +286,46 @@ assert.equal(leftoverCalls.length, 0, '劫持路径一次都不该发起');
     assert.equal(probed.callLog().length, 0, '清零后日志为空');
 }
 
+// —— 在途跟踪：调用中 activeLabels 必须有它，收尾（成功/失败都算）注销；onActivity 播报起飞/落地 ——
+{
+    let release;
+    const gate = new Promise(resolve => { release = resolve; });
+    let activeDuringCall = null;
+    const events = [];
+    const tracked = createLlmClient({
+        getSettings: () => ({ llm: { mode: 'custom', baseUrl: 'https://api.example/v1', apiKey: 'sk-secret', model: 'm1' } }),
+        fetchImpl: async () => {
+            activeDuringCall = [...tracked.activeLabels()];
+            await gate;
+            return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'done' } }] }) };
+        },
+    });
+    tracked.onActivity(event => events.push(`${event.label}:${event.phase}`));
+    assert.equal(tracked.activeLabels().length, 0, '起飞前没有在途调用');
+    const pending = tracked.complete({ system: 's', user: 'u', label: '纳戒决定' });
+    await Promise.resolve();
+    assert.deepEqual(activeDuringCall, ['纳戒决定'], '调用中 label 必须在途');
+    assert.equal(tracked.activeLabels().length, 1);
+    release();
+    assert.equal(await pending, 'done');
+    assert.equal(tracked.activeLabels().length, 0, '收尾后注销');
+    assert.deepEqual(events, ['纳戒决定:start', '纳戒决定:end'], '活动回调按序播报起飞与落地');
+
+    const failEvents = [];
+    const failing = createLlmClient({
+        getSettings: () => ({ llm: { mode: 'custom', baseUrl: 'https://api.example/v1', apiKey: 'sk-secret', model: 'm1' } }),
+        fetchImpl: async () => ({ ok: false, status: 500 }),
+    });
+    failing.onActivity(event => failEvents.push(event.phase));
+    await assert.rejects(failing.complete({ system: 's', user: 'u', label: '世界决定' }), /HTTP 500/, '失败原样上抛');
+    assert.deepEqual(failEvents, ['start', 'end'], '失败也要落地注销，不能把 label 卡死在在途表里');
+    assert.equal(failing.activeLabels().length, 0, '失败后在途表为空');
+
+    const off = tracked.onActivity(() => { throw new Error('监听器炸了也不许影响调用'); });
+    assert.equal(await tracked.complete({ system: 's', user: 'u', label: '记忆决定' }), 'done', '监听器抛错被吞掉，调用照常');
+    off();
+}
+
 // —— 全局统管：开关一开，扩展发起的所有调用（含跟随酒馆、含各功能自带自定义）都走全局连接 ——
 {
     const hits = [];

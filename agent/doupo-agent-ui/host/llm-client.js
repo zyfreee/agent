@@ -384,6 +384,17 @@ export function createLlmClient({ getSettings, getContext, fetchImpl, capture = 
         } catch { /* 无窗口环境忽略 */ }
     }
 
+    /* —— 在途调用跟踪：总控窗实时状态的数据源（label 级，同名并发只记一份）。
+     *  complete 起飞时登记、收尾（成功/失败都算）注销；onActivity 把起飞/落地广播给
+     *  悬浮球，总控窗开着时就地转圈/打勾，不用轮询。 —— */
+    const inFlightLabels = new Set();
+    const activityListeners = new Set();
+    function notifyActivity(label, phase) {
+        for (const listener of activityListeners) {
+            try { listener({ label, phase }); } catch { /* 监听器出错不碍调用本身 */ }
+        }
+    }
+
     /** 这次调用会走哪条连接、哪个模型——只用来给体检记录署名，无副作用。 */
     function describeConnection(args = {}) {
         const overrides = args.overrides && typeof args.overrides === 'object' ? args.overrides : {};
@@ -656,26 +667,33 @@ export function createLlmClient({ getSettings, getContext, fetchImpl, capture = 
         const startedAt = Date.now();
         let lastError = null;
         const { count, waitMs } = emptyRetryPlan();
-        for (let attempt = 0; attempt <= count; attempt++) {
-            if (attempt > 0) await abortableDelay(waitMs, args.signal);
-            try {
-                const reply = await completeInner(args);
-                if (typeof reply === 'string' && reply.trim()) {
-                    recordCall({ at: new Date().toISOString(), label, ok: true, model, ms: Date.now() - startedAt, chars: reply.length, error: attempt > 0 ? `空回重试${attempt}次后成功` : '' });
-                    return reply;
-                }
-                lastError = new Error('模型返回内容为空');
-            } catch (error) {
-                lastError = error;
-                const message = String(error?.message ?? error);
-                if (!message.includes('内容为空')) {
-                    recordCall({ at: new Date().toISOString(), label, ok: false, model, ms: Date.now() - startedAt, chars: 0, error: message.slice(0, 200) });
-                    throw error;
+        inFlightLabels.add(label);
+        notifyActivity(label, 'start');
+        try {
+            for (let attempt = 0; attempt <= count; attempt++) {
+                if (attempt > 0) await abortableDelay(waitMs, args.signal);
+                try {
+                    const reply = await completeInner(args);
+                    if (typeof reply === 'string' && reply.trim()) {
+                        recordCall({ at: new Date().toISOString(), label, ok: true, model, ms: Date.now() - startedAt, chars: reply.length, error: attempt > 0 ? `空回重试${attempt}次后成功` : '' });
+                        return reply;
+                    }
+                    lastError = new Error('模型返回内容为空');
+                } catch (error) {
+                    lastError = error;
+                    const message = String(error?.message ?? error);
+                    if (!message.includes('内容为空')) {
+                        recordCall({ at: new Date().toISOString(), label, ok: false, model, ms: Date.now() - startedAt, chars: 0, error: message.slice(0, 200) });
+                        throw error;
+                    }
                 }
             }
+            recordCall({ at: new Date().toISOString(), label, ok: false, model, ms: Date.now() - startedAt, chars: 0, error: String(lastError?.message ?? lastError).slice(0, 200) });
+            throw lastError;
+        } finally {
+            inFlightLabels.delete(label);
+            notifyActivity(label, 'end');
         }
-        recordCall({ at: new Date().toISOString(), label, ok: false, model, ms: Date.now() - startedAt, chars: 0, error: String(lastError?.message ?? lastError).slice(0, 200) });
-        throw lastError;
     }
 
     /** 体检读数：每次调用一笔（副本，改不动原件）。 */
@@ -772,5 +790,13 @@ export function createLlmClient({ getSettings, getContext, fetchImpl, capture = 
         return { text, claims: Array.isArray(parsed?.claims) ? parsed.claims : [] };
     }
 
-    return Object.freeze({ configured, availableFor, interpret, adjudicateAction, selectSettings, compose, complete, callLog, clearCallLog, isQuietBusy, onQuietIdle });
+    return Object.freeze({
+        configured, availableFor, interpret, adjudicateAction, selectSettings, compose, complete, callLog, clearCallLog, isQuietBusy, onQuietIdle,
+        activeLabels: () => [...inFlightLabels],
+        onActivity: listener => {
+            if (typeof listener !== 'function') return () => {};
+            activityListeners.add(listener);
+            return () => activityListeners.delete(listener);
+        },
+    });
 }

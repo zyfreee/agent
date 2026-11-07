@@ -225,4 +225,34 @@ assert.equal(shouldClearSettleOnGenerationEnd(), false);
     assert.equal(session.finish(first.token, { record: null, text: '' }), true);
     assert.deepEqual(session.begin(empty), { status: 'cached', record: null, text: '' });
 }
+
+// roundKey 放宽复用：重roll/重试里玩家输入没变就复用已完成判定，指纹里的账本漂移不触发重调。
+{
+    const session = createSettleSession();
+    const first = session.begin({ ...context, roundKey: '[5,"出手"]' });
+    assert.equal(first.status, 'started');
+    session.finish(first.token, result);
+    // 指纹变了（账本/楼层细节漂移）但 roundKey 相同 → 复用，不重调。
+    const drifted = { ...context, fingerprint: `${context.fingerprint}drifted`, roundKey: '[5,"出手"]' };
+    assert.deepEqual(session.begin(drifted), { status: 'cached', ...result }, '同轮次重roll直接复用，不重调');
+    // roundKey 变了（新楼层/改输入）→ 正常重跑。
+    const nextRound = session.begin({ ...drifted, roundKey: '[7,"再出手"]' });
+    assert.equal(nextRound.status, 'started', '新一轮玩家输入不复用旧判定');
+    session.finish(nextRound.token, { record: { id: 'N' }, text: 'N' });
+    assert.deepEqual(session.begin({ ...drifted, roundKey: '[7,"再出手"]' }), { status: 'cached', record: { id: 'N' }, text: 'N' });
+    // 聊天不同（scope 不同）永不相复用。
+    const otherChat = session.begin({ ...context, scope: otherScope, roundKey: '[5,"出手"]' });
+    assert.equal(otherChat.status, 'started', '换聊天不复用旧判定');
+    // force 无视放宽键。
+    session.invalidate();
+    const forced = session.begin({ ...context, roundKey: '[5,"出手"]', force: true });
+    assert.equal(forced.status, 'started');
+    session.finish(forced.token, result);
+    assert.equal(session.begin({ ...context, roundKey: '[5,"出手"]', force: true }).status, 'started', 'force 也不走放宽键');
+    // 不传 roundKey 的旧调用方行为不变：只认指纹。
+    const legacy = session.begin({ ...context, fingerprint: `${context.fingerprint}legacy` });
+    assert.equal(legacy.status, 'started');
+    session.finish(legacy.token, result);
+    assert.equal(session.begin({ ...context, fingerprint: `${context.fingerprint}legacy2` }).status, 'started', '未传 roundKey 时指纹不同即重跑');
+}
 console.log('settle session tests passed');
