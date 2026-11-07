@@ -1,4 +1,17 @@
 import { createAgentCoordinator, STATUS_EVENT } from './core/coordinator.js';
+import { makeElement } from './host/dom.js';
+import { roundKeyOf, settleRoundKeyOf, createMemoryRecallCacheKey } from './host/round-key.js';
+import { createCurrentAgentScope, createCaptureAgents } from './host/scope.js';
+import { createSandboxWiring } from './sandbox/wiring.js';
+import { createImpactInjection, createImpactRestore } from './impact/impact-injection.js';
+
+// 作用域与续算凭据（实现在 host/scope.js）：纪元走 getter，续算失效只动 epoch。
+const { captureAgentScope, captureAgentContinuation } = createCaptureAgents({
+    getEpoch: () => agentContinuationEpoch, settleScopeKey, getContext: getHostContext,
+    currentSettings, lastReplyIndex,
+});
+const currentAgentScope = createCurrentAgentScope({ getContext: getHostContext });
+import { renderEquipmentFigure } from './host/equipment-figure.js';
 import { createModuleRunner } from './core/module-runner.js';
 import { createTurnPipeline } from './core/turn-pipeline.js';
 import { createQualityGate } from './core/quality-gate.js';
@@ -125,27 +138,6 @@ let hostQuietIdleUnsubscribe;
 
 // A chat id alone cannot distinguish leaving and returning to the same chat.
 // Keep reply identity too: an edit/swipe/delete must not commit an older reading.
-function captureAgentScope() {
-    const epoch = agentContinuationEpoch;
-    const scope = settleScopeKey();
-    const chat = getHostContext()?.chat;
-    return { current: () => currentSettings().enabled !== false && epoch === agentContinuationEpoch
-        && scope === settleScopeKey() && getHostContext()?.chat === chat };
-}
-
-function captureAgentContinuation() {
-    const epoch = agentContinuationEpoch;
-    const scope = settleScopeKey();
-    const chat = getHostContext()?.chat;
-    const floor = lastReplyIndex(Array.isArray(chat) ? chat : []);
-    const reply = chat?.[floor];
-    const tail = chat?.at(-1);
-    const identity = () => JSON.stringify([chat?.length, reply?.mes, reply?.swipe_id, tail?.mes, tail?.swipe_id]);
-    const captured = identity();
-    return { current: () => currentSettings().enabled !== false && epoch === agentContinuationEpoch && scope === settleScopeKey()
-        && getHostContext()?.chat === chat && chat?.[floor] === reply && chat?.at(-1) === tail && identity() === captured };
-}
-
 function invalidateAgentContinuations() {
     agentContinuationEpoch += 1;
     worldDecideRunning = selfDecideRunning = memoryDecideRunning = impactDecideRunning = false;
@@ -465,7 +457,7 @@ function bindHostLifecycle() {
                 const result = agentImpactRuntime.dropFloor(index, { reason: '楼层已删' });
                 if (result.status === 'applied') {
                     persistImpact();
-                    lastImpactInjection = null;
+                    agentImpactInjection.invalidate();
                     renderImpactLibrary();
                     const words = [];
                     if (result.removed) words.push(`${result.removed} 条影响进了档案`);
@@ -673,6 +665,7 @@ export const agentTurnStages = createTurnStages({
         return {
             maxCandidates: Number.isInteger(setting.maxCandidates) && setting.maxCandidates > 0 ? setting.maxCandidates : 40,
             maxItems: Number.isInteger(setting.maxItems) && setting.maxItems > 0 ? setting.maxItems : 8,
+            // 0 = 不限制（与设置页文案一致）：assemble 对 0/空按“选中几条注几条全文”处理。
             injectionBudget: Number.isInteger(setting.injectionBudget) && setting.injectionBudget > 0 ? setting.injectionBudget : 0,
         };
     },
@@ -1030,26 +1023,8 @@ function persistMemory() {
 let memoryRecallCache = { key: '', ids: [], note: '' };
 let memoryRecallRunning = false;
 
-/** 一轮身份：楼层数 + 最新玩家输入。重 roll 换的只是 AI 楼层内容，这两样不变——
- *  召回缓存与场记挑选签名靠它做到「重 roll 复用备料结果，不重复调用」；玩家改口、
- *  楼层增删、换聊天都会换键，照常重新备料。 */
-function roundKeyOf(chat) {
-    const list = Array.isArray(chat) ? chat : [];
-    let lastUser = '';
-    for (let index = list.length - 1; index >= 0; index -= 1) {
-        const message = list[index];
-        if (message?.is_user === true && typeof message.mes === 'string' && message.mes.trim()) { lastUser = message.mes.trim(); break; }
-    }
-    return [list.length, lastUser];
-}
-
-/** 缓存键 = 聊天作用域 + 一轮身份 + 设置。按一轮缓存：同一轮（含重 roll）命中同一份
- *  召回结果，零调用零等待；玩家发新消息/改口/删楼才重新召回。 */
-function memoryRecallCacheKey(chat) {
-    const list = Array.isArray(chat) ? chat : [];
-    // 键带手改序号：重roll（换 AI 楼层）键不变照旧复用；面板手改账本/手动总结立刻换键重召回。
-    return JSON.stringify([settleScopeKey(), roundKeyOf(list), currentSettings(), agentMemoryRuntime.manualVersion()]);
-}
+// 召回缓存键：作用域 + 一轮身份 + 设置 + 记忆账本手改序号（实现在 host/round-key.js）。
+const memoryRecallCacheKey = createMemoryRecallCacheKey({ settleScopeKey: () => settleScopeKey(), currentSettings: () => currentSettings(), memoryRuntime: () => agentMemoryRuntime });
 
 function setMemoryRecallStatus(message) {
     const panel = typeof document !== 'undefined' ? document.getElementById(SETTINGS_PANEL_ID) : null;
@@ -1824,103 +1799,6 @@ function renderSelfEntryList(container, list) {
 }
 
 /** 纳戒页整页刷新：主角面板（固定标签）、各清单、流水与编辑表单。 */
-// —— 装备人形图：身体各部位就是装备槽，穿戴中的装备按类型挂到对应位置 ——
-
-const BODY_FIGURE_SLOTS = Object.freeze([
-    { id: 'head', label: '头部', icon: '👑', match: type => /盔|冠|帽|簪|头巾|面巾|面纱/.test(type) },
-    { id: 'accessory', label: '饰品', icon: '📿', match: type => /项链|坠|挂件|佩|饰品/.test(type) },
-    { id: 'body', label: '身体', icon: '👘', match: type => /防具|甲|袍|衣|衫|裙|服/.test(type) },
-    { id: 'hands', label: '手部', icon: '🧤', match: type => /手套|护腕|手环|臂环|戒指/.test(type) },
-    { id: 'waist', label: '腰部', icon: '🎒', match: type => /腰带|腰囊|储物袋/.test(type) },
-    { id: 'feet', label: '足部', icon: '👢', match: type => /靴|鞋|足具/.test(type) },
-    { id: 'weapon', label: '武器', icon: '⚔️', match: type => /武器/.test(type) },
-]);
-
-function bodyFigureSlotOf(item) {
-    const type = String(item.type || item.category || '');
-    return BODY_FIGURE_SLOTS.find(slot => slot.match(type));
-}
-
-/** 品级 → 槽位左缘配色：天阶金、地阶紫、玄阶蓝、黄阶翠、其余带“品”的走灰。 */
-function figureGradeClass(grade) {
-    const text = String(grade ?? '');
-    if (/天阶|天品|帝品|圣品/.test(text)) return 'is-gold';
-    if (/地阶|地品|灵器|宝器/.test(text)) return 'is-violet';
-    if (/玄阶|玄品/.test(text)) return 'is-azure';
-    if (/黄阶|黄品/.test(text)) return 'is-jade';
-    if (text.includes('品')) return 'is-dull';
-    return '';
-}
-
-/** 装备 → 身形槽位图：不画人形，格子就按人身上的位置摆——头在上、身体居中（胸甲位）、
-    饰品/武器在肩侧、手/腰在侧下、足在最底；穿戴中的装备名称直接写进对应部位的格子。 */
-function renderEquipmentFigure(equipped, { compact = false, onOpen, onEquip } = {}) {
-    const bySlot = new Map();
-    const loose = [];
-    for (const item of Array.isArray(equipped) ? equipped : []) {
-        if (!item || typeof item !== 'object') continue;
-        const slot = bodyFigureSlotOf(item);
-        if (!slot) { loose.push(item); continue; }
-        if (!bySlot.has(slot.id)) bySlot.set(slot.id, []);
-        bySlot.get(slot.id).push(item);
-    }
-    const wrap = makeElement('div', `dai-body-figure${compact ? ' dai-body-figure--compact' : ''}`);
-    const grid = makeElement('div', 'dai-body-slots');
-    const slotCell = (slot, col, row) => {
-        const items = bySlot.get(slot.id) ?? [];
-        const grade = items.length ? figureGradeClass(items[0].grade) : '';
-        const cell = makeElement('div', `dai-body-slot${items.length ? '' : ' is-empty'}${grade ? ` ${grade}` : ''}`);
-        cell.dataset.slot = slot.id;
-        cell.style.gridColumn = String(col);
-        cell.style.gridRow = String(row);
-        cell.append(makeElement('small', 'dai-body-slot__label', `${slot.label}`));
-        if (!items.length) {
-            if (onEquip) {
-                const add = makeElement('button', 'dai-body-slot__name dai-body-slot__add', '＋ 装备');
-                add.type = 'button';
-                add.title = `从行囊挑一件${slot.label}穿上`;
-                add.addEventListener('click', () => onEquip(slot));
-                cell.append(add);
-            } else {
-                cell.append(makeElement('span', 'dai-body-slot__name', '—'));
-            }
-            return cell;
-        }
-        const names = makeElement('span', 'dai-body-slot__items');
-        items.forEach(item => {
-            // 设置页可点开详情；悬浮球副窗纯展示。
-            const name = makeElement(onOpen ? 'button' : 'b', 'dai-body-slot__name', item.name);
-            if (onOpen) {
-                name.type = 'button';
-                name.title = [item.grade, item.type].filter(Boolean).join('·') || item.name;
-                name.addEventListener('click', () => onOpen(item));
-            }
-            names.append(name);
-        });
-        cell.append(names);
-        return cell;
-    };
-    const slotOf = id => BODY_FIGURE_SLOTS.find(s => s.id === id);
-    // 头在上；饰品/身体/武器一排（身体居中＝穿在人身上）；手/腰一排；足在最下。
-    grid.append(
-        slotCell(slotOf('head'), 2, 1),
-        slotCell(slotOf('accessory'), 1, 2),
-        slotCell(slotOf('body'), 2, 2),
-        slotCell(slotOf('weapon'), 3, 2),
-        slotCell(slotOf('hands'), 1, 3),
-        slotCell(slotOf('waist'), 2, 3),
-        slotCell(slotOf('feet'), 2, 4),
-    );
-    wrap.append(grid);
-    const foot = makeElement('div', 'dai-body-figure__foot');
-    const labeled = equipped.filter(item => item && typeof item === 'object');
-    foot.textContent = labeled.length
-        ? `穿戴中 ${labeled.length} 件${loose.length ? `（另有 ${loose.length} 件类型未定位，列表里看）` : ''}`
-        : '还没有穿戴任何装备。';
-    wrap.append(foot);
-    return wrap;
-}
-
 /** 空槽位 → 从行囊挑一件能穿到这个部位的备用装备（类别对口：武器/防具/饰品）。 */
 function openSelfEquipPicker(panel, slot) {
     const snapshot = agentSelfRuntime.snapshot();
@@ -2161,17 +2039,6 @@ function worldDay() {
     return Number.isInteger(clock?.day) && clock.day > 0 ? clock.day : 1;
 }
 
-/** 影响库跟聊天走：换聊天读那一份，读不到就按空库开局，并把库内天数对齐世界时钟。 */
-function restoreImpactFromChat() {
-    syncImpactLimits();
-    lastImpactInjection = null; // 换聊天/重读存档后，上一轮挑好的注入作废
-    const record = hostStorage?.impactState?.();
-    const result = agentImpactRuntime.reset();
-    if (record?.status === 'ready' && record.value) return agentImpactRuntime.restore(record.value);
-    // 空 apply 只做两件事：把库内天数对齐世界时钟、顺手结算已经过期的发酵日。
-    agentImpactRuntime.apply([], { source: 'manual', day: worldDay() });
-    return result;
-}
 
 function persistImpact() {
     const result = hostStorage?.saveImpactState?.(agentImpactRuntime.snapshot());
@@ -3364,9 +3231,6 @@ function impactConversation(chat, limit = 6) {
     return { draft, floors };
 }
 
-let lastImpactInjection = null; // { signature, text, status, via, usedIds }：按一轮缓存，重 roll 复用不重挑
-/** 最近一本轮真的进了正文的编号：账本页据此标“本轮已注入”。 */
-let lastInjectedIds = [];
 // 账本页面分页：库不设上限，页面上先画这么多，点“显示更多”再续，避免一次塞几千条把面板拖慢。
 let impactShown = 100;
 let impactArchiveShown = 60;
@@ -3397,80 +3261,21 @@ async function pickImpactsForPrompt({ snapshot, settings, chat }) {
     return parseImpactSelect(raw, { records: snapshot.records });
 }
 
-/**
- * 生成前把“本局世界线被改成什么样”写进独立通道；库是空的就不占预算。
- * 默认先让模型挑“这一幕用得上”的（LLM 决定），挑不出来或模型不可用就按分量/日期脚本兜底，
- * 保证正文永远拿得到世界线，而不会因为一次接口失败就断掉。
- */
-async function writeImpactInjectionForPrompt({ chat } = {}) {
-    const continuation = captureAgentContinuation();
-    const settings = impactSettings();
-    if (!settings.enabled || !settings.inject) { agentImpactPromptInjection.clear(); return { status: 'disabled' }; }
-    const probe = agentImpactPromptInjection.inspect();
-    if (probe.status !== 'ready') return probe;
-    const snapshot = agentImpactRuntime.snapshot();
-    if (!snapshot.records.length) { agentImpactPromptInjection.clear(); return { status: 'empty' }; }
-    const day = worldDay();
-    // 没传聊天就现取：公开入口（doupoAgent.impactInjection）与真实生成路径必须看同一份对话，
-    // 否则“玩家这一轮说了什么”永远为空，挑选员会拿着上一幕的缓存一直用下去。
-    const sourceChat = Array.isArray(chat) ? chat : (getHostContext()?.chat ?? []);
-    const { draft, floors } = impactConversation(sourceChat);
-    const plan = impactModelPlan(settings);
-    // 签名 = 轮次键 + 手改序号：重roll时模型落账（decide/reply）不动手改序号 → 复用挑选；
-    // 面板手改账本（manual）序号立刻变 → 同一轮内也强制重挑，注入不再拿旧文案。
-    const signatureOf = () => JSON.stringify([settleScopeKey(), roundKeyOf(sourceChat), currentSettings(), agentImpactRuntime.manualVersion()]);
-    const signature = signatureOf();
-    if (lastImpactInjection && lastImpactInjection.signature === signature) {
-        if (!lastImpactInjection.text) { agentImpactPromptInjection.clear(); return { status: lastImpactInjection.status, via: lastImpactInjection.via, usedIds: [] }; }
-        lastInjectedIds = lastImpactInjection.usedIds ?? [];
-        try { renderImpactLibrary(); } catch { /* 面板没开就算了 */ }
-        return { ...agentImpactPromptInjection.write({ text: lastImpactInjection.text }, { depth: injectionSettings().depth, maxChars: 0 }), usedIds: lastInjectedIds };
-    }
-    let text = '';
-    let usedIds = [];
-    let via = 'script';
-    let note = '';
-    if (settings.injectSmart) {
-        try {
-            const picked = await pickImpactsForPrompt({ snapshot, settings, chat: sourceChat });
-            if (!continuation.current() || signature !== signatureOf()) return { status: 'stale' };
-            if (picked.status === 'ok') {
-                const detail = buildImpactInjectionFromPicksDetail(snapshot.records, picked.picks, { maxChars: settings.injectBudget, maxLines: settings.injectMaxLines, day });
-                text = detail.text;
-                usedIds = detail.usedIds;
-                via = 'llm';
-                note = picked.note;
-            } else if (picked.status === 'empty') {
-                // 模型明确说“这一幕用不上旧账”：这一轮不注入，而不是硬塞不相干的影响。
-                lastImpactInjection = { signature, text: '', status: 'skipped', via: 'llm', note: picked.note, usedIds: [] };
-                lastInjectedIds = [];
-                agentImpactPromptInjection.clear();
-                return { status: 'skipped', via: 'llm', note: picked.note, usedIds: [] };
-            }
-        } catch (error) {
-            registerPregenFailure('场记挑选', error?.message ?? error);
-            /* 挑选失败回落到脚本挑选；拦截器会因备料失败终止本次正文调用 */
-        }
-    }
-    if (!continuation.current() || signature !== signatureOf()) return { status: 'stale' };
-    if (!text) {
-        const detail = buildImpactInjectionDetail(snapshot.records, { maxChars: settings.injectBudget, maxLines: 10, day });
-        text = detail.text;
-        usedIds = detail.usedIds;
-    }
-    if (!text) {
-        lastImpactInjection = { signature, text: '', status: 'empty', via, usedIds: [] };
-        lastInjectedIds = [];
-        agentImpactPromptInjection.clear();
-        return { status: 'empty', via, usedIds: [] };
-    }
-    lastImpactInjection = { signature, text, status: 'injected', via, note, usedIds };
-    lastInjectedIds = usedIds;
-    // 预算已在生成文本时截过，这里不再二次截断，免得多出“已按预算截断”的尾巴。
-    const written = agentImpactPromptInjection.write({ text }, { depth: injectionSettings().depth, maxChars: 0 });
-    try { renderImpactLibrary(); } catch { /* 面板没开就算了 */ }
-    return { ...written, usedIds };
-}
+
+// 世界影响注入与恢复（实现在 impact/impact-injection.js）：状态收在闭包里，
+// 面板与门面通过 injectedIds()/lastState()/invalidate() 读写。
+const agentImpactInjection = createImpactInjection({
+    capture: captureAgentContinuation, impactSettings, channel: agentImpactPromptInjection,
+    runtime: agentImpactRuntime, worldDay, getContext: getHostContext, conversation: impactConversation,
+    modelPlan: impactModelPlan, scopeKey: settleScopeKey, roundKeyOf, currentSettings, injectionSettings,
+    pick: pickImpactsForPrompt, buildFromPicks: buildImpactInjectionFromPicksDetail,
+    buildFallback: buildImpactInjectionDetail, registerFailure: registerPregenFailure,
+    renderLibrary: renderImpactLibrary,
+});
+const restoreImpactFromChat = createImpactRestore({
+    syncLimits: syncImpactLimits, storage: () => hostStorage, runtime: agentImpactRuntime,
+    worldDay, injection: agentImpactInjection,
+});
 
 /** 上一轮卷外搜索的现场，只给“运行状态”卡看，不参与逻辑。 */
 let lastLookupInfo = null;
@@ -3487,7 +3292,7 @@ async function prepareInjectionForPrompt({ chat } = {}) {
     const continuation = captureAgentContinuation();
     // 世界通道先走：它不依赖原著设定的开关与预算，两路互不阻塞。
     try { writeWorldInjectionForPrompt(); } catch { /* 世界注入失败不影响原著设定注入 */ }
-    try { await writeImpactInjectionForPrompt({ chat }); } catch { /* 影响库注入失败不影响正文生成 */ }
+    try { await agentImpactInjection.write({ chat }); } catch { /* 影响库注入失败不影响正文生成 */ }
     if (!continuation.current()) return { status: 'stale' };
     // 人物档案与影响库同属“这一局已经发生成什么样”，排在原著设定之前写，预算各算各的。
     try { writeNpcLedgerInjectionForPrompt(); } catch { /* 人物簿注入失败不影响正文生成 */ }
@@ -3796,22 +3601,6 @@ let pregenFailures = [];
 
 function registerPregenFailure(channel, reason) {
     pregenFailures.push({ channel, reason: String(reason ?? '').slice(0, 160) });
-}
-
-/**
- * 结算的轮次键：只取结算真正会读的那段历史（用户楼层及之前）的逐层内容。
- * 重roll换的是用户输入之后的正文——结算从不读它，键不变，直接复用判定；
- * 改历史楼层或改输入则键变，正常重跑。单槽内存缓存，直接存 JSON，不做哈希。
- */
-function settleRoundKeyOf(chat, userFloor) {
-    const list = Array.isArray(chat) ? chat : [];
-    const visible = list.slice(0, Math.max(0, userFloor + 1));
-    return JSON.stringify(visible.map(message => [
-        message?.is_user === true,
-        message?.is_system === true,
-        typeof message?.mes === 'string' ? message.mes : '',
-        message?.swipe_id ?? null,
-    ]));
 }
 
 /** SillyTavern calls this global (declared in manifest.json) before every real generation. */
@@ -4903,13 +4692,13 @@ export const doupoAgent = Object.freeze({
     facts: agentFactsLibrary,
     impacts: agentImpactRuntime,
     impactRuntime: agentImpactRuntime,
-    impactInjection: options => writeImpactInjectionForPrompt(typeof options === 'object' && options ? options : {}),
+    impactInjection: options => agentImpactInjection.write(typeof options === 'object' && options ? options : {}),
     settleAdjudicate: options => writeSettleAdjudicationForPrompt(typeof options === 'object' && options ? options : {}),
     impactDecide: options => runImpactDecision(options),
     impactRestoreFromChat: () => restoreImpactFromChat(),
     impactStatus: () => agentImpactRuntime.status(),
     impactArchived: () => agentImpactRuntime.archived(),
-    impactInjectedIds: () => lastInjectedIds.slice(),
+    impactInjectedIds: () => agentImpactInjection.injectedIds(),
     impactLast: () => lastImpactResult,
     actions: agentActionResolver,
     npcs: agentNpcDecisionGuard,
@@ -5028,13 +4817,6 @@ function updateCoordinatorTask(taskId, status, fields) {
 
 function text(value, fallback = '') {
     return typeof value === 'string' ? value : fallback;
-}
-
-function makeElement(tag, className, value) {
-    const element = document.createElement(tag);
-    if (className) element.className = className;
-    if (value) element.textContent = value;
-    return element;
 }
 
 /* ── 弹窗：所有“添加 / 编辑 / 看详情”的表单都收进一个居中弹层，页面只留按钮。 ──
@@ -6432,6 +6214,14 @@ const SANDBOX_MODE_MESSAGES = Object.freeze({
     nothingPending: '没有待确认的口径切换。',
 });
 
+// 沙盒口径接线（实现在 sandbox/wiring.js）：运行时与宿主存储注入，测试直接喂桩。
+const { confirmSandboxSwitch, persistSandboxMode, restoreSandboxFromChat, sandboxModeActive } = createSandboxWiring({
+    scopeOf: currentAgentScope, runtime: agentSandboxMode, hostStorage: () => hostStorage, currentSettings,
+    coordinator: agentCoordinator, stateStore: agentStateStore, invalidateContinuations: invalidateAgentContinuations,
+    setSandboxStatus, messages: SANDBOX_MODE_MESSAGES, syncPendingRow: syncSandboxPendingRow,
+    renderRuntime: renderRuntimeMode, getPanel: () => document.getElementById(SETTINGS_PANEL_ID),
+});
+
 function setSandboxStatus(text) {
     const element = document.querySelector(`#${SETTINGS_PANEL_ID} [data-sandbox-status]`);
     if (element) element.textContent = text;
@@ -6452,25 +6242,6 @@ function syncSandboxPendingRow() {
     const record = scope ? agentSandboxMode.read(scope) : { status: 'empty' };
     const desired = settings.enableSandboxMode ? 'sandbox' : 'mainline';
     row.hidden = !(record.status === 'ready' && record.mode !== desired && settings.sandbox.allowMidgameSwitch === true);
-}
-
-async function confirmSandboxSwitch() {
-    const scope = currentAgentScope();
-    const task = agentCoordinator.list().reverse().find(item => item.sessionId === scope.sessionId && item.branchId === scope.branchId);
-    const stateVersion = agentStateStore.read(scope)?.stateVersion;
-    if (!task?.taskId || typeof stateVersion !== 'string' || !stateVersion.trim()) {
-        setSandboxStatus(SANDBOX_MODE_MESSAGES.unavailable);
-        return { status: 'unavailable' };
-    }
-    const result = agentSandboxMode.confirm({ ...scope, taskId: task.taskId, stateVersion, reason: '设置页确认切换' });
-    if (result.status === 'switched') {
-        invalidateAgentContinuations();
-        const saved = await persistSandboxMode();
-        setSandboxStatus(saved.status === 'saved' ? SANDBOX_MODE_MESSAGES.switched : SANDBOX_MODE_MESSAGES.failed);
-    } else setSandboxStatus(result.reason === 'stale_switch_context' ? '当前任务或状态已变化，请重新申请口径切换。' : SANDBOX_MODE_MESSAGES.nothingPending);
-    syncSandboxPendingRow();
-    renderRuntimeMode(document.getElementById(SETTINGS_PANEL_ID));
-    return result;
 }
 
 function cancelSandboxSwitch() {
@@ -8009,49 +7780,6 @@ export function updateAgentTask(taskId, status, fields) {
     return agentCoordinator.update(taskId, status, fields);
 }
 
-function currentAgentScope() {
-    const context = getHostContext();
-    const chatId = typeof context?.chatId === 'string' && context.chatId.trim() ? context.chatId.trim() : '';
-    const branchId = typeof context?.chatMetadata?.branch_id === 'string' && context.chatMetadata.branch_id.trim() ? context.chatMetadata.branch_id.trim() : 'main';
-    return { sessionId: chatId || 'current-chat', branchId };
-}
-
-/** 沙盒口径是否生效：正式模式记录优先（中途切换要确认，记录没换口径就没换），没有记录才按设置开关。 */
-function persistSandboxMode() {
-    const scope = currentAgentScope();
-    const saved = hostStorage?.chatState?.();
-    const value = saved?.status === 'ready' && saved.value && typeof saved.value === 'object' ? { ...saved.value } : {};
-    return Promise.resolve(hostStorage?.saveChatState?.({ ...value, sandboxMode: agentSandboxMode.snapshot(scope) }) ?? { status: 'unavailable' })
-        .catch(error => ({ status: 'failed', reason: String(error?.message ?? error) }));
-}
-
-function restoreSandboxFromChat() {
-    const scope = currentAgentScope();
-    const saved = hostStorage?.chatState?.();
-    agentSandboxMode.restore(null, scope);
-    return agentSandboxMode.restore(saved?.status === 'ready' ? saved.value?.sandboxMode : null, scope);
-}
-
-function sandboxModeActive() {
-    const scope = currentAgentScope();
-    let record = agentSandboxMode.read(scope);
-    if (record.status !== 'ready') {
-        const saved = hostStorage?.chatState?.();
-        if (saved?.status === 'ready' && saved.value?.sandboxMode) {
-            const restored = agentSandboxMode.restore(saved.value.sandboxMode, scope);
-            if (restored.status === 'rejected') return false;
-            record = agentSandboxMode.read(scope);
-        }
-    }
-    if (record.status !== 'ready') {
-        const settings = currentSettings();
-        record = agentSandboxMode.sync({ ...scope, enabled: settings.enableSandboxMode === true,
-            inertia: settings.sandbox?.inertia, canonCharactersAutonomous: settings.sandbox?.canonCharactersAutonomous });
-        if (record.status === 'adopted') void persistSandboxMode();
-    }
-    return record.mode === 'sandbox';
-}
-
 const STATE_LABELS = {
     player: { hp: '气血', hpMax: '气血上限', douqi: '斗气', gold: '金币', reputation: '声望', realm: '境界', location: '位置' },
     world: { day: '天数', weather: '天气', region: '区域' },
@@ -8946,7 +8674,7 @@ async function saveImpactForm(panel) {
     highlight();
     if (returnToLedger) setTimeout(highlight, 0);
     setImpactStatus(ref ? `已改写 #${id}，下一轮正文按新内容注入。` : `已记下 #${id}：${saved?.title ?? read('title')}`);
-    lastImpactInjection = null; // 手动改过库，下一轮重新挑
+    agentImpactInjection.invalidate(); // 手动改过库，下一轮重新挑
     return { status: 'applied', id };
 }
 
@@ -8963,7 +8691,7 @@ async function runImpactOp(panel, op, successText) {
         setImpactStatus(IMPACT_REASON_TEXT[reason] ?? `操作被拒绝（${reason}）。`);
         return { status: 'rejected', reason };
     }
-    lastImpactInjection = null;
+    agentImpactInjection.invalidate();
     renderImpactLibrary(panel);
     setImpactStatus(successText);
     return { status: 'applied' };
@@ -9104,7 +8832,7 @@ function renderImpactRecent(panel) {
         list.replaceChildren(makeElement('li', 'dai-impact-empty', '还没有影响记录。玩家做出会改变世界的事之后，记录员会把它们记在这里。'));
         return;
     }
-    const injected = new Set(lastInjectedIds);
+    const injected = new Set(agentImpactInjection.injectedIds());
     list.replaceChildren(...recent.map(record => buildImpactItem(record, { injected: injected.has(record.id), compact: true })));
     if (all.length > recent.length) {
         const hint = makeElement('li', 'dai-impact-empty', `只显示最近 ${recent.length} 条（共 ${all.length} 条）；全部记录与筛选在「世界账本」里。`);
@@ -9142,10 +8870,11 @@ function renderImpactLibrary(panel) {
     // 页面顶部状态行：账本规模 + 上一轮注入走了哪条路、挑了几条，功能一眼可见。
     const statsBox = target?.querySelector?.('[data-impact-stats]');
     if (statsBox) {
-        const via = lastImpactInjection
-            ? (lastImpactInjection.status === 'injected'
-                ? `上一轮已注入 ${Array.isArray(lastInjectedIds) ? lastInjectedIds.length : 0} 条（${lastImpactInjection.via === 'llm' ? '模型挑选' : '按分量直取'}）`
-                : lastImpactInjection.status === 'skipped' ? '上一轮模型判断这一幕用不上旧账，未注入' : '上一轮没有可注入的影响')
+        const lastState = agentImpactInjection.lastState();
+        const via = lastState
+            ? (lastState.status === 'injected'
+                ? `上一轮已注入 ${lastState.usedIds?.length ?? 0} 条（${lastState.via === 'llm' ? '模型挑选' : '按分量直取'}）`
+                : lastState.status === 'skipped' ? '上一轮模型判断这一幕用不上旧账，未注入' : '上一轮没有可注入的影响')
             : '本轮还没挑过注入；生成前会自动挑。';
         statsBox.textContent = via;
     }
@@ -9164,7 +8893,7 @@ function renderImpactLibrary(panel) {
         library.replaceChildren(makeElement('li', 'dai-impact-empty', status.total ? '这个筛选里没有记录。' : '还没有影响记录。'));
         return;
     }
-    const injected = new Set(lastInjectedIds);
+    const injected = new Set(agentImpactInjection.injectedIds());
     const chatLength = getHostContext()?.chat?.length ?? null;
     library.replaceChildren(...records.slice(0, impactShown).map(record => buildImpactItem(record, {
         injected: injected.has(record.id),

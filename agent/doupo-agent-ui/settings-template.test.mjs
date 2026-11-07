@@ -163,16 +163,19 @@ assert.match(entry, /getElementById\('chat'\)/, '接力终点必须是主界面�
 assert.doesNotMatch(styleCss, /overscroll-behavior:\s*contain/, '滚动盒不许 contain 锁链——滑到头要交出去');
 // 装备槽位图：不画人形，格子按人身上的位置摆（头在上/身体居中/足在下），
 // 装备名称直接写进部位格；容器不许整体 aria-hidden——里面是可点的装备名。
-assert.match(entry, /dai-body-slots/, '装备槽位图网格缺失');
-assert.match(entry, /function figureGradeClass/, '槽位图缺少品级配色函数');
-assert.match(entry, /dai-body-slot__label/, '槽位缺少部位标签');
-assert.doesNotMatch(entry, /dai-body-figure__stage|BODY_FIGURE_ANCHORS|dai-body-figure__ghost/, '人形剪影时代的舞台/锚点/浮层应已删除');
-assert.doesNotMatch(entry, /createElementNS\('http:\/\/www\.w3\.org\/2000\/svg'/, '人形 SVG 已删，不该再画');
-assert.doesNotMatch(entry, /data-self-figure[^>]*aria-hidden/, '槽位图容器不许整体 aria-hidden（里面是可点装备名）');
+// 立绘本体已摘进 host/equipment-figure.js：形状断言改读那份源码，index.js 只留接线与弹窗。
+const figureSource = await readFile(new URL('./host/equipment-figure.js', import.meta.url), 'utf8');
+assert.match(figureSource, /dai-body-slots/, '装备槽位图网格缺失');
+assert.match(figureSource, /function figureGradeClass/, '槽位图缺少品级配色函数');
+assert.match(figureSource, /dai-body-slot__label/, '槽位缺少部位标签');
+assert.match(figureSource, /dai-body-slot__add/, '空槽位缺少「＋ 装备」入口');
+assert.doesNotMatch(figureSource, /dai-body-figure__stage|BODY_FIGURE_ANCHORS|dai-body-figure__ghost/, '人形剪影时代的舞台/锚点/浮层应已删除');
+assert.doesNotMatch(figureSource, /createElementNS\('http:\/\/www\.w3\.org\/2000\/svg'/, '人形 SVG 已删，不该再画');
+assert.doesNotMatch(figureSource, /data-self-figure[^>]*aria-hidden/, '槽位图容器不许整体 aria-hidden（里面是可点装备名）');
+assert.match(entry, /renderEquipmentFigure/, 'index.js 必须接线装备立绘渲染');
 assert.match(styleCss, /\.dai-body-slots/, '槽位网格样式缺失');
 assert.match(styleCss, /\.dai-body-slot\.is-gold/, '品级染缘样式缺失');
 // 空槽位＝装备入口：设置页点「＋ 装备」要从行囊挑对口备用装备；悬浮球纯展示没有这个按钮。
-assert.match(entry, /dai-body-slot__add/, '空槽位缺少「＋ 装备」入口');
 assert.match(entry, /function openSelfEquipPicker/, '缺少行囊挑选弹窗');
 assert.match(entry, /'武器': 'weapon', '防具': 'body', '饰品': 'accessory'/, '挑选弹窗要按类别对准部位');
 // 悬浮球上的「Agent 系统」图标＝设置面板的入口；左上角旧按钮退役（挂载函数删除，面板创建不能跟着没）。

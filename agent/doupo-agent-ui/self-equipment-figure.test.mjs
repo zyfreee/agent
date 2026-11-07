@@ -1,24 +1,15 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { runInNewContext } from 'node:vm';
-
-// 归一化行尾：Windows 检出（autocrlf）会把源码变 CRLF，源码文本断言按 LF 写，先统一。
-const source = readFileSync(new URL('./index.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
-const start = 'const BODY_FIGURE_SLOTS = Object.freeze([';
-const end = '/** 空槽位 →';
-for (const marker of [start, end]) assert.equal(source.split(marker).length, 2, `unique extraction boundary: ${marker}`);
-const figureSource = source.slice(source.indexOf(start), source.indexOf(end));
-assert.ok(figureSource.trimEnd().endsWith('return wrap;\n}'));
-for (const name of ['figureGradeClass', 'renderEquipmentFigure']) assert.equal(figureSource.split(`function ${name}(`).length, 2);
-const elementSource = source.match(/^function makeElement\(tag, className, value\) \{[\s\S]*?^\}/gm);
-assert.equal(elementSource?.length, 1, 'extract the actual makeElement exactly once');
-const document = { createElement: tag => ({
+// 不再切源码：装备立绘已摘成 host/equipment-figure.js 纯模块，这里直接 import，
+// 喂装备数据、比对着渲染出的 DOM 输出——函数怎么写、住在哪里，测试一概不关心。
+const fakeDocument = { createElement: tag => ({
     tag, className: '', textContent: '', dataset: {}, style: {}, children: [], events: {},
     append(...nodes) { this.children.push(...nodes); },
     addEventListener(name, callback) { this.events[name] = callback; },
     click() { this.events.click?.(); },
 }) };
-const render = runInNewContext(`${elementSource[0]}\n${figureSource}\nrenderEquipmentFigure`, { document });
+globalThis.document = fakeDocument;
+const { renderEquipmentFigure } = await import('./host/equipment-figure.js');
+const render = (equipped, options) => renderEquipmentFigure(equipped, options);
 const walk = node => [node, ...node.children.flatMap(walk)];
 const text = node => node.textContent + node.children.map(text).join('');
 const single = { name: '练习剑', type: '武器', grade: '玄阶', category: '防具' };

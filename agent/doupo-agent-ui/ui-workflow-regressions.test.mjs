@@ -136,7 +136,7 @@ test('OPT-102 saved impact clears every excluding filter', async () => {
     const status = {}; const form = { dataset: {}, querySelector: () => status };
     const panel = { querySelector: key => key === '[data-impact-form]' ? form : inputs[key] ?? null };
     const saved = { id: 'i1', state: 'active', weight: 'minor', kind: 'direct', title: 'saved' };
-    const env = { impactFormField: () => ({ value: 'draft' }), agentImpactRuntime: { apply: () => ({ status: 'applied', applied: [{ id: 'i1' }] }), list: () => [saved] }, worldDay: () => 1, persistImpact: async () => ({ status: 'saved' }), captureAgentContinuation: () => ({ current: () => true }), awaitPanelPersistence: async () => true, impactReturnToLedger: false, closeImpactForm() {}, renderImpactLibrary() {}, setImpactStatus() {}, setTimeout() {} };
+    const env = { agentImpactInjection: { invalidate() {}, injectedIds: () => [], lastState: () => null }, impactFormField: () => ({ value: 'draft' }), agentImpactRuntime: { apply: () => ({ status: 'applied', applied: [{ id: 'i1' }] }), list: () => [saved] }, worldDay: () => 1, persistImpact: async () => ({ status: 'saved' }), captureAgentContinuation: () => ({ current: () => true }), awaitPanelPersistence: async () => true, impactReturnToLedger: false, closeImpactForm() {}, renderImpactLibrary() {}, setImpactStatus() {}, setTimeout() {} };
     env.awaitPanelPersistence = load('awaitPanelPersistence');
     env.panelMutation = load('panelMutation', env);
     await load('saveImpactForm', env)(panel);
@@ -218,7 +218,7 @@ test('OPT-040 self quantity failed-save receipt never closes modal or overwrites
 });
 test('OPT-040 impact failed-save form remains open; retry does not record again', async () => {
     let writes = 0, saves = 0, closed = 0; const inputs = { title: '标题', detail: '正文', kind: 'direct', weight: 'minor' }; const status = {}; const form = { dataset: {}, querySelector: () => status }; const panel = { querySelector: key => key === '[data-impact-form]' ? form : null };
-    const env = { impactFormField: (form, key) => ({ value: inputs[key] ?? '' }), agentImpactRuntime: { apply() { writes++; return { status: 'applied', applied: [{ id: 'i1' }] }; }, list: () => [{ id: 'i1', state: 'active', title: '标题' }] }, persistImpact: () => Promise.resolve({ status: ++saves === 1 ? 'failed' : 'saved' }), worldDay: () => 1, setImpactStatus() {}, closeImpactForm() { closed++; }, impactReturnToLedger: false, renderImpactLibrary() {}, setTimeout() {}, IMPACT_REASON_TEXT: {} };
+    const env = { agentImpactInjection: { invalidate() {}, injectedIds: () => [], lastState: () => null }, impactFormField: (form, key) => ({ value: inputs[key] ?? '' }), agentImpactRuntime: { apply() { writes++; return { status: 'applied', applied: [{ id: 'i1' }] }; }, list: () => [{ id: 'i1', state: 'active', title: '标题' }] }, persistImpact: () => Promise.resolve({ status: ++saves === 1 ? 'failed' : 'saved' }), worldDay: () => 1, setImpactStatus() {}, closeImpactForm() { closed++; }, impactReturnToLedger: false, renderImpactLibrary() {}, setTimeout() {}, IMPACT_REASON_TEXT: {} };
     env.awaitPanelPersistence = load('awaitPanelPersistence'); env.panelMutation = load('panelMutation', env);
     const run = load('saveImpactForm', env);
     assert.equal((await run(panel)).status, 'save_failed'); assert.equal(closed, 0); assert.match(status.textContent, /未保存/);

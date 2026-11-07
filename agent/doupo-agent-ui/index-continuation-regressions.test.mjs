@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
+import { roundKeyOf, createMemoryRecallCacheKey } from './host/round-key.js';
+import { createImpactInjection } from './impact/impact-injection.js';
 
 // 归一化行尾：Windows 检出（autocrlf）会把源码变 CRLF，切片标记里的 \n\n 会失配，先统一成 LF。
+// （已搬进纯模块的函数——轮次键、影响注入——直接 import 真模块，不再切片。）
 const source = readFileSync(new URL('./index.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const extract = (start, end) => {
     assert.equal(source.split(start).length, 2, `unique ${start}`);
@@ -12,8 +15,6 @@ const extract = (start, end) => {
 };
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 const prepareCode = extract('async function prepareInjectionForPrompt(', '\n// —— 行动结算·最终判定');
-// 签名/缓存键都引用 roundKeyOf：把真实源码一起切进沙箱，不造假桩（键逻辑变了测试能逮住）。
-const roundKeyCode = extract('/** 一轮身份：楼层数 + 最新玩家输入', 'function memoryRecallCacheKey');
 function prepareHarness() {
     const pending = deferred(), writes = [], inputs = [];
     let current = true;
@@ -46,31 +47,30 @@ function prepareHarness() {
     assert.equal((await task).status, 'written');
 }
 {
-    const code = extract('async function writeImpactInjectionForPrompt(', '\n/** 上一轮卷外搜索');
+    // 影响注入已是 impact/impact-injection.js 工厂：喂桩直接测“等待期失效不落通道”。
     const pending = deferred(), writes = [], snapshot = { version: 1, records: [{ id: 'i1' }] };
     let current = true;
-    const run = runInNewContext(`${roundKeyCode};${code}; writeImpactInjectionForPrompt`, {
-        captureAgentContinuation: () => ({ current: () => current }), currentSettings: () => ({ enabled: true }),
+    const injection = createImpactInjection({
+        capture: () => ({ current: () => current }), currentSettings: () => ({ enabled: true }),
         impactSettings: () => ({ enabled: true, inject: true, injectSmart: true, injectBudget: 500 }),
-        agentImpactPromptInjection: { inspect: () => ({ status: 'ready' }), clear() {}, write: value => { writes.push(value); return { status: 'written' }; } },
-        agentImpactRuntime: { snapshot: () => snapshot, manualVersion: () => 0 }, worldDay: () => 1, getHostContext: () => ({ chat: [] }),
-        impactConversation: chat => ({ draft: chat[0]?.mes ?? '', floors: chat }), impactModelPlan: () => ({ inject: {} }),
-        pickImpactsForPrompt: () => pending.promise, lastImpactInjection: null, lastInjectedIds: [],
-        buildImpactInjectionFromPicksDetail: () => ({ text: 'A private impact', usedIds: ['i1'] }),
-        buildImpactInjectionDetail: () => ({ text: 'A fallback', usedIds: ['i1'] }), injectionSettings: () => ({ depth: 0 }), renderImpactLibrary() {},
-        settleScopeKey: () => 'A', agentWorldRuntime: { snapshot: () => ({ day: 1 }) }, agentContinuationEpoch: 0,
+        channel: { inspect: () => ({ status: 'ready' }), clear() {}, write: value => { writes.push(value); return { status: 'written' }; } },
+        runtime: { snapshot: () => snapshot, manualVersion: () => 0 }, worldDay: () => 1, getContext: () => ({ chat: [] }),
+        conversation: chat => ({ draft: chat[0]?.mes ?? '', floors: chat }), modelPlan: () => ({}),
+        pick: () => pending.promise, buildFromPicks: () => ({ text: 'A private impact', usedIds: ['i1'] }),
+        buildFallback: () => ({ text: 'A fallback', usedIds: ['i1'] }), injectionSettings: () => ({ depth: 0 }), renderLibrary() {},
+        scopeKey: () => 'A', roundKeyOf, registerFailure() {},
     });
-    const task = run({ chat: [{ mes: 'A private story' }] });
+    const task = injection.write({ chat: [{ mes: 'A private story' }] });
     current = false; pending.resolve({ status: 'ok', picks: ['i1'] });
     assert.equal((await task).status, 'stale');
     assert.equal(writes.length, 0, 'old impact selection must not write new chat');
 }
 {
-    const code = extract('function memoryRecallCacheKey(', '\nfunction setMemoryRecallStatus');
+    // 召回缓存键已是 host/round-key.js 工厂：键构成直接喂依赖验证。
     let scope = 'A', manual = 0; const settings = { memory: { recallPrompt: 'one' } };
-    const key = runInNewContext(`${roundKeyCode};${code}; memoryRecallCacheKey`, {
+    const key = createMemoryRecallCacheKey({
         settleScopeKey: () => scope, currentSettings: () => settings,
-        agentMemoryRuntime: { manualVersion: () => manual },
+        memoryRuntime: () => ({ manualVersion: () => manual }),
     });
     const chat = [{ is_user: true, mes: 'input' }, { mes: 'same length A' }], first = key(chat);
     scope = 'B'; assert.notEqual(key(chat), first, 'cache binds chat scope'); scope = 'A';

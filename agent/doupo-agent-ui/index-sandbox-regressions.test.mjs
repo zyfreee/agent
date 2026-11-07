@@ -1,14 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readFileSync } from 'node:fs';
-import { runInNewContext } from 'node:vm';
 import { createSandboxMode } from './sandbox/sandbox-mode.js';
+import { createSandboxWiring } from './sandbox/wiring.js';
+import { createCurrentAgentScope } from './host/scope.js';
 
-// 归一化行尾：Windows 检出（autocrlf）会把源码变 CRLF，源码文本断言按 LF 写，先统一。
-const source = readFileSync(new URL('./index.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
-const names = ['currentAgentScope', 'sandboxModeActive', 'confirmSandboxSwitch', 'persistSandboxMode', 'restoreSandboxFromChat'];
-const extracted = names.map(name => source.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`))?.[0]).filter(Boolean);
-for (const name of names.slice(0, 3)) assert.ok(extracted.some(code => code.includes(`function ${name}(`)), `actual index function ${name}`);
+// 不再切源码：沙盒接线已摘成 sandbox/wiring.js 依赖注入工厂，这里直接喂桩比行为。
 const scopeA = { sessionId: 'A', branchId: 'main' };
 const scopeB = { sessionId: 'B', branchId: 'fork' };
 const scopeKey = scope => `${scope.sessionId}|${scope.branchId}`;
@@ -39,8 +35,14 @@ function harness({ scope = scopeA, cachedScope = scope, version = 'v-live', task
         SETTINGS_PANEL_ID: 'test-panel', document: { getElementById: () => null },
         SANDBOX_MODE_MESSAGES: { unavailable: 'unavailable', switched: 'switched', nothingPending: 'nothingPending', stale: 'stale', failed: 'failed' },
     };
-    const exports = names.map(name => `${name}: typeof ${name} === 'function' ? ${name} : undefined`).join(',');
-    const api = runInNewContext(`${extracted.join('\n')}\n;({${exports}})`, context);
+    const api = createSandboxWiring({
+        scopeOf: createCurrentAgentScope({ getContext: context.getHostContext }),
+        runtime: context.agentSandboxMode, hostStorage: context.hostStorage, currentSettings: context.currentSettings,
+        coordinator: context.agentCoordinator, stateStore: context.agentStateStore,
+        invalidateContinuations: context.invalidateAgentContinuations, setSandboxStatus: context.setSandboxStatus,
+        messages: context.SANDBOX_MODE_MESSAGES, syncPendingRow: context.syncSandboxPendingRow,
+        renderRuntime: context.renderRuntimeMode, getPanel: () => context.document.getElementById(context.SETTINGS_PANEL_ID),
+    });
     return { api, calls, settings, runtime, metadata };
 }
 

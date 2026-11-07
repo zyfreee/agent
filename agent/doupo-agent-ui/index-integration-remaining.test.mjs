@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { trimToVolume } from './narrative/setting-supply.js';
 import { renderMemoryEntries, renderMemoryEntriesDetail } from './memory/memory-ops.js';
+import { createCaptureAgents } from './host/scope.js';
+import { createImpactRestore } from './impact/impact-injection.js';
 
 // 归一化行尾：Windows 检出（autocrlf）会把源码变 CRLF，源码文本断言按 LF 写，先统一。
 const source = readFileSync(new URL('./index.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
@@ -144,10 +146,13 @@ test('OPT-051 same-floor rerun replaces the recorded contribution through record
 });
 
 test('OPT-029 scope-only message owner survives own writes but not chat changes', () => {
-    const code = extract('function captureAgentScope(', '\nfunction captureAgentContinuation');
+    // 续算凭据已摘进 host/scope.js 工厂：直接喂依赖构造。
     let scope = 'A', epoch = 0, enabled = true, chat = [{ mes: 'before' }];
-    const context = { settleScopeKey: () => scope, getHostContext: () => ({ chat }), currentSettings: () => ({ enabled }), get agentContinuationEpoch() { return epoch; } };
-    const capture = runInNewContext(`${code}; captureAgentScope`, context), owner = capture();
+    const { captureAgentScope: capture } = createCaptureAgents({
+        getEpoch: () => epoch, settleScopeKey: () => scope, getContext: () => ({ chat }),
+        currentSettings: () => ({ enabled }), lastReplyIndex: list => list.length - 1,
+    });
+    const owner = capture();
     chat.push({ mes: 'own message' }); chat[0].mes = 'own update'; assert.equal(owner.current(), true);
     scope = 'B'; assert.equal(owner.current(), false); scope = 'A'; epoch += 1; assert.equal(owner.current(), false);
     const fresh = capture(); enabled = false; assert.equal(fresh.current(), false);
@@ -173,11 +178,13 @@ test('OPT-034 hot replacement invokes the same full disable cleanup', () => {
 });
 
 test('OPT-028 rejected restore never retains the outgoing chat impact state', () => {
-    const code = extract('function restoreImpactFromChat(', '\nfunction persistImpact');
-    let previous = true;
-    const run = runInNewContext(`${code}; restoreImpactFromChat`, {
-        syncImpactLimits() {}, lastImpactInjection: null, hostStorage: { impactState: () => ({ status: 'ready', value: {} }) },
-        agentImpactRuntime: { restore: () => ({ status: 'rejected', reason: 'duplicate_id' }), reset: () => { previous = false; return { status: 'reset' }; }, apply() {} }, worldDay: () => 1,
+    // 影响库恢复已摘进 impact/impact-injection.js 工厂：喂桩直接构造。
+    let previous = true, invalidated = 0;
+    const restore = createImpactRestore({
+        syncLimits() {}, storage: { impactState: () => ({ status: 'ready', value: {} }) },
+        runtime: { restore: () => ({ status: 'rejected', reason: 'duplicate_id' }), reset: () => { previous = false; return { status: 'reset' }; }, apply() {} },
+        worldDay: () => 1, injection: { invalidate: () => { invalidated += 1; } },
     });
-    assert.equal(run().status, 'rejected'); assert.equal(previous, false);
+    assert.equal(restore().status, 'rejected'); assert.equal(previous, false);
+    assert.equal(invalidated, 1, '换聊天恢复时上一轮挑选缓存作废');
 });
