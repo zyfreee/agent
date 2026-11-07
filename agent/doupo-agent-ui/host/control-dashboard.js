@@ -1,8 +1,8 @@
 // A read-only view over existing audit metadata. Never inspects prompts or model output.
 const MODULES = Object.freeze([
-    { id: 'facts', title: '原著设定', setting: 'setting.enabled', legacySetting: 'enableFactsLibrary', stage: 'facts-query' },
+    { id: 'facts', title: '原著设定', setting: 'setting.enabled', stage: 'facts-query' },
     { id: 'action', title: '行动结算', setting: 'enableActionResolution', stage: 'action-resolve' },
-    { id: 'world', title: '世界运转', setting: 'enableWorldProgress', stage: 'world-advance' },
+    { id: 'world', title: '世界运转', setting: 'world.eventEnabled', stage: 'world-advance' },
     { id: 'npc', title: 'NPC 决策', setting: 'enableNpcAutonomy' },
     { id: 'self', title: '纳戒', setting: 'enableSelfLedger' },
     { id: 'impact', title: '世界影响', setting: 'enablePlayerImpact' },

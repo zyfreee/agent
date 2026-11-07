@@ -20,7 +20,7 @@ const CONFLICT_SIMILARITY = 0.6;
 const FENCE_RE = /```memory[^\S\n]*\n([\s\S]*?)```/g;
 const OP_LINE_RE = /^[ \t]*\{[ \t]*"op"[ \t]*:/;
 
-export const MEMORY_HEADER = '【记忆存储·本场召回】以下是本场剧情勾出来的记忆（按需召回），正文不得与之矛盾；新记忆靠文末 memory 指令登记。';
+export const MEMORY_HEADER = '【记忆存储·本场召回】以下是本场剧情勾出来的记忆（按需召回），正文不得与之矛盾。新记忆由扩展在后台自动登记，你不需要也不允许代劳；回复只写剧情本身——禁止在正文的任何位置输出指令块、JSON、代码块或数据表。';
 
 export const MEMORY_GUIDE = [
     '【记忆指令通道】若本轮剧情里有值得记住的事，在回复的最末尾输出一个 memory 代码块，每行一条 JSON：',

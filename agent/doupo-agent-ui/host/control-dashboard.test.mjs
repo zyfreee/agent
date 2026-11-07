@@ -11,9 +11,9 @@ const audit = createAuditLog();
 const record = (event, extra = {}) => audit.record({ ...identity, event, ...extra });
 const build = extra => buildControlDashboard({ scope, records: audit.list(), ...extra });
 const moduleOf = (view, id) => view.modules.find(module => module.id === id);
-// OPT-091: nested current setting wins, even when false and legacy says true.
-for (const legacy of [undefined, true]) assert.equal(moduleOf(build({ settings: { setting: { enabled: false }, enableFactsLibrary: legacy } }), 'facts').configuration, '已关闭');
-assert.equal(moduleOf(build({ settings: { setting: { enabled: true }, enableFactsLibrary: false } }), 'facts').configuration, '已开启');
+// 旧开关已退役：facts 只读 setting.enabled，存档里残留的 enableFactsLibrary 一律忽略。
+for (const legacy of [undefined, true, false]) assert.equal(moduleOf(build({ settings: { setting: { enabled: false }, enableFactsLibrary: legacy } }), 'facts').configuration, '已关闭');
+assert.equal(moduleOf(build({ settings: { setting: { enabled: true }, enableFactsLibrary: true } }), 'facts').configuration, '已开启');
 const empty = build();
 assert.equal(empty.modules.length, 8);
 assert.equal(moduleOf(empty, 'sandbox').title, '开放世界');
@@ -50,14 +50,14 @@ for (const extra of [{ sessionId: 'chat-b' }, { branchId: 'branch-b' }, { taskId
 assert.equal(moduleOf(build(), 'facts').label, '已返回');
 assert.ok(build({ scope: undefined }).modules.every(module => module.state === 'idle'));
 assert.ok(build({ scope: { ...scope, taskIds: [] } }).modules.every(module => module.state === 'idle'));
-const configured = build({ settings: { enabled: false, enableFactsLibrary: false, llm: { useSillyTavernConnection: false } } });
+const configured = build({ settings: { enabled: false, setting: { enabled: false }, llm: { useSillyTavernConnection: false } } });
 assert.equal(moduleOf(configured, 'facts').configuration, '已关闭');
 assert.equal(moduleOf(configured, 'world').configuration, '已开启 · 总控已暂停');
 assert.equal(moduleOf(configured, 'llm').configuration, '使用独立连接');
 const tasks = [{ ...identity, status: 'completed_saved' }, { ...identity, sessionId: 'chat-b', status: 'failed_unapplied' }];
 assert.equal(build({ tasks }).taskLabel, '已完成并保存');
 assert.equal(moduleOf(build({ tasks }), 'facts').label, '已返回', '任务保存状态不能冒充模块运行结果');
-// The facts card now follows the injection setting, falls back to the legacy toggle, and can carry the channel note.
+// The facts card now follows the injection setting only, and can carry the channel note.
 const noteView = buildControlDashboard({
     settings: { setting: { enabled: true } }, records: [], tasks: [], scope,
     injectionNote: '注入通道：可用（IN_CHAT 深度 0）。',
@@ -66,6 +66,6 @@ const factsNote = noteView.modules.find(module => module.id === 'facts');
 assert.equal(factsNote.title, '原著设定');
 assert.equal(factsNote.configuration, '已开启');
 assert.match(factsNote.summary, /注入通道/);
-const legacyOnly = buildControlDashboard({ settings: { enableFactsLibrary: false }, records: [], tasks: [], scope });
-assert.equal(legacyOnly.modules.find(module => module.id === 'facts').configuration, '已关闭');
+const worldOff = buildControlDashboard({ settings: { world: { eventEnabled: false } }, records: [], tasks: [], scope });
+assert.equal(worldOff.modules.find(module => module.id === 'world').configuration, '已关闭');
 console.log('control dashboard scope, metadata, states and theme tests passed');

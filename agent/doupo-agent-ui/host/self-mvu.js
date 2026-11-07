@@ -5,7 +5,12 @@
  * 与其它存储的分工：纳戒真账本在扩展（chatMetadata），两个下游各拿一份镜像——
  * 数据库表（db-bridge，可视化/手改回拉/选条召回）和这里的 MVU 变量。
  * 数据库脚本对 MVU 只有读（getMvuData 塞进它的模板上下文），所以写 MVU 的
- * 责任在扩展这边；MVU 主脚本没装/被关时一切调用静默跳过，零回归。
+ * 责任在扩展这边。
+ *
+ * 变量层两级：MVU 框架（window.Mvu）在 → 走框架的 getMvuData/replaceMvuData；
+ * 框架没装/被关 → 走酒馆助手原生的 getVariables/replaceVariables 直写同一份楼层
+ * 变量帧（MVU 框架的读写底层正是它，帧结构 initialized_lorebooks + stat_data
+ * 与 MVU 时代逐字段一致）。两层都没有才静默跳过，零回归。
  *
  * 剧情日不进这里：世界运转的时钟注入已经带剧情日，两处各管各的，不重复。
  * 命名空间：stat_data.斗破纳戒（顶层平键，不带点号——MVU 的 setMvuVariable
@@ -148,6 +153,17 @@ export function createSelfMvuBridge({ capture = () => null, isCurrent = () => tr
         }
     }
 
+    /** 原生变量层：酒馆助手自带的楼层变量读写。MVU 框架的 getMvuData/replaceMvuData
+     *  底层正是这套 API，框架不在时用它直写同一份帧，结构逐字段一致。 */
+    function locateNativeVars() {
+        try {
+            const th = globalThis.window?.TavernHelper ?? globalThis.window?.parent?.TavernHelper;
+            return th && typeof th.getVariables === 'function' && typeof th.replaceVariables === 'function' ? th : null;
+        } catch {
+            return null;
+        }
+    }
+
     /**
      * 把一份纳戒快照同步进 stat_data.斗破纳戒。不抛异常：失败记进状态，调用方
      * fire-and-forget。返回 { ok, skipped?, wrote?, error? } 供测试与调试。
@@ -159,27 +175,34 @@ export function createSelfMvuBridge({ capture = () => null, isCurrent = () => tr
         const { target, current } = targetFor(options);
         if (!current()) return { ok: false, skipped: true, reason: 'stale' };
         const mvu = locateMvu();
-        if (!mvu || typeof mvu.getMvuData !== 'function'
-            || (typeof mvu.replaceMvuData !== 'function' && typeof mvu.setMvuVariable !== 'function')) {
-            return { ok: false, skipped: true, reason: 'missing' };
-        }
+        const mvuReady = !!mvu && typeof mvu.getMvuData === 'function'
+            && (typeof mvu.replaceMvuData === 'function' || typeof mvu.setMvuVariable === 'function');
+        const native = mvuReady ? null : locateNativeVars();
+        if (!mvuReady && !native) return { ok: false, skipped: true, reason: 'missing' };
         const payload = buildSelfMvuPayload(self);
         if (!hasSelfMvuContent(payload)) return { ok: true, skipped: true, reason: 'empty' };
         try {
-            const data = await mvu.getMvuData(target);
+            const data = mvuReady ? await mvu.getMvuData(target) : await native.getVariables(target);
             if (!current()) return { ok: false, skipped: true, reason: 'stale' };
             const tree = data && typeof data === 'object' && !Array.isArray(data) ? structuredClone(data) : {};
-            if (!tree.stat_data || typeof tree.stat_data !== 'object' || Array.isArray(tree.stat_data)) tree.stat_data = {};
+            if (!tree.stat_data || typeof tree.stat_data !== 'object' || Array.isArray(tree.stat_data)) {
+                tree.stat_data = {};
+                if (tree.initialized_lorebooks === undefined) tree.initialized_lorebooks = {}; // 新建帧与 MVU 帧同构
+            }
             tree.stat_data[NAMESPACE] = payload;
-            if (typeof mvu.replaceMvuData === 'function') {
-                await mvu.replaceMvuData(tree, target);
+            if (mvuReady) {
+                if (typeof mvu.replaceMvuData === 'function') {
+                    await mvu.replaceMvuData(tree, target);
+                } else {
+                    await mvu.setMvuVariable(tree, NAMESPACE, payload, { reason: '斗破Agent纳戒同步' });
+                }
             } else {
-                await mvu.setMvuVariable(tree, NAMESPACE, payload, { reason: '斗破Agent纳戒同步' });
+                await native.replaceVariables(tree, target);
             }
             if (!current()) return { ok: false, skipped: true, reason: 'stale' };
             lastError = '';
             lastSyncAt = new Date().toISOString();
-            return { ok: true, wrote: true, namespace: NAMESPACE };
+            return { ok: true, wrote: true, namespace: NAMESPACE, layer: mvuReady ? 'mvu' : 'native' };
         } catch (error) {
             if (!current()) return { ok: false, skipped: true, reason: 'stale' };
             lastError = String(error?.message ?? error).slice(0, 160);
@@ -192,9 +215,11 @@ export function createSelfMvuBridge({ capture = () => null, isCurrent = () => tr
         const { target, current } = targetFor(options);
         if (!current()) return { ok: false, reason: 'stale' };
         const mvu = locateMvu();
-        if (!mvu || typeof mvu.getMvuData !== 'function') return { ok: false, reason: 'missing' };
+        const mvuReady = !!mvu && typeof mvu.getMvuData === 'function';
+        const native = mvuReady ? null : locateNativeVars();
+        if (!mvuReady && !native) return { ok: false, reason: 'missing' };
         try {
-            const data = await mvu.getMvuData(target);
+            const data = mvuReady ? await mvu.getMvuData(target) : await native.getVariables(target);
             if (!current()) return { ok: false, reason: 'stale' };
             const namespace = data && typeof data === 'object' && data.stat_data && typeof data.stat_data === 'object'
                 ? data.stat_data[NAMESPACE]
@@ -206,7 +231,16 @@ export function createSelfMvuBridge({ capture = () => null, isCurrent = () => tr
     }
 
     function status() {
-        return { present: !!locateMvu(), namespace: NAMESPACE, lastError, lastSyncAt };
+        const mvu = locateMvu();
+        const mvuReady = !!mvu && typeof mvu.getMvuData === 'function';
+        const native = mvuReady ? null : locateNativeVars();
+        return {
+            present: mvuReady || !!native,
+            layer: mvuReady ? 'mvu' : native ? 'native' : 'none',
+            namespace: NAMESPACE,
+            lastError,
+            lastSyncAt,
+        };
     }
 
     return Object.freeze({ sync, readLatest, status });

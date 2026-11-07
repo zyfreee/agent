@@ -38,6 +38,11 @@ try {
     assert.equal(pending.length, 4, 'switching chat discards pending compensation');
     assert.deepEqual(active.chatMetadata, {});
     assert.ok(agent.selfSnapshot());
+    // 申报块退役：回复带 <UpdateVariable> 块也只走纳戒决定，永远不分流仲裁器。
+    active.chat.push({ is_user: true, mes: '买碗茶' }, { is_user: false, mes: '第四轮正文\n<UpdateVariable><JSONPatch>[{"op":"replace","path":"/斗破纳戒/金币","value":1}]</JSONPatch></UpdateVariable>' });
+    turn(); await flush();
+    assert.equal(pending.length, 5, 'block-bearing reply must still route to the ring decide, never the arbiter');
+    assert.match(pending[4].options.quietPrompt, /第四轮正文/);
     console.log('background latest reply and self-memory order tests passed');
 } finally {
     pending.forEach(call => call.resolve(empty)); onDisable();

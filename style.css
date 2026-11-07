@@ -1,34 +1,54 @@
 /* Scoped palettes and design tokens: never change SillyTavern's own theme variables.
-   主题：gilt 玄烬鎏金（默认暗色）/ graphite 玄铁控制台 / parchment 米纸手账。
+   主题：gilt 斗破苍穹（默认暗金）/ graphite 玄铁 / parchment 米纸。
    设计 token 一览：
    - 字号七档：--dai-fs-xs 0.72 / sm 0.78 / md 0.85 / base 0.95 / title 1.05 / lg 1.3 / xl 1.45 (rem)
    - 圆角四档：--dai-radius-field < row < card < dialog，胶囊/圆形仍用 999px/50%
    - 语义色：--dai-on-accent（强调色上的文字）、--dai-error-border、--dai-field-hover
-   - 展示字体：--dai-font-display（古卷系主题用衬线，控制台主题跟随正文） */
+   - 斗破视觉层：--dai-accent-hi（鎏金高亮）/ --dai-accent-deep（暗金线）/
+     --dai-accent-soft（强调色软底）/ --dai-glow（顶部内高光）/ --dai-line（金细线）/
+     --dai-title-gradient + --dai-title-color（标题鎏金渐变字，@supports 内启用）/
+     --dai-btn-gradient + --dai-btn-border + --dai-btn-text + --dai-btn-glow(-hover)（主按钮幽光描边）/ --dai-texture（面板织锦暗纹）
+   - 展示字体：--dai-font-display（标题走衬线，玄铁/米纸同样保留衬线） */
 .dai-settings-panel, .dai-root, .dai-orb {
-    --dai-bg: #151210;
-    --dai-sidebar: #100e0c;
-    --dai-surface: #1d1915;
-    --dai-field: #181512;
-    --dai-text: #ece1cd;
-    --dai-muted: #a2937c;
-    --dai-border: #3b332a;
+    --dai-bg: #16120c;
+    --dai-sidebar: #100d08;
+    --dai-surface: #221b10;
+    --dai-field: #1a150d;
+    --dai-text: #f0e6cd;
+    --dai-muted: #ab966f;
+    --dai-border: #4a3b20;
     --dai-accent: #d9a72b;
+    --dai-accent-hi: #f6dd9a;
+    --dai-accent-deep: #8a6d2f;
+    --dai-accent-soft: rgba(217, 167, 43, 0.13);
+    --dai-glow: rgba(246, 221, 154, 0.32);
+    --dai-line: rgba(217, 167, 43, 0.4);
+    --dai-orb-halo: rgba(217, 167, 43, 0.3);
+    --dai-title-gradient: linear-gradient(180deg, #f8e9b4 0%, #e3bc55 48%, #a87b18 100%);
+    --dai-title-color: transparent;
+    --dai-btn-gradient: linear-gradient(180deg, #261e10, #1a1409);
+    --dai-btn-border: rgba(217, 167, 43, 0.55);
+    --dai-btn-text: #ecd27f;
+    --dai-btn-glow: 0 0 14px rgba(217, 167, 43, 0.16), inset 0 0 8px rgba(217, 167, 43, 0.08);
+    --dai-btn-glow-hover: 0 0 18px rgba(217, 167, 43, 0.3), inset 0 0 10px rgba(217, 167, 43, 0.12);
+    --dai-texture: radial-gradient(120% 70% at 50% 0%, rgba(217, 167, 43, 0.05), transparent 55%),
+        repeating-linear-gradient(45deg, rgba(217, 167, 43, 0.028) 0 2px, transparent 2px 8px),
+        repeating-linear-gradient(-45deg, rgba(217, 167, 43, 0.028) 0 2px, transparent 2px 8px);
     --dai-check: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='1.5%202.5%2017%2015.5'%3E%3Cpath%20d='M4%2010.6L8.6%2015.2L16%205'%20fill='none'%20stroke='%23d9a72b'%20stroke-width='3.6'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E");
-    --dai-tint: #2e250d;
-    --dai-good: #8fbe8f;
-    --dai-good-bg: #1c2a1b;
+    --dai-tint: rgba(217, 167, 43, 0.13);
+    --dai-good: #9cc78c;
+    --dai-good-bg: #1d2a1a;
     --dai-warn: #e2b566;
     --dai-warn-bg: #372b13;
     --dai-error: #e57a63;
     --dai-error-bg: #37201a;
-    --dai-on-accent: #1f1807;
+    --dai-on-accent: #241a05;
     --dai-error-border: #8a5142;
-    --dai-field-hover: rgba(236, 225, 205, 0.045);
+    --dai-field-hover: rgba(240, 230, 205, 0.045);
     --dai-font-display: "Noto Serif SC", "Source Han Serif SC", "思源宋体", "STZhongsong", "SimSun", serif;
-    --dai-radius-dialog: 0.75rem;
-    --dai-radius-card: 0.6rem;
-    --dai-radius-row: 0.45rem;
+    --dai-radius-dialog: 0.6rem;
+    --dai-radius-card: 0.5rem;
+    --dai-radius-row: 0.4rem;
     --dai-radius-field: 0.35rem;
     --dai-fs-xs: 0.72rem;
     --dai-fs-sm: 0.78rem;
@@ -42,26 +62,41 @@
     font: var(--dai-fs-base)/1.5 var(--mainFontFamily, system-ui, sans-serif);
 }
 .dai-settings-panel[data-theme="graphite"], .dai-root[data-theme="graphite"], .dai-orb[data-theme="graphite"] {
-    --dai-bg: #0f1113;
-    --dai-sidebar: #0c0e10;
-    --dai-surface: #16191d;
-    --dai-field: #121418;
-    --dai-text: #e6e9ed;
-    --dai-muted: #8d95a3;
-    --dai-border: #282d35;
-    --dai-accent: #2fbf9d;
-    --dai-check: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='1.5%202.5%2017%2015.5'%3E%3Cpath%20d='M4%2010.6L8.6%2015.2L16%205'%20fill='none'%20stroke='%232fbf9d'%20stroke-width='3.6'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E");
-    --dai-tint: #10241f;
+    --dai-bg: #0b1210;
+    --dai-sidebar: #080d0b;
+    --dai-surface: #121b17;
+    --dai-field: #0e1613;
+    --dai-text: #ddebe3;
+    --dai-muted: #83a695;
+    --dai-border: #24382f;
+    --dai-accent: #3ecfa5;
+    --dai-accent-hi: #b7f0dd;
+    --dai-accent-deep: #1d5f4d;
+    --dai-accent-soft: rgba(62, 207, 165, 0.12);
+    --dai-glow: rgba(183, 240, 221, 0.24);
+    --dai-line: rgba(62, 207, 165, 0.35);
+    --dai-orb-halo: rgba(62, 207, 165, 0.28);
+    --dai-title-gradient: linear-gradient(180deg, #d7f7ea 0%, #6fd9b8 48%, #1d8f6f 100%);
+    --dai-title-color: transparent;
+    --dai-btn-gradient: linear-gradient(180deg, #0f241c, #0a1812);
+    --dai-btn-border: rgba(62, 207, 165, 0.55);
+    --dai-btn-text: #9fe8cf;
+    --dai-btn-glow: 0 0 14px rgba(62, 207, 165, 0.16), inset 0 0 8px rgba(62, 207, 165, 0.08);
+    --dai-btn-glow-hover: 0 0 18px rgba(62, 207, 165, 0.3), inset 0 0 10px rgba(62, 207, 165, 0.12);
+    --dai-texture: repeating-linear-gradient(45deg, rgba(62, 207, 165, 0.025) 0 2px, transparent 2px 8px),
+        repeating-linear-gradient(-45deg, rgba(62, 207, 165, 0.025) 0 2px, transparent 2px 8px);
+    --dai-check: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='1.5%202.5%2017%2015.5'%3E%3Cpath%20d='M4%2010.6L8.6%2015.2L16%205'%20fill='none'%20stroke='%233ecfa5'%20stroke-width='3.6'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E");
+    --dai-tint: rgba(62, 207, 165, 0.12);
     --dai-good: #43b06d;
     --dai-good-bg: #112219;
     --dai-warn: #d9a13c;
     --dai-warn-bg: #291f0d;
     --dai-error: #e06456;
     --dai-error-bg: #2c1512;
-    --dai-on-accent: #0a1d17;
+    --dai-on-accent: #06231a;
     --dai-error-border: #7a3d35;
-    --dai-field-hover: rgba(230, 233, 237, 0.04);
-    --dai-font-display: var(--mainFontFamily, system-ui, sans-serif);
+    --dai-field-hover: rgba(221, 235, 227, 0.04);
+    --dai-font-display: "Noto Serif SC", "Source Han Serif SC", "思源宋体", "STZhongsong", "SimSun", serif;
     --dai-radius-dialog: 0.5rem;
     --dai-radius-card: 0.4rem;
     --dai-radius-row: 0.3rem;
@@ -69,16 +104,31 @@
     color-scheme: dark;
 }
 .dai-settings-panel[data-theme="parchment"], .dai-root[data-theme="parchment"], .dai-orb[data-theme="parchment"] {
-    --dai-bg: #f2ead9;
-    --dai-sidebar: #e9dfc9;
-    --dai-surface: #faf5ea;
-    --dai-field: #fffaf0;
-    --dai-text: #383023;
-    --dai-muted: #7a6a52;
-    --dai-border: #d3c3a4;
+    --dai-bg: #f4ecd9;
+    --dai-sidebar: #ebdfc6;
+    --dai-surface: #fbf6ea;
+    --dai-field: #fffdf3;
+    --dai-text: #3c3122;
+    --dai-muted: #8a7458;
+    --dai-border: #d5c3a0;
     --dai-accent: #b4452f;
+    --dai-accent-hi: #7d2f20;
+    --dai-accent-deep: #c8a06a;
+    --dai-accent-soft: rgba(180, 69, 47, 0.09);
+    --dai-glow: rgba(255, 255, 255, 0.65);
+    --dai-line: rgba(180, 69, 47, 0.35);
+    --dai-orb-halo: rgba(180, 69, 47, 0.18);
+    --dai-title-gradient: none;
+    --dai-title-color: #7d2f20;
+    --dai-btn-gradient: linear-gradient(180deg, #faf3e3, #f0e2c6);
+    --dai-btn-border: rgba(180, 69, 47, 0.55);
+    --dai-btn-text: #7d2f20;
+    --dai-btn-glow: 0 0 12px rgba(180, 69, 47, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+    --dai-btn-glow-hover: 0 0 16px rgba(180, 69, 47, 0.26), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+    --dai-texture: repeating-linear-gradient(45deg, rgba(120, 90, 50, 0.035) 0 2px, transparent 2px 8px),
+        repeating-linear-gradient(-45deg, rgba(120, 90, 50, 0.035) 0 2px, transparent 2px 8px);
     --dai-check: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='1.5%202.5%2017%2015.5'%3E%3Cpath%20d='M4%2010.6L8.6%2015.2L16%205'%20fill='none'%20stroke='%23b4452f'%20stroke-width='3.6'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E");
-    --dai-tint: #f6e3da;
+    --dai-tint: rgba(180, 69, 47, 0.08);
     --dai-good: #4c7442;
     --dai-good-bg: #e6ecd4;
     --dai-warn: #96660f;
@@ -87,31 +137,136 @@
     --dai-error-bg: #f2dcd0;
     --dai-on-accent: #fdf6ee;
     --dai-error-border: #cf9184;
-    --dai-field-hover: rgba(56, 48, 35, 0.05);
+    --dai-field-hover: rgba(60, 49, 34, 0.05);
     --dai-font-display: "Noto Serif SC", "Source Han Serif SC", "思源宋体", "STZhongsong", "SimSun", serif;
-    --dai-radius-dialog: 0.9rem;
-    --dai-radius-card: 0.7rem;
-    --dai-radius-row: 0.55rem;
-    --dai-radius-field: 0.45rem;
+    --dai-radius-dialog: 0.65rem;
+    --dai-radius-card: 0.55rem;
+    --dai-radius-row: 0.45rem;
+    --dai-radius-field: 0.35rem;
     color-scheme: light;
 }
-/* 展示字体：标题与卡头走衬线（玄铁控制台主题解析回正文无衬线） */
+/* 展示字体：标题与卡头走衬线 */
 .dai-settings-brand strong, .dai-settings-header h2, .dai-page-heading h3, .dai-section-heading h3,
 .dai-card-heading b, .dai-module-heading b, .dai-agent-modal-title, .dai-orb-panel-head b,
 .dai-orb-pop-name b, .dai-profile-name { font-family: var(--dai-font-display, inherit); }
-/* 玄烬鎏金签名：卡面顶部一线鎏金 */
-.dai-settings-panel[data-theme="gilt"] .dai-card, .dai-root[data-theme="gilt"] .dai-card, .dai-orb[data-theme="gilt"] .dai-card { box-shadow: inset 0 1px 0 rgba(217, 167, 43, 0.25), 0 0.5rem 1.5rem #0004; }
-.dai-settings-panel[data-theme="gilt"] .dai-settings-card, .dai-root[data-theme="gilt"] .dai-settings-card, .dai-orb[data-theme="gilt"] .dai-settings-card { box-shadow: inset 0 1px 0 rgba(217, 167, 43, 0.2); }
+/* 鎏金渐变标题字：仅在支持 background-clip:text 的内核启用，其余回退纯色 */
+.dai-settings-header h2, .dai-page-heading h3 { letter-spacing: 0.1em; color: var(--dai-title-color, inherit); }
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+    .dai-settings-header h2, .dai-page-heading h3 {
+        background: var(--dai-title-gradient, none);
+        -webkit-background-clip: text;
+        background-clip: text;
+    }
+}
 
-.dai-root { position: fixed; z-index: 10000; inset: auto 1rem 1rem auto; width: min(26rem, calc(100vw - 2rem)); }
-.dai-root[hidden] { display: none; }
-.dai-capability { margin-bottom: 0.45rem; padding: 0.45rem 0.65rem; border: 1px solid var(--dai-border); border-radius: var(--dai-radius-row); background: var(--dai-surface); box-shadow: 0 0.25rem 0.75rem #0003; font-size: var(--dai-fs-md); }
-.dai-capability-ready { border-left: 3px solid var(--dai-good); }
-.dai-capability-degraded { border-left: 3px solid var(--dai-warn); }
-.dai-card { padding: 0.9rem 1rem; border: 1px solid var(--dai-border); border-left: 4px solid var(--dai-accent); border-radius: var(--dai-radius-card); background: var(--dai-surface); box-shadow: 0 0.5rem 1.5rem #0004; }
-.dai-waiting_input, .dai-save_uncertain { border-left-color: var(--dai-warn); }
-.dai-completed_saved { border-left-color: var(--dai-good); }
-.dai-failed_unapplied { border-left-color: var(--dai-error); }
+/* ---- 内联 SVG 图标：统一 1.6 描边、currentColor，随主题变色 ---- */
+svg.dai-svg { width: 1em; height: 1em; flex: none; display: inline-block; vertical-align: -0.125em; }
+.dai-ic { display: inline-grid; flex: none; width: 0.95em; height: 0.95em; color: var(--dai-accent); }
+/* 滚动条随主题：侧栏、主区、弹窗与各信息窗统一暗金细条（酒馆默认滚动条会透出紫色） */
+.dai-settings-nav, .dai-settings-body, .dai-orb-panel, .dai-orb-pop, .dai-orb-pop-list-body,
+.dai-agent-modal-body, .dai-impact-list,
+.dai-self-entries, .dai-self-panel, .dai-world-events, .dai-world-tasks,
+.dai-world-factions, .dai-world-people, .dai-world-journal, .dai-npc-grid, .dai-facts-browser {
+    scrollbar-width: thin;
+    scrollbar-color: var(--dai-accent-deep, #4a3b20) transparent;
+}
+.dai-settings-nav::-webkit-scrollbar, .dai-settings-body::-webkit-scrollbar, .dai-orb-panel::-webkit-scrollbar,
+.dai-orb-pop::-webkit-scrollbar, .dai-orb-pop-list-body::-webkit-scrollbar, .dai-agent-modal-body::-webkit-scrollbar,
+.dai-impact-list::-webkit-scrollbar { width: 0.5rem; }
+.dai-settings-nav::-webkit-scrollbar-track, .dai-settings-body::-webkit-scrollbar-track, .dai-orb-panel::-webkit-scrollbar-track,
+.dai-orb-pop::-webkit-scrollbar-track, .dai-orb-pop-list-body::-webkit-scrollbar-track, .dai-agent-modal-body::-webkit-scrollbar-track,
+.dai-impact-list::-webkit-scrollbar-track { background: transparent; }
+.dai-settings-nav::-webkit-scrollbar-thumb, .dai-settings-body::-webkit-scrollbar-thumb, .dai-orb-panel::-webkit-scrollbar-thumb,
+.dai-orb-pop::-webkit-scrollbar-thumb, .dai-orb-pop-list-body::-webkit-scrollbar-thumb, .dai-agent-modal-body::-webkit-scrollbar-thumb,
+.dai-impact-list::-webkit-scrollbar-thumb { border-radius: 999px; background: var(--dai-accent-deep); }
+.dai-settings-nav::-webkit-scrollbar-thumb:hover, .dai-settings-body::-webkit-scrollbar-thumb:hover, .dai-orb-panel::-webkit-scrollbar-thumb:hover,
+.dai-orb-pop::-webkit-scrollbar-thumb:hover, .dai-orb-pop-list-body::-webkit-scrollbar-thumb:hover, .dai-agent-modal-body::-webkit-scrollbar-thumb:hover,
+.dai-impact-list::-webkit-scrollbar-thumb:hover { background: var(--dai-muted); }
+.dai-ic svg, .dai-nav-icon svg, .dai-feature-icon svg, .dai-orb-ball svg, .dai-orb-icon svg,
+.dai-settings-mark svg, .dai-impact-mark svg { width: 100%; height: 100%; display: block; }
+
+/* ---- 设置中枢：双钩金框 + 织锦暗纹 + 四角符箓 ---- */
+.dai-settings-panel { position: fixed; z-index: 10001; inset: 0; display: grid; place-items: center; }
+.dai-settings-panel[hidden] { display: none; }
+.dai-settings-panel *, .dai-settings-panel *::before, .dai-settings-panel *::after { box-sizing: border-box; }
+.dai-settings-panel button, .dai-settings-panel input, .dai-settings-panel select { font: inherit; text-shadow: none; }
+.dai-settings-panel :is(h2, h3, b, strong) { color: inherit; }
+.dai-settings-panel :is(button, input, select):focus-visible { outline: 2px solid var(--dai-accent); outline-offset: 3px; }
+.dai-settings-backdrop { position: absolute; inset: 0; background: #05070caa; }
+.dai-settings-dialog { position: relative; display: flex; width: min(72rem, calc(100vw - 2rem)); height: min(46rem, calc(100dvh - 2rem)); overflow: hidden; border: 1px solid var(--dai-accent-deep); border-radius: var(--dai-radius-dialog); background-color: var(--dai-bg); background-image: var(--dai-texture, none); box-shadow: inset 0 0 0 3px var(--dai-bg), inset 0 0 0 4px var(--dai-line), 0 1.5rem 4rem #0007; }
+/* 四角符箓：index.js 在对话框里钉四个 <i class="dai-frame-corner">，这里只管画 */
+.dai-frame-corner { position: absolute; z-index: 3; width: 1.3rem; height: 1.3rem; pointer-events: none; }
+.dai-frame-corner::before { content: ''; position: absolute; inset: 0; border-top: 2px solid var(--dai-accent); border-left: 2px solid var(--dai-accent); }
+.dai-frame-corner::after { content: ''; position: absolute; right: 1px; bottom: 1px; width: 0.3rem; height: 0.3rem; background: var(--dai-accent); transform: rotate(45deg); }
+.dai-frame-corner.is-tl { top: 0.4rem; left: 0.4rem; }
+.dai-frame-corner.is-tr { top: 0.4rem; right: 0.4rem; transform: rotate(90deg); }
+.dai-frame-corner.is-br { bottom: 0.4rem; right: 0.4rem; transform: rotate(180deg); }
+.dai-frame-corner.is-bl { bottom: 0.4rem; left: 0.4rem; transform: rotate(270deg); }
+.dai-settings-sidebar { display: flex; flex: 0 0 14rem; flex-direction: column; padding: 1.1rem 0.75rem 0.85rem; border-right: 1px solid var(--dai-line); background: var(--dai-sidebar); }
+.dai-settings-brand { display: flex; align-items: center; gap: 0.65rem; padding: 0.35rem 0.55rem 1.1rem; border-bottom: 1px solid var(--dai-line); }
+.dai-settings-brand > div { display: grid; gap: 0.12rem; min-width: 0; }
+.dai-settings-brand strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--dai-fs-lg); font-weight: 700; letter-spacing: 0.14em; }
+.dai-settings-brand small, .dai-settings-nav small { color: var(--dai-muted); font-size: var(--dai-fs-sm); }
+.dai-settings-mark { display: grid; width: 2.1rem; height: 2.1rem; place-items: center; padding: 0.34rem; border: 1px solid var(--dai-accent-deep); border-radius: var(--dai-radius-card); color: var(--dai-accent); background: radial-gradient(circle at 32% 26%, var(--dai-accent-soft), transparent 80%); box-shadow: inset 0 1px 0 var(--dai-glow); font-weight: 700; }
+.dai-settings-nav { display: grid; gap: 0.18rem; overflow: auto; }
+.dai-nav-label { display: flex; align-items: center; gap: 0.5rem; margin: 0.85rem 0.55rem 0.25rem; color: var(--dai-muted); font-size: var(--dai-fs-sm); letter-spacing: 0.22em; white-space: nowrap; }
+.dai-nav-label::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, var(--dai-accent-deep), transparent); opacity: 0.55; }
+.dai-nav-item { display: flex; align-items: center; gap: 0.6rem; width: 100%; height: fit-content; min-height: 2.4rem; padding: 0.35rem 0.55rem; border: 1px solid transparent; border-radius: var(--dai-radius-row); color: var(--dai-text); background: transparent; cursor: pointer; text-align: left; }
+.dai-nav-item > span:not(.dai-nav-icon):not(.dai-ic) { display: grid; gap: 0.06rem; min-width: 0; }
+.dai-nav-item b { font-size: var(--dai-fs-md); font-weight: 600; line-height: 1.25; }
+.dai-nav-item small { line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dai-nav-icon { display: grid; width: 1.55rem; height: 1.55rem; place-items: center; padding: 0.26rem; border-radius: var(--dai-radius-field); color: var(--dai-muted); background: var(--dai-accent-soft); }
+.dai-nav-item:hover, .dai-nav-item:focus-visible { border-color: var(--dai-border); background: var(--dai-accent-soft); }
+.dai-nav-item:hover .dai-nav-icon, .dai-nav-item:focus-visible .dai-nav-icon { color: var(--dai-accent); }
+.dai-nav-item.is-active { border-color: transparent; color: var(--dai-accent-hi); background: linear-gradient(90deg, var(--dai-accent-soft), transparent 130%); box-shadow: inset 2px 0 0 var(--dai-accent); }
+.dai-nav-item.is-active .dai-nav-icon { color: var(--dai-accent); background: transparent; }
+.dai-sidebar-foot { display: flex; align-items: center; gap: 0.4rem; margin-top: auto; padding: 0.7rem 0.55rem 0; border-top: 1px solid var(--dai-line); color: var(--dai-muted); font-size: var(--dai-fs-sm); }
+.dai-status-dot { width: 0.42rem; height: 0.42rem; border-radius: 50%; background: var(--dai-good); box-shadow: 0 0 0.35rem var(--dai-good); }
+.dai-settings-main { display: flex; min-width: 0; flex: 1; flex-direction: column; }
+.dai-settings-header { display: flex; justify-content: space-between; gap: 1rem; padding: 1.1rem 1.5rem 0.85rem; border-bottom: 1px solid var(--dai-line); background: linear-gradient(180deg, var(--dai-accent-soft), transparent); }
+.dai-settings-header h2 { margin: 0.1rem 0 0.2rem; font-size: var(--dai-fs-lg); }
+.dai-settings-header p { margin: 0; color: var(--dai-muted); font-size: var(--dai-fs-md); }
+.dai-icon-button { align-self: start; width: 2.5rem; height: 2.5rem; border: 1px solid transparent; border-radius: 50%; color: inherit; background: transparent; cursor: pointer; font-size: 1.5rem !important; line-height: 1; }
+.dai-icon-button:hover { border-color: var(--dai-accent-deep); background: var(--dai-accent-soft); color: var(--dai-accent-hi); }
+.dai-settings-body { min-height: 0; overflow: auto; padding: 1.05rem 1.5rem 1.2rem; }
+.dai-settings-page[hidden] { display: none; }
+.dai-page-heading { margin-bottom: 0.95rem; }
+.dai-page-heading h3 { margin: 0.18rem 0 0.3rem; font-size: var(--dai-fs-xl); font-weight: 700; }
+.dai-page-heading p { max-width: 40rem; margin: 0; color: var(--dai-muted); font-size: var(--dai-fs-md); }
+.dai-page-heading::after { content: ''; display: block; height: 0.55rem; margin: 0.55rem 0 0.15rem; background: linear-gradient(45deg, var(--dai-accent) 49%, transparent 51%) center / 0.45rem 0.45rem no-repeat, linear-gradient(90deg, transparent, var(--dai-line) 12%, var(--dai-line) 88%, transparent) center / 100% 1px no-repeat; }
+.dai-section-heading { margin: 1.15rem 0 0.55rem; }
+.dai-section-heading h3 { margin: 0; font-size: var(--dai-fs-base); }
+.dai-overview-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.35rem 1.5rem; }
+.dai-overview-switch, .dai-feature-toggle { display: flex; align-items: center; gap: 0.9rem; min-height: 2.9rem; padding: 0.5rem 0.2rem; border: 0; border-bottom: 1px solid var(--dai-line); border-radius: 0; background: transparent; }
+.dai-overview-switch > span, .dai-feature-toggle > span:nth-child(2) { display: grid; flex: 1; gap: 0.2rem; }
+.dai-overview-switch small, .dai-feature-toggle small, .dai-card-heading small { color: var(--dai-muted); font-size: var(--dai-fs-md); }
+/* 勾选框：小正方形，未勾留空；勾用背景图直接画在 input 上——input 是替换元素，
+   Chrome 不渲染它的 ::before/::after（mask、字形方案全都因此失效过）。
+   勾的颜色跟主题走：每个主题块定义 --dai-check（内嵌 SVG，色值与 --dai-accent 一致）。 */
+.dai-overview-switch input, .dai-feature-toggle input, .dai-setting-toggle input[type="checkbox"], .dai-orb-switch input { appearance: none; -webkit-appearance: none; box-sizing: border-box; flex: none; position: relative; width: 1.15rem; height: 1.15rem; margin: 0; padding: 0; border: 1px solid var(--dai-accent-deep); border-radius: 0.2rem; background-color: var(--dai-field); background-position: center; background-size: 100% 100%; background-repeat: no-repeat; cursor: pointer; transition: border-color 0.12s ease; }
+.dai-overview-switch input:hover, .dai-feature-toggle input:hover, .dai-setting-toggle input[type="checkbox"]:hover, .dai-orb-switch input:hover { border-color: var(--dai-accent); }
+.dai-overview-switch input:checked, .dai-feature-toggle input:checked, .dai-setting-toggle input[type="checkbox"]:checked, .dai-orb-switch input:checked { background-image: var(--dai-check, none); }
+/* 酒馆全局样式给所有勾选框画了外圈（outline）与伪元素对勾（跟随酒馆主题强调色，通常偏蓝紫），
+   appearance:none 会让 input 的伪元素变得可渲染，于是叠在我们的金勾上面。这里一律压掉：
+   框与勾都由上面的主题样式负责，不跟酒馆配色走。注意必须排在下面的 :focus-visible 规则之前。 */
+.dai-settings-panel input[type="checkbox"]::before, .dai-settings-panel input[type="checkbox"]::after,
+.dai-root input[type="checkbox"]::before, .dai-root input[type="checkbox"]::after,
+.dai-orb input[type="checkbox"]::before, .dai-orb input[type="checkbox"]::after,
+.dai-agent-modal input[type="checkbox"]::before, .dai-agent-modal input[type="checkbox"]::after { content: none !important; display: none !important; }
+.dai-settings-panel input[type="checkbox"], .dai-root input[type="checkbox"], .dai-orb input[type="checkbox"], .dai-agent-modal input[type="checkbox"] { outline: none; box-shadow: none; filter: none; }
+.dai-overview-switch input:focus-visible, .dai-feature-toggle input:focus-visible, .dai-setting-toggle input[type="checkbox"]:focus-visible, .dai-orb-switch input:focus-visible { outline: 2px solid var(--dai-accent); outline-offset: 2px; }
+.dai-feature-icon { display: grid; width: 2rem; height: 2rem; place-items: center; padding: 0.35rem; border-radius: var(--dai-radius-card); color: var(--dai-accent); background: var(--dai-tint); }
+/* 卡片：去左色条，改鎏金顶线 + 卡头菱形火押；状态卡保留细左条表达语义 */
+.dai-card { padding: 0.9rem 1rem; border: 1px solid var(--dai-border); border-radius: var(--dai-radius-card); background: linear-gradient(180deg, var(--dai-surface), var(--dai-bg) 170%); box-shadow: inset 0 1px 0 var(--dai-glow), 0 0.35rem 1rem #0003; }
+.dai-settings-card { margin-bottom: 0.7rem; padding: 0.75rem 0.9rem; border: 1px solid var(--dai-border); border-radius: var(--dai-radius-card); background: linear-gradient(180deg, var(--dai-surface), var(--dai-bg) 190%); box-shadow: inset 0 1px 0 var(--dai-glow); }
+.dai-card-heading { display: grid; gap: 0.2rem; margin-bottom: 0.3rem; grid-template-columns: 1fr auto; align-items: start; }
+.dai-card-heading > b { grid-column: 1; display: flex; align-items: center; gap: 0.45rem; }
+.dai-card-heading > b::before { content: ''; flex: none; width: 0.36rem; height: 0.36rem; background: var(--dai-accent); transform: rotate(45deg); }
+.dai-card-heading > small { grid-column: 1; }
+.dai-card-heading > .dai-impact-edit { grid-column: 2; grid-row: 1 / 3; justify-self: end; align-self: start; }
+.dai-waiting_input, .dai-save_uncertain { border-left: 3px solid var(--dai-warn); }
+.dai-completed_saved { border-left: 3px solid var(--dai-good); }
+.dai-failed_unapplied { border-left: 3px solid var(--dai-error); }
 .dai-heading { display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; }
 .dai-status { font-size: var(--dai-fs-base); }
 .dai-task, .dai-time { color: var(--dai-muted); font-size: var(--dai-fs-md); }
@@ -123,66 +278,25 @@
 .dai-inline-description { margin: 0.35rem 0 0.65rem; opacity: 0.78; font-size: var(--dai-fs-md); }
 .dai-inline-actions { display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap; }
 .dai-inline-status { opacity: 0.7; font-size: var(--dai-fs-md); }
-.dai-settings-panel { position: fixed; z-index: 10001; inset: 0; display: grid; place-items: center; }
-.dai-settings-panel[hidden] { display: none; }
-.dai-settings-panel *, .dai-settings-panel *::before, .dai-settings-panel *::after { box-sizing: border-box; }
-.dai-settings-panel button, .dai-settings-panel input, .dai-settings-panel select { font: inherit; text-shadow: none; }
-.dai-settings-panel :is(h2, h3, b, strong) { color: inherit; }
-.dai-settings-panel :is(button, input, select):focus-visible { outline: 2px solid var(--dai-accent); outline-offset: 3px; }
-.dai-settings-backdrop { position: absolute; inset: 0; background: #05070caa; }
-.dai-settings-dialog { position: relative; display: flex; width: min(72rem, calc(100vw - 2rem)); height: min(46rem, calc(100dvh - 2rem)); overflow: hidden; border: 1px solid var(--dai-border); border-radius: var(--dai-radius-dialog); background: var(--dai-bg); box-shadow: 0 1.5rem 4rem #0007; }
-.dai-settings-sidebar { display: flex; flex: 0 0 14rem; flex-direction: column; padding: 1.1rem 0.75rem 0.85rem; border-right: 1px solid var(--dai-border); background: var(--dai-sidebar); }
-.dai-settings-brand { display: flex; align-items: center; gap: 0.65rem; padding: 0.35rem 0.55rem 1.25rem; }
-.dai-settings-brand > div { display: grid; gap: 0.12rem; min-width: 0; }
-.dai-settings-brand strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--dai-fs-md); }
-.dai-settings-brand small, .dai-settings-nav small { color: var(--dai-muted); font-size: var(--dai-fs-sm); }
-.dai-settings-mark { display: grid; width: 2rem; height: 2rem; place-items: center; border: 1px solid var(--dai-border); border-radius: var(--dai-radius-card); color: var(--dai-accent); background: var(--dai-tint); font-weight: 700; }
-.dai-settings-nav { display: grid; gap: 0.18rem; overflow: auto; }
-.dai-nav-label { margin: 0.85rem 0.55rem 0.25rem; color: var(--dai-muted); font-size: var(--dai-fs-sm); }
-.dai-nav-item { display: flex; align-items: center; gap: 0.6rem; width: 100%; height: fit-content; min-height: 2.4rem; padding: 0.35rem 0.55rem; border: 1px solid transparent; border-radius: var(--dai-radius-row); color: var(--dai-text); background: transparent; cursor: pointer; text-align: left; }
-.dai-nav-item > span:not(.dai-nav-icon) { display: grid; gap: 0.06rem; min-width: 0; }
-.dai-nav-item b { font-size: var(--dai-fs-md); font-weight: 600; line-height: 1.25; }
-.dai-nav-item small { line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.dai-nav-icon { display: grid; width: 1.55rem; height: 1.55rem; place-items: center; border-radius: var(--dai-radius-field); color: var(--dai-accent); background: var(--dai-surface); font-size: var(--dai-fs-base); }
-.dai-nav-item:hover, .dai-nav-item:focus-visible { border-color: var(--dai-border); background: var(--dai-surface); }
-.dai-nav-item.is-active { border-color: var(--dai-border); background: var(--dai-tint); box-shadow: inset 3px 0 var(--dai-accent); }
-.dai-sidebar-foot { display: flex; align-items: center; gap: 0.4rem; margin-top: auto; padding: 0.7rem 0.55rem 0; border-top: 1px solid var(--dai-border); color: var(--dai-muted); font-size: var(--dai-fs-sm); }
-.dai-status-dot { width: 0.42rem; height: 0.42rem; border-radius: 50%; background: var(--dai-good); }
-.dai-settings-main { display: flex; min-width: 0; flex: 1; flex-direction: column; }
-.dai-settings-header { display: flex; justify-content: space-between; gap: 1rem; padding: 1.1rem 1.5rem 0.85rem; border-bottom: 1px solid var(--dai-border); }
-.dai-settings-header h2 { margin: 0.1rem 0 0.2rem; font-size: var(--dai-fs-lg); letter-spacing: -0.02em; }
-.dai-settings-header p { margin: 0; color: var(--dai-muted); font-size: var(--dai-fs-md); }
-.dai-icon-button { align-self: start; width: 2.5rem; height: 2.5rem; border: 1px solid transparent; border-radius: 50%; color: inherit; background: transparent; cursor: pointer; font-size: 1.5rem !important; line-height: 1; }
-.dai-icon-button:hover { border-color: var(--dai-border); background: var(--dai-surface); }
-.dai-settings-body { min-height: 0; overflow: auto; padding: 1.05rem 1.5rem 1.2rem; }
-.dai-settings-page[hidden] { display: none; }
-.dai-page-heading { margin-bottom: 0.95rem; }
-.dai-page-heading h3 { margin: 0.18rem 0 0.3rem; font-size: var(--dai-fs-xl); letter-spacing: -0.03em; }
-.dai-page-heading p { max-width: 40rem; margin: 0; color: var(--dai-muted); font-size: var(--dai-fs-md); }
-.dai-page-eyebrow { color: var(--dai-accent); font-size: var(--dai-fs-sm); }
-.dai-section-heading { margin: 1.15rem 0 0.55rem; }
-.dai-section-heading h3 { margin: 0; font-size: var(--dai-fs-base); }
-.dai-overview-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.35rem 1.5rem; }
-.dai-overview-switch, .dai-feature-toggle { display: flex; align-items: center; gap: 0.9rem; min-height: 2.9rem; padding: 0.5rem 0.2rem; border: 0; border-bottom: 1px solid var(--dai-border); border-radius: 0; background: transparent; }
-.dai-overview-switch > span, .dai-feature-toggle > span:nth-child(2) { display: grid; flex: 1; gap: 0.2rem; }
-.dai-overview-switch small, .dai-feature-toggle small, .dai-card-heading small { color: var(--dai-muted); font-size: var(--dai-fs-md); }
-/* 勾选框：小正方形，不填充底色，勾本身用红色（选中画红勾、未选中留空）。 */
-/* 勾选框：小正方形，未勾留空；勾用背景图直接画在 input 上——input 是替换元素，
-   Chrome 不渲染它的 ::before/::after（mask、字形方案全都因此失效过）。
-   勾的颜色跟主题走：每个主题块定义 --dai-check（内嵌 SVG，色值与 --dai-accent 一致）。 */
-.dai-overview-switch input, .dai-feature-toggle input, .dai-setting-toggle input[type="checkbox"] { appearance: none; -webkit-appearance: none; box-sizing: border-box; flex: none; position: relative; width: 1.15rem; height: 1.15rem; margin: 0; padding: 0; border: 1px solid var(--dai-border); border-radius: 0.2rem; background: var(--dai-field) center / 100% 100% no-repeat; cursor: pointer; transition: border-color 0.12s ease; }
-.dai-overview-switch input:hover, .dai-feature-toggle input:hover, .dai-setting-toggle input[type="checkbox"]:hover { border-color: var(--dai-accent); }
-.dai-overview-switch input:checked, .dai-feature-toggle input:checked, .dai-setting-toggle input[type="checkbox"]:checked { background-image: var(--dai-check, none); }
-.dai-overview-switch input:focus-visible, .dai-feature-toggle input:focus-visible, .dai-setting-toggle input[type="checkbox"]:focus-visible { outline: 2px solid var(--dai-accent); outline-offset: 2px; }
-.dai-overview-switch input:focus-visible, .dai-feature-toggle input:focus-visible, .dai-setting-toggle input[type="checkbox"]:focus-visible { outline: 2px solid var(--dai-accent); outline-offset: 2px; }
-.dai-feature-icon { display: grid; width: 2rem; height: 2rem; place-items: center; border-radius: var(--dai-radius-card); color: var(--dai-accent); background: var(--dai-tint); }
-.dai-settings-card { margin-bottom: 0.7rem; padding: 0.75rem 0.9rem; border: 1px solid var(--dai-border); border-radius: var(--dai-radius-card); background: var(--dai-surface); }
-.dai-card-heading { display: grid; gap: 0.2rem; margin-bottom: 0.3rem; }
-.dai-setting-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; min-height: 2.7rem; padding: 0.4rem 0; border-bottom: 1px solid var(--dai-border); }
+.dai-setting-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; min-height: 2.7rem; padding: 0.4rem 0; border-bottom: 1px solid var(--dai-line); }
 .dai-setting-row:last-child { border-bottom: 0; }
 .dai-setting-row > span { display: grid; gap: 0.1rem; min-width: 0; }
 .dai-setting-row small { color: var(--dai-muted); font-size: var(--dai-fs-md); line-height: 1.35; }
 .dai-setting-row input:not([type="checkbox"]), .dai-setting-row select { width: min(19rem, 52%); min-height: 2.2rem; padding: 0.3rem 0.55rem; border: 1px solid var(--dai-border); border-radius: var(--dai-radius-field); color: var(--dai-text); background: var(--dai-field); }
+/* 输入控件跟随扩展主题：用户安装的全局美化主题会用 !important 把酒馆全页的文本输入框/
+   下拉/文本域染成它自己的深色（--ui-color-sec），扩展的浅色主题下就成了黑框。
+   在扩展容器内用「更高特异性 + 同为 !important」抢回主题变量；只影响扩展自己的表单，
+   酒馆其它输入框一概不碰。 */
+.dai-settings-panel input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+.dai-settings-panel select,
+.dai-settings-panel textarea:not([type="search"]),
+.dai-orb input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+.dai-orb select,
+.dai-orb textarea:not([type="search"]) {
+  background-color: var(--dai-field) !important;
+  border-color: var(--dai-border) !important;
+  color: var(--dai-text) !important;
+}
 .dai-settings-panel option { color: var(--dai-text); background: var(--dai-field); }
 .dai-setting-row textarea { width: min(30rem, 56%); min-height: 11rem; padding: 0.5rem 0.6rem; border: 1px solid var(--dai-border); border-radius: var(--dai-radius-field); color: var(--dai-text); background: var(--dai-field); font: inherit; line-height: 1.5; resize: vertical; }
 .dai-setting-actions { justify-content: flex-start; gap: 0.6rem; }
@@ -209,19 +323,18 @@
 .dai-impact-item { display: grid; gap: 0.25rem; padding: 0.7rem 0.8rem; border: 1px solid var(--dai-border); border-radius: var(--dai-radius-card); background: var(--dai-field); }
 .dai-impact-item.is-fresh { border-color: var(--dai-accent); box-shadow: 0 0 0 2px var(--dai-tint); transition: box-shadow 0.4s ease, border-color 0.4s ease; }
 .dai-impact-item-head { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
-.dai-impact-item-head b { overflow-wrap: anywhere; }
-.dai-impact-mark { display: grid; min-width: 1.4rem; height: 1.4rem; place-items: center; border-radius: var(--dai-radius-field); color: var(--dai-accent); background: var(--dai-tint); font-size: var(--dai-fs-md); }
+.dai-impact-item-head b { overflow-wrap: anywhere; flex: 1; }
+.dai-impact-mark { display: grid; min-width: 1.4rem; height: 1.4rem; place-items: center; padding: 0.28rem; border-radius: var(--dai-radius-field); color: var(--dai-accent); background: var(--dai-tint); font-size: var(--dai-fs-md); }
 .dai-impact-meta, .dai-impact-fate { color: var(--dai-muted); font-size: var(--dai-fs-sm); overflow-wrap: anywhere; }
 .dai-impact-detail { margin: 0; font-size: var(--dai-fs-md); overflow-wrap: anywhere; }
 .dai-impact-empty { padding: 0.9rem 0.2rem; color: var(--dai-muted); font-size: var(--dai-fs-md); }
-.dai-impact-item-head b { flex: 1; }
 .dai-impact-edit { flex: none; padding: 0.1rem 0.5rem; border: 1px solid var(--dai-border); border-radius: var(--dai-radius-row); color: var(--dai-muted); background: transparent; font-size: var(--dai-fs-sm); cursor: pointer; }
 .dai-impact-edit:hover { color: inherit; border-color: currentColor; }
-.dai-impact-form { display: grid; gap: 0.55rem; padding: 0.75rem; margin: 0.5rem 0 0.7rem; border: 1px dashed var(--dai-border); border-radius: var(--dai-radius-card); }
+.dai-impact-form { display: grid; gap: 0.4rem; padding: 0.6rem; margin: 0.5rem 0 0.7rem; border: 1px dashed var(--dai-border); border-radius: var(--dai-radius-card); }
 .dai-impact-form[hidden] { display: none; }
 .dai-impact-form-head { display: grid; gap: 0.15rem; }
 .dai-impact-form-head small { color: var(--dai-muted); font-size: var(--dai-fs-md); }
-.dai-impact-form textarea { width: 100%; min-height: 4.5rem; resize: vertical; }
+.dai-impact-form textarea { width: 100%; min-height: 3.2rem; resize: vertical; }
 .dai-impact-form .dai-setting-actions { align-items: center; }
 .dai-setting-actions { flex-wrap: wrap; }
 .dai-setting-actions input[type="search"] { flex: 1 1 12rem; min-width: 10rem; }
@@ -244,12 +357,10 @@
 .dai-impact-item.is-compact { padding: 0.5rem 0.65rem; }
 .dai-impact-item.is-compact .dai-impact-detail { font-size: var(--dai-fs-md); line-height: 1.5; }
 .dai-impact-recent { max-height: none; overflow: visible; }
-.dai-impact-form { gap: 0.4rem; padding: 0.6rem; }
 .dai-impact-form .dai-setting-grid { grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: 0.3rem 0.5rem; }
 .dai-impact-form .dai-setting-row { min-height: 2.1rem; padding: 0.2rem 0; }
 .dai-impact-form .dai-setting-row small { font-size: var(--dai-fs-xs); line-height: 1.3; }
 .dai-impact-form .dai-setting-row input, .dai-impact-form .dai-setting-row select { min-height: 1.9rem; padding: 0.2rem 0.4rem; font-size: var(--dai-fs-md); }
-.dai-impact-form textarea { min-height: 3.2rem; }
 .dai-impact-archive { margin: 0.7rem 0 0; padding: 0.5rem 0.7rem; border: 1px dashed var(--dai-border); border-radius: var(--dai-radius-card); }
 .dai-impact-archive > summary { display: flex; align-items: center; gap: 0.5rem; color: var(--dai-muted); font-size: var(--dai-fs-md); cursor: pointer; list-style: none; }
 .dai-impact-archive > summary::-webkit-details-marker { display: none; }
@@ -264,12 +375,12 @@
 .dai-prompt-fold > summary small { color: var(--dai-muted); font-size: var(--dai-fs-sm); }
 .dai-prompt-fold[open] > summary { margin-bottom: 0.55rem; }
 .dai-prompt-fold textarea { width: 100%; min-height: 8rem; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: var(--dai-fs-sm); line-height: 1.5; }
-.dai-settings-footer { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.65rem 1.5rem; border-top: 1px solid var(--dai-border); color: var(--dai-muted); font-size: var(--dai-fs-md); }
+.dai-settings-footer { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.65rem 1.5rem; border-top: 1px solid var(--dai-line); color: var(--dai-muted); font-size: var(--dai-fs-md); }
 .dai-secondary-button { min-height: 2.35rem; padding: 0.35rem 0.85rem; border: 1px solid var(--dai-border); border-radius: var(--dai-radius-field); color: var(--dai-text); background: var(--dai-field); cursor: pointer; transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease; }
-.dai-secondary-button:hover { background: var(--dai-tint); border-color: var(--dai-accent); }
+.dai-secondary-button:hover { background: var(--dai-tint); border-color: var(--dai-accent-deep); }
 .dai-dashboard-summary { padding: 0.75rem 1rem; border-left: 3px solid var(--dai-accent); border-radius: var(--dai-radius-row); color: var(--dai-text); background: var(--dai-tint); overflow-wrap: anywhere; }
 .dai-module-list { display: grid; gap: 0.65rem; }
-.dai-module-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 1rem; row-gap: 0.4rem; padding: 0.75rem 0.9rem; border: 1px solid var(--dai-border); border-radius: var(--dai-radius-card); background: var(--dai-surface); }
+.dai-module-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 1rem; row-gap: 0.4rem; padding: 0.75rem 0.9rem; border: 1px solid var(--dai-border); border-radius: var(--dai-radius-card); background: var(--dai-surface); box-shadow: inset 0 1px 0 var(--dai-glow); }
 .dai-module-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }
 .dai-module-summary { grid-column: 1; margin: 0; color: var(--dai-muted); font-size: var(--dai-fs-md); overflow-wrap: anywhere; }
 .dai-module-meta { grid-column: 1; display: flex; flex-wrap: wrap; gap: 0.3rem 0.8rem; color: var(--dai-muted); font-size: var(--dai-fs-sm); overflow-wrap: anywhere; }
@@ -283,13 +394,13 @@
 .dai-dashboard-note { margin: 0.7rem 0 0; color: var(--dai-muted); font-size: var(--dai-fs-md); }
 .dai-theme-picker { display: flex; flex-wrap: wrap; gap: 0.75rem; min-width: 0; margin: 1rem 0 0; padding: 1rem; border: 1px solid var(--dai-border); border-radius: var(--dai-radius-card); }
 .dai-theme-picker legend { padding: 0 0.4rem; color: var(--dai-text); font-size: var(--dai-fs-base); font-weight: 600; }
-.dai-theme-option { display: flex; align-items: center; gap: 0.5rem; flex: 1 1 7rem; min-height: 3rem; padding: 0.5rem 0.65rem; border: 1px solid var(--dai-border); border-radius: var(--dai-radius-row); cursor: pointer; color: var(--dai-text); background: var(--dai-surface); }
-.dai-theme-option:has(input:checked) { outline: 2px solid var(--dai-accent); outline-offset: 1px; background: var(--dai-tint); }
+.dai-theme-option { display: flex; align-items: center; gap: 0.5rem; flex: 1 1 7rem; min-height: 3rem; padding: 0.5rem 0.65rem; border: 1px solid var(--dai-border); border-radius: var(--dai-radius-row); cursor: pointer; color: var(--dai-muted); background: var(--dai-field); }
+.dai-theme-option:has(input:checked) { outline: 1.5px solid var(--dai-accent); outline-offset: 0; background: var(--dai-tint); color: var(--dai-accent-hi); }
 .dai-theme-option input { width: 1rem; height: 1rem; margin: 0; accent-color: var(--dai-accent); }
-.dai-theme-swatch { width: 1.6rem; height: 1.6rem; flex: 0 0 auto; border: 1px solid #898784; border-radius: 50%; }
-.dai-theme-swatch[data-swatch="gilt"] { background: #d9a72b; }
-.dai-theme-swatch[data-swatch="graphite"] { background: #2fbf9d; }
-.dai-theme-swatch[data-swatch="parchment"] { background: #b4452f; }
+.dai-theme-swatch { width: 1.6rem; height: 1.6rem; flex: 0 0 auto; border: 1px solid var(--dai-accent-deep); border-radius: 50%; }
+.dai-theme-swatch[data-swatch="gilt"] { background: radial-gradient(circle at 32% 28%, #f6dd9a, #a87b18); }
+.dai-theme-swatch[data-swatch="graphite"] { background: radial-gradient(circle at 32% 28%, #b7f0dd, #1d5f4d); }
+.dai-theme-swatch[data-swatch="parchment"] { background: radial-gradient(circle at 32% 28%, #fbf6ea, #c9b888); }
 .dai-compact .dai-module-row, .dai-compact .dai-settings-card { padding: 0.65rem 0.8rem; }
 .dai-compact .dai-setting-row { min-height: 2.75rem; padding: 0.4rem 0; }
 @media (max-width: 720px) {
@@ -309,7 +420,7 @@
     .dai-settings-nav { display: flex; gap: 0.25rem; overflow-x: auto; }
     .dai-nav-label, .dai-sidebar-foot, .dai-nav-item small { display: none; }
     .dai-nav-item { flex: 0 0 auto; width: auto; padding: 0.35rem 0.55rem; }
-    .dai-nav-item > span:not(.dai-nav-icon) { display: block; }
+    .dai-nav-item > span:not(.dai-nav-icon):not(.dai-ic) { display: block; }
     .dai-nav-item b { font-size: var(--dai-fs-md); }
     .dai-settings-main { min-height: 34rem; }
     .dai-module-row { padding: 0.75rem; column-gap: 0.6rem; }
@@ -320,8 +431,8 @@
 }
 
 .dai-turn-card { display: flex; flex-direction: column; gap: 0.55rem; }
-.dai-run-button { align-self: flex-start; min-height: 2.6rem; padding: 0.45rem 1.1rem; border: 1px solid var(--dai-accent); border-radius: var(--dai-radius-field); background: var(--dai-accent); color: var(--dai-on-accent); font-weight: 700; font-size: var(--dai-fs-md); cursor: pointer; }
-.dai-run-button:hover:not(:disabled) { filter: brightness(1.08); }
+.dai-run-button { align-self: flex-start; min-height: 2.6rem; padding: 0.45rem 1.1rem; border: 1px solid var(--dai-btn-border, var(--dai-accent)); border-radius: var(--dai-radius-field); background: var(--dai-btn-gradient, var(--dai-accent)); color: var(--dai-btn-text, var(--dai-on-accent)); font-weight: 700; font-size: var(--dai-fs-md); letter-spacing: 0.04em; cursor: pointer; box-shadow: var(--dai-btn-glow, inset 0 1px 0 rgba(255, 255, 255, 0.32), 0 0.2rem 0.6rem rgba(0, 0, 0, 0.25)); }
+.dai-run-button:hover:not(:disabled) { border-color: var(--dai-accent); box-shadow: var(--dai-btn-glow-hover, var(--dai-btn-glow, none)); }
 .dai-run-button:disabled { opacity: 0.55; cursor: progress; }
 .dai-turn-result { margin: 0; color: var(--dai-muted); font-size: var(--dai-fs-md); line-height: 1.5; white-space: pre-wrap; }
 
@@ -330,7 +441,7 @@
 .dai-pager { display: flex; align-items: center; justify-content: flex-end; gap: 0.45rem; margin-top: 0.55rem; }
 .dai-pager .dai-secondary-button { min-height: 1.9rem; padding: 0.15rem 0.65rem; font-size: var(--dai-fs-sm); }
 .dai-pager-label { color: var(--dai-muted); font-size: var(--dai-fs-sm); }
-.dai-run-button.is-secondary { background: transparent; color: var(--dai-accent); }
+.dai-run-button.is-secondary { background: var(--dai-field); border-color: var(--dai-accent-deep); color: var(--dai-text); font-weight: 500; box-shadow: none; }
 .dai-version-list { display: flex; flex-wrap: wrap; gap: 0.35rem; }
 .dai-version-button { padding: 0.2rem 0.55rem; border: 1px solid var(--dai-border); border-radius: 999px; background: transparent; color: var(--dai-muted); font-size: var(--dai-fs-sm); cursor: pointer; }
 .dai-version-button:hover:not(:disabled) { border-color: var(--dai-accent); color: var(--dai-accent); }
@@ -338,6 +449,9 @@
 
 .dai-status-list { display: grid; gap: 0.3rem; margin: 0; padding: 0; list-style: none; }
 .dai-status-list li { display: grid; grid-template-columns: minmax(5.5rem, max-content) 1fr; gap: 0.6rem; padding: 0.32rem 0.5rem; border: 1px solid var(--dai-border); border-radius: var(--dai-radius-field); background: var(--dai-field-hover); font-size: var(--dai-fs-md); line-height: 1.5; }
+.dai-status-list b { color: var(--dai-muted); font-weight: 600; }
+.dai-status-list span { color: var(--dai-text); word-break: break-word; }
+.dai-status-list li[data-tone="warn"] { border-color: var(--dai-accent); }
 
 /* 世界页：双栏事件列表与指令流水 */
 .dai-world-events { display: grid; gap: 0.4rem; }
@@ -352,23 +466,23 @@
 /* 任务列表：进行中/已完成/已逾期 */
 .dai-world-tasks { display: grid; gap: 0.4rem; }
 .dai-world-task { display: flex; flex-direction: column; gap: 0.3rem; padding: 0.45rem 0.6rem; border: 1px solid var(--dai-border); border-radius: var(--dai-radius-row); background: var(--dai-field-hover); }
-.dai-world-task[data-status="active"] { border-left: 3px solid var(--dai-accent); }
-.dai-world-task[data-status="overdue"] { border-left: 3px solid var(--dai-error); }
+.dai-world-task[data-status="active"] { border-left: 2px solid var(--dai-accent); }
+.dai-world-task[data-status="overdue"] { border-left: 2px solid var(--dai-error); }
 .dai-world-task[data-status="overdue"] .dai-world-event-head b::after { content: '（已逾期）'; color: var(--dai-error); font-size: var(--dai-fs-sm); font-weight: 400; }
-.dai-world-task[data-status="done"] { opacity: 0.62; border-left: 3px solid var(--dai-good); }
+.dai-world-task[data-status="done"] { opacity: 0.62; border-left: 2px solid var(--dai-good); }
 .dai-world-task .dai-world-event-head b::before { content: none; }
 .dai-world-task-detail { margin: 0; color: var(--dai-text); font-size: var(--dai-fs-md); line-height: 1.55; word-break: break-word; }
 /* 势力与人物：态度徽标按立场着色 */
 .dai-world-factions, .dai-world-people { display: grid; gap: 0.4rem; }
 .dai-world-faction, .dai-world-person { display: flex; flex-direction: column; gap: 0.3rem; padding: 0.45rem 0.6rem; border: 1px solid var(--dai-border); border-radius: var(--dai-radius-row); background: var(--dai-field-hover); }
 .dai-world-stance { flex-shrink: 0; padding: 0.1rem 0.5rem; border-radius: 999px; font-size: var(--dai-fs-sm); border: 1px solid var(--dai-border); color: var(--dai-muted); }
-.dai-world-faction[data-stance="hostile"] { border-left: 3px solid var(--dai-error); }
+.dai-world-faction[data-stance="hostile"] { border-left: 2px solid var(--dai-error); }
 .dai-world-faction[data-stance="hostile"] .dai-world-stance { color: var(--dai-error); border-color: var(--dai-error); }
-.dai-world-faction[data-stance="wary"] { border-left: 3px solid var(--dai-warn); }
+.dai-world-faction[data-stance="wary"] { border-left: 2px solid var(--dai-warn); }
 .dai-world-faction[data-stance="wary"] .dai-world-stance { color: var(--dai-warn); border-color: var(--dai-warn); }
-.dai-world-faction[data-stance="allied"] { border-left: 3px solid var(--dai-good); }
+.dai-world-faction[data-stance="allied"] { border-left: 2px solid var(--dai-good); }
 .dai-world-faction[data-stance="allied"] .dai-world-stance { color: var(--dai-good); border-color: var(--dai-good); }
-.dai-world-faction[data-stance="friendly"] { border-left: 3px solid var(--dai-accent); }
+.dai-world-faction[data-stance="friendly"] { border-left: 2px solid var(--dai-accent); }
 .dai-world-faction[data-stance="friendly"] .dai-world-stance { color: var(--dai-accent); border-color: var(--dai-accent); }
 .dai-world-event-head { display: flex; justify-content: space-between; gap: 0.6rem; align-items: baseline; }
 .dai-world-event-head b { color: var(--dai-text); font-size: var(--dai-fs-md); line-height: 1.5; word-break: break-word; }
@@ -388,16 +502,13 @@
 .dai-impact-item.is-clickable:hover { border-color: var(--dai-accent); background: var(--dai-tint); }
 .dai-world-journal { display: grid; gap: 0.3rem; }
 .dai-world-journal .dai-turn-result b { color: var(--dai-muted); }
-.dai-status-list b { color: var(--dai-muted); font-weight: 600; }
-.dai-status-list span { color: var(--dai-text); word-break: break-word; }
-.dai-status-list li[data-tone="warn"] { border-color: var(--dai-accent); }
 .dai-facts-injection { display: grid; gap: 0.45rem; }
 .dai-facts-injection-list { display: flex; flex-wrap: wrap; gap: 0.35rem; }
 /* 检索库条目浏览：固定高度内滚动，条目再多也不撑长页面；滑到底后滚轮接着滚主界面。 */
 .dai-facts-browser { display: grid; gap: 0.4rem; max-height: 24rem; overflow-y: auto; padding: 0.4rem; border: 1px solid var(--dai-border); border-radius: var(--dai-radius-card); background: var(--dai-surface); }
 .dai-facts-browser::-webkit-scrollbar { width: 0.5rem; }
 .dai-facts-browser::-webkit-scrollbar-track { background: transparent; }
-.dai-facts-browser::-webkit-scrollbar-thumb { border-radius: 999px; background: var(--dai-border); }
+.dai-facts-browser::-webkit-scrollbar-thumb { border-radius: 999px; background: var(--dai-accent-deep); }
 .dai-facts-browser::-webkit-scrollbar-thumb:hover { background: var(--dai-muted); }
 /* 长清单统一收进固定高度内滚动（检索库·条目浏览同款体验）：
    纳戒各清单/主角面板/流水、世界页事件任务势力人物、人物簿格子、
@@ -418,7 +529,7 @@
 .dai-world-journal::-webkit-scrollbar-track, .dai-npc-grid::-webkit-scrollbar-track { background: transparent; }
 .dai-self-entries::-webkit-scrollbar-thumb, .dai-self-panel::-webkit-scrollbar-thumb, .dai-world-events::-webkit-scrollbar-thumb,
 .dai-world-tasks::-webkit-scrollbar-thumb, .dai-world-factions::-webkit-scrollbar-thumb, .dai-world-people::-webkit-scrollbar-thumb,
-.dai-world-journal::-webkit-scrollbar-thumb, .dai-npc-grid::-webkit-scrollbar-thumb { border-radius: 999px; background: var(--dai-border); }
+.dai-world-journal::-webkit-scrollbar-thumb, .dai-npc-grid::-webkit-scrollbar-thumb { border-radius: 999px; background: var(--dai-accent-deep); }
 .dai-self-entries::-webkit-scrollbar-thumb:hover, .dai-self-panel::-webkit-scrollbar-thumb:hover, .dai-world-events::-webkit-scrollbar-thumb:hover,
 .dai-world-tasks::-webkit-scrollbar-thumb:hover, .dai-world-factions::-webkit-scrollbar-thumb:hover, .dai-world-people::-webkit-scrollbar-thumb:hover,
 .dai-world-journal::-webkit-scrollbar-thumb:hover, .dai-npc-grid::-webkit-scrollbar-thumb:hover { background: var(--dai-muted); }
@@ -428,7 +539,7 @@
 .dai-self-tabs { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.5rem; }
 .dai-self-tab { border: 1px solid var(--dai-border); border-radius: 999px; background: transparent; color: var(--dai-muted); padding: 0.25rem 0.85rem; font-size: var(--dai-fs-md); cursor: pointer; }
 .dai-self-tab:hover { color: var(--dai-text); border-color: var(--dai-accent); }
-.dai-self-tab.is-active { background: var(--dai-accent); border-color: var(--dai-accent); color: var(--dai-on-accent); }
+.dai-self-tab.is-active { background: var(--dai-btn-gradient, var(--dai-accent)); border-color: var(--dai-btn-border, var(--dai-accent)); color: var(--dai-btn-text, var(--dai-on-accent)); font-weight: 600; box-shadow: var(--dai-btn-glow, none); }
 .dai-self-entries { display: grid; gap: 0.4rem; }
 .dai-self-entry { display: flex; flex-direction: column; gap: 0.3rem; padding: 0.45rem 0.6rem; border: 1px solid var(--dai-border); border-radius: var(--dai-radius-row); background: var(--dai-field-hover); }
 .dai-self-entry-head { display: flex; justify-content: space-between; gap: 0.6rem; align-items: baseline; }
@@ -509,12 +620,12 @@
     white-space: nowrap;
 }
 
-/* 主操作按钮：强调色填充 + 加粗（此前 .dai-button 没有任何基础样式，渲染成浏览器默认灰钮） */
-.dai-button { min-height: 2.3rem; padding: 0.35rem 1rem; border: 1px solid var(--dai-accent); border-radius: var(--dai-radius-field); color: var(--dai-on-accent); background: var(--dai-accent); font-weight: 600; cursor: pointer; }
-.dai-button:hover:not(:disabled) { filter: brightness(1.08); }
+/* 主操作按钮：鎏金浮雕填充 + 加粗 */
+.dai-button { min-height: 2.3rem; padding: 0.35rem 1rem; border: 1px solid var(--dai-btn-border, var(--dai-accent)); border-radius: var(--dai-radius-field); color: var(--dai-btn-text, var(--dai-on-accent)); background: var(--dai-btn-gradient, var(--dai-accent)); font-weight: 600; cursor: pointer; box-shadow: var(--dai-btn-glow, inset 0 1px 0 rgba(255, 255, 255, 0.32), 0 0.15rem 0.5rem rgba(0, 0, 0, 0.22)); }
+.dai-button:hover:not(:disabled) { border-color: var(--dai-accent); box-shadow: var(--dai-btn-glow-hover, var(--dai-btn-glow, none)); }
 .dai-button:disabled { opacity: 0.55; cursor: progress; }
 .dai-settings-card .dai-button { font-weight: 600; }
-.dai-button-ghost { border-color: transparent; color: var(--dai-accent); background: transparent; font-weight: 500; }
+.dai-button-ghost { border-color: transparent; color: var(--dai-accent); background: transparent; font-weight: 500; box-shadow: none; }
 .dai-button-ghost:hover:not(:disabled) { background: var(--dai-tint); filter: none; }
 
 .dai-settings-card .dai-icon-button {
@@ -566,35 +677,44 @@
 .dai-orb[hidden] { display: none; }
 .dai-orb.is-dragging { cursor: grabbing; }
 .dai-orb.is-dragging .dai-orb-ball { cursor: grabbing; }
-.dai-orb-capsule { display: flex; flex-direction: column; width: 3rem; height: 3rem; max-height: calc(100vh - 1.6rem); overflow: hidden; border: 1px solid var(--dai-border); border-radius: 999px; background: var(--dai-surface); box-shadow: 0 0.35rem 1.1rem #0005; transition: height 0.28s ease; scrollbar-width: none; }
+.dai-orb-capsule { display: flex; flex-direction: column; width: 3rem; height: 3rem; max-height: calc(100vh - 1.6rem); overflow: hidden; border: 1px solid var(--dai-accent-deep); border-radius: 999px; background: var(--dai-surface); box-shadow: 0 0.35rem 1.1rem #0005, inset 0 1px 0 var(--dai-glow); transition: height 0.28s ease; scrollbar-width: none; }
 .dai-orb-capsule::-webkit-scrollbar { display: none; }
 .dai-orb[data-state="expanded"] .dai-orb-capsule { overflow-y: auto; }
-.dai-orb-ball { flex: none; display: grid; width: 3rem; height: 3rem; place-items: center; border: 0; border-radius: 999px; color: var(--dai-accent); background: var(--dai-tint); cursor: grab; font-size: var(--dai-fs-title); line-height: 1; transition: filter 0.15s ease; touch-action: none; }
+.dai-orb-ball { flex: none; display: grid; width: 3rem; height: 3rem; place-items: center; padding: 0.72rem; border: 0; border-radius: 999px; color: var(--dai-accent-hi); background: radial-gradient(circle at 32% 26%, var(--dai-accent-soft), transparent 78%), var(--dai-tint); box-shadow: inset 0 1px 0 var(--dai-glow), inset 0 0 0 1px var(--dai-accent-deep), 0 0 0.7rem var(--dai-orb-halo); cursor: grab; line-height: 1; transition: filter 0.15s ease; touch-action: none; }
 .dai-orb-ball:hover { filter: brightness(1.12); }
-.dai-orb-icon { flex: none; display: grid; width: 3rem; height: 2.9rem; place-items: center; border: 0; color: var(--dai-muted); background: transparent; cursor: pointer; font-size: var(--dai-fs-base); line-height: 1; opacity: 0; transform: translateY(-0.4rem); visibility: hidden; pointer-events: none; transition: opacity 0.22s ease, transform 0.22s ease, color 0.15s ease, background 0.15s ease, visibility 0.22s ease; }
+/* 焚决火种：内焰轻微呼吸；尊重减弱动态偏好 */
+.dai-orb-ball svg { animation: dai-flame-breathe 2.6s ease-in-out infinite alternate; transform-origin: 50% 62%; }
+@keyframes dai-flame-breathe { from { transform: scale(0.95); } to { transform: scale(1.06); } }
+.dai-orb-icon { flex: none; display: grid; width: 3rem; height: 2.9rem; place-items: center; padding: 0.72rem; border: 0; color: var(--dai-muted); background: transparent; cursor: pointer; line-height: 1; opacity: 0; transform: translateY(-0.4rem); visibility: hidden; pointer-events: none; transition: opacity 0.22s ease, transform 0.22s ease, color 0.15s ease, background 0.15s ease, visibility 0.22s ease; }
 .dai-orb[data-state="expanded"] .dai-orb-icon { opacity: 1; transform: none; visibility: visible; pointer-events: auto; }
-.dai-orb-icon:hover { color: var(--dai-text); background: var(--dai-field-hover); }
-.dai-orb-icon.is-active { color: var(--dai-accent); background: var(--dai-tint); }
-.dai-orb-panel { position: absolute; top: 0; right: calc(100% + 0.6rem); width: min(20rem, calc(100vw - 6.2rem)); max-height: min(34rem, 72vh); overflow: auto; padding: 0.85rem 0.95rem 0.95rem; border: 1px solid var(--dai-border); border-radius: var(--dai-radius-dialog); background: var(--dai-surface); box-shadow: 0 0.6rem 1.6rem #0005; font-size: var(--dai-fs-md); }
+.dai-orb-icon:hover { color: var(--dai-accent-hi); background: var(--dai-tint); }
+.dai-orb-icon.is-active { color: var(--dai-accent); background: var(--dai-tint); box-shadow: inset 2px 0 0 var(--dai-accent); }
+.dai-orb-panel { position: absolute; top: 0; right: calc(100% + 0.6rem); width: min(20rem, calc(100vw - 6.2rem)); max-height: min(34rem, 72vh); overflow: auto; padding: 0.85rem 0.95rem 0.95rem; border: 1px solid var(--dai-accent-deep); border-radius: var(--dai-radius-dialog); background: linear-gradient(180deg, var(--dai-surface), var(--dai-bg) 200%); box-shadow: 0 0.6rem 1.6rem #0005, inset 0 1px 0 var(--dai-glow); font-size: var(--dai-fs-md); }
 .dai-orb[data-side="left"] .dai-orb-panel { right: auto; left: calc(100% + 0.6rem); }
 .dai-orb-panel[hidden] { display: none; }
-.dai-orb-panel-head { display: flex; justify-content: space-between; align-items: start; gap: 0.6rem; margin-bottom: 0.45rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--dai-border); }
+.dai-orb-panel-head { display: flex; justify-content: space-between; align-items: start; gap: 0.6rem; margin-bottom: 0.45rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--dai-line); }
 .dai-orb-panel-head > div { display: grid; gap: 0.15rem; min-width: 0; }
-.dai-orb-panel-head b { font-size: var(--dai-fs-base); }
+.dai-orb-panel-head b { display: flex; align-items: center; gap: 0.4rem; font-size: var(--dai-fs-base); letter-spacing: 0.05em; color: var(--dai-accent-hi); }
 .dai-orb-panel-head small { color: var(--dai-muted); font-size: var(--dai-fs-sm); line-height: 1.45; overflow-wrap: anywhere; }
 .dai-orb-panel-close { flex: none; display: grid; width: 1.6rem; height: 1.6rem; place-items: center; border: 0; border-radius: 50%; color: var(--dai-muted); background: transparent; cursor: pointer; font-size: var(--dai-fs-base); line-height: 1; }
 .dai-orb-panel-close:hover { color: var(--dai-text); background: var(--dai-field-hover); }
-.dai-orb-row { display: flex; justify-content: space-between; gap: 0.8rem; margin: 0; padding: 0.3rem 0; border-bottom: 1px dashed var(--dai-border); }
+.dai-orb-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.32rem; margin-bottom: 0.5rem; }
+.dai-orb-switch { display: inline-flex; align-items: center; gap: 0.35rem; margin-right: 0.1rem; cursor: pointer; font-size: var(--dai-fs-xs); color: var(--dai-text); }
+.dai-orb-action { flex: none; width: fit-content; padding: 0.1rem 0.45rem; border: 1px solid var(--dai-border); border-radius: 999px; color: var(--dai-accent); background: transparent; cursor: pointer; font: inherit; font-size: var(--dai-fs-xs); line-height: 1.5; letter-spacing: 0.02em; transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease; }
+.dai-orb-action:hover:not(:disabled) { color: var(--dai-text); border-color: var(--dai-accent); background: var(--dai-tint); }
+.dai-orb-action:disabled { opacity: 0.55; cursor: progress; }
+.dai-orb-row { display: flex; justify-content: space-between; gap: 0.8rem; margin: 0; padding: 0.3rem 0; border-bottom: 1px dashed var(--dai-line); }
 .dai-orb-row-label { flex: none; color: var(--dai-muted); }
 .dai-orb-row-value { text-align: right; overflow-wrap: anywhere; }
 .dai-orb-row[data-tone="warn"] .dai-orb-row-value { color: var(--dai-warn); }
 .dai-orb-group { display: grid; gap: 0.35rem; margin-top: 0.7rem; }
 .dai-orb-group-head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; }
-.dai-orb-group-title { color: var(--dai-muted); font-size: var(--dai-fs-sm); font-weight: 600; }
+.dai-orb-group-title { color: var(--dai-muted); font-size: var(--dai-fs-sm); font-weight: 600; letter-spacing: 0.12em; }
 /* 栏目标题右边的「全部」：主窗只铺最新几条，点它弹这一栏的全量副窗。 */
 .dai-orb-group-all { flex: none; padding: 0.1rem 0.45rem; border: 1px solid var(--dai-border); border-radius: 999px; color: var(--dai-accent); background: transparent; cursor: pointer; font-size: var(--dai-fs-xs); line-height: 1.5; }
 .dai-orb-group-all:hover { color: var(--dai-text); border-color: var(--dai-accent); background: var(--dai-tint); }
-.dai-orb-entry { display: grid; gap: 0.15rem; padding: 0.45rem 0.55rem; border: 1px solid var(--dai-border); border-radius: var(--dai-radius-row); background: var(--dai-field-hover); }
+.dai-orb-entry { display: grid; gap: 0.15rem; padding: 0.45rem 0.55rem; border: 1px solid var(--dai-border); border-radius: var(--dai-radius-row); background: var(--dai-field); }
+.dai-orb-entry b { color: var(--dai-accent-hi); }
 .dai-orb-entry.is-clickable { cursor: pointer; }
 .dai-orb-entry.is-clickable:hover { border-color: var(--dai-accent); color: var(--dai-text); }
 .dai-orb-entry.is-clickable:hover b { color: var(--dai-accent); }
@@ -603,25 +723,35 @@
 .dai-orb-entry p { margin: 0; font-size: var(--dai-fs-md); line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 .dai-orb-empty { margin: 0; padding: 0.35rem 0.1rem; color: var(--dai-muted); font-size: var(--dai-fs-md); }
 /* 悬浮球人物小卡：点人物簿里的一行，贴在信息窗外侧弹出的只读小档案。 */
-.dai-orb-pop { position: fixed; z-index: 9998; display: flex; flex-direction: column; width: min(20rem, calc(100vw - 2rem)); max-height: min(30rem, calc(100dvh - 2rem)); overflow: auto; padding: 0.75rem 0.85rem 0.85rem; border: 1px solid var(--dai-border); border-radius: var(--dai-radius-dialog); background: var(--dai-surface); box-shadow: 0 0.6rem 1.6rem #0007; font-size: var(--dai-fs-md); }
-.dai-orb-pop-head { display: flex; justify-content: space-between; align-items: start; gap: 0.6rem; margin-bottom: 0.45rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--dai-border); }
+.dai-orb-pop { position: fixed; z-index: 9998; display: flex; flex-direction: column; width: min(20rem, calc(100vw - 2rem)); max-height: min(30rem, calc(100dvh - 2rem)); overflow: auto; padding: 0.75rem 0.85rem 0.85rem; border: 1px solid var(--dai-accent-deep); border-radius: var(--dai-radius-dialog); background: linear-gradient(180deg, var(--dai-surface), var(--dai-bg) 200%); box-shadow: 0 0.6rem 1.6rem #0007, inset 0 1px 0 var(--dai-glow); font-size: var(--dai-fs-md); }
+.dai-orb-pop-head { display: flex; justify-content: space-between; align-items: start; gap: 0.6rem; margin-bottom: 0.45rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--dai-line); }
 .dai-orb-pop-head > div { display: grid; gap: 0.15rem; min-width: 0; }
 .dai-orb-pop-name { display: flex; align-items: baseline; gap: 0.45rem; }
-.dai-orb-pop-name b { font-size: var(--dai-fs-base); }
+.dai-orb-pop-name b { font-size: var(--dai-fs-base); color: var(--dai-accent-hi); }
 .dai-orb-pop-name small { color: var(--dai-accent); }
 .dai-orb-pop-sub { color: var(--dai-muted); font-size: var(--dai-fs-xs); line-height: 1.4; overflow-wrap: anywhere; }
 .dai-orb-pop-close { flex: none; display: grid; width: 1.6rem; height: 1.6rem; place-items: center; border: 0; border-radius: 50%; color: var(--dai-muted); background: transparent; cursor: pointer; font-size: var(--dai-fs-base); line-height: 1; }
 .dai-orb-pop-close:hover { color: var(--dai-text); background: var(--dai-field-hover); }
 .dai-orb-pop-chips { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-bottom: 0.2rem; }
 .dai-orb-pop-group { display: grid; gap: 0.1rem; margin-top: 0.55rem; }
-.dai-orb-pop-group > b { color: var(--dai-muted); font-size: var(--dai-fs-xs); font-weight: 700; letter-spacing: 0.04em; }
+.dai-orb-pop-group > b { color: var(--dai-muted); font-size: var(--dai-fs-xs); font-weight: 700; letter-spacing: 0.1em; }
 .dai-orb-pop-group .dai-profile-row { padding: 0.22rem 0.4rem; font-size: var(--dai-fs-md); }
 .dai-orb-pop-entry { margin: 0; padding: 0.3rem 0.4rem; border-radius: var(--dai-radius-field); background: var(--dai-field-hover); font-size: var(--dai-fs-sm); line-height: 1.5; overflow-wrap: anywhere; }
 /* 「全部」副窗：跟主信息窗并排的一列，抬头固定、清单自己在里面滑。 */
 .dai-orb-pop-list { width: min(23rem, calc(100vw - 2rem)); max-height: min(34rem, calc(100dvh - 2rem)); overflow: hidden; }
 .dai-orb-pop-list-body { display: grid; gap: 0.35rem; flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-right: 0.15rem; }
+/* 纳戒初始化弹窗：设置页同款表单格收进副窗宽度；动作行里状态文字占满剩余空间。 */
+.dai-orb-pop-init { width: min(21rem, calc(100vw - 2rem)); }
+.dai-orb-pop-init .dai-setting-grid { gap: 0.3rem 0.7rem; }
+.dai-orb-pop-init .dai-setting-row { min-height: 0; gap: 0.15rem; }
+.dai-orb-pop-init .dai-setting-row > span { color: var(--dai-muted); font-size: var(--dai-fs-xs); }
+.dai-orb-pop-init .dai-setting-row input:not([type="checkbox"]),
+.dai-orb-pop-init .dai-setting-row select { width: 100%; min-height: 2rem; padding: 0.22rem 0.45rem; font-size: var(--dai-fs-md); }
+.dai-orb-init-actions { align-items: center; margin-top: 0.65rem; }
+.dai-orb-init-actions .dai-turn-result { flex: 1 1 auto; min-width: 0; font-size: var(--dai-fs-sm); }
 @media (prefers-reduced-motion: reduce) {
     .dai-orb-capsule, .dai-orb-ball, .dai-orb-icon { transition: none !important; }
+    .dai-orb-ball svg { animation: none !important; }
 }
 
 /* ---- 弹窗：添加/编辑/详情统一收进居中弹层 ---- */
@@ -630,10 +760,10 @@
 .dai-agent-modal[hidden] { display: none; }
 .dai-agent-modal-backdrop { position: absolute; inset: 0; background: #05070cb0; }
 /* max-height 用视口单位：弹窗是 place-items:center 的 grid 子项，百分比 max-height 对着内容自适应的行解析，等于没设，小屏会整块顶出屏幕。 */
-.dai-agent-modal-dialog { position: relative; display: flex; flex-direction: column; width: min(34rem, calc(100vw - 3rem)); max-height: calc(100vh - 2.5rem); max-height: calc(100dvh - 2.5rem); border: 1px solid var(--dai-border); border-radius: var(--dai-radius-dialog); background: var(--dai-bg); box-shadow: 0 1rem 3rem #0008; }
+.dai-agent-modal-dialog { position: relative; display: flex; flex-direction: column; width: min(34rem, calc(100vw - 3rem)); max-height: calc(100vh - 2.5rem); max-height: calc(100dvh - 2.5rem); border: 1px solid var(--dai-accent-deep); border-radius: var(--dai-radius-dialog); background: var(--dai-bg); box-shadow: inset 0 0 0 2px var(--dai-bg), inset 0 0 0 3px var(--dai-line), 0 1rem 3rem #0008; }
 .dai-agent-modal[data-wide="true"] .dai-agent-modal-dialog { width: min(46rem, calc(100vw - 3rem)); }
-.dai-agent-modal-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.7rem 1rem; border-bottom: 1px solid var(--dai-border); }
-.dai-agent-modal-title { font-size: var(--dai-fs-base); }
+.dai-agent-modal-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.7rem 1rem; border-bottom: 1px solid var(--dai-line); }
+.dai-agent-modal-title { font-size: var(--dai-fs-base); letter-spacing: 0.06em; }
 .dai-agent-modal-body { min-height: 0; overflow: auto; padding: 0.8rem 1rem 1rem; }
 .dai-modal-dock[hidden] { display: none; }
 .dai-setting-inline { display: inline-flex; align-items: center; gap: 0.45rem; }
@@ -642,7 +772,7 @@
 .dai-setting-row > .dai-segmented { display: inline-flex; flex: none; flex-wrap: nowrap; align-items: center; gap: 0.3rem; }
 .dai-segmented-button { min-height: 2rem; padding: 0.2rem 0.7rem; border: 1px solid var(--dai-border); border-radius: 999px; color: var(--dai-muted); background: transparent; cursor: pointer; font-size: var(--dai-fs-md); white-space: nowrap; }
 .dai-segmented-button:hover { color: var(--dai-text); border-color: var(--dai-accent); }
-.dai-segmented-button.is-active { color: var(--dai-on-accent); border-color: var(--dai-accent); background: var(--dai-accent); }
+.dai-segmented-button.is-active { color: var(--dai-btn-text, var(--dai-on-accent)); border-color: var(--dai-btn-border, var(--dai-accent)); background: var(--dai-btn-gradient, var(--dai-accent)); }
 .dai-world-tension { color: var(--dai-muted); font-size: var(--dai-fs-sm); white-space: nowrap; }
 .dai-secondary-button.is-danger { color: var(--dai-error); border-color: var(--dai-error-border); }
 .dai-secondary-button.is-danger:hover { background: var(--dai-error-bg); }
@@ -651,7 +781,7 @@
 
 /* ---- 世界页：时间/地点/天气磁贴，各占一块不再挤成一行 ---- */
 .dai-world-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5rem; margin: 0.3rem 0 0.6rem; }
-.dai-world-tile { position: relative; display: grid; gap: 0.1rem; align-content: start; min-height: 4.3rem; padding: 0.45rem 0.6rem; border: 1px solid var(--dai-border); border-radius: var(--dai-radius-card); background: var(--dai-field-hover); }
+.dai-world-tile { position: relative; display: grid; gap: 0.1rem; align-content: start; min-height: 4.3rem; padding: 0.45rem 0.6rem; border: 1px solid var(--dai-border); border-radius: var(--dai-radius-card); background: var(--dai-field-hover); box-shadow: inset 0 1px 0 var(--dai-glow); }
 .dai-world-tile-label { color: var(--dai-muted); font-size: var(--dai-fs-xs); }
 .dai-world-tile-value { font-size: var(--dai-fs-base); line-height: 1.35; overflow-wrap: anywhere; }
 .dai-world-tile-value.is-empty { color: var(--dai-muted); }
@@ -700,10 +830,10 @@
 .dai-profile-chips { display: flex; flex-wrap: wrap; gap: 0.3rem; }
 .dai-profile-chip { padding: 0.12rem 0.5rem; border: 1px solid var(--dai-border); border-radius: 999px; color: var(--dai-muted); font-size: var(--dai-fs-xs); }
 .dai-profile-chip.is-accent { color: var(--dai-accent); border-color: var(--dai-accent); }
-.dai-npc-tabs { display: flex; gap: 0.3rem; padding-bottom: 0.1rem; border-bottom: 1px solid var(--dai-border); }
+.dai-npc-tabs { display: flex; gap: 0.3rem; padding-bottom: 0.1rem; border-bottom: 1px solid var(--dai-line); }
 .dai-npc-tab { padding: 0.25rem 0.8rem; border: 1px solid transparent; border-bottom: 0; border-radius: var(--dai-radius-row) var(--dai-radius-row) 0 0; color: var(--dai-muted); background: transparent; cursor: pointer; font-size: var(--dai-fs-md); }
 .dai-npc-tab:hover { color: var(--dai-text); }
-.dai-npc-tab.is-active { color: var(--dai-accent); border-color: var(--dai-border); background: var(--dai-field); }
+.dai-npc-tab.is-active { color: var(--dai-accent-hi); border-color: var(--dai-accent-deep); background: var(--dai-field); box-shadow: inset 0 2px 0 var(--dai-accent); }
 .dai-npc-pane { display: grid; gap: 0.6rem; }
 .dai-npc-pane[hidden] { display: none; }
 .dai-npc-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.35rem 0.55rem; }
@@ -724,7 +854,7 @@
 
 /* ---- 档案弹窗：分组 + 固定标签行 ---- */
 .dai-profile { display: grid; gap: 0.7rem; }
-.dai-profile-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--dai-border); }
+.dai-profile-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--dai-line); }
 .dai-profile-head > div { display: grid; gap: 0.12rem; }
 .dai-profile-name { font-size: var(--dai-fs-title); }
 .dai-profile-sub { color: var(--dai-muted); font-size: var(--dai-fs-sm); }
@@ -734,7 +864,7 @@
 .dai-profile-side { display: flex; align-items: center; gap: 0.5rem; }
 .dai-npc-read { display: grid; gap: 0.6rem; }
 .dai-profile-group { display: grid; gap: 0.15rem; }
-.dai-profile-group-title { color: var(--dai-muted); font-size: var(--dai-fs-sm); font-weight: 700; letter-spacing: 0.04em; }
+.dai-profile-group-title { color: var(--dai-muted); font-size: var(--dai-fs-sm); font-weight: 700; letter-spacing: 0.1em; }
 .dai-profile-row { display: grid; grid-template-columns: minmax(5.2rem, max-content) 1fr; gap: 0.6rem; padding: 0.28rem 0.45rem; border-radius: var(--dai-radius-field); font-size: var(--dai-fs-md); line-height: 1.5; }
 .dai-profile-row:nth-child(odd) { background: var(--dai-field-hover); }
 .dai-profile-row.is-empty .dai-profile-value { color: var(--dai-muted); opacity: 0.55; }
@@ -750,27 +880,21 @@
 .dai-exp-side { display: grid; gap: 0.35rem; padding: 0.5rem 0.6rem; border: 1px dashed var(--dai-border); border-radius: var(--dai-radius-card); }
 .dai-exp-side > summary { cursor: pointer; color: var(--dai-muted); font-size: var(--dai-fs-md); list-style: none; }
 .dai-exp-side > summary::-webkit-details-marker { display: none; }
-/* 卡片标题里的“＋添加”小按钮：右对齐、不占满一行 */
-.dai-card-heading .dai-impact-edit { justify-self: end; align-self: start; }
-.dai-card-heading { grid-template-columns: 1fr auto; align-items: start; }
-.dai-card-heading > b { grid-column: 1; }
-.dai-card-heading > small { grid-column: 1; }
-.dai-card-heading > .dai-impact-edit { grid-column: 2; grid-row: 1 / 3; }
 
 /* ---- 楼层美化 · 本轮输入卡片 ----
    host/display-regex.js 注册的仅显示层正则输出 .dpz-round 结构（用户楼位）。
-   简约玄幻：细金线 + 四角符箓 + 一层淡金底晕；正文颜色跟随当前聊天主题，不抢戏。
-   聊天楼层在扩展面板作用域之外，--dai-* 变量取不到，这里的色值与玄烬鎏金主题同源。
+   简约玄幻：细金线 + 四角符箓 + 一层淡金底晕 + 菱形火押标题；正文颜色跟随当前聊天主题，不抢戏。
+   聊天楼层在扩展面板作用域之外，--dai-* 变量取不到，这里的色值与斗破苍穹主题同源。
    酒馆会给消息楼层里的 class 加 custom- 前缀，两组选择器都写全，正则替换串保持不动。 */
 .dpz-round,
 .custom-dpz-round {
     position: relative;
     margin: 10px 2px 14px;
-    padding: 11px 16px 12px;
-    border: 1px solid rgba(217, 167, 43, 0.32);
+    padding: 12px 18px 13px;
+    border: 1px solid rgba(217, 167, 43, 0.4);
     border-radius: 3px;
-    background: linear-gradient(180deg, rgba(217, 167, 43, 0.08), rgba(217, 167, 43, 0.02) 55%, rgba(217, 167, 43, 0));
-    box-shadow: inset 0 0 14px rgba(217, 167, 43, 0.05);
+    background: linear-gradient(180deg, rgba(217, 167, 43, 0.11), rgba(217, 167, 43, 0.03) 55%, rgba(217, 167, 43, 0));
+    box-shadow: inset 0 0 18px rgba(217, 167, 43, 0.08);
 }
 .dpz-round::before,
 .dpz-round::after,
@@ -778,31 +902,42 @@
 .custom-dpz-round::after {
     content: '';
     position: absolute;
-    width: 9px;
-    height: 9px;
+    width: 10px;
+    height: 10px;
     pointer-events: none;
 }
 .dpz-round::before,
-.custom-dpz-round::before { top: -1px; left: -1px; border-top: 2px solid rgba(217, 167, 43, 0.8); border-left: 2px solid rgba(217, 167, 43, 0.8); }
+.custom-dpz-round::before { top: -1px; left: -1px; border-top: 2px solid rgba(230, 183, 80, 0.9); border-left: 2px solid rgba(230, 183, 80, 0.9); }
 .dpz-round::after,
-.custom-dpz-round::after { right: -1px; bottom: -1px; border-right: 2px solid rgba(217, 167, 43, 0.8); border-bottom: 2px solid rgba(217, 167, 43, 0.8); }
+.custom-dpz-round::after { right: -1px; bottom: -1px; border-right: 2px solid rgba(230, 183, 80, 0.9); border-bottom: 2px solid rgba(230, 183, 80, 0.9); }
 .dpz-round-head,
 .custom-dpz-round-head {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.6em;
-    margin: 0 0 6px;
-    color: #d9a72b;
+    gap: 0.8em;
+    margin: 0 0 7px;
+    color: #e6b750;
     font-family: var(--dai-font-display, "Noto Serif SC", "Source Han Serif SC", "思源宋体", "STZhongsong", serif);
-    font-size: 0.8em;
-    font-weight: 600;
+    font-size: 0.82em;
+    font-weight: 700;
     letter-spacing: 0.5em;
     text-indent: 0.5em;
     line-height: 1.4;
 }
+.dpz-round-head::before,
+.dpz-round-head::after,
+.custom-dpz-round-head::before,
+.custom-dpz-round-head::after {
+    content: '';
+    flex: none;
+    width: 5px;
+    height: 5px;
+    background: rgba(230, 183, 80, 0.65);
+    transform: rotate(45deg);
+}
 .dpz-round-head i,
-.custom-dpz-round-head i { font-style: normal; font-weight: 400; font-size: 0.72em; opacity: 0.75; letter-spacing: 0; text-indent: 0; }
+.custom-dpz-round-head i { flex: none; font-style: normal; font-weight: 400; font-size: 0.72em; opacity: 0.75; letter-spacing: 0; text-indent: 0; }
 .dpz-round-text,
 .custom-dpz-round-text { margin: 0; font-size: 1em; line-height: 1.75; overflow-wrap: anywhere; }
 
@@ -826,7 +961,7 @@
     align-items: center;
     gap: 16px;
     padding: 10px 12px 12px;
-    border-bottom: 1px dashed var(--dai-border, #3b332a);
+    border-bottom: 1px dashed var(--dai-border, #4a3b20);
     margin-bottom: 10px;
 }
 .dai-forge-scene__caption { min-width: 0; }
@@ -837,7 +972,7 @@
     font-size: 0.92em;
     letter-spacing: 0.22em;
 }
-.dai-forge-scene__caption small { display: block; margin-top: 2px; color: var(--dai-muted, #a2937c); }
+.dai-forge-scene__caption small { display: block; margin-top: 2px; color: var(--dai-muted, #ab966f); }
 
 .dai-cauldron, .dai-anvil { position: relative; flex: 0 0 auto; width: 88px; height: 68px; }
 .dai-cauldron i, .dai-anvil i { position: absolute; display: block; }
@@ -889,7 +1024,7 @@
 .dai-anvil .dai-anvil__top {
     left: 16px; top: 14px; width: 56px; height: 12px; border-radius: 3px;
     background: linear-gradient(180deg, #6a615a, #2a2622);
-    box-shadow: inset 0 1px 0 rgba(236, 225, 205, 0.18);
+    box-shadow: inset 0 1px 0 rgba(240, 230, 205, 0.18);
 }
 .dai-anvil .dai-anvil__horn {
     left: 5px; top: 16px; width: 13px; height: 8px;
@@ -939,7 +1074,7 @@
 /* ---- 纳戒·装备槽位图：不画人形，格子按人身上的位置摆 ----
    头在上、身体居中（胸甲位）、饰品/武器在肩侧、手/腰在侧下、足在最底；
    穿戴中的装备名称直接写进对应部位的格子，品级染左缘，配色走 --dai- 主题。 */
-.dai-body-figure { padding: 12px 6px 8px; border-bottom: 1px dashed var(--dai-border, #3b332a); margin-bottom: 10px; }
+.dai-body-figure { padding: 12px 6px 8px; border-bottom: 1px dashed var(--dai-border, #4a3b20); margin-bottom: 10px; }
 .dai-body-slots {
     display: grid;
     grid-template-columns: 1fr 1.2fr 1fr;
@@ -954,19 +1089,19 @@
     align-content: center;
     min-height: 3.2rem;
     padding: 0.4rem 0.55rem;
-    border: 1px solid var(--dai-border, #3b332a);
+    border: 1px solid var(--dai-border, #4a3b20);
     border-left-width: 3px;
-    border-radius: 10px;
-    background: var(--dai-surface, rgba(23, 19, 15, 0.5));
+    border-radius: 8px;
+    background: var(--dai-surface, rgba(34, 27, 16, 0.5));
     text-align: center;
 }
-.dai-body-slot__label { color: var(--dai-muted, #a2937c); font-size: 0.72em; white-space: nowrap; }
+.dai-body-slot__label { color: var(--dai-muted, #ab966f); font-size: 0.72em; white-space: nowrap; }
 .dai-body-slot__items { display: grid; gap: 0.1rem; justify-items: center; }
 .dai-body-slot__name { margin: 0; color: var(--dai-accent, #d9a72b); font-size: 0.84em; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
 button.dai-body-slot__name { cursor: pointer; font: inherit; background: none; border: none; padding: 0; }
 button.dai-body-slot__name:hover { text-decoration: underline; }
 /* 空槽位的「＋ 装备」：虚线下划线弱化，悬停点亮 */
-.dai-body-slot__add { color: var(--dai-muted, #a2937c); font-weight: 400; text-decoration: underline dotted; }
+.dai-body-slot__add { color: var(--dai-muted, #ab966f); font-weight: 400; text-decoration: underline dotted; }
 .dai-body-slot__add:hover { color: var(--dai-accent, #d9a72b); text-decoration: underline solid; }
 /* 品级染左缘：天阶金、地阶紫、玄阶蓝、黄阶翠、杂品灰 */
 .dai-body-slot.is-gold { border-left-color: #e8b84b; }
@@ -976,8 +1111,8 @@ button.dai-body-slot__name:hover { text-decoration: underline; }
 .dai-body-slot.is-dull { border-left-color: #8a8378; }
 /* 空槽：虚线框 + 灰名，示意这个部位还空着 */
 .dai-body-slot.is-empty { border-style: dashed; border-left-width: 1px; background: transparent; }
-.dai-body-slot.is-empty .dai-body-slot__name { color: var(--dai-muted, #a2937c); font-weight: 400; }
-.dai-body-figure__foot { margin-top: 6px; text-align: center; color: var(--dai-muted, #a2937c); font-size: 0.86em; }
+.dai-body-slot.is-empty .dai-body-slot__name { color: var(--dai-muted, #ab966f); font-weight: 400; }
+.dai-body-figure__foot { margin-top: 6px; text-align: center; color: var(--dai-muted, #ab966f); font-size: 0.86em; }
 /* 悬浮球「全部」副窗里的小型版 */
 .dai-body-figure--compact .dai-body-slots { width: 100%; gap: 4px; }
 .dai-body-figure--compact .dai-body-slot { min-height: 2.6rem; padding: 0.3rem 0.4rem; }
@@ -997,7 +1132,7 @@ button.dai-body-slot__name:hover { text-decoration: underline; }
 .dai-api-preset .dai-settle-category-body { display: grid; gap: 0.55rem; }
 
 /* ---- 开放世界：本局口径切换待确认提示条 ---- */
-.dai-sandbox-pending { margin-top: 0.7rem; padding: 0.6rem 0.75rem; border: 1px solid var(--dai-accent, #d9a72b); border-radius: var(--dai-radius-row, 8px); background: var(--dai-tint, rgba(217, 167, 43, 0.12)); }
+.dai-sandbox-pending { margin-top: 0.7rem; padding: 0.6rem 0.75rem; border: 1px solid var(--dai-accent, #d9a72b); border-radius: var(--dai-radius-row, 6px); background: var(--dai-tint, rgba(217, 167, 43, 0.13)); }
 .dai-sandbox-pending p { margin: 0 0 0.45rem; }
 .dai-sandbox-pending b { display: block; font-size: var(--dai-fs-md, 0.9rem); }
-.dai-sandbox-pending small { color: var(--dai-muted, #a2937c); }
+.dai-sandbox-pending small { color: var(--dai-muted, #ab966f); }

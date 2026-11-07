@@ -24,7 +24,7 @@ const DEFAULT_MAX_OPS = 8;
 const FENCE_RE = /```world[^\S\n]*\n([\s\S]*?)```/g;
 const OP_LINE_RE = /^[ \t]*\{[ \t]*"op"[ \t]*:/;
 
-export const WORLD_HEADER = '【世界现状】以下是世界此刻的既定状态，正文必须与之保持一致；改变它只能靠文末 world 指令。';
+export const WORLD_HEADER = '【世界现状】以下是世界此刻的既定状态，正文必须与之保持一致。世界的时间、事件、氛围与势力动向由扩展在后台自动记账并已反映在此，你不需要也不允许代劳；回复只写剧情本身——禁止在正文的任何位置输出指令块、JSON、代码块或数据表。';
 
 export const OPS_GUIDE = [
     '【世界指令通道】若本轮剧情让世界发生了需要记下的变化（时间流逝、身边出现事件、世界大势变化、事件了结、天气/地点/时期更新），在回复的最末尾输出一个 world 代码块，每行一条 JSON：',

@@ -24,7 +24,8 @@ const checks = {
     async retired() {
         const doc = await read('../README.md');
         assert.doesNotMatch(doc, /self\.decideMerged` 开关开启后|合并决定开启时|返回 `delegated`|63\/63|128 个/);
-        assert.match(doc, /self\.mvuChannel.*inline/);
+        assert.match(doc, /self\.mvuChannel.*退役/);
+        assert.doesNotMatch(doc, /默认 `self\.mvuChannel='inline'`/);
         assert.match(doc, /ui\.legacyTurn/);
         assert.match(doc, /unifiedActive\(\).*false/);
         assert.match(doc, /unifiedDecide\(\).*retired/);

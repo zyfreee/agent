@@ -21,9 +21,13 @@ for (const page of ['apis', 'hub', 'facts', 'action', 'world', 'npc', 'npcledger
 }
 assert.doesNotMatch(entry, /data-settings-page="llm"/, '「模型与连接」页已并入「模型设置」，不该再出现');
 assert.doesNotMatch(entry, /data-settings-page="exp"/, '独立「经历」页已并入人物信息面板弹窗，不该再出现');
-for (const setting of ['facts.maxEntries', 'action.requireConfirmation', 'world.tickMinutes', 'npc.maxCandidates', 'impact.maxChainDepth', 'enableSandboxMode', 'sandbox.inertia', 'budget.maxModules', 'status.showHistory', 'setting.progress', 'injection.depth', 'ui.legacyTurn', 'prompt.select']) {
+for (const setting of ['action.requireConfirmation', 'npc.maxCandidates', 'impact.maxChainDepth', 'enableSandboxMode', 'sandbox.inertia', 'budget.maxModules', 'status.showHistory', 'setting.progress', 'injection.depth', 'prompt.select']) {
     assert.match(entry, new RegExp(`data-setting="${setting.replace('.', '\\.')}`), `缺少设置绑定：${setting}`);
 }
+for (const retired of ['enableFactsLibrary', 'facts.sourceMode', 'facts.maxEntries', 'facts.includeUnverified', 'enableWorldProgress', 'world.autoAdvance', 'world.tickMinutes', 'world.preserveUnconfirmed', 'ui.legacyTurn']) {
+    assert.doesNotMatch(entry, new RegExp(`data-setting="${retired.replace('.', '\\.')}"`), `旧链路开关应已随退役卡删除：${retired}`);
+}
+assert.doesNotMatch(entry, /旧版资料查询|旧链路（手动结算）|旧版手动脉冲|data-agent-run"|data-agent-retry"/, '旧版手动结算入口应已删除');
 assert.match(entry, /activeSettingsPage/);
 assert.match(entry, /data-module-list/);
 for (const theme of ['gilt', 'graphite', 'parchment']) {

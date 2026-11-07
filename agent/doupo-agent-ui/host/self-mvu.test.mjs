@@ -189,6 +189,74 @@ globalThis.window = {};
     assert.equal(fake.calls.writes[0].name, '斗破纳戒');
 }
 
+{
+    // 原生降级：没有 Mvu 框架时走酒馆助手原生楼层变量读写，帧结构与 MVU 时代逐字段一致
+    delete globalThis.window.Mvu;
+    let frame = { initialized_lorebooks: { 斗破世界书: [] }, stat_data: { 别人的: 1 } };
+    const nativeCalls = { writes: 0, lastTarget: null };
+    globalThis.window.TavernHelper = {
+        getVariables: async options => {
+            nativeCalls.lastTarget = options;
+            return frame ? JSON.parse(JSON.stringify(frame)) : null;
+        },
+        replaceVariables: async (data, options) => {
+            nativeCalls.writes++;
+            nativeCalls.lastTarget = options;
+            frame = JSON.parse(JSON.stringify(data));
+        },
+    };
+    const bridge = createSelfMvuBridge();
+    const result = await bridge.sync(fullSelf);
+    assert.equal(result.ok, true);
+    assert.equal(result.wrote, true);
+    assert.equal(result.layer, 'native', '无 Mvu 时报告原生层');
+    assert.deepEqual(frame.initialized_lorebooks, { 斗破世界书: [] }, '别人的 initialized_lorebooks 原样保留');
+    assert.deepEqual(frame.stat_data['别人的'], 1, '别人的 stat_data 键原样保留');
+    assert.equal(frame.stat_data['斗破纳戒'].姓名, '墨白');
+    assert.equal(frame.stat_data['斗破纳戒'].金币, 3200);
+    assert.deepEqual(nativeCalls.lastTarget, { type: 'message', message_id: 'latest' });
+    const st = bridge.status();
+    assert.equal(st.present, true);
+    assert.equal(st.layer, 'native');
+    assert.equal(st.lastError, '');
+    const read = await bridge.readLatest();
+    assert.deepEqual(read, { ok: true, namespace: frame.stat_data['斗破纳戒'] }, 'readLatest 原生降级可用');
+}
+
+{
+    // 原生降级：全新楼层没有变量帧时，建出与 MVU 同构的帧（initialized_lorebooks + stat_data）
+    let frame = null;
+    globalThis.window.TavernHelper = {
+        getVariables: async () => null,
+        replaceVariables: async data => { frame = JSON.parse(JSON.stringify(data)); },
+    };
+    const bridge = createSelfMvuBridge();
+    const result = await bridge.sync(fullSelf);
+    assert.equal(result.ok, true);
+    assert.deepEqual(Object.keys(frame).sort(), ['initialized_lorebooks', 'stat_data'], '新建帧与 MVU 帧同构');
+    assert.deepEqual(frame.initialized_lorebooks, {});
+    assert.equal(frame.stat_data['斗破纳戒'].姓名, '墨白');
+}
+
+{
+    // 双层全无才算缺席：只有空 window（无 Mvu 无 TavernHelper）时仍静默 missing
+    delete globalThis.window.TavernHelper;
+    const bridge = createSelfMvuBridge();
+    assert.deepEqual(await bridge.sync(fullSelf), { ok: false, skipped: true, reason: 'missing' });
+    assert.deepEqual(await bridge.readLatest(), { ok: false, reason: 'missing' });
+    assert.equal(bridge.status().layer, 'none');
+}
+
+{
+    // Mvu 存在时优先 Mvu 路径，原生层退位
+    globalThis.window.Mvu = { getMvuData: async () => ({ stat_data: {} }), replaceMvuData: async () => {} };
+    const bridge = createSelfMvuBridge();
+    assert.equal(bridge.status().layer, 'mvu');
+    const result = await bridge.sync(fullSelf);
+    assert.equal(result.layer, 'mvu');
+}
+delete globalThis.window.TavernHelper;
+
 // OPT-010: pin the target and discard a read whose owner expired.
 {
     let owner = 1, writes = 0;

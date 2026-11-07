@@ -595,7 +595,7 @@ export function renderSettleInjection(reviewed = {}, { maxChars = 6000 } = {}) {
     const relevant = actions.map((action, index) => ({ action, index })).filter(({ action }) => action.approved ? action.category !== 'none' : true);
     if (!relevant.length && !reviewed.rejected?.length) return '';
     const budget = integer(maxChars) ? Math.min(12000, Math.max(300, maxChars)) : 6000;
-    const lines = ['【行动结算·本轮判定】正文必须与此判定一致：只承认下面获批行动的实际成败与得失；被阻断项只写未完成或尝试，不得宣布成功。数值为待生成后只读核对的预期，不代表已经落账。'];
+    const lines = ['【行动结算·本轮判定】正文必须与此判定一致：只承认下面获批行动的实际成败与得失；被阻断项只写未完成或尝试，不得宣布成功。数值为待生成后只读核对的预期，不代表已经落账。所有状态由扩展在后台自动落账；回复只写剧情本身，禁止输出任何 JSON、代码块或数据表。'];
     for (const { action, index } of relevant) {
         const id = clip(text(action.id).replace(/[^a-zA-Z0-9_\-\u4e00-\u9fff]/g, ''), 40) || `action-${index + 1}`;
         if (!action.approved) { lines.push(`${index + 1}. [${id}] [blocked/${action.status === 'insufficient' ? 'insufficient' : 'not_executed'}] 第${index + 1}项输入中的尝试/意图未完成，不得宣称成功、收益或代价已支付。`); continue; }
