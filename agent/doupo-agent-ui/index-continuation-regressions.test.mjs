@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 
-const source = readFileSync(new URL('./index.js', import.meta.url), 'utf8');
+// 归一化行尾：Windows 检出（autocrlf）会把源码变 CRLF，切片标记里的 \n\n 会失配，先统一成 LF。
+const source = readFileSync(new URL('./index.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const extract = (start, end) => {
     assert.equal(source.split(start).length, 2, `unique ${start}`);
     const at = source.indexOf(start), to = source.indexOf(end, at);
@@ -11,6 +12,8 @@ const extract = (start, end) => {
 };
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 const prepareCode = extract('async function prepareInjectionForPrompt(', '\n// —— 行动结算·最终判定');
+// 签名/缓存键都引用 roundKeyOf：把真实源码一起切进沙箱，不造假桩（键逻辑变了测试能逮住）。
+const roundKeyCode = extract('/** 一轮身份：楼层数 + 最新玩家输入', 'function memoryRecallCacheKey');
 function prepareHarness() {
     const pending = deferred(), writes = [], inputs = [];
     let current = true;
@@ -46,11 +49,11 @@ function prepareHarness() {
     const code = extract('async function writeImpactInjectionForPrompt(', '\n/** 上一轮卷外搜索');
     const pending = deferred(), writes = [], snapshot = { version: 1, records: [{ id: 'i1' }] };
     let current = true;
-    const run = runInNewContext(`${code}; writeImpactInjectionForPrompt`, {
+    const run = runInNewContext(`${roundKeyCode};${code}; writeImpactInjectionForPrompt`, {
         captureAgentContinuation: () => ({ current: () => current }), currentSettings: () => ({ enabled: true }),
         impactSettings: () => ({ enabled: true, inject: true, injectSmart: true, injectBudget: 500 }),
         agentImpactPromptInjection: { inspect: () => ({ status: 'ready' }), clear() {}, write: value => { writes.push(value); return { status: 'written' }; } },
-        agentImpactRuntime: { snapshot: () => snapshot }, worldDay: () => 1, getHostContext: () => ({ chat: [] }),
+        agentImpactRuntime: { snapshot: () => snapshot, manualVersion: () => 0 }, worldDay: () => 1, getHostContext: () => ({ chat: [] }),
         impactConversation: chat => ({ draft: chat[0]?.mes ?? '', floors: chat }), impactModelPlan: () => ({ inject: {} }),
         pickImpactsForPrompt: () => pending.promise, lastImpactInjection: null, lastInjectedIds: [],
         buildImpactInjectionFromPicksDetail: () => ({ text: 'A private impact', usedIds: ['i1'] }),
@@ -64,16 +67,18 @@ function prepareHarness() {
 }
 {
     const code = extract('function memoryRecallCacheKey(', '\nfunction setMemoryRecallStatus');
-    let scope = 'A', memory = { entries: [{ id: 'm1', text: 'old' }] }, settings = { memory: { recallPrompt: 'one' } };
-    const key = runInNewContext(`${code}; memoryRecallCacheKey`, {
-        settleScopeKey: () => scope, agentContinuationEpoch: 1, currentSettings: () => settings,
-        agentMemoryRuntime: { snapshot: () => memory },
+    let scope = 'A', manual = 0; const settings = { memory: { recallPrompt: 'one' } };
+    const key = runInNewContext(`${roundKeyCode};${code}; memoryRecallCacheKey`, {
+        settleScopeKey: () => scope, currentSettings: () => settings,
+        agentMemoryRuntime: { manualVersion: () => manual },
     });
     const chat = [{ is_user: true, mes: 'input' }, { mes: 'same length A' }], first = key(chat);
     scope = 'B'; assert.notEqual(key(chat), first, 'cache binds chat scope'); scope = 'A';
-    chat[1].mes = 'same length B'; assert.notEqual(key(chat), first, 'cache binds complete scene'); chat[1].mes = 'same length A';
-    memory = { entries: [{ id: 'm1', text: 'new' }] }; assert.notEqual(key(chat), first, 'cache binds ledger content');
-    memory = { entries: [{ id: 'm1', text: 'old' }] }; settings.memory.recallPrompt = 'two'; assert.notEqual(key(chat), first, 'cache binds selection settings');
+    // 重roll只换 AI 楼层内容：轮次键（楼层数+最新玩家输入）不变，召回照旧复用。
+    chat[1].mes = 'same length B'; assert.equal(key(chat), first, 'reroll reuses the same round key'); chat[1].mes = 'same length A';
+    chat.push({ mes: 'one more floor' }); assert.notEqual(key(chat), first, 'floor count participates in the key'); chat.pop();
+    manual = 1; assert.notEqual(key(chat), first, 'manual ledger edit invalidates the recall cache'); manual = 0;
+    settings.memory.recallPrompt = 'two'; assert.notEqual(key(chat), first, 'cache binds selection settings');
 }
 {
     const code = extract('async function adoptSelfFromDb(', '\n/** 数据库可视化器');

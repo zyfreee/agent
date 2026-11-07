@@ -347,4 +347,23 @@ for (const keepActive of [false, true]) {
     assert.deepEqual(r.apply([], { floor: 3, day: 5 }).due, ['i2']);
 }
 
+// —— 手改序号：manual apply 才递增，模型落账/noop 不动；重roll复用签名靠它区分“谁改了账本”。 ——
+{
+    const r = createImpactRuntime({ now });
+    assert.equal(r.manualVersion(), 0, '初始手改序号为 0');
+    r.apply([{ op: 'record', ...auction }], { day: 1, floor: 0, source: 'decide' });
+    assert.equal(r.manualVersion(), 0, '模型落账不计手改');
+    r.apply([{ op: 'edit', ref: 'i1', title: '手改标题' }], { source: 'manual', day: 1 });
+    assert.equal(r.manualVersion(), 1, '手改递增');
+    assert.equal(r.apply([], { source: 'manual', day: 1 }).status, 'noop');
+    assert.equal(r.manualVersion(), 1, 'noop 不递增');
+    r.apply([{ op: 'record', title: '第二条', detail: 'x'.repeat(10), evidence: '第 2 楼' }], { day: 2, floor: 1, source: 'reply' });
+    assert.equal(r.manualVersion(), 1, 'reply 落账也不计手改');
+    const restored = createImpactRuntime({ now });
+    restored.restore(r.snapshot());
+    assert.equal(restored.manualVersion(), 1, '存档往返保留手改序号');
+    restored.reset();
+    assert.equal(restored.manualVersion(), 0, 'reset 归零');
+}
+
 console.log('impact runtime tests passed');

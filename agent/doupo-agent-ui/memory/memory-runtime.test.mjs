@@ -422,3 +422,21 @@ for (const source of ['llm', 'decide']) {
     assert.equal(snap.entries.find(e => e.title === '拍卖场鉴丹'), undefined, '旧版记忆被替换');
     assert.ok(snap.entries.find(e => e.title === '拍卖场验丹'));
 }
+
+// —— 手改序号：manual/面板 apply 与手动总结递增，模型落账（llm/decide）与 auto 总结不动。 ——
+{
+    const rt = createMemoryRuntime({ now: NOW });
+    assert.equal(rt.manualVersion(), 0, '初始手改序号为 0');
+    rt.apply([{ op: 'remember', title: '模型记的', text: '模型记的账', related: ['模型'] }], { source: 'llm', floor: 3 });
+    assert.equal(rt.manualVersion(), 0, '模型落账不计手改');
+    rt.apply([{ op: 'remember', title: '手记的', text: '面板手记的账', related: ['手记'] }], { source: 'manual', day: 6 });
+    assert.equal(rt.manualVersion(), 1, '手改递增');
+    rt.consolidate({ ids: rt.snapshot().entries.filter(e => e.tier === 'small').slice(0, 1).map(e => e.id), big: { text: '自动总结的大记忆', title: '自动总结', related: ['总结'] } });
+    assert.equal(rt.manualVersion(), 1, 'auto 总结不计手改');
+    rt.consolidate({ ids: rt.snapshot().entries.filter(e => e.tier === 'small').slice(0, 1).map(e => e.id), big: { text: '手动总结的大记忆内容', title: '手动总结', related: ['手动'] }, source: 'manual' });
+    assert.equal(rt.manualVersion(), 2, '手动总结递增');
+    const restored = createMemoryRuntime({ now: NOW });
+    restored.restore(rt.snapshot());
+    assert.equal(restored.manualVersion(), 2, '存档往返保留手改序号');
+}
+console.log('memory runtime tests passed');

@@ -52,6 +52,9 @@ function clampInt(value, min, max, fallback) {
 function initialState(now) {
     return {
         schemaVersion: 2,
+        // 只数“手改”的序号：面板/手动 apply（source=manual）才递增，模型落账（llm/decide）不算。
+        // 记忆召回缓存键带它——重roll时模型落账不改它（照旧复用），手改立刻失效重召回。
+        manualVersion: 0,
         entries: [],
         log: [],
         retiredIds: [],
@@ -163,6 +166,7 @@ function normalizeState(raw, now) {
     }
     return {
         schemaVersion: 2,
+        manualVersion: intIn(source.manualVersion, 0, 9999999) ?? 0,
         entries,
         log: (Array.isArray(source.log) ? source.log : []).slice(-DEFAULT_MAX_LOG),
         retiredIds: retired.slice(-MAX_RETIRED_IDS),
@@ -416,6 +420,7 @@ export function createMemoryRuntime({ maxLog = DEFAULT_MAX_LOG, maxOps = DEFAULT
         }
         if (fromModel && floorKey !== null) lastFloor = { floor: floorKey, undo: undoSteps, opIds: revertedOpIds };
         if (applied.length) {
+            if (source === 'manual') state.manualVersion += 1;
             state.updatedAt = now();
             state.log.push({ at: now(), source, summaries: applied.map(item => item.summary), rejected: rejected.length });
             state.log = state.log.slice(-maxLog);
@@ -429,7 +434,7 @@ export function createMemoryRuntime({ maxLog = DEFAULT_MAX_LOG, maxOps = DEFAULT
      * 召回钥匙尽量保全：模型选的 related 优先，这批小记忆的其余钥匙落进 aliases。
      * 大记忆只此一条入口（decide 不再直写），fail 一律带原因返回，绝不抛异常。
      */
-    function consolidate({ ids = [], big = {}, day = null } = {}) {
+    function consolidate({ ids = [], big = {}, day = null, source = 'auto' } = {}) {
         const wanted = (Array.isArray(ids) ? ids : []).map(id => text(id)).filter(Boolean);
         const consumed = state.entries.filter(entry => entry.tier === 'small' && wanted.includes(entry.id));
         if (!consumed.length) return { ok: false, reason: 'nothing_to_consolidate' };
@@ -486,6 +491,7 @@ export function createMemoryRuntime({ maxLog = DEFAULT_MAX_LOG, maxOps = DEFAULT
         };
         state.entries = state.entries.filter(item => !idList.includes(item.id));
         state.entries.push(entry);
+        if (source === 'manual') state.manualVersion += 1;
         state.updatedAt = now();
         const summary = `小记忆 ×${idList.length}（${idList.join('、')}）总结成大记忆 ${entry.id}：${body}`;
         state.log.push({ at: now(), source: 'consolidate', summaries: [summary], rejected: 0 });
@@ -554,5 +560,5 @@ export function createMemoryRuntime({ maxLog = DEFAULT_MAX_LOG, maxOps = DEFAULT
         return { status: 'applied', removed: removedEntries.length, shifted: shiftedEntries.length };
     }
 
-    return Object.freeze({ apply, consolidate, dropFloor, snapshot, status, restore, reset, note, isRetired, tiers: TIERS, tierLabels: TIER_LABELS, tagLabels: TAG_LABELS, config: Object.freeze({ maxLog, maxOps }) });
+    return Object.freeze({ apply, consolidate, dropFloor, snapshot, status, manualVersion: () => state.manualVersion, restore, reset, note, isRetired, tiers: TIERS, tierLabels: TIER_LABELS, tagLabels: TAG_LABELS, config: Object.freeze({ maxLog, maxOps }) });
 }

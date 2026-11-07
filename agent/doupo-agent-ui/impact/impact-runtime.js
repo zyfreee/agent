@@ -87,6 +87,9 @@ function initialState(now) {
         schemaVersion: 1,
         day: 1,
         version: 0,
+        // 只数“手改”的序号：面板/手动 apply 才递增，模型落账（decide/reply）不算。
+        // 场记挑选的注入签名带它——重roll时模型落账不改它（复用挑选），手改立刻失效重挑。
+        manualVersion: 0,
         // 上次叫记录员时停在哪个楼层：记录节奏按它数“之后又生成了几楼”，没记到东西也算数过。
         decidedFloor: -1,
         records: [],
@@ -139,6 +142,7 @@ function normalizeState(raw, now) {
         schemaVersion: 1,
         day: clampInt(source.day, 1, 99999, 1),
         version: clampInt(source.version, 0, 9999999, 0),
+        manualVersion: clampInt(source.manualVersion, 0, 9999999, 0),
         decidedFloor: clampInt(source.decidedFloor, 0, 9999999, -1),
         records,
         archive: (Array.isArray(source.archive) ? source.archive : []).map(cleanRecord).filter(Boolean).slice(-DEFAULT_MAX_ARCHIVE),
@@ -575,10 +579,12 @@ export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchi
         if (fromModel && floorKey !== null) state.decidedFloor = floorKey;
         if (applied.length) {
             state.version += 1;
+            if (source === 'manual') state.manualVersion += 1;
             state.updatedAt = now();
             logEntry(source, applied.map(item => item.summary), rejected.length);
         } else if (dueIds.length) {
             state.version += 1;
+            if (source === 'manual') state.manualVersion += 1;
             state.updatedAt = now();
         }
         return {
@@ -629,6 +635,7 @@ export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchi
         return {
             day: state.day,
             version: state.version,
+            manualVersion: state.manualVersion,
             decidedFloor: state.decidedFloor,
             total: state.records.length,
             active: count('active'),
@@ -733,6 +740,7 @@ export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchi
         pendingRipen,
         snapshot,
         status,
+        manualVersion: () => state.manualVersion,
         dropFloor,
         restore,
         reset,

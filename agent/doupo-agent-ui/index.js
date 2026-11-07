@@ -1047,7 +1047,8 @@ function roundKeyOf(chat) {
  *  召回结果，零调用零等待；玩家发新消息/改口/删楼才重新召回。 */
 function memoryRecallCacheKey(chat) {
     const list = Array.isArray(chat) ? chat : [];
-    return JSON.stringify([settleScopeKey(), roundKeyOf(list), currentSettings()]);
+    // 键带手改序号：重roll（换 AI 楼层）键不变照旧复用；面板手改账本/手动总结立刻换键重召回。
+    return JSON.stringify([settleScopeKey(), roundKeyOf(list), currentSettings(), agentMemoryRuntime.manualVersion()]);
 }
 
 function setMemoryRecallStatus(message) {
@@ -3415,7 +3416,9 @@ async function writeImpactInjectionForPrompt({ chat } = {}) {
     const sourceChat = Array.isArray(chat) ? chat : (getHostContext()?.chat ?? []);
     const { draft, floors } = impactConversation(sourceChat);
     const plan = impactModelPlan(settings);
-    const signatureOf = () => JSON.stringify([settleScopeKey(), roundKeyOf(sourceChat), currentSettings()]);
+    // 签名 = 轮次键 + 手改序号：重roll时模型落账（decide/reply）不动手改序号 → 复用挑选；
+    // 面板手改账本（manual）序号立刻变 → 同一轮内也强制重挑，注入不再拿旧文案。
+    const signatureOf = () => JSON.stringify([settleScopeKey(), roundKeyOf(sourceChat), currentSettings(), agentImpactRuntime.manualVersion()]);
     const signature = signatureOf();
     if (lastImpactInjection && lastImpactInjection.signature === signature) {
         if (!lastImpactInjection.text) { agentImpactPromptInjection.clear(); return { status: lastImpactInjection.status, via: lastImpactInjection.via, usedIds: [] }; }
@@ -4572,7 +4575,7 @@ async function runMemoryConsolidation({ source = 'auto' } = {}) {
             setMemoryConsolidateStatus(`总结失败：${parsed.error}。小记忆原样保留，下次再试。`);
             return { status: 'invalid', error: parsed.error };
         }
-        const result = agentMemoryRuntime.consolidate({ ids: smalls.map(entry => entry.id), big: parsed.big, day: worldDay() });
+        const result = agentMemoryRuntime.consolidate({ ids: smalls.map(entry => entry.id), big: parsed.big, day: worldDay(), source });
         if (!result.ok) {
             agentMemoryRuntime.note(`记忆总结没有落账：${result.reason}（${smalls.length} 条小记忆原样保留）`, { source: 'consolidate' });
             persistMemory();
