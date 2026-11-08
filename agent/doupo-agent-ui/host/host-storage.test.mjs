@@ -186,7 +186,7 @@ const legacyContext = { extensionSettings: { doupo_agent_ui: {
     impact: { modelMode: 'shared', decideMode: 'custom', decideBaseUrl: 'https://impact.example/v1', decideApiKey: 'ik', decideModel: 'im', injectMode: 'custom', injectBaseUrl: 'https://inject.example/v1', injectApiKey: 'jk', injectModel: 'jm' },
 } } };
 const legacyMigrated = createHostStorage({ getContext: () => legacyContext }).settings().value;
-assert.equal(legacyMigrated.schemaVersion, 12);
+assert.equal(legacyMigrated.schemaVersion, DEFAULT_SETTINGS.schemaVersion, '迁移后必须落到当前 schema 版本，数字跟着源码走而不是写死');
 assert.equal(legacyMigrated.api.presets.length, 4, 'llm / memory+world 共用 / npc / impact.decide = 4 个方案');
 const memoryPreset = legacyMigrated.api.presets.find(item => item.id === legacyMigrated.memory.decideApiPreset);
 assert.equal(memoryPreset.baseUrl, 'https://api.deepseek.com/v1');
@@ -221,7 +221,7 @@ const v10Context = { extensionSettings: { doupo_agent_ui: {
     memory: { decideApiPreset: 'pA', decideMaxFloors: 8, decideMaxEntries: 20 },
 } } };
 const v11Migrated = createHostStorage({ getContext: () => v10Context }).settings().value;
-assert.equal(v11Migrated.schemaVersion, 12);
+assert.equal(v11Migrated.schemaVersion, DEFAULT_SETTINGS.schemaVersion);
 assert.equal(v11Migrated.self.decideApiPreset, 'pA', '纳戒决定继承拆分前的共用绑定');
 assert.equal(v11Migrated.self.decideMaxFloors, 8);
 assert.equal(v11Migrated.self.decideMaxEntries, undefined, '条目上限随 v13 退役，v10 存档里的旧值也清掉');
@@ -243,7 +243,7 @@ const v11StaleContext = { extensionSettings: { doupo_agent_ui: {
     impact: { injectFloors: 6, decideMaxFloors: 10 },
 } } };
 const v12Migrated = createHostStorage({ getContext: () => v11StaleContext }).settings().value;
-assert.equal(v12Migrated.schemaVersion, 12);
+assert.equal(v12Migrated.schemaVersion, DEFAULT_SETTINGS.schemaVersion);
 assert.equal(v12Migrated.readFloors, 0, '全局读楼默认清 0＝跟随角色正则');
 assert.equal(v12Migrated.world.decideMaxFloors, 0);
 assert.equal(v12Migrated.npc.ledgerFloors, 0);
@@ -278,7 +278,7 @@ const v12EntriesContext = { extensionSettings: { doupo_agent_ui: {
     impact: { decideMaxEntries: 9 },
 } } };
 const v13Migrated = createHostStorage({ getContext: () => v12EntriesContext }).settings().value;
-assert.equal(v13Migrated.schemaVersion, 13);
+assert.equal(v13Migrated.schemaVersion, DEFAULT_SETTINGS.schemaVersion);
 assert.equal(v13Migrated.world.decideMaxEntries, undefined);
 assert.equal(v13Migrated.self.decideMaxEntries, undefined);
 assert.equal(v13Migrated.memory.decideMaxEntries, undefined);

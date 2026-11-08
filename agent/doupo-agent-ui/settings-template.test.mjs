@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { DEFAULT_SETTINGS } from './host/host-storage.js';
+import { createSandboxMode } from './sandbox/sandbox-mode.js';
 import { fileURLToPath } from 'node:url';
 
 const directory = fileURLToPath(new URL('./', import.meta.url));
@@ -124,8 +125,19 @@ assert.match(entry, /data-exp-condense/, '经历精简应挂在信息面板里')
 // 沙盒开关必须真的写到正式模式记录，否则只是留在设置里的开关。
 assert.match(entry, /data-sandbox-status/);
 assert.match(entry, /function syncSandboxModeFromSettings/);
-assert.match(entry, /agentSandboxMode\.sync\(\{/);
+assert.match(entry, /agentSandboxMode\.(?:sync|followSwitch)\(\{/, '设置页的沙盒开关必须把开关状态交给模式运行时');
 assert.match(entry, /agentSandboxMode\.read\(\{/);
+// 光看调用名不够：开关动作要真的落到模式记录里，界面开关与提示词口径才一致。
+{
+    const runtime = createSandboxMode();
+    const scope = { sessionId: 'settings-template', branchId: 'main' };
+    assert.equal(runtime.read(scope).status, 'empty', '新会话还没写过模式记录');
+    const flipped = runtime.followSwitch({ ...scope, sandbox: true, inertia: 'medium' });
+    assert.equal(flipped.mode, 'sandbox', '沙盒开关必须真的写入模式记录，而不能只留在设置里');
+    assert.equal(runtime.read(scope).mode, 'sandbox', '写入后读回仍是沙盒口径');
+    const back = runtime.followSwitch({ ...scope, sandbox: false, inertia: 'medium' });
+    assert.equal(back.mode, 'mainline', '关掉开关要回到主线口径，不能留着沙盒记录');
+}
 // 功能守卫：绑了方案（connection === 'custom'）直连方案端点；没绑＝跟随酒馆，只看酒馆静默
 // 生成这条路通不通（availableFor('tavern')），不拿“全局连接是否配好”当代理——
 // 全局选了自定义但空着时，configured() 永远是 false，跟酒馆模式的功能会被误拦在门口（世界决定同病）。
