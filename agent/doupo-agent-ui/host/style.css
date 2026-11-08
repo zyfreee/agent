@@ -240,12 +240,24 @@ svg.dai-svg { width: 1em; height: 1em; flex: none; display: inline-block; vertic
 .dai-overview-switch, .dai-feature-toggle { display: flex; align-items: center; gap: 0.9rem; min-height: 2.9rem; padding: 0.5rem 0.2rem; border: 0; border-bottom: 1px solid var(--dai-line); border-radius: 0; background: transparent; }
 .dai-overview-switch > span, .dai-feature-toggle > span:nth-child(2) { display: grid; flex: 1; gap: 0.2rem; }
 .dai-overview-switch small, .dai-feature-toggle small, .dai-card-heading small { color: var(--dai-muted); font-size: var(--dai-fs-md); }
+/* 调用版本左右切换（模型设置页）：两枚并排选项，选中侧描边高亮。 */
+.dai-api-mode-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-top: 0.4rem; }
+.dai-api-mode-option { display: grid; gap: 0.15rem; justify-items: center; padding: 0.6rem 0.5rem; border: 1px solid var(--dai-line); border-radius: 8px; background: transparent; color: inherit; cursor: pointer; }
+.dai-api-mode-option small { color: var(--dai-muted); font-size: var(--dai-fs-md); }
+.dai-api-mode-option.is-active { border-color: var(--dai-accent); background: color-mix(in srgb, var(--dai-accent) 12%, transparent); }
+.dai-api-mode-option.is-active b { color: var(--dai-accent); }
+.dai-api-mode-option:hover { border-color: var(--dai-accent); }
 /* 勾选框：小正方形，未勾留空；勾用背景图直接画在 input 上——input 是替换元素，
    Chrome 不渲染它的 ::before/::after（mask、字形方案全都因此失效过）。
    勾的颜色跟主题走：每个主题块定义 --dai-check（内嵌 SVG，色值与 --dai-accent 一致）。 */
 .dai-overview-switch input, .dai-feature-toggle input, .dai-setting-toggle input[type="checkbox"], .dai-orb-switch input { appearance: none; -webkit-appearance: none; box-sizing: border-box; flex: none; position: relative; width: 1.15rem; height: 1.15rem; margin: 0; padding: 0; border: 1px solid var(--dai-accent-deep); border-radius: 0.2rem; background-color: var(--dai-field); background-position: center; background-size: 100% 100%; background-repeat: no-repeat; cursor: pointer; transition: border-color 0.12s ease; }
 .dai-overview-switch input:hover, .dai-feature-toggle input:hover, .dai-setting-toggle input[type="checkbox"]:hover, .dai-orb-switch input:hover { border-color: var(--dai-accent); }
 .dai-overview-switch input:checked, .dai-feature-toggle input:checked, .dai-setting-toggle input[type="checkbox"]:checked, .dai-orb-switch input:checked { background-image: var(--dai-check, none); }
+/* 总控行尾的随开随关小开关：沿用勾选框外观，行内紧凑不换行。 */
+.dai-orb-row-switch { display: inline-flex; align-items: center; flex: none; margin-left: 0.45rem; cursor: pointer; }
+.dai-orb-row-switch input { appearance: none; -webkit-appearance: none; box-sizing: border-box; width: 1.05rem; height: 1.05rem; margin: 0; padding: 0; border: 1px solid var(--dai-accent-deep); border-radius: 0.2rem; background-color: var(--dai-field); background-position: center; background-size: 100% 100%; background-repeat: no-repeat; cursor: pointer; transition: border-color 0.12s ease; }
+.dai-orb-row-switch input:hover { border-color: var(--dai-accent); }
+.dai-orb-row-switch input:checked { background-image: var(--dai-check, none); }
 /* 酒馆全局样式给所有勾选框画了外圈（outline）与伪元素对勾（跟随酒馆主题强调色，通常偏蓝紫），
    appearance:none 会让 input 的伪元素变得可渲染，于是叠在我们的金勾上面。这里一律压掉：
    框与勾都由上面的主题样式负责，不跟酒馆配色走。注意必须排在下面的 :focus-visible 规则之前。 */

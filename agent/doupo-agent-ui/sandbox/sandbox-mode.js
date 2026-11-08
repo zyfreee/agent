@@ -74,6 +74,23 @@ export function createSandboxMode({ now = () => new Date().toISOString(), maxHis
         return { status: pending.delete(keyOf({ sessionId, branchId })) ? 'cancelled' : 'no_pending_switch' };
     }
 
+    /** 开关随开随关：口径直接跟随全局开关换向——不申请、不待确认、不绑定任务。
+     *  沙盒历史与惯性参数原样保留（开关关了再开能续上），待确认变更随换向作废。 */
+    function followSwitch({ sessionId, branchId, sandbox, inertia, canonCharactersAutonomous = true } = {}) {
+        const key = keyOf({ sessionId, branchId });
+        const mode = sandbox === true ? 'sandbox' : 'mainline';
+        const record = records.get(key);
+        if (!record) {
+            records.set(key, { mode, inertia: normalizeInertia(inertia), canonCharactersAutonomous: canonCharactersAutonomous !== false, history: [] });
+        } else {
+            record.mode = mode;
+            record.inertia = normalizeInertia(inertia);
+            record.canonCharactersAutonomous = canonCharactersAutonomous !== false;
+        }
+        pending.delete(key);
+        return { status: 'ready', ...structuredClone(records.get(key)) };
+    }
+
     /** 供提示词与界面共用的口径说明；不回传历史记录，避免把状态表塞进正文。 */
     function describe({ sessionId, branchId } = {}) {
         const record = records.get(keyOf({ sessionId, branchId }));
@@ -120,7 +137,7 @@ export function createSandboxMode({ now = () => new Date().toISOString(), maxHis
     }
 
     function clear() { records.clear(); pending.clear(); }
-    return Object.freeze({ read, sync, confirm, cancelSwitch, describe, invalidate, clear, snapshot, restore, modes: MODES, inertias: INERTIAS });
+    return Object.freeze({ read, sync, confirm, cancelSwitch, followSwitch, describe, invalidate, clear, snapshot, restore, modes: MODES, inertias: INERTIAS });
 }
 
 export { MODES as SANDBOX_MODES, INERTIAS as SANDBOX_INERTIAS, INERTIA_LABELS as SANDBOX_INERTIA_LABELS };

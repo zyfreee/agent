@@ -11,12 +11,12 @@ import { TIER_LABELS } from './memory-runtime.js';
 /** 默认总结提示词（system）。改写时保持"只输出 JSON"与字段名不变，否则解析不到。 */
 export const MEMORY_CONSOLIDATE_PROMPT = [
     '你是这部小说的「传记整理人」。记忆库里攒了一批小记忆（轻量近事），现在要把它们提炼成一条大记忆：合并重复、归并同一件事的多次进展、保留时间顺序和关键转折，让这一条大记忆能替代这批小记忆长期保存。',
-    '只输出一个 JSON 对象：{"title":"…","text":"…","basis":"…","related":[…],"aliases":[…],"quote":"…","weight":"major|minor","tag":""}。不要输出解释、标题或代码块以外的文字。',
+    '只输出一个 JSON 对象：{"title":"…","text":"…","basis":"…","related":[…],"aliases":[…],"quote":"…","weight":"major|minor","tag":""}。不要输出解释、标题或代码块以外的文字。各字段不限字数、不限条数。',
     '【规矩】',
     '1. title 必写：4~14 字短标题（名词短语，概括这批小记忆合成的这件大事，如「黑土坊交割首胜」）。记忆列表主页面只显示标题。',
     '2. text ≤300 字：一段话说清"发生了什么、为什么值得长期记住"；关键人名、地名、恩怨对象与结果必须保留，不许丢。',
-    '3. related 必写 1-4 个：从这批小记忆的关联/别名里挑日后召回价值最高的钥匙（反复出现的人名/地名优先）。',
-    '4. aliases 可选（≤4 个）：没挤进 related 的其余钥匙放这里，召回时与 related 同权。',
+    '3. related 必写：把钥匙总结一遍——从这批小记忆的关联/别名里挑日后召回价值最高的钥匙（反复出现的人名/地名优先），按重要度从高到低排，数量不限。',
+    '4. aliases：没写进 related 的其余钥匙原样放这里，召回时与 related 同权；脚本会把这批小记忆的全部钥匙并集兜底收进来，一条不丢。',
     '5. basis ≤80 字：写清"由哪些天的小记忆总结而来"。',
     '6. quote 可选（≤60 字）：这批记忆里最有味道的一句原话，只准摘小记忆引文里真实出现过的对白，没有就空着。',
     '7. weight：这批事够得上值得长期记住的大事就 major，只是一段有内容的经历就 minor。',
@@ -79,15 +79,11 @@ export function parseConsolidation(raw) {
     }
     const text = typeof object.text === 'string' ? object.text.trim() : '';
     if (!text) return { status: 'invalid', error: '总结缺少 text' };
-    if (text.length > 300) return { status: 'invalid', error: '总结 text 超过 300 字' };
     const title = typeof object.title === 'string' ? object.title.trim() : '';
     if (!title) return { status: 'invalid', error: '总结缺少 title' };
-    // 超长标题整条打回（小记忆原样保留重试），不静默截断。
-    if (title.length > 14) return { status: 'invalid', error: '总结 title 超过 14 字' };
     const pickNames = value => (Array.isArray(value) ? value : [])
         .filter(item => typeof item === 'string' && item.trim())
-        .map(item => item.trim())
-        .slice(0, 4);
+        .map(item => item.trim());
     return {
         status: 'ok',
         big: {

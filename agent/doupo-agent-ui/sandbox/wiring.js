@@ -47,24 +47,27 @@ export function createSandboxWiring({
         return runtime.restore(saved?.status === 'ready' ? saved.value?.sandboxMode : null, scope);
     }
 
+    /** 沙盒口径是否生效：开关随开随关——全局开关是最终裁判，聊天存档只携带沙盒的任务与历史，
+     *  不再把口径钉死在某个聊天上。记录口径跟开关不一致时直接换向（不走确认），换向落存档。 */
     function sandboxModeActive() {
         const scope = scopeOf();
+        const settings = currentSettings();
+        const wantSandbox = settings.enableSandboxMode === true;
         let record = runtime.read(scope);
         if (record.status !== 'ready') {
             const saved = storage()?.chatState?.();
             if (saved?.status === 'ready' && saved.value?.sandboxMode) {
                 const restored = runtime.restore(saved.value.sandboxMode, scope);
-                if (restored.status === 'rejected') return false;
+                if (restored.status === 'rejected') return wantSandbox;
                 record = runtime.read(scope);
             }
         }
-        if (record.status !== 'ready') {
-            const settings = currentSettings();
-            record = runtime.sync({ ...scope, enabled: settings.enableSandboxMode === true,
-                inertia: settings.sandbox?.inertia, canonCharactersAutonomous: settings.sandbox?.canonCharactersAutonomous });
-            if (record.status === 'adopted') void persistSandboxMode();
-        }
-        return record.mode === 'sandbox';
+        const recordMode = record.status === 'ready' ? record.mode : null;
+        if (recordMode === (wantSandbox ? 'sandbox' : 'mainline')) return wantSandbox;
+        runtime.followSwitch({ ...scope, sandbox: wantSandbox,
+            inertia: settings.sandbox?.inertia, canonCharactersAutonomous: settings.sandbox?.canonCharactersAutonomous });
+        void persistSandboxMode();
+        return wantSandbox;
     }
 
     return { confirmSandboxSwitch, persistSandboxMode, restoreSandboxFromChat, sandboxModeActive };

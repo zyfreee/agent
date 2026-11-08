@@ -82,7 +82,7 @@ test('OPT-092 navigation always selects one existing page, including llm and unk
     const start = source.indexOf('    const selectPage = page =>');
     const end = source.indexOf("    panel.addEventListener('click'", start);
     const panel = { querySelectorAll: selector => selector === '[data-settings-section]' ? sections : [], querySelector: () => null };
-    const env = { panel, renderCallLogList() {}, renderRuntimeMode() {}, probeCoverScriptStatus: () => ({}), syncSettingsForm() {} };
+    const env = { panel, renderCallLogList() {}, renderRuntimeMode() {}, renderApiMode() {}, probeCoverScriptStatus: () => ({}), syncSettingsForm() {} };
     const select = vm.runInNewContext(`let activeSettingsPage; ${source.slice(start, end)}; selectPage`, env);
     for (const [page, expected] of [['llm', 'hub'], ['hub', 'hub'], ['not-a-page', 'overview']]) { select(page); assert.deepEqual(sections.filter(item => !item.hidden).map(item => item.dataset.settingsSection), [expected]); }
 });

@@ -33,7 +33,7 @@ assert.ok(!user.includes('第1楼的内容') && !user.includes('第0楼的内容
 
 // 空输入也有可读结构
 const empty = buildSelfDecideUser({});
-assert.ok(empty.includes('- （本轮没有命中的世界书条目）'));
+assert.ok(empty.includes('- （原著资料本轮还没有注入内容）'));
 assert.ok(empty.includes('- （还没有聊天内容）'));
 
 // —— 解析：正常 / 坏 JSON / 非对象 / 超量截断 / 坏条目过滤 ——

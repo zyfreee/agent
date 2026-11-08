@@ -116,4 +116,32 @@ assert.equal(limited.read(scope).history.length, 2);
     assert.equal(r.confirm({ ...scope, taskId: 't3', stateVersion: 'v3' }).reason, 'no_pending_switch');
 }
 
+// 开关随开随关：followSwitch 直接换向，不申请不确认，历史保留、待确认作废。
+{
+    const r = createSandboxMode();
+    r.sync({ ...scope, enabled: true, inertia: 'strong' });
+    r.sync({ ...scope, enabled: false, taskId: 't9', stateVersion: 'v9', inertia: 'medium' });
+    assert.equal(r.read(scope).mode, 'sandbox', '待确认期间口径不变');
+    const flipped = r.followSwitch({ ...scope, sandbox: false, inertia: 'weak' });
+    assert.equal(flipped.status, 'ready');
+    assert.equal(r.read(scope).mode, 'mainline', '开关关了＝主线，立刻生效');
+    assert.equal(r.read(scope).inertia, 'weak');
+    assert.equal(r.confirm({ ...scope, taskId: 't9', stateVersion: 'v9' }).reason, 'no_pending_switch', '换向作废待确认变更');
+    const back = r.followSwitch({ ...scope, sandbox: true });
+    assert.equal(back.mode, 'sandbox', '开关开了＝开放世界，立刻生效');
+    assert.equal(back.inertia, 'medium', '没填惯性按默认中；接线层每次都带设置值');
+    const fresh = createSandboxMode();
+    const created = fresh.followSwitch({ ...scope, sandbox: true, inertia: 'strong', canonCharactersAutonomous: false });
+    assert.equal(created.mode, 'sandbox');
+    assert.equal(created.inertia, 'strong');
+    assert.equal(created.canonCharactersAutonomous, false);
+    assert.equal(fresh.read(scope).history.length, 0, '换向不走确认历史');
+    const round = createSandboxMode();
+    round.sync({ ...scope, enabled: true, inertia: 'strong' });
+    round.followSwitch({ ...scope, sandbox: false });
+    const restored = createSandboxMode();
+    assert.equal(restored.restore(round.snapshot(scope), scope).status, 'restored', '换向后的快照仍可跨重载恢复');
+    assert.equal(restored.read(scope).mode, 'mainline');
+}
+
 console.log('sandbox mode tests passed');

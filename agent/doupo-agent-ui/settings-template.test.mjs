@@ -64,9 +64,12 @@ for (const legacyButton of ['data-llm-models', 'data-facts-models', 'data-settle
     assert.doesNotMatch(entry, new RegExp(legacyButton.replace(/-/g, '\\-')), `每卡拉取模型按钮应已删除（方案卡上保留）：${legacyButton}`);
 }
 assert.doesNotMatch(entry, /CONNECTION_MODE_TOGGLERS/, '连接模式登记表应随模式选择一起删除');
-// 非连接类的运行参数保留在卡上：全局超时、世界/记忆的喂楼数与条目上限。
-for (const keep of ['llm.timeoutMs', 'world.decideMaxFloors', 'world.decideMaxEntries', 'memory.decideMaxFloors', 'memory.decideMaxEntries']) {
+// 非连接类的运行参数保留在卡上：全局超时、世界/记忆的喂楼数（条目上限已退役——决定改读原著资料注入内容）。
+for (const keep of ['llm.timeoutMs', 'world.decideMaxFloors', 'memory.decideMaxFloors']) {
     assert.match(hubMarkup, new RegExp(`data-setting="${keep.replace('.', '\\.')}"`), `模型设置页应保留运行参数：${keep}`);
+}
+for (const retired of ['world.decideMaxEntries', 'self.decideMaxEntries', 'memory.decideMaxEntries', 'impact.decideMaxEntries']) {
+    assert.doesNotMatch(entry, new RegExp(`data-setting="${retired.replace('.', '\\.')}"`), `条目上限设置应已删除：${retired}`);
 }
 // API设置：方案编辑元素齐备；「模型设置」页每卡一个方案选择（纳戒决定与记忆决定是两条独立调用，各自绑定）。
 const apisStart = entry.indexOf('data-settings-section="apis"');
@@ -79,7 +82,9 @@ for (const binding of ['llm.apiPreset', 'setting.apiPreset', 'world.decideApiPre
     assert.equal(boundPaths.filter(path => path === binding).length, 1, `方案绑定下拉应只在模型设置页出现一次：${binding}`);
 }
 assert.match(hubMarkup, /data-api-preset-select/g ? /data-api-preset-select/ : /never/, '模型设置页缺少方案绑定下拉');
-assert.equal([...hubMarkup.matchAll(/data-api-preset-select/g)].length, 14, '方案绑定下拉应恰好 14 个（每个独立模型调用一张卡；行动结算分类与最终判定共用一张）');
+assert.equal([...hubMarkup.matchAll(/data-api-preset-select/g)].length, 17, '方案绑定下拉应恰好 17 个（完整版 14 张功能卡 + 简略版素材总挑选/总结算两张合并卡 + 简略版行动结算判定卡）');
+// settle.resultApiPreset 在完整版与简略版各出现一次（同一绑定、两版各一张卡，同屏只显示其一）。
+assert.equal(boundPaths.filter(path => path === 'settle.resultApiPreset').length, 2, '行动结算判定绑定应完整版/简略版各一张卡');
 assert.doesNotMatch(entry, /data-setting="settle\.apiPreset"/, '分类判定已并入最终判定同一套 API，不再有独立绑定下拉');
 // 绑定下拉首项＝跟随酒馆主连接（不绑方案的语义），不再是“手动配置”。
 assert.match(entry, /跟随酒馆主连接（不绑方案）/, '绑定下拉首项应标明“跟随酒馆主连接”');

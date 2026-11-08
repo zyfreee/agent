@@ -31,6 +31,18 @@ const DEFAULT_SETTINGS = Object.freeze({
     showStatusPanel: true,
     showOrb: true,
     debug: false,
+    // 调用版本：'full' = 完整版（每个功能各一路调用，行为与旧版一致）；'lite' = 简略版
+    // （备料三路并成一次「素材总挑选」、记账五路并成一次「总结算」，其余管线不动）。
+    apiMode: 'full',
+    // 功能读取楼层数：0（或留空）＝跟随"当前角色卡自带的提示词侧整楼隐藏正则"的 minDepth
+    // （只看角色脚本，不看全局正则）；卡上没有这类正则时回落 8。
+    // 正整数＝手动钉死，优先于正则跟随。
+    readFloors: 0,
+    // 简略版两条合并通道各自的 API设置方案绑定；空 = 跟随酒馆主连接。
+    lite: Object.freeze({
+        pickApiPreset: '',
+        settleApiPreset: '',
+    }),
     settle: Object.freeze({
         // 行动结算的分类判定（丹药/修炼/伤害/通用）独立调用用的连接与参数。
         mode: 'tavern', // 'tavern' = 跟随酒馆当前设置；'custom' = 用下面这套自定义连接
@@ -161,8 +173,7 @@ const DEFAULT_SETTINGS = Object.freeze({
         decideTopP: 0, // 0 = 不指定
         decidePresencePenalty: 0, // 0 = 不指定
         decideFrequencyPenalty: 0, // 0 = 不指定
-        decideMaxFloors: 6, // 喂给决定模型的最近楼层数
-        decideMaxEntries: 12, // 世界书相关条目上限
+        decideMaxFloors: 0, // 喂给决定模型的最近楼层数（0 = 跟随全局读楼默认，即角色正则）
         decidePrompt: '', // 决定提示词，留空用内置默认
         decideApiPreset: '', // API设置方案绑定：非空时世界决定整套走方案
     }),
@@ -175,7 +186,7 @@ const DEFAULT_SETTINGS = Object.freeze({
         ledgerEvery: 1, // 1 = 每轮；3 = 每三轮（省调用，代价是中间两轮要等下次记账）
         ledgerInject: true, // 注入正文提示词
         ledgerBudget: 900, // 注入字数预算，0 = 内置默认
-        ledgerFloors: 2, // 记录员看最近几楼
+        ledgerFloors: 0, // 记录员看最近几楼（0 = 跟随全局读楼默认，即角色正则）
         ledgerMaxFull: 6, // 全字段最多写几个人
         ledgerMode: 'tavern', // 'tavern' = 跟随酒馆当前设置；'custom' = 用下面这套自定义连接
         ledgerBaseUrl: '', // 自定义接口地址（选 custom 才用得上；留空沿用“模型与连接”页）
@@ -219,8 +230,7 @@ const DEFAULT_SETTINGS = Object.freeze({
         decideEnabled: true,
         decideAuto: true, // 每轮生成后自动决定；关闭则只认正文里的 self 指令块
         decideApiPreset: '', // API设置方案绑定：非空时纳戒决定整套走方案；空＝跟随酒馆主连接
-        decideMaxFloors: 6, // 纳戒决定喂最近几楼聊天（与记忆决定各自一份）
-        decideMaxEntries: 12, // 纳戒决定的世界书相关条目上限
+        decideMaxFloors: 0, // 纳戒决定喂最近几楼聊天（与记忆决定各自一份；0 = 跟随全局读楼默认，即角色正则）
         decidePrompt: '', // 决定提示词，留空用内置默认
         guide: '', // 降级模式（关自动决定）随现状注入的指令指南，留空用内置默认
     }),
@@ -247,8 +257,7 @@ const DEFAULT_SETTINGS = Object.freeze({
         decideTopP: 0, // 0 = 不指定
         decidePresencePenalty: 0, // 0 = 不指定
         decideFrequencyPenalty: 0, // 0 = 不指定
-        decideMaxFloors: 6, // 喂给决定/召回模型的最近楼层数
-        decideMaxEntries: 12, // 世界书相关条目上限
+        decideMaxFloors: 0, // 喂给决定/召回模型的最近楼层数（0 = 跟随全局读楼默认，即角色正则）
         decidePrompt: '', // 决定提示词，留空用内置默认
         guide: '', // 降级模式（关自动决定）随现状注入的指令指南，留空用内置默认
         decideApiPreset: '', // API设置方案绑定：非空时记忆决定整套走方案
@@ -266,7 +275,7 @@ const DEFAULT_SETTINGS = Object.freeze({
         injectBudget: 800, // 注入字数预算
         injectSmart: true, // 注入前先让模型挑“这一幕用得上”的影响；关掉则脚本按分量/日期直接挑
         injectMaxLines: 8, // 模型最多挑几条
-        injectFloors: 6, // 场记判断“这一幕用得上什么”时看最近几楼（含玩家这句话）
+        injectFloors: 0, // 场记判断“这一幕用得上什么”时看最近几楼（含玩家这句话；0 = 跟随全局读楼默认，即角色正则）
         injectModel: '', // 挑选员模型名；mode 选 custom 才用得上
         injectMode: 'tavern', // 'tavern' = 跟随酒馆当前设置；'custom' = 用下面这套自定义连接
         injectBaseUrl: '', // 自定义接口地址（选 custom 才用得上；留空沿用“模型与连接”页）
@@ -279,8 +288,7 @@ const DEFAULT_SETTINGS = Object.freeze({
         decideEnabled: true, // 是否启用“世界记录员”
         decideAuto: true, // 生成结束后自动记录
         decideEvery: 1, // 每几轮生成记录一次：1 = 每轮，3 = 每三轮
-        decideMaxFloors: 10, // 喂给记录员的最近楼层数
-        decideMaxEntries: 30, // 相关世界书条目上限
+        decideMaxFloors: 0, // 喂给记录员的最近楼层数（0 = 跟随全局读楼默认，即角色正则）
         decideModel: '', // 记录员模型名；decideMode 选 custom 才用得上，留空沿用全局模型名
         decideBaseUrl: '', // 自定义接口地址（选 custom 才用得上；留空沿用“模型与连接”页）
         decideApiKey: '', // 自定义接口密钥（留空沿用“模型与连接”页）
@@ -324,7 +332,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     api: Object.freeze({
         presets: Object.freeze([]),
     }),
-    schemaVersion: 11,
+    schemaVersion: 13,
 });
 
 function clone(value) {
@@ -395,7 +403,7 @@ function migrateLegacyApiPresets(merged) {
 
 function mergeSettings(current = {}) {
     const source = current && typeof current === 'object' ? current : {};
-    const nested = ['llm', 'budget', 'ui', 'facts', 'setting', 'injection', 'prompt', 'action', 'world', 'npc', 'impact', 'sandbox', 'status', 'settle', 'self', 'memory', 'api'];
+    const nested = ['llm', 'budget', 'ui', 'facts', 'setting', 'injection', 'prompt', 'action', 'world', 'npc', 'impact', 'sandbox', 'status', 'settle', 'self', 'memory', 'lite', 'api'];
     const merged = { ...clone(DEFAULT_SETTINGS), ...source };
     for (const key of nested) {
         const incoming = source[key] && typeof source[key] === 'object' && !Array.isArray(source[key]) ? source[key] : {};
@@ -433,6 +441,32 @@ function mergeSettings(current = {}) {
         if (oldSelf.decideMaxFloors === undefined) merged.self.decideMaxFloors = merged.memory.decideMaxFloors;
         if (oldSelf.decideMaxEntries === undefined) merged.self.decideMaxEntries = merged.memory.decideMaxEntries;
     }
+    // schemaVersion 12：功能读楼数的默认语义改成“跟随角色卡正则”（0/留空＝跟随，正整数才钉死）。
+    // 老存档里躺着旧默认数值（8/6/2/10），正整数永远优先，正则跟随就会被挡死；只清与旧默认完全
+    // 相等的值，玩家手调过的原样保留。
+    if (Number(source.schemaVersion ?? 0) < 12) {
+        const legacyFloorDefaults = [
+            [null, 'readFloors', 8],
+            ['world', 'decideMaxFloors', 6],
+            ['npc', 'ledgerFloors', 2],
+            ['self', 'decideMaxFloors', 6],
+            ['memory', 'decideMaxFloors', 6],
+            ['impact', 'injectFloors', 6],
+            ['impact', 'decideMaxFloors', 10],
+        ];
+        for (const [group, key, legacy] of legacyFloorDefaults) {
+            const holder = group ? merged[group] : merged;
+            if (holder && Number(holder[key]) === legacy) holder[key] = 0;
+        }
+    }
+    // schemaVersion 13：「世界书条目上限」（world/self/memory/impact.decideMaxEntries）退役——决定调用
+    // 改为直接读角色卡世界书里打开的条目，不再按聊天匹配原著库（原著知识走世界书常驻与原著资料注入）。
+    // 存量键一律清掉，不再躺在存档里。
+    if (Number(source.schemaVersion ?? 0) < 13) {
+        for (const group of ['world', 'self', 'memory', 'impact']) {
+            if (merged[group]) delete merged[group].decideMaxEntries;
+        }
+    }
     merged.schemaVersion = DEFAULT_SETTINGS.schemaVersion;
     return merged;
 }
@@ -459,7 +493,7 @@ export function createHostStorage({ getContext } = {}) {
         if (!all || typeof all !== 'object') return { status: 'unavailable', value: clone(DEFAULT_SETTINGS) };
         const current = all[SETTINGS_KEY] && typeof all[SETTINGS_KEY] === 'object' ? all[SETTINGS_KEY] : {};
         const incoming = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : {};
-        const nested = ['llm', 'budget', 'ui', 'facts', 'setting', 'injection', 'prompt', 'action', 'world', 'npc', 'impact', 'sandbox', 'status', 'settle', 'self', 'memory', 'api'];
+        const nested = ['llm', 'budget', 'ui', 'facts', 'setting', 'injection', 'prompt', 'action', 'world', 'npc', 'impact', 'sandbox', 'status', 'settle', 'self', 'memory', 'lite', 'api'];
         const mergedPatch = { ...current, ...incoming };
         for (const key of nested) {
             if (incoming[key] && typeof incoming[key] === 'object' && !Array.isArray(incoming[key])) {

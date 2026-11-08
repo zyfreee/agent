@@ -403,6 +403,69 @@ assert.equal(overview.rows[0].value, '已开启 · 已返回');
 assert.equal(overview.rows[1].value, '已开启', 'idle 模块只报开关状态，不再挂死「暂无记录」');
 assert.equal(overview.rows.length, 2, '总控行数=模块行数：调用状态改挂行尾，不再铺底部列表');
 
+// —— 总控调用标记按真实调用标签匹配：原著选条登记「事实检索」，影响行挂注入挑选员＋决定 ——
+// 回归：facts 渠道曾误写成「场记挑选」（那是影响注入挑选员的标签），原著设定行因此永远显示「无」。
+const markNow = new Date().toISOString();
+const markView = buildOverviewPanel({
+    dashboard: {
+        enabled: true, taskLabel: 'x',
+        modules: [
+            { id: 'facts', title: '原著设定', configuration: '已开启', state: 'idle', label: '暂无记录', enabled: true },
+            { id: 'memory', title: '记忆', configuration: '已开启', state: 'idle', label: '暂无记录', enabled: true },
+            { id: 'impact', title: '世界影响', configuration: '已开启', state: 'idle', label: '暂无记录', enabled: true },
+        ],
+    },
+    calls: [
+        { label: '事实检索', ok: true, at: markNow },
+        { label: '场记挑选', ok: true, at: markNow },
+        { label: '影响决定', ok: false, error: '等待超时', at: markNow },
+        { label: '记忆召回', ok: true, at: markNow },
+        { label: '记忆决定', ok: true, at: markNow },
+    ],
+    active: [],
+});
+const markRows = new Map(markView.rows.map(row => [row.label, row]));
+assert.deepEqual(markRows.get('原著设定').marks.map(mark => mark.status), ['ok'], '原著设定行挂真实选条标签「事实检索」，选条调用过就不再是「无」');
+assert.deepEqual(markRows.get('世界影响').marks.map(mark => mark.status), ['ok', 'failed'], '世界影响行挂「场记挑选＋影响决定」两个渠道');
+assert.match(markRows.get('世界影响').marks[1].detail, /等待超时/);
+// 行尾多记号并排时用短名对齐（记忆＝召回/决定，影响＝挑选/决定），全名保留在悬停标题里。
+assert.deepEqual(markRows.get('世界影响').marks.map(mark => mark.short), ['挑选', '决定'], '影响行短名＝挑选/决定');
+const memRow = markView.rows.find(row => row.label === '记忆');
+if (memRow) assert.deepEqual(memRow.marks.map(mark => mark.short), ['召回', '决定'], '记忆行短名＝召回/决定');
+
+// —— 简略版总控：固定三行，行上的分路清单跟着各功能开关变，只显示状态不带开关 ——
+const liteNow = new Date().toISOString();
+const liteView = buildOverviewPanel({
+    mode: 'lite',
+    dashboard: { enabled: true, taskLabel: '已完成并保存', modules: [{ id: 'action', title: '行动结算', configuration: '已开启', enabled: true, state: 'idle', label: '暂无记录' }] },
+    calls: [{ label: '素材总挑选', ok: true, at: liteNow }, { label: '总结算', ok: false, error: '输出无法解析', at: liteNow }],
+    active: [],
+    litePickParts: ['原著', '影响'],
+    liteSettleParts: ['人物', '世界', '影响', '纳戒', '记忆'],
+});
+assert.deepEqual(liteView.rows.map(row => row.label), ['素材总挑选', '行动结算', '总结算'], '简略版总控固定三行');
+assert.equal(liteView.rows[0].value, '生成前 · 原著／影响一次挑完', '关掉记忆召回，行上就少那一路');
+assert.equal(liteView.rows[1].value, '生成前 · 行动判定独立调用');
+assert.equal(liteView.rows[2].value, '生成后 · 人物／世界／影响／纳戒／记忆一次记完');
+assert.equal(liteView.rows[0].marks[0].status, 'ok');
+assert.equal(liteView.rows[2].marks[0].status, 'failed');
+assert.equal(liteView.rows.every(row => row.toggle === undefined), true, '总控只看情况，不带勾选');
+assert.equal(liteView.rows.some(row => row.label === '原著设定'), false, '完整版的模块行不再混进简略版总控');
+assert.match(liteView.summary, /总控已开启 · 简略版/);
+// 全关 → 空态文案，标记消失；行动结算开关关 → 行显示已关闭
+const liteOff = buildOverviewPanel({
+    mode: 'lite',
+    dashboard: { enabled: true, taskLabel: 'x', modules: [{ id: 'action', title: '行动结算', configuration: '已关闭', enabled: false, state: 'idle', label: '暂无记录' }] },
+    calls: [], active: [], litePickParts: [], liteSettleParts: [],
+});
+assert.equal(liteOff.rows[0].value, '生成前 · 三路全关，本轮不挑');
+assert.equal(liteOff.rows[0].marks.length, 0);
+assert.equal(liteOff.rows[1].value, '已关闭，本轮不判定');
+assert.equal(liteOff.rows[2].value, '生成后 · 五账全关，本轮不记');
+// 不传分路清单时按全开显示（兼容旧调用）
+const liteDefault = buildOverviewPanel({ mode: 'lite', dashboard: { enabled: true, taskLabel: 'x', modules: [] }, calls: [], active: [] });
+assert.equal(liteDefault.rows[0].value, '生成前 · 原著／影响／记忆一次挑完');
+
 // —— 总控：调用标记直接挂模块行尾——在途转圈、✓、✗、没调过「无」；已关闭的模块不挂 ——
 const now = new Date().toISOString();
 const statusView = buildOverviewPanel({
@@ -599,6 +662,12 @@ assert.equal(ordered.lists[0].items[1].head, '晚的', '其余按登记日期倒
             }
         }
     }
+    // 沙盒口径挡结算要明说原因，不能只报一句"已关闭"让玩家对着开关排查。
+    const sandboxPanel = buildSettlePanel({ lastAdjudication: { status: 'unsupported', actions: [], summary: '沙盒口径下行动结算不参与；切回正式口径后恢复' } });
+    assert.match(sandboxPanel.summary, /当前环境不支持结算：沙盒口径/);
+    assert.equal(sandboxPanel.rows.find(item => item.label === '状态').tone, 'warn');
+    const sandboxBare = buildSettlePanel({ lastAdjudication: { status: 'unsupported', actions: [] } });
+    assert.match(sandboxBare.summary, /切回正式口径后恢复/, '没带 summary 也有兜底说明');
     for (const [status, label] of Object.entries({ success: '成功', partial: '部分成功', failure: '失败', insufficient: '依据不足', not_executed: '未执行' })) {
         const panel = buildSettlePanel({ lastAdjudication: { status: 'preview', actions: [{ status, category: 'combat', outcome: '审核后的结果' }] } });
         assert.match(panel.lists[0].all[0].meta, new RegExp(label));

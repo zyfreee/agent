@@ -20,16 +20,8 @@ export const TIER_LABELS = Object.freeze({ small: '小记忆', big: '大记忆' 
 export const TAG_LABELS = Object.freeze({ grudge: '恩怨', intel: '情报', thread: '伏笔', milestone: '大事记' });
 const WEIGHTS = Object.freeze(['major', 'minor']);
 
-const MAX_TEXT = 300;
-/** 新记记忆的短标题上限；老存档可能存着更长的标题，恢复走 RESTORE_TITLE 不硬截。 */
-const MAX_TITLE = 14;
-const RESTORE_TITLE = 20;
-const MAX_BASIS = 80;
-const MAX_NOTE = 200;
-const MAX_QUOTE = 60;
-const MAX_RELATED = 4;
-const MAX_ALIASES = 4;
-const MAX_RELATED_TEXT = 30;
+// 字段不再设字数/条数上限（正文、标题、依据、细节、引文、召回钥匙一律原样入库）：
+// 详略由提示词引导，注入侧各有字数预算兜底；只保留 day 的合理性边界。
 const MAX_DAY = 99999;
 const DEFAULT_MAX_LOG = 40;
 const DEFAULT_MAX_OPS = 8;
@@ -65,32 +57,30 @@ function initialState(now) {
     };
 }
 
-/** 逐条清洗；text 缺失整条丢弃，坏字段截断而不是作废。 */
+/** 逐条清洗；text 缺失整条丢弃，其余字段原样保留（不再截断，钥匙不限量）。 */
 function normalizeOneEntry(raw) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
     const body = text(raw.text);
     if (!body) return null;
     const related = (Array.isArray(raw.related) ? raw.related : [])
-        .map(item => text(item).slice(0, MAX_RELATED_TEXT))
-        .filter(Boolean)
-        .slice(0, MAX_RELATED);
+        .map(item => text(item))
+        .filter(Boolean);
     const tier = TIERS.includes(raw.tier) ? raw.tier : 'big';
     return {
         id: text(raw.id),
         tier,
-        text: body.slice(0, MAX_TEXT),
-        title: text(raw.title).slice(0, RESTORE_TITLE),
-        quote: text(raw.quote).slice(0, MAX_QUOTE),
-        basis: text(raw.basis).slice(0, MAX_BASIS),
+        text: body,
+        title: text(raw.title),
+        quote: text(raw.quote),
+        basis: text(raw.basis),
         related,
         aliases: (Array.isArray(raw.aliases) ? raw.aliases : [])
-            .map(item => text(item).slice(0, MAX_RELATED_TEXT))
-            .filter(Boolean)
-            .slice(0, MAX_ALIASES),
+            .map(item => text(item))
+            .filter(Boolean),
         weight: WEIGHTS.includes(raw.weight) ? raw.weight : 'minor',
         tag: TAG_LABELS[raw.tag] ? raw.tag : '',
         day: clampInt(raw.day, 1, MAX_DAY, 1),
-        note: text(raw.note).slice(0, MAX_NOTE),
+        note: text(raw.note),
         // 记录来源楼层（聊天数组绝对位）：删楼时"对应的记忆跟着删、后续楼层前移"全靠它。
         floor: Number.isInteger(raw.floor) && raw.floor >= 0 ? raw.floor : null,
     };
@@ -226,27 +216,21 @@ export function createMemoryRuntime({ maxLog = DEFAULT_MAX_LOG, maxOps = DEFAULT
             const tier = kind === 'remember' ? 'small' : 'big';
             const body = text(op.text);
             if (!body) return { ok: false, reason: 'text_missing' };
-            if (body.length > MAX_TEXT) return { ok: false, reason: 'text_too_long' };
-            // title 是列表主页面的短标题，必填：没给标题的条目不收。
+            // title 是列表主页面的短标题，必填：没给标题的条目不收；字数不限。
             const title = text(op.title);
             const related = (Array.isArray(op.related) ? op.related : [])
-                .map(item => text(item).slice(0, MAX_RELATED_TEXT))
-                .filter(Boolean)
-                .slice(0, MAX_RELATED);
-            // related 是日后"按需召回"的钥匙：没有关联的记忆永远召不回来。
+                .map(item => text(item))
+                .filter(Boolean);
+            // related 是日后"按需召回"的钥匙：没有关联的记忆永远召不回来；数量不限。
             if (!related.length) return { ok: false, reason: 'related_missing' };
-            if (Array.isArray(op.related) && op.related.length > MAX_RELATED) return { ok: false, reason: 'related_too_many' };
             if (!title) return { ok: false, reason: 'title_missing' };
-            // 新记条目不收超长标题，也不静默截断——标题就是列表主页那一行。
-            if (title.length > MAX_TITLE) return { ok: false, reason: 'title_too_long' };
             const day = op.day === undefined ? stateDay() : intIn(op.day, 1, MAX_DAY);
             if (day === null) return { ok: false, reason: 'bad_day' };
             const tag = TAG_LABELS[op.tag] ? op.tag : '';
-            const quote = text(op.quote).slice(0, MAX_QUOTE);
+            const quote = text(op.quote);
             const aliases = (Array.isArray(op.aliases) ? op.aliases : [])
-                .map(item => text(item).slice(0, MAX_RELATED_TEXT))
-                .filter(Boolean)
-                .slice(0, MAX_ALIASES);
+                .map(item => text(item))
+                .filter(Boolean);
             // 同层同文的条目不重记，防止模型一轮里反复登记同一件事。
             if (state.entries.some(entry => entry.tier === tier && entry.text === body)) {
                 return { ok: false, reason: 'duplicate_text' };
@@ -257,13 +241,13 @@ export function createMemoryRuntime({ maxLog = DEFAULT_MAX_LOG, maxOps = DEFAULT
                 text: body,
                 title,
                 quote,
-                basis: text(op.basis).slice(0, MAX_BASIS),
+                basis: text(op.basis),
                 related,
                 aliases,
                 weight: WEIGHTS.includes(op.weight) ? op.weight : 'minor',
                 tag,
                 day,
-                note: text(op.note).slice(0, MAX_NOTE),
+                note: text(op.note),
                 floor: Number.isInteger(floorKey) && floorKey >= 0 ? floorKey : null,
             };
             state.entries.push(entry);
@@ -440,39 +424,39 @@ export function createMemoryRuntime({ maxLog = DEFAULT_MAX_LOG, maxOps = DEFAULT
         if (!consumed.length) return { ok: false, reason: 'nothing_to_consolidate' };
         const body = text(big?.text);
         if (!body) return { ok: false, reason: 'text_missing' };
-        if (body.length > MAX_TEXT) return { ok: false, reason: 'text_too_long' };
-        // 大记忆的标题也必填：列表主页只显示标题，没有标题或超长的总结不收。
+        // 大记忆的标题也必填：列表主页只显示标题，没有标题的总结不收。
         const bigTitle = text(big?.title);
         if (!bigTitle) return { ok: false, reason: 'title_missing' };
-        if (bigTitle.length > MAX_TITLE) return { ok: false, reason: 'title_too_long' };
         // 同文大记忆不重记：同一天重跑总结的保险。
         if (state.entries.some(entry => entry.tier === 'big' && entry.text === body)) return { ok: false, reason: 'duplicate_text' };
+        // 钥匙不设上限、超限不再拒并：模型总结挑选的 related 优先排前，
+        // 其余钥匙（模型 aliases + 这批小记忆的全部钥匙并集）原样收进 aliases，召回路径一条不丢。
+        const chosenRelated = (Array.isArray(big?.related) ? big.related : [])
+            .map(item => text(item))
+            .filter(Boolean);
+        const chosenAliases = (Array.isArray(big?.aliases) ? big.aliases : [])
+            .map(item => text(item))
+            .filter(Boolean);
         const unionKeys = [];
         for (const entry of consumed) {
             for (const key of [...(entry.related ?? []), ...(entry.aliases ?? [])]) {
                 if (key && !unionKeys.includes(key)) unionKeys.push(key);
             }
         }
-        const chosenRelated = (Array.isArray(big?.related) ? big.related : [])
-            .map(item => text(item).slice(0, MAX_RELATED_TEXT))
-            .filter(Boolean);
-        const chosenAliases = (Array.isArray(big?.aliases) ? big.aliases : [])
-            .map(item => text(item).slice(0, MAX_RELATED_TEXT))
-            .filter(Boolean);
-        const allKeys = [...new Set([...chosenRelated, ...unionKeys, ...chosenAliases])];
-        // Bounded format: refusing the merge preserves all sources instead of losing recall paths.
-        if (allKeys.length > MAX_RELATED + MAX_ALIASES) return { ok: false, reason: 'recall_keys_overflow' };
         const related = [];
-        for (const key of allKeys) {
-            if (related.length >= MAX_RELATED) break;
+        for (const key of chosenRelated) {
             if (!related.includes(key)) related.push(key);
         }
-        // 没有钥匙的大记忆永远召不回，跟 remember 一样不打收。
-        if (!related.length) return { ok: false, reason: 'related_missing' };
-        const aliases = allKeys.filter(key => !related.includes(key));
+        const aliases = [];
+        for (const key of [...chosenAliases, ...unionKeys]) {
+            if (related.includes(key) || aliases.includes(key)) continue;
+            aliases.push(key);
+        }
+        // 模型一个钥匙没挑、这批小记忆也没钥匙 → 合出来的大记忆谁也召不回，才拒并。
+        if (!related.length && !aliases.length) return { ok: false, reason: 'related_missing' };
         const dayKey = intIn(day, 1, MAX_DAY) ?? stateDay();
         const idList = consumed.map(entry => entry.id);
-        const basis = text(big?.basis).slice(0, MAX_BASIS) || `由 ${idList.join('、')} 总结`.slice(0, MAX_BASIS);
+        const basis = text(big?.basis) || `由 ${idList.join('、')} 总结`;
         const retired = retire(idList);
         if (!retired.ok) return retired;
         const entry = {
@@ -480,7 +464,7 @@ export function createMemoryRuntime({ maxLog = DEFAULT_MAX_LOG, maxOps = DEFAULT
             tier: 'big',
             text: body,
             title: bigTitle,
-            quote: text(big?.quote).slice(0, MAX_QUOTE),
+            quote: text(big?.quote),
             basis,
             related,
             aliases,
@@ -530,9 +514,9 @@ export function createMemoryRuntime({ maxLog = DEFAULT_MAX_LOG, maxOps = DEFAULT
         return { status: 'reset', ...status() };
     }
 
-    /** 不改记忆、只往流水里记一笔（模型判断无变化、解析失败这类"决定结果"）。 */
+    /** 不改记忆、只往流水里记一笔（模型判断无变化、解析失败这类"决定结果"）。流水是状态行，非记忆内容，留个防炸长度。 */
     function note(message, { source = 'decide' } = {}) {
-        state.log.push({ at: now(), source, summaries: [String(message).slice(0, MAX_TEXT)], rejected: 0 });
+        state.log.push({ at: now(), source, summaries: [String(message).slice(0, 500)], rejected: 0 });
         state.log = state.log.slice(-maxLog);
         return { status: 'noted' };
     }

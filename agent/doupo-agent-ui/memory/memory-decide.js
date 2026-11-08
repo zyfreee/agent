@@ -19,12 +19,12 @@ export const MEMORY_DECIDE_PROMPT = [
     '只输出一个 JSON 对象：{"note":"一句话说明总结依据","ops":[…]}。不要输出解释、标题或代码块以外的文字。',
     '- ops 里恰好 1 条 remember：把最后一楼正文（结合玩家的本轮输入理解）总结成一句简明记忆——谁/在哪/干了什么、结果如何。本轮正文确实是纯过场、没有任何新信息时才允许空 ops。',
     '- 只总结本轮正文里实际发生的事；现有记忆清单里已有的近事绝不再写（哪怕换个措辞）——多余的小记忆会被脚本直接丢弃。',
-    '- title 必写：1~14 字短标题（名词短语，概括这条记忆，如「加列家中街设卡」「洗骨草扣货待沽」）。记忆列表主页面只显示标题；缺标题或超过 14 字的条目会被脚本整条拒绝，不要拿正文原句硬凑。',
-    '- text≤60字写一句简明记忆；更多细节写进 note≤200字；basis 必写（本轮正文里哪里来的）；related 必写 1-4 个（本轮出现的人名/地名/物名，作为日后召回的钥匙）；related 为空的操作会被脚本拒绝。',
+    '- title 必写：1~14 字短标题（名词短语，概括这条记忆，如「加列家中街设卡」「洗骨草扣货待沽」）。记忆列表主页面只显示标题；缺标题的条目会被脚本整条拒绝，不要拿正文原句硬凑。',
+    '- text≤60字写一句简明记忆；更多细节写进 note≤200字；basis 必写（本轮正文里哪里来的）；related 必写（本轮出现的人名/地名/物名，作为日后召回的钥匙，数量不限、按重要度排）；related 为空的操作会被脚本拒绝。',
     '- quote 可选：本轮里最有味道的一句原话（≤60字）；只准摘聊天里真实出现过的对白，没有就空着。',
     '- forgetMemory(id)：仅在既有记忆与本轮正文事实明显冲突时使用；记忆永久保存，没有"了结"状态。',
     '- 大记忆不用你管：小记忆攒够后脚本会自动总结成大记忆，你没有 memorize/promote 这类操作。',
-    '- 例外：当输入里有【待整合小记忆】时，额外输出 consolidate 字段（一次调用两件事）——{"ids":[待整合条目的编号],"title":"≤14字大记忆短标题","text":"≤60字把这批小记忆整批总结成一条长期大事","related":[1-4个钥匙],"aliases":[其余召回钥匙]}。ids 必须来自待整合清单；没有这个输入段就不输出该字段。',
+    '- 例外：当输入里有【待整合小记忆】时，额外输出 consolidate 字段（一次调用两件事）——{"ids":[待整合条目的编号],"title":"≤14字大记忆短标题","text":"≤300字把这批小记忆整批总结成一条长期大事","related":[挑重点的召回钥匙，数量不限、按重要度排],"aliases":[其余召回钥匙]}。ids 必须来自待整合清单；没有这个输入段就不输出该字段。',
     '口吻：记忆是中性的记事，写清"谁/在哪/发生了什么"，不要写成"我"的第一人称日记。',
     '所有权边界：主角的目标约定、境界物品归纳戒管；玩家接的任务归世界任务；正在发生的市井/势力动态归世界事件；NPC 的档案与好感归人物簿。你只收本轮正文的叙事总结。',
     '只输出 JSON。',
@@ -83,7 +83,7 @@ export const MEMORY_JSON_SCHEMA = Object.freeze({
     required: ['ops'],
 });
 
-/** 组装发给模型的 user 内容：本场召回的记忆 + 相关世界书条目 + 最近聊天（旧→新）。 */
+/** 组装发给模型的 user 内容：本场召回的记忆 + 最近聊天（旧→新）。 */
 export function buildDecideUser({ snapshot = {}, floors = [], consolidateIds = [] } = {}) {
     // 现有记忆全清单（只列标题）：不给模型看，它就不知道哪些近事已经记过，换个措辞重记一遍。
     const existing = (Array.isArray(snapshot?.entries) ? snapshot.entries : [])
@@ -159,11 +159,11 @@ export function parseDecision(raw) {
             ids: rawConsolidate.ids.map(id => String(id).trim()).filter(Boolean),
             title: String(rawConsolidate.title || '').trim(),
             text: String(rawConsolidate.text || '').trim(),
-            related: Array.isArray(rawConsolidate.related) ? rawConsolidate.related.map(item => String(item).trim()).filter(Boolean).slice(0, 4) : [],
-            aliases: Array.isArray(rawConsolidate.aliases) ? rawConsolidate.aliases.map(item => String(item).trim()).filter(Boolean).slice(0, 8) : [],
-            quote: typeof rawConsolidate.quote === 'string' ? rawConsolidate.quote.trim().slice(0, 60) : '',
-            basis: typeof rawConsolidate.basis === 'string' ? rawConsolidate.basis.trim().slice(0, 120) : '',
-            note: typeof rawConsolidate.note === 'string' ? rawConsolidate.note.trim().slice(0, 200) : '',
+            related: Array.isArray(rawConsolidate.related) ? rawConsolidate.related.map(item => String(item).trim()).filter(Boolean) : [],
+            aliases: Array.isArray(rawConsolidate.aliases) ? rawConsolidate.aliases.map(item => String(item).trim()).filter(Boolean) : [],
+            quote: typeof rawConsolidate.quote === 'string' ? rawConsolidate.quote.trim() : '',
+            basis: typeof rawConsolidate.basis === 'string' ? rawConsolidate.basis.trim() : '',
+            note: typeof rawConsolidate.note === 'string' ? rawConsolidate.note.trim() : '',
             weight: rawConsolidate.weight === 'minor' ? 'minor' : 'major',
             tag: ['grudge', 'intel', 'thread', 'milestone'].includes(rawConsolidate.tag) ? rawConsolidate.tag : '',
         }

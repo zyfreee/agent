@@ -104,7 +104,7 @@ function clampInt(value, min, max, fallback) {
     return num;
 }
 
-/** 组装发给模型的 user 内容：台账现状 + 相关世界书条目 + 最近聊天（旧→新）。 */
+/** 组装发给模型的 user 内容：台账现状 + 原著资料已注入内容 + 最近聊天（旧→新）。 */
 export function buildDecideUser({ snapshot = {}, floors = [], worldbookLines = [] } = {}) {
     const worldBlock = buildWorldInjection(snapshot, { maxChars: 1200 });
     const bookLines = (Array.isArray(worldbookLines) ? worldbookLines : [])
@@ -122,8 +122,8 @@ export function buildDecideUser({ snapshot = {}, floors = [], worldbookLines = [
         '【世界台账（当前既定状态）】',
         worldBlock,
         '',
-        `【世界书资料（与本轮聊天相关的条目，共 ${bookLines.length} 条）】`,
-        bookLines.length ? bookLines.map(line => `- ${line}`).join('\n') : '- （本轮没有命中的世界书条目）',
+        '【原著资料（本轮已注入的原著条目）】',
+        bookLines.length ? bookLines.join('\n\n') : '- （原著资料本轮还没有注入内容）',
         '',
         `【最近聊天记录（旧 → 新，共 ${chat.length} 楼）】`,
         chat.length ? chat.join('\n') : '- （还没有聊天内容）',

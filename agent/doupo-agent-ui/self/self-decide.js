@@ -80,7 +80,7 @@ export const SELF_JSON_SCHEMA = Object.freeze({
     required: ['ops'],
 });
 
-/** 组装发给模型的 user 内容：纳戒现状（带编号，供 update/remove 引用）+ 相关世界书条目 + 最近聊天（旧→新）。 */
+/** 组装发给模型的 user 内容：纳戒现状（带编号，供 update/remove 引用）+ 原著资料已注入内容 + 最近聊天（旧→新）。 */
 export function buildSelfDecideUser({ snapshot = {}, floors = [], worldbookLines = [] } = {}) {
     const selfBlock = buildSelfInjection(snapshot, { maxChars: 1600, withIds: true });
     const bookLines = (Array.isArray(worldbookLines) ? worldbookLines : [])
@@ -98,8 +98,8 @@ export function buildSelfDecideUser({ snapshot = {}, floors = [], worldbookLines
         '【纳戒现状（主角此刻的自身状态与随身之物）】',
         selfBlock,
         '',
-        `【世界书资料（与本轮聊天相关的条目，共 ${bookLines.length} 条）】`,
-        bookLines.length ? bookLines.map(line => `- ${line}`).join('\n') : '- （本轮没有命中的世界书条目）',
+        '【原著资料（本轮已注入的原著条目）】',
+        bookLines.length ? bookLines.join('\n\n') : '- （原著资料本轮还没有注入内容）',
         '',
         `【最近聊天记录（旧 → 新，共 ${chat.length} 楼）】`,
         chat.length ? chat.join('\n') : '- （还没有聊天内容）',

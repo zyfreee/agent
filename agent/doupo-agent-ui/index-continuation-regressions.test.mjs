@@ -21,6 +21,9 @@ function prepareHarness() {
     const channel = { clear() {}, inspect: () => ({ status: 'ready' }), write: value => { writes.push(value); return { status: 'written' }; } };
     const run = runInNewContext(`${prepareCode}; prepareInjectionForPrompt`, {
         captureAgentContinuation: () => ({ current: () => current }), currentSettings: () => ({ enabled: true }),
+        apiMode: () => 'full',
+        cleanFloorText: async message => (typeof message?.mes === 'string' ? message.mes : ''),
+        cleanFloorEntries: async entries => (Array.isArray(entries) ? entries : []).map(({ role, text }) => ({ role, text })),
         writeWorldInjectionForPrompt() {}, writeImpactInjectionForPrompt: async () => {}, writeNpcLedgerInjectionForPrompt() {},
         writeSelfInjectionForPrompt() {}, writeMemoryInjectionForPrompt: async () => {},
         injectionSettings: () => ({ enabled: true, depth: 0, maxChars: 0 }), sandboxModeActive: () => false,

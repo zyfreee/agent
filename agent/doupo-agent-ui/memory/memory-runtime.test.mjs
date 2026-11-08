@@ -23,10 +23,10 @@ assert.deepEqual(Object.values(TAG_LABELS), ['恩怨', '情报', '伏笔', '大�
     assert.equal(entry.day, 6);
     assert.equal('done' in entry, false, '已了结概念已删除');
     assert.equal('recallCount' in entry, false, '强度统计已删除');
-    // 超长标题整条拒绝、缺标题直接拒绝（列表主页只显示标题，新记录不静默截断）
+    // 标题不再限长：多长的标题都原样入库；缺标题直接拒绝（列表主页只显示标题）
     const longTitle = rt.apply([{ op: 'remember', title: '一二三四五六七八九十甲乙丙丁戊', text: '标题超长的记忆', related: ['药老'] }], { source: 'panel', day: 6 });
-    assert.equal(longTitle.status, 'rejected');
-    assert.equal(longTitle.rejected[0].reason, 'title_too_long', '超过 14 字的标题整条拒绝，不截断');
+    assert.equal(longTitle.status, 'applied', '标题不限字数，原样入库');
+    assert.equal(rt.snapshot().entries.at(-1).title, '一二三四五六七八九十甲乙丙丁戊');
     const noTitle = rt.apply([{ op: 'remember', text: '没有标题的记忆', related: ['药老'] }], { source: 'panel', day: 6 });
     assert.equal(noTitle.rejected[0].reason, 'title_missing', '没给 title 的记忆整条拒绝');
     const big = rt.apply([{ op: 'memorize', title: '欠药老一条命', text: '欠药老一条命', basis: '第 3 楼', related: ['药老'], weight: 'major', tag: 'grudge' }], { source: 'panel', day: 3 });
@@ -43,16 +43,20 @@ assert.deepEqual(Object.values(TAG_LABELS), ['恩怨', '情报', '伏笔', '大�
     // 大记忆里同文不受小记忆影响（分层去重）
     const crossTier = rt.apply([{ op: 'memorize', title: '坊市穆蛇被打跑', text: '穆蛇在坊市被打跑', basis: '升级记', related: ['穆蛇'] }], { source: 'panel', day: 7 });
     assert.equal(crossTier.status, 'applied');
-    // 文本超长 / 关联超量 / 坏 day / 引文截断
-    assert.equal(rt.apply([{ op: 'remember', text: 'x'.repeat(301), related: ['a'] }]).status, 'rejected');
-    assert.equal(rt.apply([{ op: 'remember', text: 'ok', related: ['一', '二', '三', '四', '五'] }]).status, 'rejected');
+    // 文本/关联/引文/细节一律不限量：原样入库
+    const long = rt.apply([{ op: 'remember', title: '长文', text: 'x'.repeat(301), related: ['a'] }], { source: 'panel', day: 7 });
+    assert.equal(long.status, 'applied', '正文不限字数');
+    assert.equal(rt.snapshot().entries.at(-1).text.length, 301);
+    const manyKeys = rt.apply([{ op: 'remember', title: '多钥匙', text: '多钥匙', related: ['一', '二', '三', '四', '五'] }], { source: 'panel', day: 7 });
+    assert.equal(manyKeys.status, 'applied', 'related 数量不限');
+    assert.deepEqual(rt.snapshot().entries.at(-1).related, ['一', '二', '三', '四', '五']);
     assert.equal(rt.apply([{ op: 'remember', title: '坏日', text: 'ok', related: ['a'], day: 0 }]).status, 'rejected');
     const capped = rt.apply([{ op: 'remember', title: '引文测试', text: '引文测试', related: ['a'], quote: '长'.repeat(80) }], { source: 'panel', day: 7 });
     assert.equal(capped.status, 'applied');
-    assert.equal(rt.snapshot().entries.at(-1).quote.length, 60);
+    assert.equal(rt.snapshot().entries.at(-1).quote.length, 80, '引文原样入库');
     const noted = rt.apply([{ op: 'remember', title: '备注落账', text: '备注落账', related: ['a'], note: '细'.repeat(250) }], { source: 'panel', day: 7 });
     assert.equal(noted.status, 'applied');
-    assert.equal(rt.snapshot().entries.at(-1).note.length, 200, 'note 落账且截到 200');
+    assert.equal(rt.snapshot().entries.at(-1).note.length, 250, 'note 原样入库');
 }
 
 // 2. promote：小转大（可顺带补标签）；undo 供同楼重 roll
@@ -235,27 +239,25 @@ assert.deepEqual(Object.values(TAG_LABELS), ['恩怨', '情报', '伏笔', '大�
     }
 }
 
-// OPT-043: never retire a source whose recall keys do not fit the bounded result.
+// OPT-043 改版：钥匙不设上限、超限绝不拒并——模型挑的 related 排前，其余钥匙全量收进 aliases。
 {
     const rt = createMemoryRuntime({ now: NOW });
     const keys = Array.from({ length: 9 }, (_, i) => `钥匙${i + 1}`);
     rt.apply(keys.slice(0, 8).map(key => ({ op: 'remember', title: key, text: key, related: [key] })), { source: 'panel' });
-    rt.apply([{ op: 'remember', title: keys[8], text: keys[8], related: [keys[8]] }], { source: 'panel' });
+    rt.apply(keys.slice(8).map(key => ({ op: 'remember', title: key, text: key, related: [key] })), { source: 'panel' });
     const ids = rt.snapshot().entries.map(entry => entry.id);
-    const before = rt.snapshot();
-    const overflow = rt.consolidate({ ids, big: { title: '九把钥匙', text: '九条旧事', related: [keys[0]] } });
-    assert.equal(overflow.reason, 'recall_keys_overflow', 'reject rather than silently retire ninth recall key');
-    assert.deepEqual(rt.snapshot(), before, 'failed consolidation is fully atomic, including log and tombstones');
-    const result = rt.consolidate({ ids: ids.slice(0, 7), big: { title: '七条旧事', text: '七条合并', related: [keys[0]], aliases: ['新别名', '新别名'] } });
-    assert.equal(result.ok, true);
-    const retained = [...result.entry.related, ...result.entry.aliases];
-    assert.deepEqual(new Set(retained), new Set([...keys.slice(0, 7), '新别名']));
-    assert.equal(rt.snapshot().entries.some(entry => entry.id === ids[8]), true, 'unconsumed overflow source remains');
-    rt.restore(JSON.parse(JSON.stringify(rt.snapshot())));
-    assert.ok(rt.snapshot().entries.find(entry => entry.id === result.id).aliases.includes('新别名'), 'model alias survives reload');
-    const current = rt.snapshot();
-    assert.equal(rt.consolidate({ ids: [ids[7], ids[8]], big: { title: '重复钥匙', text: '重复钥匙合并', related: [keys[7], keys[7]], aliases: [keys[8], keys[8]] } }).ok, true);
-    assert.equal(current.entries.length - rt.snapshot().entries.length, 1);
+    const result = rt.consolidate({ ids, big: { title: '九把钥匙', text: '九条旧事', related: [keys[0]] } });
+    assert.equal(result.ok, true, '九把钥匙也必须并进去，不再 recall_keys_overflow');
+    assert.deepEqual(result.entry.related, [keys[0]], '模型挑的钥匙排前');
+    assert.deepEqual(result.entry.aliases, keys.slice(1), '其余钥匙全量进 aliases，召回路径一条不丢');
+    assert.equal(rt.snapshot().entries.some(entry => ids.includes(entry.id)), false, '九条小记忆全部退役');
+    assert.equal(rt.snapshot().entries.filter(entry => entry.tier === 'big').length, 1);
+    // 模型一个钥匙没挑：并集钥匙兜底进 aliases，照样能并
+    const rt2 = createMemoryRuntime({ now: NOW });
+    rt2.apply([{ op: 'remember', title: '旧事甲', text: '旧事甲', related: ['甲'] }, { op: 'remember', title: '旧事乙', text: '旧事乙', related: ['乙'] }], { source: 'panel' });
+    const merged = rt2.consolidate({ ids: rt2.snapshot().entries.map(entry => entry.id), big: { title: '合并', text: '两条并一条' } });
+    assert.equal(merged.ok, true);
+    assert.deepEqual([...merged.entry.related, ...merged.entry.aliases].sort(), ['乙', '甲'], '并集钥匙兜底');
 }
 
 // OPT-017: restore reserves retired/live identities and repairs only absent/duplicate IDs.
@@ -379,14 +381,14 @@ for (const source of ['llm', 'decide']) {
     other.restore(rt.snapshot());
     const added = other.apply([{ op: 'remember', title: '新小记忆', text: '新小记忆', related: ['新地'] }], { source: 'panel', day: 3 });
     assert.equal(added.applied[0].id, 'm2', 'restore 后编号续接不撞号');
-    // 老存档里的 done/resolvedDay/recallCount 字段（已删除的概念）恢复时整体丢弃
+    // 老存档里的 done/resolvedDay/recallCount 字段（已删除的概念）恢复时整体丢弃；字段不再截断
     other.restore({ entries: [{ text: 'x'.repeat(400), tier: '坏层', related: Array(9).fill('名'), quote: '长'.repeat(99), done: true, resolvedDay: 9, recallCount: 99999, lastRecallDay: 8 }], });
     const cleaned = other.snapshot().entries;
     assert.equal(cleaned.length, 1);
     assert.equal(cleaned[0].tier, 'big', '坏层级回落大记忆');
-    assert.equal(cleaned[0].text.length, 300);
-    assert.equal(cleaned[0].related.length, 4);
-    assert.equal(cleaned[0].quote.length, 60);
+    assert.equal(cleaned[0].text.length, 400, '恢复不再截断正文');
+    assert.equal(cleaned[0].related.length, 9, '恢复不再截钥匙');
+    assert.equal(cleaned[0].quote.length, 99, '恢复不再截引文');
     assert.equal('done' in cleaned[0], false, '老 done 字段不复活');
     assert.equal('recallCount' in cleaned[0], false, '老强度字段不复活');
     other.reset();

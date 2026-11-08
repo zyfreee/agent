@@ -70,7 +70,7 @@ const floors = [
 const user = buildRecallUser({ snapshot, floors, worldbookLines: ['123|物品|青莲地心火|异火榜第十九'] });
 assert.ok(user.includes('【记忆目录'), user.slice(0, 60));
 assert.ok(user.includes('m2|大记忆'));
-assert.ok(user.includes('【命中的世界书条目（共 1 条）】'));
+assert.ok(user.includes('【原著资料（本轮已注入的原著条目）】'));
 assert.ok(user.includes('123|物品|青莲地心火|异火榜第十九'));
 assert.ok(user.includes('最后一楼是玩家刚发的新输入'));
 assert.ok(user.includes('[玩家] 我去坊市找穆蛇算账。'));

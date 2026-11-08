@@ -156,7 +156,8 @@ export function createTurnStages({
         const progress = typeof getProgress === 'function' ? getProgress(ctx) : null;
         const asOf = Number.isInteger(progress) ? progress : (Number.isInteger(progress?.volume) ? progress.volume : null);
         const source = progress?.source === 'manual' ? 'manual' : 'auto';
-        const recentTexts = typeof getRecentTexts === 'function' ? getRecentTexts(ctx) : [];
+        // getRecentTexts 允许异步（楼层要套角色卡正则后再给选条模型）；同步返回数组也兼容。
+        const recentTexts = typeof getRecentTexts === 'function' ? await getRecentTexts(ctx) : [];
         const progressText = [ctx.playerInput, ...(Array.isArray(recentTexts) ? recentTexts : [])].join('\n');
         // 目录选条：先把整卷目录给模型，由它点名 uid，再由脚本按预算取正文。
         // 失败时退回下面的关键字召回，不阻断本轮。

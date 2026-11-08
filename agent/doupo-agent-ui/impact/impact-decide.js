@@ -116,7 +116,7 @@ function clampInt(value, min, max, fallback) {
     return num;
 }
 
-/** 组装发给模型的 user 内容：世界台账 + 影响库 + 相关世界书 + 最近聊天（旧→新）。 */
+/** 组装发给模型的 user 内容：世界台账 + 影响库 + 原著资料已注入内容 + 最近聊天（旧→新）。 */
 export function buildImpactDecideUser({ snapshot = {}, floors = [], worldbookLines = [] } = {}) {
     const worldBlock = buildWorldInjection(snapshot, { maxChars: 900 });
     const records = Array.isArray(snapshot.records) ? snapshot.records : [];
@@ -145,8 +145,8 @@ export function buildImpactDecideUser({ snapshot = {}, floors = [], worldbookLin
         `【世界影响库（玩家已经改出的世界线，共 ${records.length} 条：未了结 ${counts.active}、已发酵 ${counts.ripened}、已收场 ${counts.closed}）】`,
         ledger.length ? ledger.map(line => `- ${line}`).join('\n') : '- （本局还没有记录任何影响，这是世界线第一次偏移的机会）',
         '',
-        `【世界书资料（与本轮相关的原著条目，共 ${bookLines.length} 条）】`,
-        bookLines.length ? bookLines.map(line => `- ${line}`).join('\n') : '- （本轮没有命中的世界书条目）',
+        '【原著资料（本轮已注入的原著条目）】',
+        bookLines.length ? bookLines.join('\n\n') : '- （原著资料本轮还没有注入内容）',
         '',
         `【最近聊天记录（旧 → 新，共 ${chat.length} 楼）】`,
         chat.length ? chat.join('\n') : '- （还没有聊天内容）',

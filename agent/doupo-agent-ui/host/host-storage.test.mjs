@@ -116,8 +116,8 @@ assert.equal(selfSettings.decideAuto, true);
 assert.equal(selfSettings.decideMode, undefined, '旧的手填决定连接键不该再有（连接走方案）');
 assert.equal(selfSettings.decideMerged, undefined, '合并决定已退役，开关键清掉');
 assert.equal(selfSettings.decideApiPreset, '', '纳戒决定自己的方案绑定，默认不绑＝跟随酒馆');
-assert.equal(selfSettings.decideMaxFloors, 6, '纳戒决定自己的喂楼数（v11 起与记忆分开）');
-assert.equal(selfSettings.decideMaxEntries, 12, '纳戒决定自己的条目上限');
+assert.equal(selfSettings.decideMaxFloors, 0, '纳戒决定自己的喂楼数默认 0＝跟随角色正则');
+assert.equal(selfSettings.decideMaxEntries, undefined, '条目上限已退役（决定改读原著资料注入内容）');
 assert.equal(selfSettings.decidePrompt, '');
 assert.equal(selfSettings.guide, '');
 freshStorage.updateSettings({ self: { injectBudget: 1200, decidePrompt: '' } });
@@ -131,10 +131,10 @@ assert.equal(migrated.memory.decideMode, 'tavern', '共用键搬完、方案迁�
 const ringPreset = migrated.api.presets.find(item => item.id === migrated.memory.decideApiPreset);
 assert.equal(ringPreset.baseUrl, 'https://ring.example/v1', '纳戒侧手填连接经共用键搬进方案');
 assert.equal(ringPreset.temperature, 0.3);
-assert.equal(migrated.memory.decideMaxFloors, 6, '喂楼数不再共用：记忆侧保持默认');
+assert.equal(migrated.memory.decideMaxFloors, 0, '喂楼数不再共用：记忆侧旧默认已清成 0＝跟随角色正则');
 assert.equal(migrated.self.decideMaxFloors, 9, '纳戒侧自己的喂楼数保留');
 assert.equal(migrated.self.decideApiPreset, migrated.memory.decideApiPreset, '拆分起点：纳戒绑定继承共用方案');
-assert.equal(migrated.memory.decideMaxEntries, 12, '记忆侧默认值没动');
+assert.equal(migrated.memory.decideMaxEntries, undefined, '条目上限已退役');
 assert.equal(migrated.self.decideMode, undefined, '纳戒侧死键清掉');
 assert.equal(migrated.self.decideBaseUrl, undefined);
 // 迁移后把共用卡改回跟随酒馆，不会被纳戒侧残留旧值再搬回去。
@@ -186,7 +186,7 @@ const legacyContext = { extensionSettings: { doupo_agent_ui: {
     impact: { modelMode: 'shared', decideMode: 'custom', decideBaseUrl: 'https://impact.example/v1', decideApiKey: 'ik', decideModel: 'im', injectMode: 'custom', injectBaseUrl: 'https://inject.example/v1', injectApiKey: 'jk', injectModel: 'jm' },
 } } };
 const legacyMigrated = createHostStorage({ getContext: () => legacyContext }).settings().value;
-assert.equal(legacyMigrated.schemaVersion, 11);
+assert.equal(legacyMigrated.schemaVersion, 12);
 assert.equal(legacyMigrated.api.presets.length, 4, 'llm / memory+world 共用 / npc / impact.decide = 4 个方案');
 const memoryPreset = legacyMigrated.api.presets.find(item => item.id === legacyMigrated.memory.decideApiPreset);
 assert.equal(memoryPreset.baseUrl, 'https://api.deepseek.com/v1');
@@ -221,14 +221,68 @@ const v10Context = { extensionSettings: { doupo_agent_ui: {
     memory: { decideApiPreset: 'pA', decideMaxFloors: 8, decideMaxEntries: 20 },
 } } };
 const v11Migrated = createHostStorage({ getContext: () => v10Context }).settings().value;
-assert.equal(v11Migrated.schemaVersion, 11);
+assert.equal(v11Migrated.schemaVersion, 12);
 assert.equal(v11Migrated.self.decideApiPreset, 'pA', '纳戒决定继承拆分前的共用绑定');
 assert.equal(v11Migrated.self.decideMaxFloors, 8);
-assert.equal(v11Migrated.self.decideMaxEntries, 20);
+assert.equal(v11Migrated.self.decideMaxEntries, undefined, '条目上限随 v13 退役，v10 存档里的旧值也清掉');
 const rebindContext = { extensionSettings: { doupo_agent_ui: JSON.parse(JSON.stringify(v11Migrated)) } };
 rebindContext.extensionSettings.doupo_agent_ui.memory.decideApiPreset = 'pB';
 rebindContext.extensionSettings.doupo_agent_ui.memory.decideMaxFloors = 3;
 const rebind = createHostStorage({ getContext: () => rebindContext }).settings().value;
 assert.equal(rebind.self.decideApiPreset, 'pA', '拆分后记忆侧改动不回写纳戒');
 assert.equal(rebind.self.decideMaxFloors, 8, '拆分后记忆侧喂料改动不回写纳戒');
+// schemaVersion 12：读楼数默认语义改成“跟随角色卡正则”（0/留空＝跟随，正整数才钉死）。
+// 老存档里与旧默认完全相等的值清成 0，玩家手调过的原样保留；跑过一次（schemaVersion≥12）不再清。
+const v11StaleContext = { extensionSettings: { doupo_agent_ui: {
+    schemaVersion: 11,
+    readFloors: 8,
+    world: { decideMaxFloors: 6 },
+    npc: { ledgerFloors: 2 },
+    self: { decideMaxFloors: 6 },
+    memory: { decideMaxFloors: 6 },
+    impact: { injectFloors: 6, decideMaxFloors: 10 },
+} } };
+const v12Migrated = createHostStorage({ getContext: () => v11StaleContext }).settings().value;
+assert.equal(v12Migrated.schemaVersion, 12);
+assert.equal(v12Migrated.readFloors, 0, '全局读楼默认清 0＝跟随角色正则');
+assert.equal(v12Migrated.world.decideMaxFloors, 0);
+assert.equal(v12Migrated.npc.ledgerFloors, 0);
+assert.equal(v12Migrated.self.decideMaxFloors, 0);
+assert.equal(v12Migrated.memory.decideMaxFloors, 0);
+assert.equal(v12Migrated.impact.injectFloors, 0);
+assert.equal(v12Migrated.impact.decideMaxFloors, 0);
+const v12CustomContext = { extensionSettings: { doupo_agent_ui: {
+    schemaVersion: 11,
+    readFloors: 5,
+    memory: { decideMaxFloors: 9 },
+    impact: { decideMaxFloors: 4 },
+} } };
+const v12Kept = createHostStorage({ getContext: () => v12CustomContext }).settings().value;
+assert.equal(v12Kept.readFloors, 5, '玩家手调过的读楼数原样保留');
+assert.equal(v12Kept.memory.decideMaxFloors, 9, '玩家手调过的喂楼数原样保留');
+assert.equal(v12Kept.impact.decideMaxFloors, 4, '玩家手调过的记录员喂楼数原样保留');
+const v12OnceContext = { extensionSettings: { doupo_agent_ui: {
+    schemaVersion: 12,
+    readFloors: 8,
+    memory: { decideMaxFloors: 6 },
+} } };
+const v12Once = createHostStorage({ getContext: () => v12OnceContext }).settings().value;
+assert.equal(v12Once.readFloors, 8, '版本门已过（schemaVersion=12）不再清值');
+assert.equal(v12Once.memory.decideMaxFloors, 6, '版本门已过（schemaVersion=12）不再清值');
+// schemaVersion 13：决定条目上限退役——决定调用改读原著资料注入内容，四个存量键一律清掉。
+const v12EntriesContext = { extensionSettings: { doupo_agent_ui: {
+    schemaVersion: 12,
+    world: { decideMaxEntries: 6 },
+    self: { decideMaxEntries: 7 },
+    memory: { decideMaxEntries: 8 },
+    impact: { decideMaxEntries: 9 },
+} } };
+const v13Migrated = createHostStorage({ getContext: () => v12EntriesContext }).settings().value;
+assert.equal(v13Migrated.schemaVersion, 13);
+assert.equal(v13Migrated.world.decideMaxEntries, undefined);
+assert.equal(v13Migrated.self.decideMaxEntries, undefined);
+assert.equal(v13Migrated.memory.decideMaxEntries, undefined);
+assert.equal(v13Migrated.impact.decideMaxEntries, undefined);
+const v13Once = createHostStorage({ getContext: () => ({ extensionSettings: { doupo_agent_ui: { schemaVersion: 13, memory: { decideMaxEntries: 8 } } } }) }).settings().value;
+assert.equal(v13Once.memory.decideMaxEntries, 8, '版本门已过（schemaVersion=13）不再清键');
 console.log('host storage tests passed');

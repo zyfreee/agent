@@ -523,7 +523,7 @@ const JOURNAL_EVENTS = Object.freeze({
     npc_plan_reassessment_cleared: '重估解除', npc_plan_candidates_invalidated: 'NPC 候选作废',
     narrative_candidates_invalidated: '正文候选作废', history_changed_after_commit: '提交后历史变动', history_candidate_invalidated: '历史候选作废',
     turn_mvu_arbitrate: '纳戒仲裁', turn_memory_decide: '记忆总结', turn_npc_record: '人物记账', turn_world_decision: '世界推进',
-    turn_impact_decide: '影响记录', turn_settle_adjudicate: '行动结算', turn_facts_inject: '原著注入',
+    turn_impact_decide: '影响记录', turn_settle_adjudicate: '行动结算', turn_facts_inject: '原著注入', turn_lite_settle: '总结算',
 });
 const JOURNAL_OUTCOMES = Object.freeze({
     completed: '完成', processing: '进行中', aborted: '中止', aborted_before_stage: '未开始就中止',
@@ -576,22 +576,34 @@ export function buildSandboxPanel({ read } = {}) {
 
 /** 总控窗常驻的调用渠道：每轮生成前后基本都会跑的模型调用，按一轮里的发生顺序排。 */
 /** 每个仪表盘模块自己名下的调用渠道：标记直接标在模块行尾，一眼看清哪路没调/在调。 */
+/** 每个仪表盘模块自己名下的调用渠道：标记直接标在模块行尾，一眼看清哪路没调/在调。
+ *  key 是调用流水里的登记标签（markOf 靠它对号）；short 是行尾多个记号并排时的短名，
+ *  行尾只挂一个记号时不显示文字，悬停标题里始终是全名。 */
 const MODULE_CHANNELS = Object.freeze({
-    facts: ['场记挑选'],
-    action: ['行动结算'],
-    memory: ['记忆召回', '记忆决定'],
-    world: ['世界决定'],
-    npc: ['人物记录'],
-    self: ['纳戒决定'],
-    impact: ['影响决定'],
+    // 原著设定每轮的真实调用是选条员，登记标签是「事实检索」（facts-select 调 complete 时不报标签，
+    // 由 index.js 兜底命名）；「场记挑选」其实是世界影响的注入挑选员，挂在影响行。
+    facts: [{ key: '事实检索', short: '选条' }],
+    action: [{ key: '行动结算', short: '判定' }],
+    memory: [{ key: '记忆召回', short: '召回' }, { key: '记忆决定', short: '决定' }],
+    world: [{ key: '世界决定', short: '决定' }],
+    npc: [{ key: '人物记录', short: '记录' }],
+    self: [{ key: '纳戒决定', short: '决定' }],
+    impact: [{ key: '场记挑选', short: '挑选' }, { key: '影响决定', short: '决定' }],
 });
 
+/** 简略版总控不按模块拼行：直接铺两条合并调用；行内说明随各功能开关动态增减分路。 */
+const LITE_OVERVIEW_ROWS = Object.freeze([
+    Object.freeze({ label: '素材总挑选', kind: 'pick', all: '原著／影响／记忆', emptyText: '生成前 · 三路全关，本轮不挑' }),
+    Object.freeze({ label: '行动结算', kind: 'action', all: '生成前 · 行动判定独立调用', emptyText: '已关闭，本轮不判定' }),
+    Object.freeze({ label: '总结算', kind: 'settle', all: '人物／世界／影响／纳戒／记忆', emptyText: '生成后 · 五账全关，本轮不记' }),
+]);
+
 /**
- * 模块行尾的实时状态标记，数据来自 LLM 客户端：在途转圈、最近一次 ✓ / ✗、没调过「无」。
- * 渠道之外的调用（档案抄录/记忆总结/冷藏推进/经历精简…）不在模块行展示——在途的由
+ * 调用标记的数据面：在途转圈、最近一次 ✓ / ✗、没调过「无」。
+ * 渠道之外的调用（档案抄录/记忆总结/冷藏推进/经历精简…）不进行列展示——在途的由
  * 摘要行「正在调用」播报，完结的结果在各自面板的状态行里看。
  */
-function buildModuleMarks({ modules, calls, active }) {
+function buildMarkOf({ calls, active }) {
     const log = Array.isArray(calls) ? calls : [];
     const inFlight = Array.isArray(active) ? active.filter(item => typeof item === 'string' && item) : [];
     const byLabel = new Map();
@@ -600,7 +612,7 @@ function buildModuleMarks({ modules, calls, active }) {
         if (!byLabel.has(key)) byLabel.set(key, []);
         byLabel.get(key).push(item);
     }
-    const markOf = label => {
+    return label => {
         if (inFlight.includes(label)) return { label, status: 'running', detail: '调用中' };
         const list = byLabel.get(label);
         if (!list?.length) return { label, status: 'none', detail: '未调用' };
@@ -609,16 +621,57 @@ function buildModuleMarks({ modules, calls, active }) {
         if (last?.ok === true) return { label, status: 'ok', detail: time };
         return { label, status: 'failed', detail: `${last?.error || '失败'}（${time}）` };
     };
+}
+
+function buildModuleMarks({ modules, calls, active }) {
+    const markOf = buildMarkOf({ calls, active });
     const marks = new Map();
     for (const module of modules) {
         const channels = MODULE_CHANNELS[module?.id];
-        if (Array.isArray(channels) && channels.length) marks.set(module.id, channels.map(markOf));
+        if (Array.isArray(channels) && channels.length) {
+            marks.set(module.id, channels.map(channel => {
+                // 渠道兼容两种写法：旧式纯标签字符串，或 { key, short }（行尾多记号并排时用短名）。
+                const key = typeof channel === 'string' ? channel : channel?.key;
+                const mark = markOf(key);
+                const short = typeof channel === 'object' && channel?.short ? channel.short : undefined;
+                return short ? { ...mark, short } : mark;
+            }));
+        }
     }
     return marks;
 }
 
-/** 总控：各模块开关 + 行尾挂自己渠道的实时调用标记（转圈/✓/✗/无），只读。 */
-export function buildOverviewPanel({ dashboard, calls, active } = {}) {
+/** 总控：完整版按各模块开关铺行、行尾挂自己渠道的实时标记；简略版固定三行，行的分路清单跟着各功能开关变。 */
+export function buildOverviewPanel({ dashboard, calls, active, mode, litePickParts, liteSettleParts } = {}) {
+    const inFlight = Array.isArray(active) ? active.filter(item => typeof item === 'string' && item) : [];
+    const running = inFlight.length ? ` · 正在调用：${inFlight.join('、')}` : '';
+    if (mode === 'lite') {
+        const markOf = buildMarkOf({ calls, active });
+        const pickParts = Array.isArray(litePickParts) ? litePickParts : null;
+        const settleParts = Array.isArray(liteSettleParts) ? liteSettleParts : null;
+        const actionOn = (Array.isArray(dashboard?.modules) ? dashboard.modules : []).find(module => module?.id === 'action')?.enabled === true;
+        const rows = LITE_OVERVIEW_ROWS.map(row => {
+            if (row.kind === 'action') {
+                return { label: row.label, value: actionOn ? row.all : row.emptyText, marks: actionOn ? [markOf(row.label)] : [] };
+            }
+            const parts = row.kind === 'pick' ? pickParts : settleParts;
+            const alive = parts === null || parts.length > 0;
+            const shown = parts === null ? row.all : parts.join('／');
+            return {
+                label: row.label,
+                value: alive ? `生成${row.kind === 'pick' ? '前' : '后'} · ${shown}${row.kind === 'pick' ? '一次挑完' : '一次记完'}` : row.emptyText,
+                marks: alive ? [markOf(row.label)] : [],
+            };
+        });
+        return {
+            title: '总控', icon: '⌂',
+            summary: dashboard
+                ? `总控已开启 · 简略版${running} · 最近任务：${dashboard.taskLabel ?? '暂无任务'}`
+                : '总控状态还没有载入。',
+            rows: capRows(rows, 24),
+            lists: [],
+        };
+    }
     const modules = Array.isArray(dashboard?.modules) ? dashboard.modules : [];
     const marks = buildModuleMarks({ modules, calls, active });
     const rows = modules.map(module => ({
@@ -628,8 +681,6 @@ export function buildOverviewPanel({ dashboard, calls, active } = {}) {
         // 已关闭的模块标记为空数组：不显示记号，但槽位占着，「已开启」列才能对齐。
         marks: module.enabled === false ? [] : (marks.get(module.id) ?? []),
     }));
-    const inFlight = Array.isArray(active) ? active.filter(item => typeof item === 'string' && item) : [];
-    const running = inFlight.length ? ` · 正在调用：${inFlight.join('、')}` : '';
     return {
         title: '总控', icon: '⌂',
         summary: dashboard
@@ -748,7 +799,8 @@ export function buildSettlePanel({ lastAdjudication } = {}) {
     if (differences.length) lists.push(list('对账差异', '', differences.map(item => entry('差异', '', settleDifference(item)))));
     return {
         title: '行动结算', icon: '⚖',
-        summary: multi ? `${state} · ${actions.length} 项行动 · ${channel}。`
+        summary: record.status === 'unsupported' ? `当前环境不支持结算：${brief(record.summary, 40) || '沙盒口径下行动结算不参与，切回正式口径后恢复'}`
+            : multi ? `${state} · ${actions.length} 项行动 · ${channel}。`
             : record.status === 'error' ? `上次判定失败：${brief(record.summary, 40)}`
             : record.status === 'none' ? '本轮没有可结算的行动。'
             : `${state}（${label}）：${brief(record.outcome, 40)} · ${channel}。`,

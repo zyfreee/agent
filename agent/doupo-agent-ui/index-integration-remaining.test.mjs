@@ -66,16 +66,18 @@ test('OPT-085 settlement adapter forwards its stage cancellation signal', async 
     await run({ category: 'general', signal }); assert.equal(received.signal, signal);
 });
 
-test('OPT-023 settlement clips future sections through the shared volume trimmer', () => {
-    const code = extract('function collectSettleMaterials(', '\n/** 预览不占用');
-    const run = runInNewContext(`${code}; collectSettleMaterials`, {
-        getHostContext: () => ({ chat: [] }), impactConversation: () => ({ floors: [] }), settleSettings: () => ({ customCategories: [], resultPrompt: '', promptFor: () => '' }),
+test('OPT-023 settlement clips future sections through the shared volume trimmer', async () => {
+    const code = extract('async function collectSettleMaterials(', '\n/** 预览不占用');
+    // collectSettleMaterials 现在要套楼层正则（异步）：切片放进 AsyncFunction 求值后再调用。
+    const run = runInNewContext(`(async () => {\n${code}\n; return collectSettleMaterials; })()`, {
+        getHostContext: () => ({ chat: [] }), impactConversation: async () => ({ floors: [] }), settleSettings: () => ({ customCategories: [], resultPrompt: '', promptFor: () => '' }),
         settleStateFromSelf: () => ({}), buildSettleContextState: () => ({}), agentNpcLedger: { list: () => [] }, sandboxModeActive: () => false,
         agentFactsIndex: { stats: () => ({ total: 1 }), matchTokens: () => [{ uid: 1 }], get: () => ({ uid: 1, name: '药材', content: '当前可知\n〔卷04 增补〕\n未来秘密' }) },
         currentVolumeForWorld: () => 1, trimToVolume, buildSettleResultUser: value => JSON.stringify(value), readInjectedChannelTexts: () => [],
         SETTLE_CATEGORIES: [], settleScopeKey: () => 'A', currentSettings: () => ({}), worldDay: () => 1,
     });
-    const result = run([{ is_user: true, mes: '查看药材' }]); assert.match(result.user, /当前可知/); assert.doesNotMatch(result.user, /未来秘密/);
+    const collect = await run;
+    const result = await collect([{ is_user: true, mes: '查看药材' }]); assert.match(result.user, /当前可知/); assert.doesNotMatch(result.user, /未来秘密/);
 });
 
 test('OPT-047/048 memory injection records only complete written entries and never failed writes', async () => {
@@ -88,6 +90,7 @@ test('OPT-047/048 memory injection records only complete written entries and nev
         agentMemoryPromptInjection: { inspect: () => ({ status: 'ready' }), clear() {}, write: value => { writes.push(value.text); return { status: writeOk ? 'injected' : 'error', chars: value.text.length }; } },
         agentMemoryRuntime: { snapshot: () => ({ entries }) }, recallHits: () => entries, renderMemoryEntries, renderMemoryEntriesDetail,
         getHostContext: () => ({ chat: [] }), currentSettings: () => ({}), MEMORY_HEADER: 'HEADER', MEMORY_GUIDE: '', injectionSettings: () => ({}),
+        cleanFloorText: async message => (typeof message?.mes === 'string' ? message.mes : ''),
         recordMemoryLastInjection: value => records.push(value), markMemoryLastInjectionCleared() {},
     });
     await run(); assert.equal(records.at(-1).ids.length, 1); assert.ok(writes.at(-1).length <= 200); assert.equal(records.at(-1).ids[0], 'm1');
@@ -121,6 +124,7 @@ test('OPT-051 same-floor rerun replaces the recorded contribution through record
     const chat = [{ is_user: true, mes: '问' }, { mes: '旧回复' }];
     const run = runInNewContext(`${code}; runNpcLedgerRecord`, {
         npcLedgerSettings: () => ({ enabled: true, every: 1, floors: 2, connection: 'custom', prompt: '', overrides: {} }),
+        cleanFloorEntries: async entries => (Array.isArray(entries) ? entries : []).map(({ role, text }) => ({ role, text })),
         npcRecordRunning: false, lastNpcLedgerFloor: floorMarker, lastNpcLedgerReplyIdentity: identityMarker,
         getHostContext: () => ({ chat }), lastReplyIndex: list => list.length - 1, captureAgentContinuation: () => ({ current: () => true }),
         agentLlmClient: { availableFor: () => true, complete: () => pending.promise },
@@ -187,4 +191,43 @@ test('OPT-028 rejected restore never retains the outgoing chat impact state', ()
     });
     assert.equal(restore().status, 'rejected'); assert.equal(previous, false);
     assert.equal(invalidated, 1, '换聊天恢复时上一轮挑选缓存作废');
+});
+
+test('OPT-110 decide calls read facts content even after the generation-end channel clear', () => {
+    // 行为：factsInjectedLines 优先读通道；通道被生成结束清空后退回选条写入时的正文快照。
+    const code = extract("let factsInjectedSnapshot = '';", '/** 人物簿已建档判定');
+    // VM 里造的数组带着另一个 realm 的 Array.prototype，deepStrictEqual 会判否，先复制回宿主再比。
+    const build = value => {
+        const scope = runInNewContext(`${code}; ({ factsInjectedLines, setSnapshot: text => { factsInjectedSnapshot = text; } })`,
+            { getHostContext: () => ({ extensionPrompts: { doupo_facts: { value } } }) });
+        return { setSnapshot: scope.setSnapshot, lines: () => Array.from(scope.factsInjectedLines()) };
+    };
+    assert.deepEqual(build(undefined).lines(), [], '通道和快照都空时给空数组');
+    assert.deepEqual(build('').lines(), []);
+    const empty = build('');
+    empty.setSnapshot('#534 萧炎：主角……');
+    assert.deepEqual(empty.lines(), ['#534 萧炎：主角……'], '生成结束清空通道后决定调用退回快照');
+    const both = build('  本轮选条正文  ');
+    both.setSnapshot('上一轮的旧快照');
+    assert.deepEqual(both.lines(), ['本轮选条正文'], '通道还有内容时优取通道');
+    assert.deepEqual(build('   ').lines(), [], '纯空白通道视同空');
+});
+
+test('OPT-110 snapshot lifecycle: captured on injected write, kept through generation-end clear', () => {
+    // 写入成功才留快照，且生成结束的通道清空不许把快照一起清掉（决定调用还没跑）。
+    assert.match(source, /factsInjectedSnapshot = writeResult\?\.status === 'injected'/, '只有注入成功才更新快照');
+    const tail = extract('try { agentPromptInjection.clear(); } catch { /* 清空失败不影响生成 */ }', 'markMemoryLastInjectionCleared');
+    assert.ok(!tail.includes('factsInjectedSnapshot'), '生成结束清通道时快照必须保留');
+    for (const marker of [
+        "if (!settings.enabled) { agentPromptInjection.clear(); factsInjectedSnapshot = '';",
+        "if (!input) { agentPromptInjection.clear(); factsInjectedSnapshot = '';",
+        "if (!resolved?.text) { agentPromptInjection.clear(); factsInjectedSnapshot = '';",
+    ]) assert.ok(source.includes(marker), `该清空的路径要清快照：${marker.slice(0, 40)}`);
+    const sandboxBlock = extract('if (sandboxModeActive()) {', 'const writeResult = agentPromptInjection.write({ text: SANDBOX_WORLD_PROMPT');
+    assert.ok(sandboxBlock.includes("factsInjectedSnapshot = '';"), '沙盒基线覆盖通道时快照一并清空');
+    const chatChange = extract("try { agentPromptInjection.clear(); factsInjectedSnapshot = ''; } catch { /* 切聊天时清空注入 */ }", 'agentWorldPromptInjection');
+    assert.ok(chatChange.includes('切聊天时清空注入'), '换聊天时快照清空');
+    // 纳戒决定与记忆/影响一致：沙盒口径不拿原著资料。
+    const selfBlock = extract('const bookLines = !sandboxModeActive() ? factsInjectedLines() : [];', 'buildSelfDecideUser');
+    assert.ok(selfBlock.includes('沙盒口径不注入原著条目'), '纳戒决定沙盒门控已对齐');
 });

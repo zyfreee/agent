@@ -64,7 +64,7 @@ test('OPT-065 sandboxModeActive adopts and persists the current scope without a 
     assert.equal(JSON.stringify(h.calls.saved[0].value.sandboxMode), JSON.stringify(h.runtime.snapshot(scopeB)));
 });
 
-test('OPT-065 same-scope refresh restores confirmed mode and history before opposing global settings', async () => {
+test('OPT-065 开关随开随关：存档记录不再钉死口径，restore 保留历史，口径跟开关换向并落存档', async () => {
     const original = createSandboxMode();
     pending(original, scopeA);
     original.confirm({ ...scopeA, taskId: 'latest', stateVersion: 'v-live', reason: 'confirmed before refresh' });
@@ -72,11 +72,14 @@ test('OPT-065 same-scope refresh restores confirmed mode and history before oppo
     h.settings.enableSandboxMode = false;
     assert.equal(typeof h.api.restoreSandboxFromChat, 'function', 'index must expose its real scoped restore hook');
     await h.api.restoreSandboxFromChat();
-    assert.equal(await h.api.sandboxModeActive(), true);
-    assert.equal(h.runtime.read(scopeA).history[0].reason, 'confirmed before refresh');
-    assert.equal(h.runtime.read(scopeA).inertia, 'weak');
-    assert.equal(h.runtime.read(scopeA).canonCharactersAutonomous, false);
-    assert.equal(h.calls.saved.length, 0, 'restoring confirmed mode must not replace it from settings');
+    assert.equal(h.runtime.read(scopeA).history[0].reason, 'confirmed before refresh', '沙盒历史跨重载保留');
+    assert.equal(await h.api.sandboxModeActive(), false, '开关关了＝主线，聊天存档里的沙盒口径不再拦截');
+    assert.equal(h.runtime.read(scopeA).mode, 'mainline', '记录口径随开关换向');
+    assert.equal(h.calls.saved.length, 1, '换向立即落存档，重载后不回弹');
+    h.settings.enableSandboxMode = true;
+    assert.equal(await h.api.sandboxModeActive(), true, '开关再开＝开放世界，立刻生效');
+    assert.equal(h.runtime.read(scopeA).mode, 'sandbox');
+    assert.equal(h.runtime.read(scopeA).history[0].reason, 'confirmed before refresh', '关了再开，沙盒任务与历史续上');
 });
 
 test('OPT-066 confirm uses live scope, latest matching task and store version then invalidates and persists', async () => {

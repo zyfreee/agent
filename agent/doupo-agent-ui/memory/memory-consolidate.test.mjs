@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { MEMORY_CONSOLIDATE_PROMPT, MEMORY_CONSOLIDATE_JSON_SCHEMA, buildConsolidateUser, parseConsolidation } from './memory-consolidate.js';
 
-// 1. 提示词契约：只输出 JSON、字段齐全、不许发明
-for (const keyword of ['"title"', '"text"', '"related"', '"aliases"', '"weight"', '只输出', '300 字', '小记忆']) {
+// 1. 提示词契约：只输出 JSON、字段齐全、不许发明；正文/标题有字数要求，钥匙总结不限量
+for (const keyword of ['"title"', '"text"', '"related"', '"aliases"', '"weight"', '只输出', '300 字', '把钥匙总结', '小记忆']) {
     assert.ok(MEMORY_CONSOLIDATE_PROMPT.includes(keyword), `总结提示词缺少：${keyword}`);
 }
 assert.ok(MEMORY_CONSOLIDATE_PROMPT.includes('title 必写'), '总结要给大记忆起短标题（主页面只显示标题）');
@@ -38,7 +38,7 @@ assert.ok('title' in MEMORY_CONSOLIDATE_JSON_SCHEMA.properties, 'schema 要放�
     assert.ok(!absent.includes('[object Object]') && !absent.includes('标题：') && !absent.includes('细节：'), '缺失、空白与非字符串补充字段不应污染输入');
 }
 
-// 3. 解析：正常、缺 text、超长、字段收窄
+// 3. 解析：正常、缺 text、超长放行、钥匙不限量
 {
     const ok = parseConsolidation('前言 {"title":"坊市风波初起","text":"坊市不太平","basis":"由 m1、m2 总结","related":["穆蛇","坊市掌柜"],"aliases":["掌柜","云岚宗"],"quote":"把灵石留下。","weight":"minor","tag":"thread"} 后记');
     assert.equal(ok.status, 'ok');
@@ -61,8 +61,12 @@ assert.ok('title' in MEMORY_CONSOLIDATE_JSON_SCHEMA.properties, 'schema 要放�
 
     assert.equal(parseConsolidation('不是 JSON').status, 'invalid');
     assert.equal(parseConsolidation('{"basis":"没有 text"}').error, '总结缺少 text');
-    assert.equal(parseConsolidation(`{"title":"标题","text":"${'长'.repeat(301)}"}`).error, '总结 text 超过 300 字');
-    // 数组里混入非字符串：过滤而不是作废
+    // 正文/标题不再限长：超长照样通过，原样入库
+    const long = parseConsolidation(`{"title":"${'标'.repeat(30)}","text":"${'长'.repeat(301)}"}`);
+    assert.equal(long.status, 'ok', '超长正文放行');
+    assert.equal(long.big.text.length, 301);
+    assert.equal(long.big.title.length, 30);
+    // 数组里混入非字符串：过滤而不是作废；数量不限
     const messy = parseConsolidation('{"title":"标题","text":"某事","related":["甲", 3, "乙", "丙", "丁", "戊"]}');
-    assert.deepEqual(messy.big.related, ['甲', '乙', '丙', '丁']);
+    assert.deepEqual(messy.big.related, ['甲', '乙', '丙', '丁', '戊']);
 }
