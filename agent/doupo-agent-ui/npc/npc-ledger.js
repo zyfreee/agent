@@ -20,6 +20,12 @@ export const FAVOR_MAX = 100;
 export const FAVOR_REASON_MAX = 15;
 /** 单次好感幅度上限：一次最多 ±10，防止模型一句话把关系写飞。 */
 export const FAVOR_STEP_MAX = 10;
+/** 大变动依据门槛：好感单次 |Δ|≥5 或写「经历」时要求一句话依据；缺失只记审计流水，不拦截落账。 */
+export const FAVOR_AUDIT_THRESHOLD = 5;
+export const BASIS_MAX = 80;
+/** 短期情绪：快变量，默认三天到期自动消散；好感是慢变量，两层分开记。 */
+export const MOOD_TTL_DAYS = 3;
+export const MAX_MOODS = 4;
 
 const MAX_TEXT = 300;
 const MAX_LIST = 12;
@@ -145,6 +151,8 @@ const KEY_ALIASES = new Map([
     ['正在做什么', 'doing'], ['在做什么', 'doing'], ['doing', 'doing'],
     ['远程联系', 'reachable'], ['能否联系', 'reachable'], ['reachable', 'reachable'],
     ['秘密', 'secret'], ['secret', 'secret'],
+    ['情绪', 'mood'], ['心情', 'mood'], ['当前情绪', 'mood'], ['此刻情绪', 'mood'], ['mood', 'mood'],
+    ['依据', 'basis'], ['根据', 'basis'], ['事由', 'basis'], ['basis', 'basis'],
     ['重要', 'importance'], ['重要度', 'importance'], ['重要性', 'importance'], ['importance', 'importance'],
     ['好感', 'favor'], ['好感度', 'favor'], ['favor', 'favor'],
     ['好感理由', 'favorReason'], ['理由', 'favorReason'], ['favorReason', 'favorReason'],
@@ -297,6 +305,17 @@ function normalizeName(value) {
     return text(value, MAX_NAME).replace(/^[\s【\[「『(（]+|[\s】\]」』)）]+$/g, '');
 }
 
+/** 一条短期情绪：一个词 + 为什么；长期态度和好感不走这里。 */
+function normalizeMoodEntry(item) {
+    if (item && typeof item === 'object' && !Array.isArray(item)) {
+        return {
+            label: text(item.情绪 ?? item.心情 ?? item.label ?? item.name, 12),
+            reason: text(item.理由 ?? item.reason ?? item.因为 ?? item.为什么, 40),
+        };
+    }
+    return { label: text(item, 12), reason: '' };
+}
+
 export function createEmptyRecord(name, options = {}) {
     const clean = normalizeName(name);
     const source = SOURCE_OPTIONS.includes(options.source) ? options.source : '正文';
@@ -311,7 +330,7 @@ export function createEmptyRecord(name, options = {}) {
         others: [], items: [], storage: '', money: '', property: '', debt: '',
         location: '', presence: options.presence === '在场' ? '在场' : '不在场', doing: '', reachable: '',
         secret: { hideFrom: '', what: '' },
-        log: [], favorLog: [], exp: [],
+        log: [], favorLog: [], exp: [], moods: [],
         importance: options.importance === '重要' ? '重要' : '不重要',
         source,
         firstFloor: floor,
@@ -370,10 +389,23 @@ export function normalizeRecord(raw) {
             day: normalizeDay(item?.day),
             delta: clampFavor(item?.delta) ?? 0,
             reason: text(item?.reason, FAVOR_REASON_MAX),
+            // basis 与 apply() 的落账同形（好感依据是审计线索）：指纹校验前后必须一模一样，
+            // 少了这一个字段，凡带依据的好感变动整单被拒（invalid_reply_result）。
+            ...(item && typeof item === 'object' && typeof item.basis === 'string' && item.basis.trim() ? { basis: text(item.basis, BASIS_MAX) } : {}),
         })).slice(-MAX_FAVOR_LOG);
     }
     if (Array.isArray(input.exp)) {
         record.exp = input.exp.map(item => normalizeExpEntry(item)).filter(item => item.text).slice(-MAX_EXP);
+    }
+    if (Array.isArray(input.moods)) {
+        record.moods = input.moods.map(item => {
+            const clean = normalizeMoodEntry(item);
+            if (!clean.label) return null;
+            const day = normalizeDay(item && typeof item === 'object' ? item.day : null);
+            const expiresDay = normalizeDay(item && typeof item === 'object' ? item.expiresDay : null)
+                ?? (day !== null ? day + MOOD_TTL_DAYS : null);
+            return { ...clean, day, expiresDay };
+        }).filter(Boolean).slice(0, MAX_MOODS);
     }
     if (Number.isInteger(input.lastFloor)) record.lastFloor = input.lastFloor;
     record.version = Math.max(1, clampNumber(input.version, 1, 1e9, 1));
@@ -397,7 +429,7 @@ function patchList(payload) {
 export function normalizePatch(raw, context = {}) {
     const input = raw && typeof raw === 'object' ? raw : (typeof raw === 'string' ? { name: raw } : {});
     const result = {
-        name: '', fields: {}, favor: null, favorReason: '', log: [], exp: [], presence: null,
+        name: '', fields: {}, favor: null, favorReason: '', basis: '', log: [], exp: [], moods: [], presence: null,
         importance: null, source: SOURCE_OPTIONS.includes(context.source) ? context.source : null, ignored: [],
     };
     const absorb = (key, value) => {
@@ -409,8 +441,9 @@ export function normalizePatch(raw, context = {}) {
         if (value && typeof value === 'object' && !Array.isArray(value)) {
             const entries = Object.entries(value);
             const mapped = KEY_ALIASES.get(String(key).trim());
+            // 情绪/依据自带格式（{情绪,理由}、一段话），拆包会把「理由」错收进好感理由，所以排除。
             const packable = !mapped || mapped === 'traits'
-                || entries.some(([inner]) => KEY_ALIASES.has(String(inner).trim()));
+                || (mapped !== 'mood' && mapped !== 'basis' && entries.some(([inner]) => KEY_ALIASES.has(String(inner).trim())));
             if (packable && entries.length) {
                 for (const [inner, item] of entries) absorb(inner, item);
                 return;
@@ -425,6 +458,16 @@ export function normalizePatch(raw, context = {}) {
             return;
         }
         if (target === 'favorReason') { result.favorReason = text(value, FAVOR_REASON_MAX); return; }
+        if (target === 'basis') { result.basis = text(value, BASIS_MAX); return; }
+        if (target === 'mood') {
+            const entries = Array.isArray(value) ? value : [value];
+            for (const entry of entries) {
+                const clean = normalizeMoodEntry(entry);
+                if (clean.label && !result.moods.some(item => item.label === clean.label)) result.moods.push(clean);
+                if (result.moods.length >= MAX_MOODS) break;
+            }
+            return;
+        }
         if (target === 'log') {
             const entries = Array.isArray(value) ? value : [value];
             for (const entry of entries) {
@@ -523,6 +566,19 @@ export function createNpcLedger({ maxRecords = 200, now = () => new Date() } = {
         return key ? structuredClone(records.get(key)) : null;
     }
 
+    /** 撤销专用：把整档快照原样写回（快照来自 get()，已是归一后的形状；不动版本号、不记流水）。
+     *  只认主键/别名还能命中的现有档案——改名或清空过的人原地跳过。 */
+    function restoreSnapshots(snapshots = {}) {
+        const restored = [];
+        for (const [name, snapshot] of Object.entries(snapshots && typeof snapshots === 'object' ? snapshots : {})) {
+            const key = findKey(name);
+            if (!key || !snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) continue;
+            records.set(key, structuredClone(snapshot));
+            restored.push(key);
+        }
+        return { status: restored.length ? 'restored' : 'noop', restored };
+    }
+
     function list(filter = {}) {
         const all = [...records.values()];
         const query = text(filter.query, 60).toLowerCase();
@@ -542,25 +598,58 @@ export function createNpcLedger({ maxRecords = 200, now = () => new Date() } = {
             .map(record => structuredClone(record));
     }
 
+    /** 过期情绪清账：expiresDay 过线的短期情绪静默消散，好感与流水不动。 */
+    function decayMoodsInRecord(record, currentDay) {
+        if (!Array.isArray(record.moods) || !record.moods.length) return false;
+        const kept = record.moods.filter(mood => mood.expiresDay === null || currentDay === null || mood.expiresDay >= currentDay);
+        if (kept.length === record.moods.length) return false;
+        record.moods = kept;
+        return true;
+    }
+
+    /** 在一句话里找已建档的其他人物（按主键/别名，跳过 seen 里的名字），返回档案键。 */
+    function findKeyOfText(line, seen = new Set()) {
+        const lower = String(line ?? '').toLowerCase();
+        if (!lower) return null;
+        for (const [key, record] of records) {
+            if (seen.has(key)) continue;
+            if (lower.includes(key)) return key;
+            for (const alias of record.aliases) {
+                const aliasKey = alias.toLowerCase();
+                if (aliasKey && lower.includes(aliasKey)) return key;
+            }
+        }
+        return null;
+    }
+
     /** 记账的唯一入口：补丁进，档案出新。 */
     function apply(payload, context = {}) {
         const patches = patchList(payload).map(item => normalizePatch(item, context));
         const floor = Number.isInteger(context.floor) ? context.floor : null;
         const day = normalizeDay(context.day);
-        const result = { status: 'applied', applied: [], skipped: [], ignored: [], created: [], changed: 0 };
+        const result = { status: 'applied', applied: [], skipped: [], ignored: [], created: [], changed: 0, audits: [], relations: [], crossWritten: [], decayedMoods: 0 };
+        // 落账前先清一遍到期情绪： worldDay 前进后，三天前的短期情绪不再注入。
+        if (day !== null) {
+            for (const record of records.values()) {
+                if (decayMoodsInRecord(record, day)) result.decayedMoods += 1;
+            }
+        }
         for (const patch of patches) {
             if (!patch.name) { result.skipped.push({ reason: 'missing_name', ignored: patch.ignored }); continue; }
             for (const key of patch.ignored) if (!result.ignored.includes(key)) result.ignored.push(key);
             // 先按主键、再按别名找人：模型写“萧炎”或写“炎帝”都指向同一份档案。
             const matched = findKey(patch.name);
             let target = null;
+            let targetKey = null;
             if (!matched) {
                 if (records.size >= maxRecords) { result.skipped.push({ name: patch.name, reason: 'ledger_full' }); continue; }
                 const record = createEmptyRecord(patch.name, { source: patch.source ?? context.source ?? '正文', floor });
-                records.set(record.name.toLowerCase(), record);
+                targetKey = record.name.toLowerCase();
+                records.set(targetKey, record);
                 result.created.push(record.name);
                 target = record;
             } else {
+                targetKey = matched;
                 target = records.get(matched);
             }
             const fillOnly = context.fillEmpty === true;
@@ -575,16 +664,30 @@ export function createNpcLedger({ maxRecords = 200, now = () => new Date() } = {
             }
             if (patch.presence && target.presence !== patch.presence && (!fillOnly || target.presence === '不在场')) { target.presence = patch.presence; touched.push('在场'); }
             if (patch.importance && target.importance !== patch.importance && (!fillOnly || target.importance === '不重要')) { target.importance = patch.importance; touched.push('重要度'); }
+            // 「对他人」改过就交一份快照出去：全局关系图（npc-relations）拿它做有向边。
+            if (!fillOnly && touched.includes('对他人') && Array.isArray(target.others) && target.others.length) {
+                result.relations.push({ from: target.name, triples: structuredClone(target.others), day, floor });
+            }
             let favorDelta = 0;
             if (patch.favor && !fillOnly) {
                 const next = clampFavor(target.favor + patch.favor);
                 favorDelta = next - target.favor;
                 if (favorDelta !== 0) {
                     target.favor = next;
-                    target.favorLog.push({ floor, day, delta: favorDelta, reason: patch.favorReason });
+                    // 依据随流水留档：大变动的 basis 是审计线索，小变动有也照收。
+                    target.favorLog.push({ floor, day, delta: favorDelta, reason: patch.favorReason, ...(patch.basis ? { basis: patch.basis } : {}) });
                     if (target.favorLog.length > MAX_FAVOR_LOG) target.favorLog.splice(0, target.favorLog.length - MAX_FAVOR_LOG);
                     touched.push(`好感${favorDelta > 0 ? '+' : ''}${favorDelta}`);
+                    // 大变动没带依据只记审计不拦截：和「模型怎么写就怎么记」的取舍一致，给复查留抓手。
+                    if (Math.abs(favorDelta) >= FAVOR_AUDIT_THRESHOLD && !patch.basis) {
+                        result.audits.push({ name: target.name, kind: 'favor', delta: favorDelta, floor, day, reason: 'favor_no_basis' });
+                    }
                 }
+            }
+            if (patch.moods.length && !fillOnly) {
+                // 情绪是快变量快照：整单替换当前情绪，到期日 = 本轮世界天数 + TTL。
+                target.moods = patch.moods.map(mood => ({ ...mood, day, expiresDay: day !== null ? day + MOOD_TTL_DAYS : null }));
+                touched.push('情绪');
             }
             // logSrc：这次补丁的流水来源标签（'冷藏' ＝ 冷藏推进的自行活动），逐条带在流水上。
             const logSrc = typeof context.logSrc === 'string' && context.logSrc.trim() ? text(context.logSrc, 12) : null;
@@ -593,7 +696,10 @@ export function createNpcLedger({ maxRecords = 200, now = () => new Date() } = {
             if (!fillOnly && patch.log.length) touched.push('流水');
             if (!fillOnly) for (const entry of patch.exp) target.exp.push({ ...entry, floor: entry.floor ?? floor });
             if (target.exp.length > MAX_EXP) target.exp.splice(0, target.exp.length - MAX_EXP);
-            if (!fillOnly && patch.exp.length) touched.push('经历');
+            if (!fillOnly && patch.exp.length) {
+                touched.push('经历');
+                if (!patch.basis) result.audits.push({ name: target.name, kind: 'exp', floor, day, reason: 'exp_no_basis' });
+            }
             target.lastFloor = floor ?? target.lastFloor;
             if (touched.length) {
                 target.version += 1;
@@ -604,6 +710,26 @@ export function createNpcLedger({ maxRecords = 200, now = () => new Date() } = {
                 // 冷藏推进不只补流水：位置/正在做什么等字段也会改。把这次自行活动动过的字段盖章在档案上，
                 // 档案面板和悬浮球靠它标“❄ 这里是自行活动改的”。
                 if (logSrc) target.coldTouch = { day, floor, fields: touched.slice(), at: target.updatedAt };
+            }
+            // NPC 互写（冷藏推进等自行活动）：补丁流水里提到其他已建档人物，就往对方流水里
+            // 记一条带来源的行——两个冷藏人物相遇，双方的账都有痕迹。每份补丁最多牵连 3 人。
+            if (context.crossWrite === true && !fillOnly && patch.log.length) {
+                const seen = new Set([target.name.toLowerCase(), ...target.aliases.map(alias => alias.toLowerCase()), targetKey]);
+                let linked = 0;
+                for (const line of patch.log) {
+                    if (linked >= 3) break;
+                    const mentionedKey = findKeyOfText(line, seen);
+                    if (!mentionedKey) continue;
+                    const mentioned = records.get(mentionedKey);
+                    if (!mentioned) continue;
+                    mentioned.log.push({ floor, day, text: text(`${target.name}：${line}`, 200), ...(logSrc ? { src: logSrc } : {}) });
+                    if (mentioned.log.length > MAX_LOG) mentioned.log.splice(0, mentioned.log.length - MAX_LOG);
+                    mentioned.version += 1;
+                    mentioned.updatedAt = stamp();
+                    result.crossWritten.push({ from: target.name, to: mentioned.name, floor, day });
+                    seen.add(mentionedKey);
+                    linked += 1;
+                }
             }
             result.applied.push({ name: target.name, fields: touched, favor: favorDelta, created: result.created.includes(target.name) });
         }
@@ -737,6 +863,25 @@ export function createNpcLedger({ maxRecords = 200, now = () => new Date() } = {
         return { status: 'cleared' };
     }
 
+    /** 手动清一遍到期情绪（注入前调用）：有清掉的档案才动版本号与变更计数。 */
+    function decayMoods(currentDay) {
+        const day = normalizeDay(currentDay);
+        if (day === null) return { status: 'skipped', reason: 'invalid_day' };
+        let pruned = 0;
+        for (const record of records.values()) {
+            if (decayMoodsInRecord(record, day)) {
+                record.version += 1;
+                record.updatedAt = stamp();
+                pruned += 1;
+            }
+        }
+        if (pruned) {
+            changes += 1;
+            lastChange = { name: '', fields: ['情绪消散'], at: stamp() };
+        }
+        return { status: 'decayed', pruned };
+    }
+
     function status() {
         const all = [...records.values()];
         return {
@@ -796,12 +941,22 @@ export function createNpcLedger({ maxRecords = 200, now = () => new Date() } = {
     function injection({ budget = 900, maxFull = 6, maxBrief = 14, header = NPC_LEDGER_HEADER } = {}) {
         const cap = value => Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
         budget = cap(budget); maxFull = cap(maxFull); maxBrief = cap(maxBrief);
-        const recent = (a, b) => (b.lastFloor ?? -1) - (a.lastFloor ?? -1) || a.name.localeCompare(b.name, 'zh');
         const all = [...records.values()];
-        const fullTargets = all.filter(record => record.presence === '在场' && record.importance === '重要').sort(recent);
+        // 档内排序不再按插入序：动态分值 = 最近出场为主 + 近期好感波动 + 剧情钩子（经历/在做/秘密）。
+        // 分值同分再看楼层远近，保证“刚发生过事的人”排在前、预算紧张时先降级他。
+        const maxFloor = all.reduce((top, record) => Math.max(top, record.lastFloor ?? 0), 0);
+        const score = record => {
+            const recency = Number.isInteger(record.lastFloor) && record.lastFloor >= 0
+                ? Math.max(0, 30 - Math.min(30, (maxFloor - record.lastFloor) * 3)) : 0;
+            const movement = Math.min(20, (record.favorLog ?? []).slice(-4).reduce((sum, entry) => sum + Math.abs(entry.delta || 0), 0));
+            const hooks = Math.min(10, (record.exp ?? []).length * 2) + (record.doing ? 2 : 0) + (record.secret?.what ? 2 : 0);
+            return recency + movement + hooks;
+        };
+        const byScore = (a, b) => score(b) - score(a) || (b.lastFloor ?? -1) - (a.lastFloor ?? -1) || a.name.localeCompare(b.name, 'zh');
+        const fullTargets = all.filter(record => record.presence === '在场' && record.importance === '重要').sort(byScore);
         const rest = [
-            ...all.filter(record => record.presence === '在场' && record.importance !== '重要').sort(recent),
-            ...all.filter(record => record.presence !== '在场' && record.importance === '重要').sort(recent),
+            ...all.filter(record => record.presence === '在场' && record.importance !== '重要').sort(byScore),
+            ...all.filter(record => record.presence !== '在场' && record.importance === '重要').sort(byScore),
         ];
         const eligible = [...fullTargets, ...rest];
         const full = fullTargets.slice(0, maxFull);
@@ -842,8 +997,8 @@ export function createNpcLedger({ maxRecords = 200, now = () => new Date() } = {
     }
 
     return Object.freeze({
-        apply, recordReply, get, list, remove, clear, status, exportAll, load, describe, injection, exps, replaceExp,
-        setFields, addExp, removeExp,
+        apply, recordReply, get, list, remove, clear, status, exportAll, load, describe, injection, exps, replaceExp, restoreSnapshots,
+        setFields, addExp, removeExp, decayMoods,
         find: name => (findKey(name) ? true : false),
         names: () => [...records.values()].map(record => record.name),
         missing: nameOrRecord => {
@@ -897,6 +1052,9 @@ function describeFull(record) {    const lines = [];
     if (person) lines.push(person);
     const bond = [`好感 ${record.favor}（${favorLabel(record.favor) || '未定'}）`, record.attitude && `态度：${record.attitude}`, record.publicAttitude && `人前：${record.publicAttitude}`, record.privateAttitude && `私下：${record.privateAttitude}`, record.appellation && `称呼你：「${record.appellation}」`, record.stage && `关系：${record.stage}`].filter(Boolean).join('｜');
     lines.push(bond);
+    if (Array.isArray(record.moods) && record.moods.length) {
+        lines.push(`此刻：${record.moods.map(mood => `${mood.label}${mood.reason ? `（${mood.reason}）` : ''}`).join('、')}`);
+    }
     if (record.others.length) lines.push(`对他人：${record.others.map(item => `${item.who}${item.relation ? `（${item.relation}）` : ''}${item.attitude ? `：${item.attitude}` : ''}`).join('；')}`);
     const assets = [record.items.length && `随身：${joinText(record.items)}`, record.storage && `储物：${record.storage}`, record.money && `货币：${record.money}`, record.property && `产业：${record.property}`, record.debt && `债务：${record.debt}`].filter(Boolean).join('｜');
     if (assets) lines.push(`资产：${assets}`);
@@ -915,6 +1073,7 @@ function describeBrief(record, options = {}) {
     parts.push(place);
     if (record.identity) parts.push(record.identity);
     parts.push(`好感 ${record.favor}（${favorLabel(record.favor) || '未定'}）`);
+    if (Array.isArray(record.moods) && record.moods.length) parts.push(`此刻${record.moods.map(mood => mood.label).join('、')}`);
     if (record.appellation) parts.push(`称呼你「${record.appellation}」`);
     if (record.doing) parts.push(`正在${doingText(record.doing)}`);
     if (options.distant === false && record.log.length) parts.push(`近事：${record.log.slice(-1)[0].text}`);

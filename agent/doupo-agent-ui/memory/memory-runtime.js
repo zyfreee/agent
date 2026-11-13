@@ -6,6 +6,8 @@
  * - big 大记忆：值得一直记住的事（恩怨/秘密/伏笔/大事），常驻注入；
  *   tag 是可选标签（恩怨/情报/伏笔/大事记），只便于查看，不影响记账。
  * - promote：小记忆后来发现分量够重，转入大记忆。
+ * - supersede：软覆盖——旧记忆被新事明确覆盖时标记 supersededBy 指向新条目，
+ *   默认不再进召回目录与注入，但账永远在，玩家可一键恢复（unsupersede，仅手动）。
  * 删除（forget）只由书记官或玩家主动做，脚本从不自动动账；账本无上限，脚本绝不自动丢账。
  *
  * 所有权边界（防双写）：目标约定归纳戒、任务归世界台账、世界事件归世界、
@@ -14,6 +16,9 @@
  * 所有修改都走 apply()：单条操作要么通过校验生效，要么带着原因被拒绝，
  * 绝不抛异常打断调用方。面板手动操作与模型指令走同一条路，规则完全一致。
  */
+
+// 写入查重与钥匙计算借用检索模块的纯函数（retrieve 不回依赖 runtime，无环）。
+import { DEDUP_SIMILARITY, recallKeys, textSimilarity } from './memory-retrieve.js';
 
 const TIERS = Object.freeze(['small', 'big']);
 export const TIER_LABELS = Object.freeze({ small: '小记忆', big: '大记忆' });
@@ -77,10 +82,14 @@ function normalizeOneEntry(raw) {
         aliases: (Array.isArray(raw.aliases) ? raw.aliases : [])
             .map(item => text(item))
             .filter(Boolean),
-        weight: WEIGHTS.includes(raw.weight) ? raw.weight : 'minor',
-        tag: TAG_LABELS[raw.tag] ? raw.tag : '',
+          weight: WEIGHTS.includes(raw.weight) ? raw.weight : 'minor',
+          // 重要度 1-10：老档没写按分量推默认（关键 7 / 一般 5 中性），归一化幂等。
+          importance: clampInt(raw.importance, 1, 10, raw.weight === 'major' ? 7 : 5),
+          tag: TAG_LABELS[raw.tag] ? raw.tag : '',
         day: clampInt(raw.day, 1, MAX_DAY, 1),
         note: text(raw.note),
+        // 软覆盖指针：指向"覆盖了这条记忆"的新条目编号；空串 = 仍然有效。
+        supersededBy: text(raw.supersededBy),
         // 记录来源楼层（聊天数组绝对位）：删楼时"对应的记忆跟着删、后续楼层前移"全靠它。
         floor: Number.isInteger(raw.floor) && raw.floor >= 0 ? raw.floor : null,
     };
@@ -154,6 +163,11 @@ function normalizeState(raw, now) {
         }
         seen.add(entry.id);
     }
+    // 软覆盖指针的引用完整性：指向已不存在条目的标记原地清空（旧档/坏帧不炸）。
+    const knownIds = new Set(entries.map(entry => entry.id));
+    for (const entry of entries) {
+        if (entry.supersededBy && !knownIds.has(entry.supersededBy)) entry.supersededBy = '';
+    }
     return {
         schemaVersion: 2,
         manualVersion: intIn(source.manualVersion, 0, 9999999) ?? 0,
@@ -166,7 +180,7 @@ function normalizeState(raw, now) {
     };
 }
 
-export function createMemoryRuntime({ maxLog = DEFAULT_MAX_LOG, maxOps = DEFAULT_MAX_OPS, now = () => new Date().toISOString() } = {}) {
+export function createMemoryRuntime({ maxLog = DEFAULT_MAX_LOG, maxOps = DEFAULT_MAX_OPS, now = () => new Date().toISOString(), advancedMode = () => true } = {}) {
     maxLog = clampInt(maxLog, 5, 200, DEFAULT_MAX_LOG);
     maxOps = clampInt(maxOps, 1, 32, DEFAULT_MAX_OPS);
     let state = initialState(now);
@@ -202,6 +216,13 @@ export function createMemoryRuntime({ maxLog = DEFAULT_MAX_LOG, maxOps = DEFAULT
         return state.entries.filter(entry => entry.tier === tier);
     }
 
+    /** 引用完整性：被删条目身上的软覆盖指针一并清空（覆盖者没了，被覆盖的旧账恢复有效）。 */
+    function clearSupersedeRefs(id) {
+        for (const entry of state.entries) {
+            if (entry.supersededBy === id) entry.supersededBy = '';
+        }
+    }
+
     function rememberOpId(opId) {
         if (!opId) return;
         opIdMemory.push(opId);
@@ -231,25 +252,45 @@ export function createMemoryRuntime({ maxLog = DEFAULT_MAX_LOG, maxOps = DEFAULT
             const aliases = (Array.isArray(op.aliases) ? op.aliases : [])
                 .map(item => text(item))
                 .filter(Boolean);
-            // 同层同文的条目不重记，防止模型一轮里反复登记同一件事。
-            if (state.entries.some(entry => entry.tier === tier && entry.text === body)) {
-                return { ok: false, reason: 'duplicate_text' };
-            }
-            const entry = {
-                id: nextId(),
-                tier,
-                text: body,
-                title,
-                quote,
-                basis: text(op.basis),
-                related,
-                aliases,
-                weight: WEIGHTS.includes(op.weight) ? op.weight : 'minor',
-                tag,
-                day,
-                note: text(op.note),
-                floor: Number.isInteger(floorKey) && floorKey >= 0 ? floorKey : null,
-            };
+              // 同层同文的条目不重记，防止模型一轮里反复登记同一件事。
+              if (state.entries.some(entry => entry.tier === tier && entry.text === body)) {
+                  return { ok: false, reason: 'duplicate_text' };
+              }
+              // 写入查重（MemPalace check_duplicate，进阶版）：与共享钥匙的**同层**在用旧账词面几乎相同
+              // （≥DEDUP_SIMILARITY）的新条目视为复述，落账前直接拒绝——近似重复从"事后体检"变
+              // "写入时拦住"。跨层不查：大记忆同文小记忆是合法的升级路径（分层去重语义不变）。
+              // 完整版/简略版（advancedMode()=false）跳过近似查重，只保留上面的同层同文精确查重（旧行为）。
+              const newKeys = advancedMode() ? new Set(recallKeys({ related, aliases })) : null;
+              if (newKeys && newKeys.size) {
+                  const fingerprint = `${title}${body}`.replace(/\s+/g, '');
+                  for (const entry of state.entries) {
+                      if (entry.tier !== tier) continue;
+                      if (text(entry.supersededBy)) continue;
+                      if (!recallKeys(entry).some(key => newKeys.has(key))) continue;
+                      const oldFingerprint = `${text(entry.title)}${text(entry.text)}`.replace(/\s+/g, '');
+                      if (textSimilarity(fingerprint, oldFingerprint) >= DEDUP_SIMILARITY) {
+                          return { ok: false, reason: `duplicate_of_${entry.id}` };
+                      }
+                  }
+              }
+              const weight = WEIGHTS.includes(op.weight) ? op.weight : 'minor';
+              const entry = {
+                  id: nextId(),
+                  tier,
+                  text: body,
+                  title,
+                  quote,
+                  basis: text(op.basis),
+                  related,
+                  aliases,
+                  weight,
+                  // 重要度 1-10（Generative Agents 检索三因子之一）：没写按分量推默认（关键 7 / 一般 5 中性）。
+                  importance: clampInt(op.importance, 1, 10, weight === 'major' ? 7 : 5),
+                  tag,
+                  day,
+                  note: text(op.note),
+                  floor: Number.isInteger(floorKey) && floorKey >= 0 ? floorKey : null,
+              };
             state.entries.push(entry);
             const relatedNote = `（关联：${related.join('、')}）`;
             return { ok: true, id: entry.id, summary: `${TIER_LABELS[tier]} +${entry.id}（第 ${day} 天）：${body}${relatedNote}`, undo: { op: '_removeMemory', id: entry.id } };
@@ -280,14 +321,46 @@ export function createMemoryRuntime({ maxLog = DEFAULT_MAX_LOG, maxOps = DEFAULT
             const retired = retire([id]);
             if (!retired.ok) return retired;
             state.entries = state.entries.filter(item => item.id !== id);
+            clearSupersedeRefs(id);
             return { ok: true, id, summary: `忘记${TIER_LABELS[entry.tier]} ${id}：${entry.text}`, undo: { op: '_restoreEntry', entry } };
+        }
+        if (kind === 'supersede') {
+            const id = text(op.id);
+            const by = text(op.by);
+            const target = findEntry(id);
+            const source = findEntry(by);
+            if (!target || !source) return { ok: false, reason: 'entry_not_found' };
+            if (id === by) return { ok: false, reason: 'bad_supersede' };
+            if (source.supersededBy === id) return { ok: false, reason: 'supersede_cycle' };
+            if (target.supersededBy === by) return { ok: false, reason: 'supersede_unchanged' };
+            const before = target.supersededBy;
+            target.supersededBy = by;
+            return { ok: true, id, summary: `${id} 已被 ${by} 覆盖（软替代：不再进召回，账仍在，可恢复）`, undo: { op: '_restoreSupersede', id, before } };
+        }
+        if (kind === 'unsupersede') {
+            const id = text(op.id);
+            const entry = findEntry(id);
+            if (!entry) return { ok: false, reason: 'entry_not_found' };
+            if (!entry.supersededBy) return { ok: false, reason: 'not_superseded' };
+            const before = entry.supersededBy;
+            entry.supersededBy = '';
+            return { ok: true, id, summary: `恢复 ${id} 的召回权（此前曾被 ${before} 覆盖）`, undo: { op: '_restoreSupersede', id, before } };
         }
         // 内部撤销操作：只由同楼重 roll 的回滚调用，不写进模型指南。
         if (kind === '_removeMemory') {
             const id = text(op.id);
             const before = state.entries.length;
             state.entries = state.entries.filter(item => item.id !== id);
+            clearSupersedeRefs(id);
             return before === state.entries.length ? { ok: false, reason: 'entry_not_found' } : { ok: true, summary: `撤销新增 ${id}` };
+        }
+        if (kind === '_restoreSupersede') {
+            const entry = findEntry(text(op.id));
+            if (!entry) return { ok: false, reason: 'entry_not_found' };
+            const before = text(op.before);
+            // 指回的目标必须仍在账上，否则清空（引用完整性优先于撤销还原）。
+            entry.supersededBy = before && findEntry(before) ? before : '';
+            return { ok: true, summary: `恢复 ${entry.id} 的覆盖标记` };
         }
         if (kind === '_retier') {
             const entry = findEntry(text(op.id));
@@ -306,6 +379,7 @@ export function createMemoryRuntime({ maxLog = DEFAULT_MAX_LOG, maxOps = DEFAULT
             const restored = normalizeOneEntry(op.entry);
             if (!restored) return { ok: false, reason: 'entry_not_found' };
             if (!restored.id || findEntry(restored.id)) restored.id = nextId(); // 换号避免双份
+            if (restored.supersededBy && !findEntry(restored.supersededBy)) restored.supersededBy = '';
             const unretired = unretire(restored.id);
             if (!unretired.ok) return unretired;
             const restoredSequence = identitySequence(restored.id);
@@ -386,6 +460,11 @@ export function createMemoryRuntime({ maxLog = DEFAULT_MAX_LOG, maxOps = DEFAULT
                 if (op.op === 'memorize') op = { ...op, op: 'remember' };
                 else if (op.op === 'promote') {
                     rejected.push({ op: 'promote', reason: 'promote_retired' });
+                    continue;
+                }
+                else if (op.op === 'unsupersede') {
+                    // 恢复被覆盖的旧记忆是玩家自己的决定，模型只能 supersede 不能反向。
+                    rejected.push({ op: 'unsupersede', reason: 'manual_only' });
                     continue;
                 }
             }
@@ -469,11 +548,14 @@ export function createMemoryRuntime({ maxLog = DEFAULT_MAX_LOG, maxOps = DEFAULT
             related,
             aliases,
             weight: WEIGHTS.includes(big?.weight) ? big.weight : 'major',
+            // 总结出的大记忆继承原小记忆里的最高重要度；一个都没有时按大记忆口径给 7。
+            importance: clampInt(Math.max(7, ...consumed.map(item => Number(item?.importance) || 0)), 1, 10, 7),
             tag: TAG_LABELS[big?.tag] ? big.tag : '',
             day: dayKey,
             note: '',
         };
         state.entries = state.entries.filter(item => !idList.includes(item.id));
+        for (const id of idList) clearSupersedeRefs(id);
         state.entries.push(entry);
         if (source === 'manual') state.manualVersion += 1;
         state.updatedAt = now();
@@ -492,7 +574,8 @@ export function createMemoryRuntime({ maxLog = DEFAULT_MAX_LOG, maxOps = DEFAULT
         for (const tier of TIERS) {
             byTier[tier] = { total: entriesOf(tier).length };
         }
-        return { byTier, total: state.entries.length, legacy_gap: state.legacy_gap };
+        const superseded = state.entries.filter(entry => entry.supersededBy).length;
+        return { byTier, total: state.entries.length, superseded, legacy_gap: state.legacy_gap };
     }
 
     function restore(raw) {
@@ -534,6 +617,7 @@ export function createMemoryRuntime({ maxLog = DEFAULT_MAX_LOG, maxOps = DEFAULT
         state.entries = state.entries
             .filter(entry => entry.floor !== index)
             .map(entry => Number.isInteger(entry.floor) && entry.floor > index ? { ...entry, floor: entry.floor - 1 } : entry);
+        for (const entry of removedEntries) clearSupersedeRefs(entry.id);
         if (lastFloor && Number.isInteger(lastFloor.floor)) {
             if (lastFloor.floor === index) lastFloor = null;
             else if (lastFloor.floor > index) lastFloor = { ...lastFloor, floor: lastFloor.floor - 1 };

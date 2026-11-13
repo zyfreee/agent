@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { buildWorldInjection, extractOpsBlock, parseOps, stripOpsBlock, OPS_GUIDE, WORLD_HEADER, seasonOf } from '../world/world-ops.js';
+import { buildWorldInjection, extractOpsBlock, parseOps, stripOpsBlock, OPS_GUIDE, WORLD_HEADER, seasonOf, injectionLimits } from '../world/world-ops.js';
 
 const snapshot = {
     clock: { day: 5, minute: 500, label: '三年之约倒计时' },
@@ -72,8 +72,11 @@ const fat = {
 const tiny = buildWorldInjection(fat, { maxChars: 200 });
 assert.ok(tiny.startsWith('时钟：'), tiny);
 assert.ok(tiny.length <= 200);
-assert.ok(!tiny.includes('身边事件'));
-assert.ok(!tiny.includes('世界大事'));
+// 逐条入列后的截断契约：装得下几条装几条（都是完整行），装不下的整栏连栏头一起退场。
+assert.ok(!tiny.includes('世界大事'), '装不下的整栏连栏头一起退场');
+assert.ok(!tiny.trimEnd().endsWith('：'), '栏头不许孤悬');
+const keptRows = tiny.split('\n').filter(line => /^[★？·]\(/.test(line));
+assert.ok(keptRows.length >= 1 && keptRows.every(row => row.startsWith('·(n') && row.includes('内容足够长会撑爆预算')), '保留的事件行都是完整一行，不拦腰截断');
 
 // —— 势力逐条入列：超预算从尾部整条丢（敌对保住），栏头不孤 ——
 const tight = buildWorldInjection({
@@ -150,5 +153,29 @@ assert.ok(OPS_GUIDE.includes('basis'));
 assert.ok(OPS_GUIDE.includes('有依据地长出来'), '指南必须写明事件要有依据');
 assert.ok(OPS_GUIDE.includes('不要把原著桥段照搬成事件'), '指南必须写明不照搬原著');
 assert.ok(WORLD_HEADER.startsWith('【世界现状】'));
+
+// —— A5 氛围决定注入条数：calm 收紧、rising 照旧、storm 放开 ——
+assert.deepEqual(injectionLimits('calm'), { near: 6, world: 4 });
+assert.deepEqual(injectionLimits('rising'), { near: 8, world: 6 });
+assert.deepEqual(injectionLimits('storm'), { near: 8, world: 8 });
+assert.deepEqual(injectionLimits(undefined), { near: 6, world: 4 }, '缺氛围按平静算');
+{
+    // 同一批事件，storm 下全列，calm 下只留前 4 条世界大事（置顶/重大优先）。
+    const busy = { clock: { day: 5 }, nearEvents: [], worldEvents: [], tension: 'calm' };
+    for (let index = 1; index <= 6; index += 1) {
+        busy.worldEvents.push({ id: `w${index}`, day: index, text: `世界大事${index}号`, weight: 'minor', done: false });
+    }
+    const calmText = buildWorldInjection(busy);
+    assert.equal(busy.worldEvents.filter(event => calmText.includes(event.id)).length, 4, 'calm 只注入 4 条世界大事');
+    busy.tension = 'storm';
+    const stormText = buildWorldInjection(busy);
+    assert.equal(busy.worldEvents.every(event => stormText.includes(event.id)), true, 'storm 全部注入');
+}
+
+// —— A2 因果标记：未了结事件的注入行带起因编号 ——
+{
+    const withCause = buildWorldInjection({ clock: { day: 5 }, nearEvents: [{ id: 'e2', day: 4, text: '有人在收异火消息', cause: 'e1', done: false }], worldEvents: [] });
+    assert.ok(withCause.includes('（起因：e1）'), withCause);
+}
 
 console.log('world ops tests passed');

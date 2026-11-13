@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {
     SETTLE_RESULT_PROMPT, SETTLE_RESULT_JSON_SCHEMA, SETTLE_INJECTION_SOURCES,
     SETTLE_ALLOWED_FIELDS, SETTLE_FIELD_LABELS, SETTLE_CATEGORY_LABELS,
-    buildSettleState, buildSettleContextState, buildSettleResultUser,
+    buildSettleState, buildSettleContextState, buildSettleResultUser, buildSettleRetryUser,
     parseSettleResult, reviewSettleEffects, renderSettleInjection, compareSettleState,
 } from './settle-adjudicate.js';
 import { checkEffects } from '../core/settle-categories.js';
@@ -510,6 +510,116 @@ test('tavern trailing variable patches cannot replace the adjudication object', 
     const result = parseSettleResult(`<game>${JSON.stringify({ version: 2, actions: [action('a1', '打听', { outcome: '问到了开场时间', effects: [] })] })}</game>\n<UpdateVariable>{"op":"replace","path":"/目标","value":"等待开场"}</UpdateVariable>`);
     assert.equal(result.version, 2);
     assert.equal(result.actions[0].outcome, '问到了开场时间');
+});
+
+// —— 难度+骰子 + 结构化代价（v2 契约扩展，opt-in dice）——
+const die = value => (value - 1) / 20 + 0.01;
+const sequence = values => { let index = 0; return () => values[Math.min(index++, values.length - 1)]; };
+
+test('v2 contract documents difficulty/modifiers/structured consequences and schema accepts both shapes', () => {
+    for (const token of ['difficulty', 'modifiers', '掷 d20', '只降不升', 'grudge', 'exposure', '保底条目']) assert.ok(SETTLE_RESULT_PROMPT.includes(token), token);
+    const actionSchema = SETTLE_RESULT_JSON_SCHEMA.properties.actions.items.properties;
+    assert.deepEqual(actionSchema.difficulty.enum, ['controlled', 'standard', 'risky', 'desperate']);
+    assert.equal(actionSchema.modifiers.items.required.includes('reason'), true);
+    assert.ok(Array.isArray(actionSchema.consequences.items.anyOf), '后果兼容字符串与对象两种形状');
+    assert.deepEqual(actionSchema.modifiers.maxItems, 6);
+});
+
+test('parser normalizes difficulty/modifiers/structured consequences and flags junk softly', () => {
+    const structured = action('a1', '付十金币', {
+        difficulty: 'risky', modifiers: [{ reason: '深夜采买', value: -1 }],
+        consequences: ['【耗时·轻】排了队', { type: 'grudge', grade: 'minor', text: '掌柜记了脸色' }],
+    });
+    const result = parsed([structured]);
+    assert.equal(result.status, 'ok');
+    assert.equal(result.actions[0].difficulty, 'risky');
+    assert.deepEqual(result.actions[0].modifiers, [{ reason: '深夜采买', value: -1 }]);
+    assert.deepEqual(result.actions[0].consequences, ['【耗时·轻】排了队', '【结仇·轻】掌柜记了脸色']);
+    assert.deepEqual(result.actions[0].penalties, [{ type: null, grade: null, text: '【耗时·轻】排了队' }, { type: 'grudge', grade: 'minor', text: '掌柜记了脸色' }]);
+    assert.ok(!result.diagnostics.some(entry => ['invalid_consequences', 'invalid_difficulty'].includes(entry.code)));
+
+    const sloppy = parsed([action('a1', '付十金币', { difficulty: 'impossible', consequences: [{ grade: 'minor' }] })]);
+    assert.equal(sloppy.actions[0].difficulty, 'standard', '未知档位回落常规');
+    assert.ok(sloppy.diagnostics.some(entry => entry.code === 'invalid_difficulty'), '未知档位记诊断');
+    assert.ok(sloppy.diagnostics.some(entry => entry.code === 'invalid_consequences'), '无正文对象后果记违规');
+    assert.equal(sloppy.actions[0].parseErrors.includes('invalid_consequences'), true, '缺正文的后果阻断本行动');
+});
+
+test('review with dice downgrades success to failure, keeps only costs, and renders the roll line', () => {
+    const result = review(
+        [action('a1', '付十金币', { difficulty: 'standard', outcome: '付完钱买到了药', consequences: ['拿到了药'], effects: [gold(10, { reason: '捡了钱' }), gold(-10)] })],
+        '付十金币', state(),
+        { dice: { rng: sequence([die(6)]) } },
+    );
+    assert.equal(result.actions[0].approved, true, '代价效果照常通过审核');
+    assert.equal(result.actions[0].status, 'failure');
+    assert.equal(result.actions[0].outcome, '判定掷骰不利，此行动未达成预期结果。');
+    assert.ok(!renderSettleInjection(result).includes('付完钱买到了药'), '被推翻的成功叙事不得进入注入');
+    assert.deepEqual(result.expectedState.player.gold, 110, '只留支出');
+    const injected = renderSettleInjection(result);
+    assert.ok(injected.includes('判定：掷骰 6+0 对难度 11（常规）→ 失败'), injected);
+    assert.ok(injected.includes('[failure]'));
+    assert.equal(result.diceRolled, 1);
+    assert.equal(result.diceOverridden, 1);
+    assert.equal(result.oracle, null, '波折但变数未掷中：sequence 耗尽重复首值 0.26 ≥ 0.25');
+});
+
+test('review with dice downgrades to partial and guarantees a visible cost', () => {
+    const result = review(
+        [action('a1', '付十金币', { difficulty: 'standard', outcome: '付完钱买到了药', effects: [gold(-10)] })],
+        '付十金币', state(),
+        { dice: { rng: sequence([die(7), 0.1]) } },
+    );
+    assert.equal(result.actions[0].status, 'partial');
+    assert.deepEqual(result.actions[0].consequences, ['【耗时·轻】横生枝节，多耗了些工夫'], 'general 保底代价');
+    assert.ok(renderSettleInjection(result).includes('【耗时·轻】横生枝节'));
+    assert.ok(result.oracle, '变数命中');
+    assert.ok(renderSettleInjection(result).includes(`【变数】${result.oracle.title}`));
+    assert.ok(renderSettleInjection(result).includes('部分成功'));
+});
+
+test('review without dice keeps the old deterministic path and parse keeps difficulty untouched', () => {
+    const result = review([action('a1', '付十金币', { difficulty: 'desperate', modifiers: [{ reason: '含着金钥匙', value: 2 }] })], '付十金币');
+    assert.equal(result.actions[0].status, 'success');
+    assert.equal(result.actions[0].dice, undefined);
+    assert.equal(result.diceRolled, undefined);
+    assert.equal(result.oracle, undefined);
+});
+
+test('blocked actions never receive dice and the blocked render stays intact', () => {
+    // 缺 evidence 的行动在重解析时带 missing_evidence，骰子跳过、审核阻断。
+    const result = review(
+        [action('a1', '付十金币', { difficulty: 'standard', evidence: '' })],
+        '付十金币', state(),
+        { dice: { rng: sequence([die(6)]) } },
+    );
+    assert.equal(result.actions[0].approved, false);
+    assert.equal(result.actions[0].dice, undefined);
+    assert.ok(renderSettleInjection(result).includes('[blocked/not_executed]'));
+});
+
+test('review with dice leaves actions that never declared a difficulty untouched', () => {
+    // 旧契约/自定义提示词输出没有 difficulty 字段：即使掷出 nat 1 也不改判。
+    const result = review(
+        [action('a1', '付十金币', { outcome: '付完钱买到了药', effects: [gold(-10)] })],
+        '付十金币', state(),
+        { dice: { rng: sequence([die(1)]) } },
+    );
+    assert.equal(result.actions[0].status, 'success');
+    assert.equal(result.actions[0].dice, undefined);
+    assert.equal(result.diceRolled, 0);
+});
+
+test('retry builder feeds diagnostics back and refuses to overflow the user budget', () => {
+    const invalid = parseSettleResult('不是JSON');
+    const retry = buildSettleRetryUser('【玩家这一轮说】\n付十金币', invalid);
+    assert.ok(retry.startsWith('【玩家这一轮说】'));
+    assert.ok(retry.includes('invalid_json'));
+    assert.ok(retry.includes('重新输出完整 v2 JSON'));
+    assert.ok(retry.includes('evidence 仍逐字取自'));
+    assert.equal(buildSettleRetryUser('', invalid), '');
+    assert.equal(buildSettleRetryUser('x'.repeat(29999), invalid), '', '装不下就放弃重试，绝不截断玩家输入');
+    assert.equal(buildSettleRetryUser('正常输入', null).includes('invalid_json'), true, '无诊断时按 invalid_json 兜底');
 });
 
 console.log(`settle adjudicate tests passed (${cases} cases)`);

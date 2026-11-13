@@ -8,7 +8,16 @@
 
 import { formatClock, STANCE_LABELS, TENSION_LABELS } from './world-runtime.js';
 
-const NEAR_LIMIT = 8;
+/**
+ * 氛围决定注入的事件条数：平静少投、升温照常、风波多投。
+ * 只控制注入上限（投放多少事件进正文/决定提示词），不改台账本身；
+ * rising 档就是原来的固定值，calm 收紧、storm 放开。
+ */
+export function injectionLimits(tension) {
+    if (tension === 'storm') return { near: 8, world: 8 };
+    if (tension === 'rising') return { near: 8, world: 6 };
+    return { near: 6, world: 4 };
+}
 
 /** 斗气大陆历：360 天一年，90 天一季。纯推导值，不占状态。 */
 export function seasonOf(day) {
@@ -18,7 +27,6 @@ export function seasonOf(day) {
     if (dayInYear <= 270) return '秋';
     return '冬';
 }
-const WORLD_LIMIT = 6;
 const DEFAULT_MAX_CHARS = 900;
 const DEFAULT_MAX_OPS = 8;
 const FENCE_RE = /```world[^\S\n]*\n([\s\S]*?)```/g;
@@ -33,11 +41,11 @@ export const OPS_GUIDE = [
     '{"op":"addEvent","scope":"near","title":"城东连环失窃","text":"城东连着三家铺子夜里失窃","basis":"最近几楼提到的失窃传闻，主角今早又看见巡卫盘查"}',
     '{"op":"addEvent","scope":"world","title":"炼药师大会提前","text":"皇室宣布炼药师大会提前","basis":"上楼贵族宾客的谈话里放出风声","day":6,"weight":"major","days":10}',
     '```',
-    '可用操作：advance(days≤365,minutes≤1439)；setClock(day,minute,label)；addTask(title必写≤20字短标题,detail≤300字完整内容,basis,days=时限≤90)；completeTask(id)；deleteTask(id)；updateTask(id,detail)；setFaction(name,stance:敌对hostile|警惕wary|中立neutral|友好friendly|同盟allied,type类型:宗门|家族|帝国|学院|佣兵团|商会|联盟,level实力档次,leader首领,elders高层阵容,members成员构成,location驻地,assets底蕴产业,relations势力关系,dynamics动向,basis；档案字段留空保留旧值，首次登记尽量写全)；deleteFaction(name)；setPerson(name,attitude态度,basis)；deletePerson(name)；addEvent(scope:near|world,title必写≤16字短标题（如“乌坦城集市风波”，一眼看懂）,text≤120字完整内容,basis≤80字,day,location=事发地点≤40字,weight:minor|major|rumor,days=有效天数≤90，到期自动了结)；setTension(level:calm平静|rising升温|storm风波)；resolveEvent(id)；pinEvent(id)；setInfo(field:weather|location|era|reputation|wanted,text≤80字)。id 用上面事件列表里的编号。',
+    '可用操作：advance(days≤365,minutes≤1439)；setClock(day,minute,label)；addTask(title必写≤20字短标题,detail≤300字完整内容,basis,days=时限≤90)；completeTask(id)；deleteTask(id)；updateTask(id,detail)；setFaction(name,stance:敌对hostile|警惕wary|中立neutral|友好friendly|同盟allied,type类型:宗门|家族|帝国|学院|佣兵团|商会|联盟,level实力档次,leader首领,elders高层阵容,members成员构成,location驻地,assets底蕴产业,relations势力关系,dynamics动向,basis；档案字段留空保留旧值，首次登记尽量写全)；deleteFaction(name)；setPerson(name,attitude态度,basis)；deletePerson(name)；addEvent(scope:near|world,title必写≤16字短标题（如“乌坦城集市风波”，一眼看懂）,text≤120字完整内容,basis≤80字,day,location=事发地点≤40字,weight:minor|major|rumor,days=有效天数≤90，到期自动了结,participants=点名到的人物或势力名（台账里已有的名字，≤3个）,cause=起因事件编号)；setTension(level:calm平静|rising升温|storm风波)；resolveEvent(id,outcome=了结结论≤80字)；updateEvent(id,title/text/weight/days：给已登记的事件推进阶段——大事酝酿到爆发、传闻升级实锤、时限延期都走它)；pinEvent(id)；setInfo(field:weather|location|era|reputation|wanted,text≤80字)。id 用上面事件列表里的编号。',
     '任务规则：玩家承诺或接下的事、人物托付、剧情给出的明确目标才立任务（addTask），detail 写清目标、背景与现状；任务达成后及时 completeTask，作废用 deleteTask；进展变化用 updateTask 更新详情。不要把每件小事都立成任务。',
     '地点与氛围：事件必须符合所在地特征（魔兽山脉是兽袭与药草，帝都是权贵与阴谋），跨地发生的大事写明 location；setTension 管「世界氛围」——大事临近升 rising、风波不断升 storm、风波平息回落 calm，氛围决定这轮投放事件的频率和烈度。',
         '季节与日程：一年 360 天四季轮转（春/夏/秋/冬），环境描写、药草收成、衣着起居要跟季节对上；固定的大会、仪式、约期用 addEvent 带未来的 day 登记成预定事件，到日子再 resolveEvent。',
-        '事件取材规则：事件从最近剧情里有依据地长出来——正在发生的事、玩家行动引出的动静、所在地点此时合理的动态，内容不拘一格（市井琐事、势力动作、传闻都行），但 basis 必须一句话写清它从哪来（哪楼/谁/什么事引出的）；title 必写——4~16 字名词短语，一眼看懂是哪件事，缺标题或超长的条目会被脚本整条丢弃；没有依据的事不记，也不要把原著桥段照搬成事件，原著只在正文需要引用时用。rumor=传闻（未证实消息，正文不得当事实写，查证后 resolveEvent 了结并另记真相或戳穿）；有时限的事（限期比武、悬赏、药效、期限任务）务必带上 days，注入列表会显示剩余天数，正文里的时间压力要和它对得上。机遇与危机（拍卖会、药草成熟、仇家寻上门、势力清洗）属于世界主动投放的大事，偶尔来一件、必须有依据，不要每轮都发；名声（reputation）与通缉度（wanted）只在剧情真有对应行为时更新。',
+        '事件取材规则：事件从最近剧情里有依据地长出来——正在发生的事、玩家行动引出的动静、所在地点此时合理的动态，内容不拘一格（市井琐事、势力动作、传闻都行），但 basis 必须一句话写清它从哪来（哪楼/谁/什么事引出的）；title 必写——4~16 字名词短语，一眼看懂是哪件事，缺标题或超长的条目会被脚本整条丢弃；没有依据的事不记，也不要把原著桥段照搬成事件，原著只在正文需要引用时用。rumor=传闻（未证实消息，正文不得当事实写；查证后 resolveEvent 带 outcome 写结论，真相或戳穿另记一条新事件并用 cause 关联原事件）；有时限的事（限期比武、悬赏、药效、期限任务）务必带上 days，注入列表会显示剩余天数，正文里的时间压力要和它对得上；addEvent 能点名就带 participants（台账「相关人物」「势力动向」里已有的名字），后台靠它知道这件事牵连到谁。机遇与危机（拍卖会、药草成熟、仇家寻上门、势力清洗）属于世界主动投放的大事，偶尔来一件、必须有依据，不要每轮都发；名声（reputation）与通缉度（wanted）只在剧情真有对应行为时更新。',
     '没有需要记下的变化就完全不要输出这个区块；正文照常写给玩家看，指令只是记账。',
 ].join('\n');
 
@@ -63,6 +71,7 @@ function eventLine(event, today) {
     const scheduled = Number.isInteger(today) && event.day > today ? `（预定：第${event.day}天）` : '';
     const where = text(event.location) ? `（地点：${text(event.location)}）` : '';
     const rumor = event.weight === 'rumor' ? '（传闻·未证实）' : '';
+    const cause = text(event.cause) ? `（起因：${text(event.cause)}）` : '';
     // 标题 + 正文一起注入：模型改写事件时要认得这一条是哪件事，光看正文容易重记。
     const title = text(event.title) ? `「${text(event.title)}」` : '';
     let due = '';
@@ -71,7 +80,7 @@ function eventLine(event, today) {
         const left = event.endDay - todayNum + 1;
         due = left > 0 ? `（剩 ${left} 天）` : '（今日到期）';
     }
-    return `${mark}(${event.id} 第${event.day}天) ${title}${event.text}${where}${scheduled}${due}${rumor}${basis}${pinned}`;
+    return `${mark}(${event.id} 第${event.day}天) ${title}${event.text}${where}${scheduled}${due}${rumor}${cause}${basis}${pinned}`;
 }
 
 /** 世界快照 → 注入文本；超预算时优先保住时钟，事件从末尾往上丢。 */
@@ -89,35 +98,46 @@ lines.push(`时钟：${formatClock(clock)}（${seasonOf(today2)}季）${textOr(c
     if (infoParts.length) lines.push(`现状：${infoParts.join('；')}`);
     if (snapshot.tension && snapshot.tension !== 'calm') lines.push(`世界氛围：${TENSION_LABELS[snapshot.tension] ?? '平静'}${snapshot.tension === 'storm' ? '（危机频发）' : snapshot.tension === 'rising' ? '（大事酝酿）' : ''}`);
     // 注入排序：置顶 → 重大 → 传闻 → 其余按最新；重要事件不被新登记的小事挤出列表。
+    // 事件条数上限跟氛围走（calm 6/4、rising 8/6、storm 8/8）——投放节奏由氛围定，不靠模型自觉。
+    const limits = injectionLimits(snapshot.tension);
     const byImportance = (a, b) => (b.pinned === true) - (a.pinned === true)
         || (b.weight === 'major') - (a.weight === 'major')
         || (b.weight === 'rumor') - (a.weight === 'rumor')
         || b.day - a.day;
-    const near = (Array.isArray(snapshot.nearEvents) ? snapshot.nearEvents : []).filter(event => event?.done !== true).sort(byImportance).slice(0, NEAR_LIMIT);
-    const world = (Array.isArray(snapshot.worldEvents) ? snapshot.worldEvents : []).filter(event => event?.done !== true).sort(byImportance).slice(0, WORLD_LIMIT);
+    const near = (Array.isArray(snapshot.nearEvents) ? snapshot.nearEvents : []).filter(event => event?.done !== true).sort(byImportance).slice(0, limits.near);
+    const world = (Array.isArray(snapshot.worldEvents) ? snapshot.worldEvents : []).filter(event => event?.done !== true).sort(byImportance).slice(0, limits.world);
     const today = intIn(clock.day, 1, 99999);
-    if (near.length) lines.push(`身边事件（未了结，可被剧情推进或 resolveEvent）：\n${near.map(event => eventLine(event, today)).join('\n')}`);
-    if (world.length) lines.push(`世界大事（未了结）：\n${world.map(event => eventLine(event, today)).join('\n')}`);
-    // 势力与人物：敌对优先，最近更新的在前；只列剧情真正接触过的。
-    // 势力逐条入列：超预算时从尾部整条丢（敌对排序保住要紧的），不再整块消失。
+    // 逐条入列 + 栏头不孤：超预算从尾部按条丢，一栏的行丢光时栏头一起退场——
+    // 台账积累多了之后，整块推送会被一次预算裁剪全部挤掉，注入会静默退化成只剩时钟与现状。
     const stanceRank = { hostile: 0, wary: 1, allied: 2, friendly: 3, neutral: 4 };
     const factions = (Array.isArray(snapshot.factions) ? snapshot.factions : [])
         .slice().sort((a, b) => (stanceRank[a.stance] ?? 2) - (stanceRank[b.stance] ?? 2) || (b.updatedDay ?? 0) - (a.updatedDay ?? 0)).slice(0, FACTION_LIMIT);
-    if (factions.length) {
-        lines.push('势力动向（改变态度或动向用 setFaction）：');
-        for (const faction of factions) lines.push(factionLine(faction));
-    }
     const people = (Array.isArray(snapshot.people) ? snapshot.people : [])
         .slice().sort((a, b) => (b.updatedDay ?? 0) - (a.updatedDay ?? 0)).slice(0, PEOPLE_LIMIT);
-    if (people.length) lines.push(`相关人物（改变态度用 setPerson）：\n${people.map(p => personLine(p)).join('\n')}`);
     const tasks = (Array.isArray(snapshot.tasks) ? snapshot.tasks : []).filter(task => task?.status === 'active').slice(0, TASK_LIMIT);
-    if (tasks.length) lines.push(`当前任务（进行中，达成用 completeTask、作废用 deleteTask）：\n${tasks.map(task => taskLine(task, today)).join('\n')}`);
-    let textOut = lines.join('\n');
-    while (textOut.length > cap && lines.length > 1) {
-        lines.pop();
-        textOut = lines.join('\n');
+    const sections = [
+        near.length ? { header: '身边事件（未了结，可被剧情推进或 resolveEvent）：', rows: near.map(event => eventLine(event, today)) } : null,
+        world.length ? { header: '世界大事（未了结）：', rows: world.map(event => eventLine(event, today)) } : null,
+        factions.length ? { header: '势力动向（改变态度或动向用 setFaction）：', rows: factions.map(faction => factionLine(faction)) } : null,
+        people.length ? { header: '相关人物（改变态度用 setPerson）：', rows: people.map(person => personLine(person)) } : null,
+        tasks.length ? { header: '当前任务（进行中，达成用 completeTask、作废用 deleteTask）：', rows: tasks.map(task => taskLine(task, today)) } : null,
+    ].filter(Boolean);
+    const parts = [];
+    for (const line of lines) parts.push({ text: line, section: null, isHeader: false });
+    for (const section of sections) {
+        parts.push({ text: section.header, section, isHeader: true });
+        for (const row of section.rows) parts.push({ text: row, section, isHeader: false });
     }
-    return textOut;
+    const joined = () => parts.map(part => part.text).join('\n');
+    while (parts.length > 1 && joined().length > cap) {
+        const dropped = parts.pop();
+        // 栏头自己也算该栏成员，但不算“幸存的行”：一栏最后一行被挤掉时，栏头一起退场。
+        if (dropped.section && !dropped.isHeader && !parts.some(part => part.section === dropped.section && !part.isHeader)) {
+            const at = parts.findIndex(part => part.section === dropped.section);
+            if (at >= 0) parts.splice(at, 1);
+        }
+    }
+    return joined();
 }
 
 const TASK_LIMIT = 8;

@@ -66,6 +66,8 @@ function harness({ state = localState(), database = null, record = null, rejectN
             adoptMemory: async () => { calls.adoptions += 1; return typeof nextDatabase === 'function' ? nextDatabase() : clone(nextDatabase); },
             mirrorMemory: async snapshot => { calls.mirrors.push(clone(snapshot)); return { status: 'mirrored' }; },
         },
+        // persistMemory 会顺带请求向量补嵌；语义检索在切片之外，这里桩掉。
+        syncMemoryVectors: () => {},
         refreshMemoryPage: () => calls.refreshes.push(runtime.snapshot()),
     });
     return { ...api, runtime, calls, setDatabase(value) { nextDatabase = value; }, switchRecord(value) { scope += 1; chatRecord = value; } };

@@ -3,15 +3,19 @@
  * 取出 ```memory 代码块解析成受控操作。
  *
  * 注入分两条路：主路由召回决定（memory-recall.js，LLM 挑选）给出条目；召回决定没跑/
- * 失败/关着时退回关键词兜底——只有召回钥匙（related + 别名）出现在最近剧情里的记忆才被
- * 召回，排序 = 大记忆优先 → 关键优先 → 新的优先（无强度权重）。相关性判定是确定性的
- * 整词匹配（sceneText 含钥匙项），不靠模型现挑。
+ * 失败/关着时退回兜底召回——只有被场景真正勾到（钥匙/引文/标题/词面/向量任一命中）的
+ * 记忆才注入，排序走 memory-retrieve.js 的混合分数（钥匙命中 → 词面包含 → 时间邻近，
+ * 大记忆与关键分量作底分）。相关性判定是确定性的，不靠模型现挑。
  *
  * 约定与 world/self 一致：模型每轮最多输出一个代码块，块内每行一条 JSON 操作；
  * 脚本逐行解析，坏行跳过并记录，好行交给 memory-runtime 校验执行。
  */
 
 import { TIER_LABELS, TAG_LABELS } from './memory-runtime.js';
+import { recallKeys, textSimilarity, topCandidates } from './memory-retrieve.js';
+
+// 召回钥匙与文本相似度工具住在 memory-retrieve.js（召回目录与兜底共用），这里转发保持旧导入路径可用。
+export { recallKeys, textSimilarity };
 
 const DEFAULT_MAX_CHARS = 900;
 const RECALL_LIMIT = 12;
@@ -29,7 +33,7 @@ export const MEMORY_GUIDE = [
     '```',
     '只记小记忆（remember）：轻量记录的近事杂事，weight 用 minor，不必重要才记，保持主角”记得这几天发生过什么”；title 必写——1~14 字短标题（名词短语），列表主页只显示标题，缺标题或超过 14 字的条目会被脚本整条丢弃；related 是日后召回的钥匙，必写 1-4 个人名/地名/物名。大记忆不用你登记——小记忆攒够后脚本会自动总结成大记忆。',
     'quote 可选：剧情里最有味道的一句原话（≤60字），召回时会以「」原样带回正文；没有合适的就空着，不要编造没出现过的对白。',
-    '可用操作：remember(title必写≤14字短标题,text≤60字一句简明记忆,note≤200字细节补充,basis≤80字出处,related必写≤4个,quote≤60字)；forgetMemory(id)（记错删除）。id 用上面召回列表里的编号。text 只写一眼能看懂的一句话，细节、背景、后续影响写进 note；记忆不是任务：没有“了结”状态，旧事也永远保留召回权。',
+    '可用操作：remember(title必写≤14字短标题,text≤60字一句简明记忆,note≤200字细节补充,basis≤80字出处,related必写≤4个,quote≤60字)；forgetMemory(id)（记错删除）；supersede(id,by)（旧记忆被本轮新事明确覆盖时标记，不删除，恢复由玩家做）。id 用上面召回列表里的编号。text 只写一眼能看懂的一句话，细节、背景、后续影响写进 note；记忆不是任务：没有“了结”状态，旧事也永远保留召回权。',
     '只记玩家看得到的事（主角亲历/得知，或正文实际演到的情节），用中性记事口吻写清"谁/在哪/发生了什么"，不要写成"我"的第一人称日记；text 保持一句话的简短，长细节交给 note；必须有剧情依据（basis 写清从哪楼/谁/什么事来）；不记原著设定、不替人物簿记 NPC 档案与好感、不记该归纳戒目标或世界任务的事；没有新记忆就完全不要输出这个区块。',
 ].join('\n');
 
@@ -42,41 +46,26 @@ function text(value) {
     return typeof value === 'string' ? value.trim() : '';
 }
 
-/** 一条记忆的全部召回钥匙：related + 用户补的别名，去重。 */
-export function recallKeys(entry) {
-    const keys = new Set();
-    for (const name of [...(entry?.related ?? []), ...(entry?.aliases ?? [])]) {
-        const key = text(name);
-        if (key) keys.add(key);
-    }
-    return [...keys];
-}
-
 /**
- * 关键词兜底召回：related/aliases 整词命中 sceneText 的记忆（确定性，无强度权重）。
- * 排序 = 大记忆优先 → 关键优先 → 新的优先；主召回路是 memory-recall.js 的召回决定，
- * 这里只在召回决定没跑/失败/关着时兜底。
+ * 兜底召回：场景信号触发的记忆按混合分数排序（memory-retrieve.scoreEntries）。
+ * 主召回路是 memory-recall.js 的召回决定，这里只在召回决定没跑/失败/关着时兜底；
+ * 向量相似度（vectorSim）与当前天数（currentDay）由调用方可选传入。
+ * advanced=false（完整版/简略版口径）退回旧行为：召回钥匙整词命中才算，大记忆优先 → 关键优先 → 新的优先。
  */
-export function recallHits(snapshot = {}, { sceneText = '', limit = RECALL_LIMIT } = {}) {
-    const scene = typeof sceneText === 'string' ? sceneText : '';
-    if (!scene) return [];
-    const hits = (Array.isArray(snapshot.entries) ? snapshot.entries : [])
-        .filter(entry => recallKeys(entry).some(key => scene.includes(key)));
-    const byRecall = (a, b) => (b.tier === 'big') - (a.tier === 'big')
-        || (b.weight === 'major') - (a.weight === 'major')
-        || b.day - a.day;
-    return [...hits].sort(byRecall).slice(0, clampInt(limit, 1, 40, RECALL_LIMIT));
+export function recallHits(snapshot = {}, { sceneText = '', limit = RECALL_LIMIT, currentDay = null, vectorSim = null, advanced = true } = {}) {
+    return topCandidates(snapshot, { sceneText, currentDay, vectorSim, advanced }, { limit: clampInt(limit, 1, 40, RECALL_LIMIT) });
 }
 
 function entryLine(entry) {
     const mark = entry.weight === 'major' ? '★' : '·';
     const tier = TIER_LABELS[entry.tier] ?? '记忆';
     const tag = entry.tag && TAG_LABELS[entry.tag] ? `[${TAG_LABELS[entry.tag]}]` : '';
+    const superseded = text(entry.supersededBy) ? `（已替代→${text(entry.supersededBy)}）` : '';
     const quote = text(entry.quote) ? `「${text(entry.quote)}」` : '';
     const related = recallKeys(entry).length ? `（关联：${recallKeys(entry).join('、')}）` : '';
     const basis = text(entry.basis) ? `（依据：${text(entry.basis)}）` : '';
     const note = text(entry.note) ? `（细节：${text(entry.note)}）` : '';
-    return `${mark}(${entry.id} 第${entry.day}天)[${tier}]${tag} ${entry.text}${note}${quote}${related}${basis}`;
+    return `${mark}(${entry.id} 第${entry.day}天)[${tier}]${tag}${superseded} ${entry.text}${note}${quote}${related}${basis}`;
 }
 
 /**
@@ -117,28 +106,13 @@ export function buildMemoryInjection(snapshot = {}, { maxChars = DEFAULT_MAX_CHA
 
 // ---------- 矛盾提醒：同钥匙 + 文本高相似（确定性 bigram Dice，不调模型） ----------
 
-function bigrams(value) {
-    const body = text(value).replace(/\s+/g, '');
-    const set = new Set();
-    for (let i = 0; i < body.length - 1; i++) set.add(body.slice(i, i + 2));
-    return set;
-}
-
-function similarity(a, b) {
-    const left = bigrams(a);
-    const right = bigrams(b);
-    if (!left.size || !right.size) return 0;
-    let shared = 0;
-    for (const gram of left) if (right.has(gram)) shared += 1;
-    return (2 * shared) / (left.size + right.size);
-}
-
 /**
  * 在记忆里找疑似重复/矛盾对：共享至少一个召回钥匙，且内容 bigram 相似度达标。
  * 返回 [{ a, b, similarity }]，a.id < b.id；只提醒不拦账，由书记官/玩家自己定夺。
+ * 已被软覆盖（supersededBy）的旧账不再参与矛盾提醒——它已经被承认过时了。
  */
 export function findMemoryConflicts(entries = [], { threshold = CONFLICT_SIMILARITY } = {}) {
-    const open = (Array.isArray(entries) ? entries : []).filter(Boolean);
+    const open = (Array.isArray(entries) ? entries : []).filter(entry => entry && !text(entry.supersededBy));
     const conflicts = [];
     for (let i = 0; i < open.length; i++) {
         for (let j = i + 1; j < open.length; j++) {
@@ -147,7 +121,7 @@ export function findMemoryConflicts(entries = [], { threshold = CONFLICT_SIMILAR
             if (a.tier === b.tier && a.id === b.id) continue;
             const sharedKey = recallKeys(a).some(key => recallKeys(b).includes(key));
             if (!sharedKey) continue;
-            const score = similarity(a.text, b.text);
+            const score = textSimilarity(a.text, b.text);
             if (score >= clampInt(threshold * 100, 10, 99, 60) / 100) {
                 conflicts.push({ a: a.id, b: b.id, similarity: Math.round(score * 100) / 100 });
             }

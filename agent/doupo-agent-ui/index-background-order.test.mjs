@@ -5,7 +5,7 @@ import { doupoAgent as agent, onEnable, onDisable } from './index.js';
 const previous = globalThis.SillyTavern;
 const events = new EventEmitter(), pending = [], sampling = {};
 events.makeLast = (event, handler) => { events.removeListener(event, handler); events.on(event, handler); };
-const settings = { enableDbBridge: false, world: { decideAuto: false }, self: { mvuChannel: 'independent' }, memory: { consolidateAfter: 0 }, npc: { ledgerAuto: false }, impact: { decideAuto: false } };
+const settings = { enableDbBridge: false, world: { decideAuto: false }, self: { mvuChannel: 'independent' }, memory: { consolidateAfter: 0 }, npc: { ledgerAuto: false }, impact: { decideAuto: false }, plot: { decideAuto: false } };
 const makeContext = id => ({ chatId: id, chat: [{ mes: '第一轮正文', is_user: false }], chatMetadata: {}, chatCompletionSettings: sampling,
     extensionSettings: { doupo_agent_ui: settings }, eventSource: events,
     event_types: { CHAT_CHANGED: 'chat', GENERATION_STARTED: 'started', GENERATION_ENDED: 'ended', CHARACTER_MESSAGE_RENDERED: 'rendered' }, saveMetadata() {},

@@ -9,6 +9,7 @@ _inspection-context.txt
 # 本地工具会话计划、截图转储与误生成的重定向文件
 .zcode/
 dev/shots/
+nul
 agent/doupo-agent-ui/nul
 
 # 审查工作区里的改动前快照与逐门禁日志（代码本身已在仓库内，快照重复且有数 MB）

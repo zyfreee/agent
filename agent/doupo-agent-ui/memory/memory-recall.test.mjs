@@ -62,6 +62,35 @@ assert.equal(buildRecallCatalog({ entries: [{ id: 'x'.repeat(500), tier: 'big', 
 // 空库
 assert.equal(buildRecallCatalog({}), '（记忆库还是空的）');
 
+// —— 混合分数序：有场景时目录按 memory-retrieve 分数排，场景触发的排最前 ——
+const ranked = { entries: [
+    { id: 'm1', tier: 'big', title: '旧账', text: '无关内容', related: ['旧账'], day: 9 },
+    { id: 'm2', tier: 'small', title: '近事', text: '萧炎突破斗者', related: ['突破'], day: 8 },
+] };
+const sceneCatalog = buildRecallCatalog(ranked, { maxChars: 4000, sceneText: '萧炎要突破了。', currentDay: 8 });
+assert.ok(sceneCatalog.indexOf('- m2|') < sceneCatalog.indexOf('- m1|'), '场景触发+时间贴近的排到目录前部');
+const dayCatalog = buildRecallCatalog({ entries: [
+    { id: 'm1', tier: 'small', title: '上周的事', text: '无关内容', related: [], day: 2 },
+    { id: 'm2', tier: 'small', title: '今天的事', text: '别的内容', related: [], day: 8 },
+] }, { maxChars: 4000, sceneText: '与谁都不沾边的一天。', currentDay: 8 });
+assert.ok(dayCatalog.indexOf('- m2|') < dayCatalog.indexOf('- m1|'), '无信号时时间邻近让近事靠前');
+
+// —— superseded（软覆盖）不进目录、不回场 ——
+const supersededSnap = { entries: [
+    { id: 'm1', tier: 'big', title: '旧账', text: '旧内容', related: ['旧账'], day: 3, supersededBy: 'm2' },
+    { id: 'm2', tier: 'small', title: '新账', text: '新内容', related: ['旧账'], day: 4 },
+] };
+assert.equal(buildRecallCatalog(supersededSnap).includes('- m1|'), false, '被覆盖的旧账不进目录');
+assert.equal(buildRecallCatalog(supersededSnap, { sceneText: '旧账旧内容都在场景里。' }).includes('- m1|'), false, '有场景也不复活被覆盖的旧账');
+assert.deepEqual(recallEntriesFromIds(supersededSnap, ['m1', 'm2']).map(entry => entry.id), ['m2'], '召回编号对账跳过被覆盖条目');
+
+// —— candidates 外部候选序优先（index.js 向量融合分数直接传入） ——
+const candidateCatalog = buildRecallCatalog(ranked, { maxChars: 4000, candidates: [{ entry: ranked.entries[1] }, ranked.entries[0]] });
+assert.ok(candidateCatalog.indexOf('- m2|') < candidateCatalog.indexOf('- m1|'), '外部候选序直接采用');
+const candidateMissing = buildRecallCatalog(ranked, { maxChars: 4000, candidates: ['mX'] });
+assert.equal(candidateMissing.split('\n').length, 2, '候选里没有的条目按旧序补齐，不丢账');
+assert.equal(buildRecallUser({ snapshot: supersededSnap, floors: [{ role: '玩家', text: '旧账旧内容都在场景里。' }] }).includes('- m1|'), false, 'user 组装继承软覆盖过滤');
+
 // —— user 组装：三段式，楼层含最新玩家输入且旧→新 ——
 const floors = [
     { role: '角色', text: '萧炎握紧了拳头。' },
@@ -122,3 +151,14 @@ assert.deepEqual(picked.map(entry => entry.id), ['m3', 'm1'], '坏号跳过、�
 assert.equal(recallEntriesFromIds(snapshot, []).length, 0);
 
 console.log('memory recall tests passed');
+
+// —— advanced=false（完整版/简略版口径）：目录退回旧洪泛序（大/小交替），不走混合分数排序 ——
+{
+    const entries = [
+        { id: 'm1', tier: 'small', title: '词面命中的新事', text: '穆蛇在坊市拦路勒索被赶跑了', related: [], day: 9 },
+        { id: 'm2', tier: 'big', title: '大记忆旧事', text: '旧事一桩', related: [], day: 2 },
+    ];
+    const scene = '穆蛇在坊市拦路勒索被赶跑了。';
+    assert.ok(buildRecallCatalog({ entries }, { sceneText: scene, maxChars: 4000 }).startsWith('- m1|'), '进阶版：词面命中的条目排到目录最前');
+    assert.ok(buildRecallCatalog({ entries }, { sceneText: scene, maxChars: 4000, advanced: false }).startsWith('- m2|'), '旧口径：大/小交替洪泛序，不按分数排');
+}

@@ -231,6 +231,36 @@ const strictRun = await strict.select({ input: '药老，这火怎么炼', volum
 assert.deepEqual(strictRun.ids, [], '模型没选就不注入');
 assert.equal(strictCalls[0].user.includes('直接收录'), false, '提示词里不再有强制层说明');
 
+// —— 目录相关度重排接入选条：强命中行置顶进提示词，meta 带出重排标记与命中行数。
+const rankedCalls = [];
+const rankedSelector = createFactsSelector({
+    index,
+    complete: async args => {
+        rankedCalls.push(args);
+        return '{"need":[{"uid":1041,"why":"异火"}],"no_match":false}';
+    },
+});
+const rankedRun = await rankedSelector.select({ input: '青莲地心火怎么炼化', volume: 2 });
+assert.equal(rankedRun.status, 'selected');
+assert.equal(rankedRun.meta.catalogRanked, true, 'meta 标注目录已按相关度重排');
+assert.equal(rankedRun.meta.scoredRows, 1, '命中行计数进 meta');
+const rankedUser = rankedCalls[0].user;
+assert.ok(rankedUser.indexOf('1041|物品|青莲地心火') < rankedUser.indexOf('42|故事线|'), '强命中行排在零分行前面');
+
+// 旧索引没有 rankCatalogFor 时按旧目录走，行为不变。
+const legacyCalls = [];
+const legacy = createFactsSelector({
+    index: { stats: () => index.stats(), catalogFor: (...args) => index.catalogFor(...args), get: uid => index.get(uid) },
+    complete: async args => {
+        legacyCalls.push(args);
+        return '{"need":[],"no_match":true}';
+    },
+});
+const legacyRun = await legacy.select({ input: 'x', volume: 2 });
+assert.equal(legacyRun.status, 'no_match');
+assert.equal(legacyRun.meta.catalogRanked, false, '没有 rankCatalogFor 的索引回退原目录');
+assert.equal(legacyRun.meta.scoredRows, 0);
+
 test('malformed first-pass replies return unparsed without a lookup call', async () => {
     for (const reply of ['模型拒绝了这次请求', '{"need":[', '', undefined]) {
         let count = 0;

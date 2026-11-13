@@ -6,7 +6,7 @@ const previousHost = globalThis.SillyTavern;
 const events = new EventEmitter();
 events.makeLast = (event, listener) => { events.removeListener(event, listener); events.on(event, listener); };
 const pending = [];
-const settings = { enableDbBridge: false, world: { decideAuto: false }, self: { mvuChannel: 'independent' }, memory: { consolidateAfter: 0 }, npc: { ledgerAuto: false }, impact: { decideAuto: false } };
+const settings = { enableDbBridge: false, world: { decideAuto: false }, self: { mvuChannel: 'independent' }, memory: { consolidateAfter: 0 }, npc: { ledgerAuto: false }, impact: { decideAuto: false }, plot: { decideAuto: false } };
 const context = id => ({ chatId: id, characterId: 0, chat: [{ is_user: false, mes: '萧战在乌坦城。', swipe_id: 0 }], chatMetadata: {}, extensionSettings: { doupo_agent_ui: settings }, eventSource: events, event_types: { CHAT_CHANGED: 'chat', GENERATION_ENDED: 'ended', GENERATION_STARTED: 'started', CHARACTER_MESSAGE_RENDERED: 'rendered' }, saveMetadata() {}, generateQuietPrompt: options => new Promise((resolve, reject) => pending.push({ options, resolve, reject })) });
 let active;
 const switchChat = chat => { active = chat; events.emit('chat'); };

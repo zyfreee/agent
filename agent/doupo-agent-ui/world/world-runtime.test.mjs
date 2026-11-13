@@ -359,13 +359,14 @@ assert.equal(runtime.apply([{ op: 'resolveEvent', id: 'e9' }]).applied.length, 1
 
 // —— 上限清理：先清已了结的，再清未置顶最老的，置顶永不丢 ——
 const bounded = createWorldRuntime({ maxEvents: 10 });
+// 标题带「号」避免撞上 duplicate_similar（双字相似度过线）——这条测的是清理顺序，不是去重。
 for (let index = 1; index <= 10; index += 1) {
-    bounded.apply([{ op: 'addEvent', scope: 'near', title: `事件${index}`, text: `事件${index}`, day: index }]);
+    bounded.apply([{ op: 'addEvent', scope: 'near', title: `事件${index}号`, text: `事件${index}号`, day: index }]);
 }
 assert.equal(bounded.apply([{ op: 'resolveEvent', id: 'e1' }, { op: 'pinEvent', id: 'e2', pinned: true }]).applied.length, 2);
 // 再塞 4 条触发清理：应依次丢掉 e1（已了结）→ e3 → e4 → e5（未置顶最老）。
 for (let index = 11; index <= 14; index += 1) {
-    bounded.apply([{ op: 'addEvent', scope: 'near', title: `事件${index}`, text: `事件${index}`, day: index }]);
+    bounded.apply([{ op: 'addEvent', scope: 'near', title: `事件${index}号`, text: `事件${index}号`, day: index }]);
 }
 assert.equal(bounded.snapshot().nearEvents.length, 10);
 const keptIds = bounded.snapshot().nearEvents.map(event => event.id);
@@ -400,6 +401,100 @@ for (const days of [undefined, 2]) {
     assert.equal(r.snapshot().nearEvents[0].text, '新正文');
     assert.deepEqual(r.apply([op], { floor: 4 }).duplicate, ['stable']);
     assert.equal(r.snapshot().nearEvents.length, 1);
+}
+
+// —— A1 事件点名：participants 清洗（去重、限量、截长），坏形状当没给 ——
+{
+    const r = createWorldRuntime();
+    r.apply([{ op: 'addEvent', scope: 'near', title: '集市骚动', text: '有人在集市散布异火传闻', participants: ['萧炎', ' 药老 ', '萧炎', '这个名字长得已经超出单个名字的限额', '药老', 42] }]);
+    const event = r.snapshot().nearEvents.find(item => item.title === '集市骚动');
+    assert.deepEqual(event.participants, ['萧炎', '药老'], '点名去重限量，坏值丢弃');
+}
+
+// —— A2 因果链：cause 必须指到已有事件（写错剥离不拒绝）；resolveEvent 的 outcome 落账可恢复 ——
+{
+    const r = createWorldRuntime();
+    const added = r.apply([{ op: 'addEvent', scope: 'near', title: '集市骚动', text: '有人在集市散布异火传闻', participants: ['药老'] }]);
+    assert.equal(added.applied.length, 1);
+    const rumorId = added.applied[0].id;
+    const badCause = r.apply([{ op: 'addEvent', scope: 'near', title: '传闻被戳穿', text: '当众验证后传闻不攻自破', cause: 'e999' }]);
+    assert.equal(badCause.applied.length, 1, 'cause 写错不整条拒绝');
+    assert.ok(badCause.applied[0].warning.includes('起因编号'), JSON.stringify(badCause.warnings));
+    assert.equal(badCause.warnings.length >= 1, true, 'warnings 汇总到批结果');
+    assert.equal(r.snapshot().nearEvents.find(item => item.title === '传闻被戳穿').cause, null);
+    const goodCause = r.apply([{ op: 'addEvent', scope: 'near', title: '散布者招供', text: '查明传闻是米特尔家族放的假消息', cause: rumorId }]);
+    assert.ok(goodCause.applied[0].summary.includes(`起因：${rumorId}`), goodCause.applied[0].summary);
+    assert.equal(r.snapshot().nearEvents.find(item => item.title === '散布者招供').cause, rumorId);
+    const resolved = r.apply([{ op: 'resolveEvent', id: rumorId, outcome: '验证为假，散布者被扭送' }]);
+    assert.ok(resolved.applied[0].summary.includes('结论：验证为假'), resolved.applied[0].summary);
+    assert.equal(r.snapshot().nearEvents.find(item => item.id === rumorId).resolvedNote, '验证为假，散布者被扭送');
+    // undo 连结论一起恢复
+    r.apply([resolved.applied[0].undo], { source: 'revert' });
+    const restored = r.snapshot().nearEvents.find(item => item.id === rumorId);
+    assert.equal(restored.done, false);
+    assert.equal(restored.resolvedNote, '', '了结结论随撤销清空');
+}
+
+// —— A3 updateEvent：大事推进阶段/传闻升级，undo 往返，无变化拒绝 ——
+{
+    const r = createWorldRuntime();
+    r.apply([{ op: 'addEvent', scope: 'world', title: '炼药师大会酝酿', text: '各地炼药师收到邀请函', weight: 'minor' }]);
+    const id = r.snapshot().worldEvents[0].id;
+    const updated = r.apply([{ op: 'updateEvent', id, text: '大会正式开幕，各路高手云集帝都', weight: 'major', days: 10 }]);
+    assert.equal(updated.applied.length, 1);
+    const event = r.snapshot().worldEvents[0];
+    assert.equal(event.text, '大会正式开幕，各路高手云集帝都');
+    assert.equal(event.weight, 'major');
+    assert.equal(event.endDay, event.day + 9, 'days 以事件登记日重算有效期末');
+    assert.ok(updated.applied[0].summary.includes('minor → major'), updated.applied[0].summary);
+    r.apply([updated.applied[0].undo], { source: 'revert' });
+    const back = r.snapshot().worldEvents[0];
+    assert.equal(back.text, '各地炼药师收到邀请函');
+    assert.equal(back.weight, 'minor');
+    assert.equal(back.endDay, null, '没带时限的事件撤销后仍是无限期');
+    assert.equal(r.apply([{ op: 'updateEvent', id }]).rejected[0].reason, 'event_nothing_to_update');
+    assert.equal(r.apply([{ op: 'updateEvent', id: 'e999', text: 'x' }]).rejected[0].reason, 'event_not_found');
+    assert.equal(r.apply([{ op: 'updateEvent', id, weight: 'secret' }]).rejected[0].reason, 'bad_weight');
+}
+
+// —— A4 重复登记防线：同标题 / 近似标题（几天内相似度过线）/ 同文，已了结的不参与 ——
+{
+    const r = createWorldRuntime();
+    r.apply([{ op: 'addEvent', scope: 'near', title: '城东连环失窃', text: '三家铺子夜里失窃', day: 5 }]);
+    assert.equal(r.apply([{ op: 'addEvent', scope: 'near', title: '城东连环失窃', text: '换了说法', day: 6 }]).rejected[0].reason, 'duplicate_title');
+    assert.equal(r.apply([{ op: 'addEvent', scope: 'near', title: '城东连环失窃案', text: '又换了说法', day: 6 }]).rejected[0].reason, 'duplicate_similar');
+    assert.equal(r.apply([{ op: 'addEvent', scope: 'near', title: '完全不同的事', text: '三家铺子夜里失窃', day: 6 }]).rejected[0].reason, 'duplicate_text');
+    const later = r.apply([{ op: 'addEvent', scope: 'near', title: '城东连环失窃案', text: '巡卫破了案', day: 9 }]);
+    assert.equal(later.applied.length, 1, '过了相似窗口的相似标题放行');
+    const r2 = createWorldRuntime();
+    r2.apply([{ op: 'addEvent', scope: 'near', title: '旧闻', text: '旧闻内容' }]);
+    r2.apply([{ op: 'resolveEvent', id: r2.snapshot().nearEvents[0].id }]);
+    assert.equal(r2.apply([{ op: 'addEvent', scope: 'near', title: '旧闻', text: '旧闻内容' }]).applied.length, 1, '已了结事件不再参与去重');
+}
+
+// —— A6 跳跃空窗审计：一次跨太多天又没补动向事件就提醒，补了不提醒 ——
+{
+    const gapped = createWorldRuntime();
+    const result = gapped.apply([{ op: 'advance', days: 10 }]);
+    assert.deepEqual(result.jumpGap, { from: 1, to: 11 });
+    assert.ok(result.warnings.some(item => item.includes('原地等你')), JSON.stringify(result.warnings));
+    const covered = createWorldRuntime();
+    const ok = covered.apply([{ op: 'advance', days: 8 }, { op: 'addEvent', scope: 'near', title: '闭关期间动向', text: '萧家护卫队巡城两次', day: 4 }]);
+    assert.equal(ok.jumpGap, null);
+    assert.equal(ok.warnings.length, 0);
+    const small = createWorldRuntime();
+    assert.equal(small.apply([{ op: 'advance', days: 3 }]).jumpGap, null, '小步推进不提醒');
+}
+
+// —— 新字段随存档往返：participants/cause/resolvedNote 恢复不丢，schemaVersion 升到 2 ——
+{
+    const r = createWorldRuntime();
+    r.restore({ schemaVersion: 1, clock: { day: 3, minute: 0 }, nearEvents: [{ id: 'e1', text: '正文', title: '旧档事件', participants: ['萧炎', '云韵', '药老', '第四个名字'], cause: 'e9', resolvedNote: '旧结论' }] });
+    const event = r.snapshot().nearEvents[0];
+    assert.deepEqual(event.participants, ['萧炎', '云韵', '药老'], '点名限量 3 个');
+    assert.equal(event.cause, 'e9');
+    assert.equal(event.resolvedNote, '旧结论');
+    assert.equal(r.snapshot().schemaVersion, 2);
 }
 
 console.log('world runtime tests passed');

@@ -265,6 +265,10 @@ const sandbox = buildSandboxPanel({
 assert.equal(sandbox.rows.find(row => row.label === '本局口径').value, '开放世界');
 assert.match(sandbox.rows.find(row => row.label === '口径切换').value, /最近 主线 → 开放世界/);
 assert.equal(buildSandboxPanel({ read: { status: 'empty' } }).rows.length, 0);
+// 开关关＝功能不存在：面板（图标已隐藏，这是兜底）明说主线口径，不再拿“还没记录”装样子。
+const sandboxOff = buildSandboxPanel({ enabled: false, read: undefined });
+assert.match(sandboxOff.summary, /已关闭/);
+assert.match(sandboxOff.summary, /主线/);
 
 // —— 主角记忆：两层计数 + 关键排前 + 引文与关联 ——
 const memory = buildMemoryPanel({
@@ -415,6 +419,7 @@ const markView = buildOverviewPanel({
             { id: 'impact', title: '世界影响', configuration: '已开启', state: 'idle', label: '暂无记录', enabled: true },
         ],
     },
+    mode: 'advanced',
     calls: [
         { label: '事实检索', ok: true, at: markNow },
         { label: '场记挑选', ok: true, at: markNow },
@@ -425,13 +430,50 @@ const markView = buildOverviewPanel({
     active: [],
 });
 const markRows = new Map(markView.rows.map(row => [row.label, row]));
-assert.deepEqual(markRows.get('原著设定').marks.map(mark => mark.status), ['ok'], '原著设定行挂真实选条标签「事实检索」，选条调用过就不再是「无」');
+assert.deepEqual(markRows.get('原著设定').marks.map(mark => mark.status), ['ok', 'none'], '原著设定行挂「事实检索＋正文核验」两渠道：选条调过打勾，核验没调过标「无」');
+assert.deepEqual(markRows.get('原著设定').marks.map(mark => mark.short), ['选条', '核验'], '原著行短名＝选条/核验（核验是生成后事实审计的第二路调用）');
 assert.deepEqual(markRows.get('世界影响').marks.map(mark => mark.status), ['ok', 'failed'], '世界影响行挂「场记挑选＋影响决定」两个渠道');
 assert.match(markRows.get('世界影响').marks[1].detail, /等待超时/);
 // 行尾多记号并排时用短名对齐（记忆＝召回/决定，影响＝挑选/决定），全名保留在悬停标题里。
 assert.deepEqual(markRows.get('世界影响').marks.map(mark => mark.short), ['挑选', '决定'], '影响行短名＝挑选/决定');
 const memRow = markView.rows.find(row => row.label === '记忆');
 if (memRow) assert.deepEqual(memRow.marks.map(mark => mark.short), ['召回', '决定'], '记忆行短名＝召回/决定');
+
+// —— 完整版（非进阶）不挂进阶专属渠道：正文核验运行时已关，核验记号不再永远「无」地占位 ——
+const fullFactsView = buildOverviewPanel({
+    dashboard: {
+        enabled: true, taskLabel: 'x',
+        modules: [{ id: 'facts', title: '原著设定', configuration: '已开启', state: 'idle', label: '暂无记录', enabled: true }],
+    },
+    calls: [{ label: '事实检索', ok: true, at: markNow }],
+    active: [], mode: 'full',
+});
+assert.deepEqual(fullFactsView.rows[0].marks.map(mark => mark.short), ['选条'], '完整版原著行只挂选条：正文核验是进阶版专属渠道');
+
+// —— 剧情账本的「剧情决定」标记挂在 plot 行（回归：MODULE_CHANNELS 曾漏 plot，跑了也显示「无」） ——
+const plotMarkView = buildOverviewPanel({
+    dashboard: {
+        enabled: true, taskLabel: 'x',
+        modules: [
+            { id: 'plot', title: '剧情账本', configuration: '已开启', state: 'idle', label: '暂无记录', enabled: true },
+        ],
+    },
+    calls: [{ label: '剧情决定', ok: true, at: markNow }],
+    active: [], mode: 'advanced',
+});
+assert.deepEqual(plotMarkView.rows[0].marks.map(mark => mark.short), ['决定'], '剧情账本行挂「剧情决定」渠道');
+assert.equal(plotMarkView.rows[0].marks[0].status, 'ok', '剧情决定跑过就打勾，不再永远「无」');
+const fullPlotView = buildOverviewPanel({
+    dashboard: {
+        enabled: true, taskLabel: 'x',
+        modules: [
+            { id: 'plot', title: '剧情账本', configuration: '已开启', state: 'idle', label: '暂无记录', enabled: true },
+        ],
+    },
+    calls: [{ label: '剧情决定', ok: true, at: markNow }],
+    active: [], mode: 'full',
+});
+assert.deepEqual(fullPlotView.rows[0].marks, [], '完整版下剧情决定渠道不挂标记（模块行本身也会被隐藏）');
 
 // —— 简略版总控：固定三行，行上的分路清单跟着各功能开关变，只显示状态不带开关 ——
 const liteNow = new Date().toISOString();
@@ -509,6 +551,135 @@ const idleView = buildOverviewPanel({ dashboard: { enabled: true, taskLabel: '�
 assert.doesNotMatch(idleView.summary, /正在调用/, '没有在途调用时不播报');
 assert.equal(idleView.rows.every(item => !item.marks?.some(mark => mark.status === 'running')), true, '无在途时没有转圈标记');
 assert.equal(idleView.rows.every(item => !Array.isArray(item.marks) || item.marks.every(mark => mark.status === 'none')), true, '没有任何调用时全部标「无」');
+
+// —— 总控渠道标记的重roll 箭头投影：箭头挂在各自渠道上，开关/版本门控，busy 看标记 running 态 ——
+{
+    const rerollModules = worldEnabled => ([
+        { id: 'world', title: '世界运转', configuration: '已开启', enabled: worldEnabled, state: 'idle', label: '暂无记录' },
+        { id: 'facts', title: '原著设定', configuration: '已开启', enabled: true, state: 'idle', label: '暂无记录' },
+        { id: 'plot', title: '剧情账本', configuration: '已开启', enabled: true, state: 'idle', label: '暂无记录' },
+        { id: 'action', title: '行动结算', configuration: '已开启', enabled: true, state: 'idle', label: '暂无记录' },
+        { id: 'memory', title: '记忆', configuration: '已开启', enabled: true, state: 'idle', label: '暂无记录' },
+        { id: 'impact', title: '世界影响', configuration: '已开启', enabled: true, state: 'idle', label: '暂无记录' },
+    ]);
+    const rowOf = (view, label) => view.rows.find(item => item.label === label);
+    const fullReroll = buildOverviewPanel({ dashboard: { enabled: true, taskLabel: 'x', modules: rerollModules(true) }, calls: [], active: [], mode: 'full' });
+    assert.equal(fullReroll.apiMode, 'full', '总控投影带回调用版本（渲染层打徽章用）');
+    assert.deepEqual(rowOf(fullReroll, '世界运转').marks[0].reroll, { id: 'world', hint: '重roll 决定', busy: false }, '世界行「决定」标记上挂重roll 箭头');
+    assert.deepEqual(rowOf(fullReroll, '行动结算').marks[0].reroll, { id: 'action', hint: '重roll 判定（预览，不注入）', busy: false }, '行动结算行箭头＝预览判定');
+    const fullMemoryMarks = rowOf(fullReroll, '记忆').marks;
+    assert.deepEqual(fullMemoryMarks.map(mark => mark.reroll?.id ?? null), ['recall', 'memory'], '记忆行两路请求各挂一枚箭头：召回/决定各管各的');
+    const fullImpactMarks = rowOf(fullReroll, '世界影响').marks;
+    assert.deepEqual(fullImpactMarks.map(mark => mark.reroll?.id ?? null), ['impactpick', 'impact'], '影响行两路请求各挂一枚箭头：挑选/影响决定各管各的');
+    assert.equal(rowOf(fullReroll, '原著设定').marks.length, 1, '完整版原著行只剩选条：核验渠道不占位');
+    assert.equal(rowOf(fullReroll, '原著设定').marks[0].label, '事实检索');
+    assert.equal(rowOf(fullReroll, '原著设定').marks[0].reroll?.id, 'factsselect', '选条路自己挂箭头：点了就是重挑一遍原著设定');
+    assert.deepEqual(rowOf(fullReroll, '剧情账本').marks, [], '完整版剧情行不挂渠道（模块行本身也会被隐藏）');
+    const advReroll = buildOverviewPanel({ dashboard: { enabled: true, taskLabel: 'x', modules: rerollModules(true) }, calls: [], active: [], mode: 'advanced' });
+    assert.equal(advReroll.apiMode, 'advanced');
+    const advFactsMarks = rowOf(advReroll, '原著设定').marks;
+    assert.deepEqual(advFactsMarks.map(mark => mark.reroll?.id ?? null), ['factsselect', 'facts'], '进阶版原著行两路各挂箭头：选条/核验');
+    assert.equal(rowOf(advReroll, '剧情账本').marks[0].reroll?.id, 'plot', '进阶版剧情行有箭头');
+    const busyReroll = buildOverviewPanel({ dashboard: { enabled: true, taskLabel: 'x', modules: rerollModules(true) }, calls: [], active: ['世界决定'], mode: 'full' });
+    assert.equal(rowOf(busyReroll, '世界运转').marks[0].status, 'running');
+    assert.deepEqual(rowOf(busyReroll, '世界运转').marks[0].reroll, { id: 'world', hint: '重roll 决定', busy: true }, '标记在途 → 该渠道箭头禁用自转');
+    assert.deepEqual(rowOf(busyReroll, '行动结算').marks[0].reroll.busy, false, '别的路在途不影响本行');
+    const offReroll = buildOverviewPanel({ dashboard: { enabled: true, taskLabel: 'x', modules: rerollModules(false) }, calls: [], active: [], mode: 'full' });
+    assert.deepEqual(rowOf(offReroll, '世界运转').marks, [], '已关闭的模块没有可重跑的调用，标记与箭头一起消失');
+}
+// —— 简略版三行的重roll 箭头：该路活着才给，挂在标记上 ——
+{
+    const liteAlive = buildOverviewPanel({
+        mode: 'lite',
+        dashboard: { enabled: true, taskLabel: 'x', modules: [{ id: 'action', title: '行动结算', configuration: '已开启', enabled: true, state: 'idle', label: '暂无记录' }] },
+        calls: [], active: [], litePickParts: ['原著'], liteSettleParts: ['人物'],
+    });
+    assert.equal(liteAlive.apiMode, 'lite');
+    assert.deepEqual(liteAlive.rows.map(row => row.marks[0]?.short), ['挑选', '判定', '结算'], '简略版芯片用两字短名，等宽才对得齐');
+    assert.deepEqual(liteAlive.rows[0].marks[0].reroll, { id: 'litepick', hint: '重roll 挑选', busy: false }, '素材总挑选活着 → 标记挂箭头');
+    assert.deepEqual(liteAlive.rows[1].marks[0].reroll, { id: 'action', hint: '重roll 判定（预览，不注入）', busy: false }, '简略版行动结算行箭头同款预览');
+    assert.deepEqual(liteAlive.rows[2].marks[0].reroll, { id: 'litesettle', hint: '重roll 结算', busy: false }, '总结算活着 → 标记挂箭头');
+    const liteDead = buildOverviewPanel({
+        mode: 'lite',
+        dashboard: { enabled: true, taskLabel: 'x', modules: [{ id: 'action', title: '行动结算', configuration: '已关闭', enabled: false, state: 'idle', label: '暂无记录' }] },
+        calls: [], active: [], litePickParts: [], liteSettleParts: [],
+    });
+    assert.deepEqual(liteDead.rows.map(row => row.marks.length), [0, 0, 0], '全关的三行没有标记与箭头');
+}
+
+// —— 总控首行「上次失败」：置顶一眼看到，行内只留一句短话（哪路 · 状态码 · 时间），长文本收进弹卡 ——
+{
+    const failView = buildOverviewPanel({
+        dashboard: { enabled: true, taskLabel: 'x', modules: [{ id: 'world', title: '世界运转', configuration: '已开启', enabled: true, state: 'idle', label: '暂无记录' }] },
+        calls: [
+            { at: '2026-11-13T10:00:00', label: '世界决定', ok: true },
+            { at: '2026-11-13T10:01:00', label: '记忆召回', ok: false, status: 400, error: '模型接口返回 HTTP 400（POST https://api.example/v1/chat/completions）：Invalid model id', model: 'm1', body: 'Invalid model id' },
+        ],
+        active: [],
+    });
+    assert.equal(failView.rows[0].label, '上次失败', '失败行置顶');
+    assert.equal(failView.rows[0].tone, 'warn', 'warn 色醒目');
+    assert.match(failView.rows[0].value, /^记忆召回 · HTTP 400（/, '行内只留一句：哪路 · 状态码 · 时间，不长文');
+    assert.ok(!failView.rows[0].value.includes('（POST'), '长文本（端点/原因）不进行内');
+    assert.match(failView.rows[0].hint, /记忆召回：模型接口返回 HTTP 400/, '悬停提示带完整错误');
+    assert.match(failView.rows[0].hint, /响应体：Invalid model id/, '悬停提示带响应体片段');
+    assert.equal(failView.rows[1].label, '世界运转', '模块行跟在失败行后面');
+    assert.equal(failView.rows[0].marks, undefined, '失败行不占标记槽位：值列占满整行，不长文换行');
+    // 行带 ref：渲染层据此把整行变成可点（手机没有悬停，点击弹详情小卡）
+    assert.equal(failView.rows[0].ref.kind, 'callfail');
+    assert.equal(failView.rows[0].ref.label, '记忆召回');
+    assert.equal(failView.rows[0].ref.status, 400, '状态码进 ref 给弹卡');
+    assert.equal(failView.rows[0].ref.body, 'Invalid model id');
+    assert.equal(failView.rows[0].ref.error, '模型接口返回 HTTP 400（POST https://api.example/v1/chat/completions）：Invalid model id');
+    assert.equal(failView.rows[0].ref.endpoint, '', '夹具没带端点，照实为空');
+    // 失败渠道标记同样带详情字段：点击可弹该路的详情小卡
+    const failedMarkView = buildOverviewPanel({
+        dashboard: { enabled: true, taskLabel: 'x', modules: [{ id: 'world', title: '世界运转', configuration: '已开启', enabled: true, state: 'idle', label: '暂无记录' }] },
+        calls: [{ at: '2026-11-13T10:01:00', label: '世界决定', ok: false, error: 'HTTP 400：boom', model: 'm1', endpoint: 'https://x/v1/chat/completions', body: 'boom' }],
+        active: [], mode: 'full',
+    });
+    const failedMark = failedMarkView.rows.find(row => row.label === '世界运转').marks[0];
+    assert.equal(failedMark.at, '2026-11-13T10:01:00');
+    assert.equal(failedMark.error, 'HTTP 400：boom');
+    assert.equal(failedMark.model, 'm1');
+    assert.equal(failedMark.endpoint, 'https://x/v1/chat/completions');
+    assert.equal(failedMark.body, 'boom');
+    // 简略版同样置顶
+    const liteFail = buildOverviewPanel({
+        mode: 'lite',
+        dashboard: { enabled: true, taskLabel: 'x', modules: [] },
+        calls: [{ at: '2026-11-13T10:01:00', label: '总结算', ok: false, error: '输出无法解析' }],
+        active: [],
+    });
+    assert.equal(liteFail.rows[0].label, '上次失败', '简略版失败行也置顶');
+    assert.equal(liteFail.rows[1].label, '素材总挑选', '简略版三行跟在后面');
+    const cleanView = buildOverviewPanel({ dashboard: { enabled: true, taskLabel: 'x', modules: [] }, calls: [{ at: 'x', label: 'a', ok: true }] });
+    assert.deepEqual(cleanView.rows, [], '没有失败就不加行');
+    // 失败之后同一路重roll成功：行降为 muted 并缀「· 已恢复」，不再挂着警报
+    const recoveredView = buildOverviewPanel({
+        dashboard: { enabled: true, taskLabel: 'x', modules: [] },
+        calls: [
+            { at: '2026-11-13T10:01:00', label: '素材总挑选', ok: false, status: 400, error: 'HTTP 400：模型名无效' },
+            { at: '2026-11-13T10:03:00', label: '素材总挑选', ok: true },
+        ],
+        active: [], mode: 'lite',
+    });
+    assert.equal(recoveredView.rows[0].label, '上次失败', '恢复后失败行仍在（留档可查）');
+    assert.equal(recoveredView.rows[0].tone, 'muted', '已恢复的失败行降为 muted 灰');
+    assert.match(recoveredView.rows[0].value, /· 已恢复$/, '行内缀「· 已恢复」');
+    assert.equal(recoveredView.rows[0].ref.recovered, true, 'ref 带恢复标记给弹卡');
+    // 别的路恢复不算数：还是 warn，不缀已恢复
+    const otherRecovered = buildOverviewPanel({
+        dashboard: { enabled: true, taskLabel: 'x', modules: [] },
+        calls: [
+            { at: '2026-11-13T10:01:00', label: '素材总挑选', ok: false, status: 400, error: 'boom' },
+            { at: '2026-11-13T10:03:00', label: '总结算', ok: true },
+        ],
+        active: [], mode: 'lite',
+    });
+    assert.equal(otherRecovered.rows[0].tone, 'warn', '同一路没成功就不算恢复');
+    assert.ok(!otherRecovered.rows[0].value.includes('已恢复'), '没恢复不缀已恢复');
+}
 
 // —— 主窗预览 / 副窗全量：items 只给几条，all 收全量，total 报总数 ——
 const many = Array.from({ length: 40 }, (_, i) => ({ id: `e${i}`, text: `事件${i}`, day: 1, done: false, weight: 'minor' }));

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { NPC_RECORD_PROMPT, NPC_RECORD_JSON_SCHEMA, NPC_EXTRACT_PROMPT, ledgerLines, buildNpcRecordUser, buildNpcExtractUser, playerContextLine, parseNpcRecordReply } from './npc-recorder.js';
+import { NPC_RECORD_PROMPT, NPC_RECORD_JSON_SCHEMA, NPC_EXTRACT_PROMPT, ledgerLines, buildNpcRecordUser, buildNpcExtractUser, playerContextLine, parseNpcRecordReply, NPC_RECORD_RETRY_SYSTEM_NOTE, buildRecordRetryUser } from './npc-recorder.js';
 import { createNpcLedger } from './npc-ledger.js';
 
 // 1) 记录员规则里必须写清格式、好感和“别写没出现的字段”。
@@ -161,6 +161,27 @@ import { createNpcLedger } from './npc-ledger.js';
     assert.ok(NPC_RECORD_PROMPT.includes('污染人物簿'), '要说清写进去的代价');
     assert.ok(NPC_RECORD_PROMPT.includes('过了门槛'), '新人物建档必须以过门槛为前提');
     assert.ok(!NPC_RECORD_PROMPT.includes('路人龙套为 false'), '不许再暗示路人龙套也要记');
+}
+
+// 新键：依据（大变动审计）与情绪（短期快变量）要写进提示词和 schema。
+{
+    assert.ok(NPC_RECORD_PROMPT.includes('依据'), '大变动要带依据');
+    assert.ok(NPC_RECORD_PROMPT.includes('三天后自动消散'), '情绪是短期变量要有消散说明');
+    assert.equal(NPC_RECORD_JSON_SCHEMA.properties.人物.items.properties.依据.type, 'string');
+    assert.equal(NPC_RECORD_JSON_SCHEMA.properties.人物.items.properties.情绪.type, 'string');
+}
+
+// 重试构造器：材料 + 坏输出 + 拒绝原因；坏输出截断，材料超限也截断。
+{
+    assert.ok(NPC_RECORD_RETRY_SYSTEM_NOTE.includes('JSON'), '重试附言要强调只输出 JSON');
+    const retry = buildRecordRetryUser({ user: '原始材料', raw: '模型说的废话', reason: 'JSON 解析失败：意外标记' });
+    assert.ok(retry.includes('原始材料'));
+    assert.ok(retry.includes('模型说的废话'));
+    assert.ok(retry.includes('JSON 解析失败：意外标记'));
+    const clipped = buildRecordRetryUser({ user: 'u', raw: 'x'.repeat(2000), reason: '' });
+    assert.ok(clipped.length < 2000, '坏输出只带 600 字上下，不撑爆上下文');
+    const capped = buildRecordRetryUser({ user: 'u'.repeat(8000), raw: 'bad', reason: 'r', maxChars: 3000 });
+    assert.ok(capped.length <= 3100, '材料超限要截断并注明');
 }
 
 console.log('npc-recorder 测试通过');

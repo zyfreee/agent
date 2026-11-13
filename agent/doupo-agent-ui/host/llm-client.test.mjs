@@ -286,6 +286,48 @@ assert.equal(leftoverCalls.length, 0, '劫持路径一次都不该发起');
     assert.equal(probed.callLog().length, 0, '清零后日志为空');
 }
 
+// —— 失败详情：HTTP 错误读响应体提真实原因，密钥打码，状态/端点/响应片段进体检条目 ——
+{
+    const detail = createLlmClient({
+        getSettings: () => ({ llm: { mode: 'custom', baseUrl: 'https://api.example/v1', apiKey: 'sk-secret', model: 'm1' } }),
+        fetchImpl: async () => ({
+            ok: false, status: 400,
+            text: async () => JSON.stringify({ error: { message: 'Invalid model id: gpt-x, key sk-secret leaked back' } }),
+        }),
+    });
+    await assert.rejects(detail.complete({ system: 's', user: 'u', label: '选条' }), /HTTP 400.*Invalid model id/, '错误文本带状态码与服务商真实原因');
+    const entry = detail.callLog().at(-1);
+    assert.equal(entry.status, 400, '结构化状态码进条目');
+    assert.equal(entry.endpoint, 'https://api.example/v1/chat/completions', '端点进条目');
+    assert.match(entry.body, /Invalid model id/);
+    assert.ok(!entry.body.includes('sk-secret'), '响应体里的密钥打码');
+    assert.ok(!JSON.stringify(detail.callLog()).includes('sk-secret'), '日志 JSON 绝不带明文密钥');
+    assert.equal(entry.error.includes('***'), true, '错误文本里密钥同样打码');
+}
+{
+    const plain = createLlmClient({
+        getSettings: () => ({ llm: { mode: 'custom', baseUrl: 'https://api.example/v1' } }),
+        fetchImpl: async () => ({ ok: false, status: 400, text: async () => 'bad gateway plain text' }),
+    });
+    await assert.rejects(
+        plain.complete({ system: 's', user: 'u' }),
+        /HTTP 400（POST https:\/\/api\.example\/v1\/chat\/completions）：bad gateway plain text/,
+        '非 JSON 响应体用原文片段当原因',
+    );
+}
+{
+    // 酒馆路径：ST 只抛裸错误，扩展拿不到状态码与响应体；条目至少标出走的哪条连接
+    const tavern = createLlmClient({
+        getSettings: () => ({ llm: { mode: 'tavern' } }),
+        getContext: () => ({ generateQuietPrompt: async () => { throw new Error('Bad Request'); } }),
+    });
+    await assert.rejects(tavern.complete({ system: 's', user: 'u', label: '世界决定' }), /Bad Request/, '酒馆路径错误文本原样上抛');
+    const entry = tavern.callLog().at(-1);
+    assert.equal(entry.endpoint, '酒馆连接', '酒馆路径条目标出走的连接');
+    assert.equal(entry.status, null, '酒馆路径拿不到状态码');
+    assert.equal(entry.body, '', '酒馆路径没有响应体详情');
+}
+
 // —— 在途跟踪：调用中 activeLabels 必须有它，收尾（成功/失败都算）注销；onActivity 播报起飞/落地 ——
 {
     let release;
@@ -383,7 +425,7 @@ assert.equal(leftoverCalls.length, 0, '劫持路径一次都不该发起');
         client.complete({ system: 's', user: 'u' }).then(() => 'unexpected success', error => error.message),
         new Promise(resolve => setTimeout(() => resolve('body read never timed out'), 1500)),
     ]);
-    assert.match(result, /超过 1000ms/);
+    assert.match(result, /超过 1 秒/);
     assert.equal(fetchSignal.aborted, true);
     const controller = new AbortController();
     const cancelled = client.complete({ system: 's', user: 'u', signal: controller.signal });
@@ -391,6 +433,19 @@ assert.equal(leftoverCalls.length, 0, '劫持路径一次都不该发起');
     controller.abort();
     const cancellation = await Promise.race([cancelled.then(() => 'unexpected success', error => error.message), new Promise(resolve => setTimeout(() => resolve('body read ignored abort'), 100))]);
     assert.match(cancellation, /取消/);
+}
+
+// 「秒」版超时设置优先于老的毫秒字段：timeoutSec: 1 就该 1 秒掐断，不该被 timeoutMs 拖长。
+{
+    const client = createLlmClient({
+        getSettings: () => ({ llm: { mode: 'custom', baseUrl: 'https://slow.example/v1', model: 'slow', timeoutSec: 1, timeoutMs: 999999 } }),
+        fetchImpl: async () => ({ ok: true, json: () => new Promise(() => {}) }),
+    });
+    const result = await Promise.race([
+        client.complete({ system: 's', user: 'u' }).then(() => 'unexpected success', error => error.message),
+        new Promise(resolve => setTimeout(() => resolve('body read never timed out'), 1600)),
+    ]);
+    assert.match(result, /超过 1 秒/);
 }
 
 const noEndpoint = createLlmClient({
@@ -714,5 +769,12 @@ assert.equal(passthroughCalls[0].url, 'https://alt.example/v1/chat/completions',
 assert.equal(passthroughCalls[0].body.model, 'alt-model');
 await passthrough.interpret({ input: '我看看四周', state: {}, allowedFields: [] });
 assert.equal(passthroughCalls.length, 1, '不传 overrides 不发起自定义请求');
+
+// 单次 connection: 'tavern' 指定照常生效（方案层是否走酒馆由 presetToOverrides 决定，见 api-presets 测试）
+const defaultClient = createLlmClient({
+    getSettings: () => ({ llm: { useSillyTavernConnection: true, timeoutMs: 5000 } }),
+    getContext: () => ({ generateQuietPrompt: async () => 'from-tavern-default' }),
+});
+assert.equal(await defaultClient.complete({ system: 's', user: 'u', overrides: { connection: 'tavern' } }), 'from-tavern-default');
 
 console.log('llm client tests passed');

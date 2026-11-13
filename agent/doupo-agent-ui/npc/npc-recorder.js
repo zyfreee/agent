@@ -39,6 +39,8 @@ ${fieldMenu()}
 姓名：必填，写正文里出现的那个称呼；别名/称号另起键写。
 好感：只写“本次增减”，整数，正数=变好，负数=变坏；单次最多 ±10，超过会被脚本压回 ±10。不要写累计值，累计由脚本算。
 好感理由：不超过 ${FAVOR_REASON_MAX} 个字，写清“因为什么”，例：护住族人、当众打脸、救命之恩。
+依据：好感单次超过 ±5、或写了「经历」时必写一句（不超过 80 字）：正文里哪句话支撑了这个变化。普通小改动不用写。
+情绪：这个人这一楼冒出来的短期情绪（感激、恼怒、警惕、愧疚、畏惧、心疼……一个词），可选；三天后自动消散。长期态度走「态度」，别写进情绪。
 流水：一句话记“他做了什么/发生了什么”，会原样追加到流水里，不要覆盖旧记录。
 经历：只记“这个人从此不一样了”的重大转变——心智改变、态度反转、立场易帜、身份更替、结下死契或深仇这类。一件一行，写成完整的一句话；普通小事写“流水”，不要写进经历。
 在场：true 或 false；同时尽量给位置和正在做什么。
@@ -82,6 +84,8 @@ export const NPC_RECORD_JSON_SCHEMA = Object.freeze({
                     姓名: { type: 'string' },
                     好感: { type: 'number' },
                     好感理由: { type: 'string' },
+                    依据: { type: 'string' },
+                    情绪: { type: 'string' },
                     在场: { type: 'boolean' },
                     重要: { type: 'boolean' },
                     流水: { type: 'string' },
@@ -212,6 +216,21 @@ function sliceJson(value) {
     const end = value.lastIndexOf(close);
     if (end <= start) return '';
     return value.slice(start, end + 1);
+}
+
+/** 重试附言：解析失败退回模型重问时，追加在 system 末尾的一句话。 */
+export const NPC_RECORD_RETRY_SYSTEM_NOTE = '\n\n【补记】上一次的输出无法解析，被退回重做。这次只输出一个合法 JSON，形状照【输出格式】，不要解释、不要 Markdown 代码块、不要前后缀。';
+
+/**
+ * 拼重试材料：原材料 + 上次的坏输出 + 拒绝原因，让模型只改格式不改内容。
+ * 坏输出最多带 600 字——够它对出自己写了什么，不至于把上下文撑爆。
+ */
+export function buildRecordRetryUser({ user = '', raw = '', reason = '', maxChars = 7000 } = {}) {
+    const body = String(user);
+    const clipped = clampText(raw, 600);
+    const note = `【上次输出（无法解析）】\n${clipped}\n【问题】${reason || 'JSON 不合法'}\n请重新输出这一楼的人物变化：只输出 JSON，其他一个字都不要。`;
+    const merged = `${body}\n\n${note}`;
+    return merged.length > maxChars ? `${merged.slice(0, maxChars)}\n（材料过长被截断；以上一次输出错误为准，只输出合法 JSON。）` : merged;
 }
 
 /** 解析记录员回答：认不出就直说认不出，不猜、不修补成半截数据。 */

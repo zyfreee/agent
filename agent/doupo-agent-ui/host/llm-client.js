@@ -39,6 +39,43 @@ function needText(value, name) {
     return value.trim();
 }
 
+/* —— 失败详情：服务商的 400/429/500 几乎都把真实原因写在响应体里（模型名错/额度/内容策略），
+ *  只抛「HTTP 400」等于瞎猜。读 body、提原因、密钥打码，详情跟着错误文本走进所有展示面。 —— */
+const HTTP_BODY_SNIPPET_MAX = 400;
+/** 密钥打码：服务商若在响应体里回显鉴权材料，统一替换成 ***（日志钉死不得出现明文密钥）。 */
+function maskSecret(text, secret) {
+    const raw = String(text ?? '');
+    const key = typeof secret === 'string' && secret.trim() ? secret.trim() : '';
+    if (!key || !raw.includes(key)) return raw;
+    return raw.split(key).join('***');
+}
+/** 从错误响应体里提真实原因：优先 JSON 的 error.message/code/type、detail 字段，取不到用原文片段。 */
+function extractHttpReason(raw, apiKey) {
+    const text = maskSecret(String(raw ?? ''), apiKey);
+    const probe = text.trim().slice(0, 2000);
+    if (!probe) return '';
+    let reason = '';
+    try {
+        const parsed = JSON.parse(probe);
+        const inner = parsed?.error ?? parsed?.detail ?? parsed;
+        reason = typeof inner === 'string' ? inner
+            : String(inner?.message || inner?.code || inner?.type || (typeof parsed?.detail === 'string' ? parsed.detail : ''));
+    } catch { /* 非 JSON 响应体：直接用原文片段 */ }
+    return (reason.trim() || probe).slice(0, HTTP_BODY_SNIPPET_MAX);
+}
+/** 自定义接口的非 2xx 响应 → 带齐状态码/端点/响应原因的错误；详情字段挂在 error 上给体检日志取用。 */
+async function httpErrorWithBody(response, url, apiKey) {
+    const status = response?.status ?? '未知';
+    let raw = '';
+    try { raw = String((await response?.text?.()) ?? ''); } catch { /* 响应体读不到就只报状态码 */ }
+    const reason = extractHttpReason(raw, apiKey);
+    const error = new Error(`模型接口返回 HTTP ${status}${url ? `（POST ${url}）` : ''}${reason ? `：${reason}` : ''}`);
+    error.httpStatus = typeof status === 'number' ? status : null;
+    error.httpEndpoint = url ?? '';
+    error.httpBody = reason;
+    return error;
+}
+
 /** Pulls the first JSON object out of a model reply, tolerating fences and chatter. */
 export function extractJson(raw) {
     if (typeof raw !== 'string' || !raw.trim()) throw new Error('模型没有返回内容');
@@ -267,7 +304,7 @@ function withTimeout(promise, timeoutMs, signal, onTimeout) {
     return new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
             signal?.removeEventListener('abort', onAbort);
-            reject(new Error(`模型请求超过 ${timeoutMs}ms 未返回`));
+            reject(new Error(`模型请求超过 ${Math.round(timeoutMs / 1000)} 秒未返回`));
             onTimeout?.();
         }, timeoutMs);
         const onAbort = () => { clearTimeout(timer); signal?.removeEventListener('abort', onAbort); reject(new Error('模型请求已取消')); };
@@ -501,6 +538,7 @@ export function createLlmClient({ getSettings, getContext, fetchImpl, capture = 
             throw error;
         }
         const llm = connection.llm ?? {};
+        // 全局统管接管时，单次调用的连接与参数选择一并让位。
         if (connection.governed) overrides = {};
         // 单次覆盖：世界决定等调用可以在设置里指定自己的模型与温度（酒馆连接模式下模型沿用当前选择）。
         const temperature = Number.isFinite(Number(overrides.temperature))
@@ -510,7 +548,11 @@ export function createLlmClient({ getSettings, getContext, fetchImpl, capture = 
             ? Math.max(64, Math.floor(Number(overrides.maxTokens)))
             : Number.isFinite(Number(llm.maxTokens)) ? Math.max(64, Math.floor(Number(llm.maxTokens))) : 2048;
         const model = typeof overrides.model === 'string' && overrides.model.trim() ? overrides.model.trim() : llm.model;
-        const timeoutMs = Number.isFinite(Number(llm.timeoutMs)) ? Math.min(600000, Math.max(1000, Math.floor(Number(llm.timeoutMs)))) : 60000;
+        // 单次等待上限：优先读「秒」版设置（llm.timeoutSec，1~600 秒），老玩家填过的毫秒版（llm.timeoutMs）继续认，都没有默认 60 秒。
+        const timeoutSec = Number(llm.timeoutSec);
+        const timeoutMs = Number.isFinite(timeoutSec) && timeoutSec >= 1
+            ? Math.min(600, Math.floor(timeoutSec)) * 1000
+            : Number.isFinite(Number(llm.timeoutMs)) ? Math.min(600000, Math.max(1000, Math.floor(Number(llm.timeoutMs)))) : 60000;
         // 采样参数：没填（0/空）就不指定，沿用当前连接自己的设置。
         const topP = Number.isFinite(Number(overrides.topP)) && Number(overrides.topP) > 0 && Number(overrides.topP) <= 1
             ? Number(overrides.topP) : undefined;
@@ -569,7 +611,13 @@ export function createLlmClient({ getSettings, getContext, fetchImpl, capture = 
             });
             tavernSamplingQueues.set(shared, request.catch(() => {}));
             try { return await withTimeout(request, timeoutMs, signal, () => { expired = true; }); }
-            catch (error) { expired = true; throw error; }
+            catch (error) {
+                expired = true;
+                // ST 只抛裸错误（消息常常只有 "Bad Request"，响应体在它自己手里），扩展拿不到更多；
+                // 端点上下文挂在错误上，体检日志至少能定位是哪条连接出的错。
+                error.httpEndpoint = error?.httpEndpoint ?? '酒馆连接';
+                throw error;
+            }
         }
 
         const fetchFn = connection.fetchImpl;
@@ -623,12 +671,20 @@ export function createLlmClient({ getSettings, getContext, fetchImpl, capture = 
                     signal: controller.signal,
                     body: JSON.stringify(body),
                 });
-                if (!response?.ok) throw new Error(`模型接口返回 HTTP ${response?.status ?? '未知'}`);
+                if (!response?.ok) throw await httpErrorWithBody(response, url, apiKey);
                 return response.json();
             })(), timeoutMs, signal, () => controller.abort());
         } catch (error) {
             if (error?.name === 'AbortError') throw new Error('模型请求已取消');
-            throw new Error(`模型接口请求失败：${error?.message ?? error}`);
+            if (error?.httpStatus !== undefined || error?.httpEndpoint) {
+                // 已带齐状态码/端点/响应原因的 HTTP 错误：详情就是从响应里读的，不再包一层。
+                error.httpEndpoint = error.httpEndpoint || url;
+                throw error;
+            }
+            // 网络失败/超时等没有响应体的错误：包一层原因，端点信息照样带上供体检日志定位。
+            const wrapped = new Error(`模型接口请求失败：${error?.message ?? error}`);
+            wrapped.httpEndpoint = url;
+            throw wrapped;
         } finally {
             signal?.removeEventListener('abort', onAbort);
         }
@@ -660,6 +716,17 @@ export function createLlmClient({ getSettings, getContext, fetchImpl, capture = 
             waitMs: Number.isFinite(wait) && wait > 0 ? wait * 1000 : EMPTY_RETRY_DEFAULT_WAIT_MS,
         };
     }
+    /** 失败的体检条目：错误文本上限 600（详情化后 body/端点都进文本），另带结构化的
+     *  状态码/端点/响应片段（没有就空串）；同时在控制台留一份完整详情方便排查。 */
+    function recordFailure({ label, model, ms, error, at }) {
+        const message = String(error?.message ?? error).slice(0, 600);
+        const status = Number.isFinite(error?.httpStatus) ? error.httpStatus : null;
+        const endpoint = typeof error?.httpEndpoint === 'string' && error.httpEndpoint ? error.httpEndpoint : '';
+        const body = typeof error?.httpBody === 'string' && error.httpBody ? error.httpBody : '';
+        recordCall({ at: at ?? new Date().toISOString(), label, ok: false, model, ms, chars: 0, error: message, status, endpoint, body });
+        try { console.warn(`[doupo-agent] 模型调用失败｜${label}｜${message}`, body ? `响应体：${body}` : ''); } catch { /* 控制台不可用忽略 */ }
+        return message;
+    }
     async function complete(args = {}) {
         args = { ...args, owner: capture() };
         const label = typeof args?.label === 'string' && args.label.trim() ? args.label.trim() : '未标注调用';
@@ -683,12 +750,12 @@ export function createLlmClient({ getSettings, getContext, fetchImpl, capture = 
                     lastError = error;
                     const message = String(error?.message ?? error);
                     if (!message.includes('内容为空')) {
-                        recordCall({ at: new Date().toISOString(), label, ok: false, model, ms: Date.now() - startedAt, chars: 0, error: message.slice(0, 200) });
+                        recordFailure({ label, model, ms: Date.now() - startedAt, error });
                         throw error;
                     }
                 }
             }
-            recordCall({ at: new Date().toISOString(), label, ok: false, model, ms: Date.now() - startedAt, chars: 0, error: String(lastError?.message ?? lastError).slice(0, 200) });
+            recordFailure({ label, model, ms: Date.now() - startedAt, error: lastError });
             throw lastError;
         } finally {
             inFlightLabels.delete(label);

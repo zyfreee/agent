@@ -33,11 +33,23 @@ export async function cleanFloorText(message, depth = undefined) {
     }
 }
 
+/** 剥掉楼层里的思维链幻括号：部分卡的正文以 <thinking>…</thinking> 开头，里面
+ *  只是卡的演出脚手架（还常引用玩家输入原文），却按头部截断挤占决定链喂料的
+ *  有限字数预算——实测出现过"模型只看到 thinking 里引用的输入、没看到失败正文"
+ *  的误记账。闭合与未闭合（剥到文末）都处理；大小写不敏感。 */
+export function stripThinkingBlocks(text) {
+    const raw = typeof text === 'string' ? text : '';
+    return raw
+        .replace(/<thinking>[\s\S]*?<\/thinking\s*>/gi, '')
+        .replace(/<thinking>[\s\S]*$/i, '');
+}
+
 /** 批量清洗：entries = [{ role, text, isUser, depth }] → [{ role, text }]，顺序不变。
- *  清洗后变成空的楼层（被"远楼层隐藏"正则整楼清掉的）直接剔除，不留空槽。 */
+ *  先剥思维链幻括号，再套与酒馆主提示词同款的角色卡正则；清洗后变成空的楼层
+ * （被"远楼层隐藏"正则整楼清掉的）直接剔除，不留空槽。 */
 export async function cleanFloorEntries(entries) {
     const list = Array.isArray(entries) ? entries : [];
-    const cleaned = await Promise.all(list.map(entry => cleanFloorText({ mes: entry.text, is_user: entry.isUser === true }, entry.depth)));
+    const cleaned = await Promise.all(list.map(entry => cleanFloorText({ mes: stripThinkingBlocks(entry.text), is_user: entry.isUser === true }, entry.depth)));
     return list.map((entry, index) => ({ role: entry.role, text: cleaned[index] })).filter(floor => floor.text.trim());
 }
 

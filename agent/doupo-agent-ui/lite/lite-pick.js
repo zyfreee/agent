@@ -216,7 +216,8 @@ export function createLitePick({
                 }).filter(Boolean);
             }
             const impactList = enabled.impact ? impactPickLines(impactRecords?.() ?? []) : [];
-            const catalog = enabled.memory ? buildRecallCatalog(memorySnapshot?.() ?? {}, { sceneText: recentText }) : '';
+            // 简略版永远不是进阶版：记忆目录退回旧洪泛序，不走混合分数排序（那是学 GitHub 加的）。
+            const catalog = enabled.memory ? buildRecallCatalog(memorySnapshot?.() ?? {}, { sceneText: recentText, advanced: false }) : '';
             const raw = await complete({
                 label: '素材总挑选',
                 system: buildLitePickPrompt(enabled),

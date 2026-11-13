@@ -10,8 +10,11 @@ import { createImpactRestore } from './impact/impact-injection.js';
 // 归一化行尾：Windows 检出（autocrlf）会把源码变 CRLF，源码文本断言按 LF 写，先统一。
 const source = readFileSync(new URL('./index.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const extract = (start, end) => {
-    const from = source.indexOf(start), to = source.indexOf(end, from);
-    assert.ok(from >= 0 && to > from, `extract ${start}`);
+    const from = source.indexOf(start);
+    assert.ok(from >= 0, `extract ${start}`);
+    if (end === undefined) return source.slice(from); // 缺省切到文件尾
+    const to = source.indexOf(end, from);
+    assert.ok(to > from, `extract ${start}`);
     return source.slice(from, to);
 };
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
@@ -32,7 +35,7 @@ test('OPT-018 consolidation cannot restore facts changed during model wait', asy
 });
 
 test('OPT-022/099 only the current shared worldbook request may submit', async () => {
-    const code = extract('async function syncWorldbookIndex(', '\nfunction renderTurnExtras');
+    const code = extract('async function syncWorldbookIndex(');
     const requests = [], indexed = [], status = { textContent: '' };
     let name = 'A';
     const run = runInNewContext(`${code}; ({syncWorldbookIndex, importWorldbookFromPanel})`, {
@@ -58,12 +61,22 @@ test('OPT-026/087 entry preserves manual and auto volume provenance', () => {
     settings = {}; assert.equal(JSON.stringify(get()), JSON.stringify({ volume: 3, source: 'auto' }));
 });
 
-test('OPT-085 settlement adapter forwards its stage cancellation signal', async () => {
-    const code = extract('    settleAdjudicator: async (', '\n    getWritableFields:');
-    let received;
-    const run = runInNewContext(`({${code}}).settleAdjudicator`, { settleSettings: () => ({ promptFor: () => '', labelFor: () => '' }), agentLlmClient: { adjudicateAction: value => { received = value; } } });
-    const signal = new AbortController().signal;
-    await run({ category: 'general', signal }); assert.equal(received.signal, signal);
+// OPT-085 旧结算适配器（settleAdjudicator 阶段转发 signal）已随旧回合流水线退役：
+// 现役行动结算是生成前一次 complete 调用，由 settleSession 令牌管并发与过期，无阶段信号可转发。
+
+test('OPT-111 decide note rides the user prompt only when the player wrote one', () => {
+    const code = extract('function withPlayerNote(', '\nasync function runMemoryRecall');
+    const run = runInNewContext(`${code}; withPlayerNote`, {});
+    const base = '【人物】…';
+    assert.equal(run(base, ''), base, '留空＝没填，提示词原样');
+    assert.equal(run(base, '   '), base, '纯空白同样原样');
+    const noted = run(base, '让老执事对萧炎起疑');
+    assert.match(noted, /^【人物】…/);
+    assert.match(noted, /【玩家本轮补充指示】让老执事对萧炎起疑/);
+    assert.match(noted, /遵守上面的 JSON 字段/);
+    const long = 'x'.repeat(600);
+    assert.ok(run(base, long).includes('x'.repeat(500)), '超长想法截到 500 字');
+    assert.equal(run(base, null), base, '非字符串按没填处理');
 });
 
 test('OPT-023 settlement clips future sections through the shared volume trimmer', async () => {
@@ -86,11 +99,14 @@ test('OPT-047/048 memory injection records only complete written entries and nev
     let writeOk = true;
     const run = runInNewContext(`${code}; writeMemoryInjectionForPrompt`, {
         memorySettings: () => ({ enabled: true, inject: true, injectBudget: 200, recallEnabled: false, decideEnabled: true, decideAuto: true }),
+        advancedMode: () => true,
         captureAgentContinuation: () => ({ current: () => true }), memoryRecallCacheKey: () => 'current',
         agentMemoryPromptInjection: { inspect: () => ({ status: 'ready' }), clear() {}, write: value => { writes.push(value.text); return { status: writeOk ? 'injected' : 'error', chars: value.text.length }; } },
         agentMemoryRuntime: { snapshot: () => ({ entries }) }, recallHits: () => entries, renderMemoryEntries, renderMemoryEntriesDetail,
         getHostContext: () => ({ chat: [] }), currentSettings: () => ({}), MEMORY_HEADER: 'HEADER', MEMORY_GUIDE: '', injectionSettings: () => ({}),
         cleanFloorText: async message => (typeof message?.mes === 'string' ? message.mes : ''),
+        // 兜底链现在带时间邻近与可选语义检索：切片外依赖桩掉（相似度表恒 null = 纯本地）。
+        memoryVectorSim: async () => null, worldDay: () => 1,
         recordMemoryLastInjection: value => records.push(value), markMemoryLastInjectionCleared() {},
     });
     await run(); assert.equal(records.at(-1).ids.length, 1); assert.ok(writes.at(-1).length <= 200); assert.equal(records.at(-1).ids[0], 'm1');
@@ -124,15 +140,16 @@ test('OPT-051 same-floor rerun replaces the recorded contribution through record
     const chat = [{ is_user: true, mes: '问' }, { mes: '旧回复' }];
     const run = runInNewContext(`${code}; runNpcLedgerRecord`, {
         npcLedgerSettings: () => ({ enabled: true, every: 1, floors: 2, connection: 'custom', prompt: '', overrides: {} }),
+        advancedMode: () => true,
         cleanFloorEntries: async entries => (Array.isArray(entries) ? entries : []).map(({ role, text }) => ({ role, text })),
         npcRecordRunning: false, lastNpcLedgerFloor: floorMarker, lastNpcLedgerReplyIdentity: identityMarker,
         getHostContext: () => ({ chat }), lastReplyIndex: list => list.length - 1, captureAgentContinuation: () => ({ current: () => true }),
         agentLlmClient: { availableFor: () => true, complete: () => pending.promise },
         buildNpcRecordUser: () => 'u', NPC_RECORD_JSON_SCHEMA: {}, npcLedgerBookLines: () => [], npcPlayerContext: () => '', npcLedgerOverrides: () => ({}),
         parseNpcRecordReply: () => ({ status: 'ok', patches: [{ 姓名: 'A', 好感: 1 }] }),
-        agentNpcLedger: { list: () => [], recordReply: (payload, context) => { replies.push({ payload, context }); return { status: 'applied', applied: [{ name: 'A' }], created: [], changed: 1, skipped: [], ignored: [], floor: context.floor, replaced: true }; } },
+        agentNpcLedger: { list: () => [], get: () => ({ exp: [] }), recordReply: (payload, context) => { replies.push({ payload, context }); return { status: 'applied', applied: [{ name: 'A' }], created: [], changed: 1, skipped: [], ignored: [], floor: context.floor, replaced: true }; } },
         persistNpcLedger: () => saves.push(1), refreshNpcLedgerPage() {}, setNpcLedgerStatus: value => statuses.push(value), worldDay: () => 1,
-        runNpcLedgerExtract() {}, setTimeout,
+        runNpcLedgerExtract() {}, runAutoExpCondense: async () => {}, runNpcConsistencyCheck: async () => {}, adoptNpcRelationsFromResult: () => null, setTimeout,
     });
     const task = run({ source: 'auto' });
     pending.resolve('{}');
@@ -162,16 +179,21 @@ test('OPT-029 scope-only message owner survives own writes but not chat changes'
     const fresh = capture(); enabled = false; assert.equal(fresh.current(), false);
 });
 
-test('OPT-063 history integration reads actual host scope rather than cached task scope', () => {
-    const code = extract('export function initializeHistoryEvents(', '\nexport const doupoAgent').replace('export function', 'function');
-    let scope = { sessionId: 'A', branchId: 'main' }, options;
-    const run = runInNewContext(`${code}; initializeHistoryEvents`, {
-        agentCapabilities: null, probeHostCapabilities: () => ({}), getHostContext: () => ({ eventSource: {}, event_types: {} }),
-        agentHistoryEvents: null, createHistoryEventAdapter: value => { options = value; return { start() {} }; },
-        agentTurnPipeline: {}, agentRequestRouter: {}, agentActiveScope: { sessionId: 'A', branchId: 'main', taskIds: ['task-A'] }, currentAgentScope: () => scope,
+test('OPT-063 capability probe reads the live host context on every call', () => {
+    const code = extract('export function probeAgentCapabilities(', '\nexport function getAgentCapabilities').replace('export function', 'function');
+    const probes = [], rendered = [];
+    const root = { hidden: false };
+    const run = runInNewContext(`${code}; probeAgentCapabilities`, {
+        agentCapabilities: null, probeHostCapabilities: options => { probes.push(options); return { status: 'ready', probe: probes.length }; },
+        renderCapabilities: value => rendered.push(value), root,
     });
-    run(); assert.equal(options.getScope().sessionId, 'A'); scope = { sessionId: 'B', branchId: 'main' };
-    assert.equal(options.getScope().sessionId, 'B'); assert.equal(options.getScope().taskIds.length, 0);
+    const first = run(root);
+    assert.equal(first.status, 'ready'); assert.equal(root.hidden, false);
+    assert.equal(rendered.at(-1)?.probe, 1, '探测结果就地渲染进能力面板');
+    const second = run(root);
+    assert.equal(probes.length, 2, '每次探测都真跑一次，不吃旧缓存');
+    assert.ok(probes.every(item => item === root), '每次探测都带最新宿主上下文');
+    assert.equal(rendered.at(-1)?.probe, 2);
 });
 
 test('OPT-034 hot replacement invokes the same full disable cleanup', () => {
@@ -231,3 +253,12 @@ test('OPT-110 snapshot lifecycle: captured on injected write, kept through gener
     const selfBlock = extract('const bookLines = !sandboxModeActive() ? factsInjectedLines() : [];', 'buildSelfDecideUser');
     assert.ok(selfBlock.includes('沙盒口径不注入原著条目'), '纳戒决定沙盒门控已对齐');
 });
+{
+    // 第三批记忆功能：写入查重、重要度评分、相关记忆跳转的接线必须真实存在。
+    const runtimeSource = readFileSync(new URL('./memory/memory-runtime.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+    assert.match(runtimeSource, /import \{ DEDUP_SIMILARITY, recallKeys, textSimilarity \} from '\.\/memory-retrieve\.js'/, 'runtime 引检索纯函数做写入查重');
+    assert.match(runtimeSource, /duplicate_of_\$\{entry\.id\}/, '查重拒绝带旧账编号');
+    assert.match(source, /重要度 \$\{Number\.isFinite\(Number\(entry\.importance\)\)/, '列表 meta 带重要度');
+    assert.match(source, /相关记忆（共钥匙）/, '详情弹窗有相关记忆节');
+    assert.match(source, /links: \[\{ label, onPick \}\]/, '详情弹窗支持可点击 links 行');
+}

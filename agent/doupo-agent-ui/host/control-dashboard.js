@@ -4,6 +4,7 @@ const MODULES = Object.freeze([
     { id: 'action', title: '行动结算', setting: 'enableActionResolution', stage: 'action-resolve' },
     { id: 'memory', title: '记忆', setting: 'enableMemoryLedger' },
     { id: 'world', title: '世界运转', setting: 'world.eventEnabled', stage: 'world-advance' },
+    { id: 'plot', title: '剧情账本', setting: 'plot.enabled' },
     { id: 'npc', title: 'NPC 决策', setting: 'enableNpcAutonomy' },
     { id: 'self', title: '纳戒', setting: 'enableSelfLedger' },
     { id: 'impact', title: '世界影响', setting: 'enablePlayerImpact' },
@@ -58,7 +59,9 @@ export function buildControlDashboard({ settings = {}, records = [], tasks = [],
         }
         return true;
     };
-    const modules = MODULES.map(module => {
+    // 剧情账本（剧情决定）是进阶版专属：完整版/简略版下运行时已关、设置卡也隐藏，模块行一并隐藏。
+    const advanced = settings.apiMode === 'advanced';
+    const modules = MODULES.filter(module => module.id !== 'plot' || advanced).map(module => {
         const enabled = readEnabled(module);
         const record = scopedRecords.filter(item => (module.stage && item.stage === module.stage && STAGES[item.event])
             || (module.id === 'npc' && NPC_EVENTS[item.event])).at(-1);

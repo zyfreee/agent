@@ -256,6 +256,9 @@ export function normalizeApiPreset(raw) {
     return {
         id,
         name: cleanText(raw.name, PRESET_NAME_MAX),
+        // 通道：tavern = 这个方案代表「走酒馆通道」，绑定它的功能经由酒馆当前的 API 发出，
+        // 地址/密钥/采样参数都用不上；false = 按方案自己的接口直连（原有行为）。
+        tavern: raw.tavern === true,
         provider: raw.provider === 'anthropic' || raw.provider === 'openai' ? raw.provider : '',
         baseUrl: cleanText(raw.baseUrl, 300),
         apiKey: cleanText(raw.apiKey, 200),
@@ -302,7 +305,12 @@ export function normalizeApiPresets(list) {
  */
 export function presetToOverrides(preset) {
     const normalized = preset && typeof preset === 'object' ? preset : null;
-    if (!normalized || !String(normalized.baseUrl ?? '').trim()) return null;
+    if (!normalized) return null;
+    // 走酒馆通道的方案：只带通道标记——绑定它的功能跟着走酒馆当前的 API，
+    // 方案里填的地址/密钥/采样参数一概用不上。必须在 baseUrl 检查之前判断，
+    // 不然“没填地址的酒馆方案”会被误判成不可用。
+    if (normalized.tavern === true) return { connection: 'tavern' };
+    if (!String(normalized.baseUrl ?? '').trim()) return null;
     const positive = value => {
         const num = Number(value);
         return Number.isFinite(num) && num > 0 ? num : undefined;

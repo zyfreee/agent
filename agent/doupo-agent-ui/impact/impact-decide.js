@@ -116,8 +116,8 @@ function clampInt(value, min, max, fallback) {
     return num;
 }
 
-/** 组装发给模型的 user 内容：世界台账 + 影响库 + 原著资料已注入内容 + 最近聊天（旧→新）。 */
-export function buildImpactDecideUser({ snapshot = {}, floors = [], worldbookLines = [] } = {}) {
+/** 组装发给模型的 user 内容：世界台账 + 影响库 + 本轮结算裁定 + 原著资料已注入内容 + 最近聊天（旧→新）。 */
+export function buildImpactDecideUser({ snapshot = {}, floors = [], worldbookLines = [], settleLines = [] } = {}) {
     const worldBlock = buildWorldInjection(snapshot, { maxChars: 900 });
     const records = Array.isArray(snapshot.records) ? snapshot.records : [];
     const day = clampInt(snapshot?.clock?.day, 1, 99999, 1);
@@ -130,6 +130,7 @@ export function buildImpactDecideUser({ snapshot = {}, floors = [], worldbookLin
     const bookLines = (Array.isArray(worldbookLines) ? worldbookLines : [])
         .filter(line => typeof line === 'string' && line.trim())
         .slice(0, MAX_BOOK_LINES);
+    const settle = (Array.isArray(settleLines) ? settleLines : []).filter(line => typeof line === 'string' && line.trim());
     const chat = (Array.isArray(floors) ? floors : [])
         .slice(-MAX_FLOORS)
         .map(floor => {
@@ -145,6 +146,7 @@ export function buildImpactDecideUser({ snapshot = {}, floors = [], worldbookLin
         `【世界影响库（玩家已经改出的世界线，共 ${records.length} 条：未了结 ${counts.active}、已发酵 ${counts.ripened}、已收场 ${counts.closed}）】`,
         ledger.length ? ledger.map(line => `- ${line}`).join('\n') : '- （本局还没有记录任何影响，这是世界线第一次偏移的机会）',
         '',
+        ...(settle.length ? ['【本轮行动结算（生成前已判定，影响库只记与判定一致的世界变化）】', ...settle, ''] : []),
         '【原著资料（本轮已注入的原著条目）】',
         bookLines.length ? bookLines.join('\n\n') : '- （原著资料本轮还没有注入内容）',
         '',

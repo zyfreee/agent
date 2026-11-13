@@ -8,7 +8,7 @@
  */
 
 import { extractJson } from '../host/llm-client.js';
-import { recallKeys } from './memory-ops.js';
+import { recallKeys, scoreEntries } from './memory-retrieve.js';
 import { TIER_LABELS } from './memory-runtime.js';
 
 const MAX_IDS = 25;
@@ -23,7 +23,7 @@ export const MEMORY_RECALL_PROMPT = [
     '你是这部小说的「记忆召回员」。每次调用你会拿到一份记忆目录、原著资料已注入的原著条目和最近聊天；你只做一件事：判断"这一轮正文需要哪些旧账压场"，从目录里挑出该召回的记忆编号，输出能被脚本严格执行的 JSON。',
     '先想清楚你的决定意味着什么：你挑出的每条记忆都会以「正文不得与之矛盾」的方式进入提示词，成为正文模型的硬约束。所以召回的唯一标准是——忘了它，这一轮就会写出矛盾，或错过该回收的时机；而不是"这条好像有点关系"。',
     '只输出一个 JSON 对象：{"note":"一句话说明为什么挑这些","ids":["m12",…]}。不要输出解释、标题或代码块以外的文字。',
-    '【读目录】目录里每行是 编号|层|标题（召回钥匙）："大记忆"是长期事实（恩怨/秘密/伏笔/大事），"小记忆"是近一两天的事；括号里的钥匙是人名/地名/物名，用来和本轮登场的人事物对号。只准从目录里挑编号；没在目录里的记忆不存在，绝不编造编号。',
+    '【读目录】目录里每行是 编号|层|标题（召回钥匙）："大记忆"是长期事实（恩怨/秘密/伏笔/大事），"小记忆"是近一两天的事；括号里的钥匙是人名/地名/物名，用来和本轮登场的人事物对号。目录按与近期剧情的混合相关度排序（越靠前越可能要压场）；已被新事覆盖的旧记忆不会出现在目录里，编号断号是正常的，不要凭空补全缺号。只准从目录里挑编号；没在目录里的记忆不存在，绝不编造编号。',
     '【怎么挑】按顺序过三步，别跳：',
     '1. 找钩子：读最近聊天（尤其最后一楼玩家的新输入），列出这一轮正文会出现谁、去哪里、动什么物件，有没有提旧账、旧约、承诺、期限、伏笔。',
     '2. 对钥匙：只有能和钩子对上号的记忆才进候选——人再登场对人的旧账，地重访对地发生过的事，物件再现对它的来历与下落。',
@@ -45,11 +45,15 @@ export const RECALL_JSON_SCHEMA = Object.freeze({
 });
 
 /**
- * 记忆目录：完整小目录仍按大→小/新→旧；超预算先场景命中，再在各组交替两层。
- * 标题缺了拿 text 顶；只截描述，不截编号，每层至少留一行的空间。
+ * 记忆目录：行格式与预算机制不变（提示词契约），排序分层——
+ * - 无场景/无外部候选：保持旧序（大→小、各自新→旧），截断时大/小逐条交替，两层都留一席；
+ * - 有场景：memory-retrieve.scoreEntries 的混合分数序（钥匙/引文/标题/词面/时间/向量），
+ *   召回模型自上而下读，靠前的就是更可能要压场的；
+ * - candidates：调用方已算好的候选序（向量融合分数），直接采用，不再重复打分。
+ * 已被软覆盖（supersededBy）的条目默认整条不可见。标题缺了拿 text 顶；只截描述，不截编号。
  */
-export function buildRecallCatalog(snapshot = {}, { maxChars = DEFAULT_CATALOG_CHARS, sceneText = '' } = {}) {
-    const entries = (Array.isArray(snapshot?.entries) ? snapshot.entries : []).filter(Boolean);
+export function buildRecallCatalog(snapshot = {}, { maxChars = DEFAULT_CATALOG_CHARS, sceneText = '', currentDay = null, vectorSim = null, candidates = null, advanced = true } = {}) {
+    const entries = (Array.isArray(snapshot?.entries) ? snapshot.entries : []).filter(entry => entry && !entry.supersededBy);
     if (!entries.length) return '（记忆库还是空的）';
     const value = Number(maxChars);
     const cap = Number.isSafeInteger(value) && value > 0 ? Math.max(200, value) : DEFAULT_CATALOG_CHARS;
@@ -57,30 +61,24 @@ export function buildRecallCatalog(snapshot = {}, { maxChars = DEFAULT_CATALOG_C
     const small = entries.filter(entry => entry.tier !== 'big').sort((a, b) => b.day - a.day);
     const lineCap = big.length && small.length ? Math.floor((cap - 1) / 2) : cap;
     const scene = typeof sceneText === 'string' ? sceneText : '';
-    const records = [...big, ...small].flatMap(entry => {
+    const lines = new Map();
+    for (const entry of [...big, ...small]) {
         const tier = TIER_LABELS[entry.tier] ?? '记忆';
         const keys = recallKeys(entry);
         const prefix = `- ${entry.id}|${tier}|`;
-        if (/[\r\n]/.test(prefix) || prefix.length >= lineCap) return [];
+        if (/[\r\n]/.test(prefix) || prefix.length >= lineCap) continue;
         const label = `${entry.title || entry.text || ''}${keys.length ? `（${keys.join('、')}）` : ''}`.replace(/[\r\n]+/g, ' ');
         const room = lineCap - prefix.length;
-        const line = prefix + (label.length > room ? `${label.slice(0, room - 1)}…` : label);
-        return [{ line, big: entry.tier === 'big', hit: !!scene && keys.some(key => scene.includes(key)) }];
-    });
-    const complete = records.map(record => record.line).join('\n');
-    if (complete.length <= cap) return complete;
-    const ordered = [];
-    for (const hit of [true, false]) {
-        const large = records.filter(record => record.hit === hit && record.big);
-        const little = records.filter(record => record.hit === hit && !record.big);
-        for (let i = 0; i < Math.max(large.length, little.length); i++) {
-            if (large[i]) ordered.push(large[i]);
-            if (little[i]) ordered.push(little[i]);
-        }
+        lines.set(entry.id, prefix + (label.length > room ? `${label.slice(0, room - 1)}…` : label));
     }
+    const rankedIds = rankCatalog(entries, { scene, currentDay, vectorSim, candidates, big, small, advanced });
+    const complete = [...lines.values()].join('\n');
+    if (complete.length <= cap && !scene && !Array.isArray(candidates)) return complete;
     const kept = [];
     let used = 0;
-    for (const { line } of ordered) {
+    for (const id of rankedIds) {
+        const line = lines.get(id);
+        if (line === undefined) continue;
         const cost = line.length + (kept.length ? 1 : 0);
         if (used + cost > cap) continue;
         kept.push(line);
@@ -89,8 +87,39 @@ export function buildRecallCatalog(snapshot = {}, { maxChars = DEFAULT_CATALOG_C
     return kept.join('\n');
 }
 
-/** 组装发给召回模型的 user 内容：记忆目录 + 最近聊天（旧→新，含最新玩家输入）+ 世界书命中。 */
-export function buildRecallUser({ snapshot = {}, floors = [], worldbookLines = [] } = {}) {
+/** 目录条目排序：外部候选序 > 场景分数序 > 旧洪泛保护（大/小交替）。
+ *  advanced=false（完整版/简略版口径）跳过混合分数序，退回旧洪泛序——
+ *  打分排序是学 GitHub 仓库加的，只在进阶版生效。 */
+function rankCatalog(entries, { scene, currentDay, vectorSim, candidates, big, small, advanced = true }) {
+    const legacy = [...big, ...small].map(entry => entry.id);
+    if (Array.isArray(candidates)) {
+        const known = new Set(entries.map(entry => entry.id));
+        const ranked = [];
+        const seen = new Set();
+        for (const item of candidates) {
+            const id = typeof item === 'string' ? item : item?.entry?.id ?? item?.id;
+            if (typeof id !== 'string' || !known.has(id) || seen.has(id)) continue;
+            seen.add(id);
+            ranked.push(id);
+        }
+        for (const id of legacy) if (!seen.has(id)) ranked.push(id);
+        return ranked;
+    }
+    if (!scene || advanced === false) {
+        // 无场景截断（或非进阶版）时的旧洪泛保护：大/小逐条交替，保证两层在预算内都有一席之地。
+        const interleaved = [];
+        for (let i = 0; i < Math.max(big.length, small.length); i++) {
+            if (big[i]) interleaved.push(big[i].id);
+            if (small[i]) interleaved.push(small[i].id);
+        }
+        return interleaved;
+    }
+    return scoreEntries({ entries }, { sceneText: scene, currentDay, vectorSim }).map(item => item.entry.id);
+}
+
+/** 组装发给召回模型的 user 内容：记忆目录 + 最近聊天（旧→新，含最新玩家输入）+ 世界书命中。
+ *  advanced=false（完整版/简略版口径）目录退回旧洪泛序，不走混合分数排序。 */
+export function buildRecallUser({ snapshot = {}, floors = [], worldbookLines = [], currentDay = null, vectorSim = null, catalogChars = null, advanced = true } = {}) {
     const bookLines = (Array.isArray(worldbookLines) ? worldbookLines : [])
         .filter(line => typeof line === 'string' && line.trim())
         .slice(0, MAX_BOOK_LINES);
@@ -104,7 +133,7 @@ export function buildRecallUser({ snapshot = {}, floors = [], worldbookLines = [
         .filter(Boolean);
     return [
         '【记忆目录（编号|层|标题（钥匙））】',
-        buildRecallCatalog(snapshot, { sceneText: chat.join('\n') }),
+        buildRecallCatalog(snapshot, { sceneText: chat.join('\n'), currentDay, vectorSim, advanced, ...(Number.isInteger(catalogChars) && catalogChars > 0 ? { maxChars: catalogChars } : {}) }),
         '',
         '【原著资料（本轮已注入的原著条目）】',
         bookLines.length ? bookLines.join('\n\n') : '- （原著资料本轮还没有注入内容）',
@@ -116,7 +145,7 @@ export function buildRecallUser({ snapshot = {}, floors = [], worldbookLines = [
     ].join('\n');
 }
 
-/** 把召回结果对到现有条目上：账里没有的编号丢弃（防模型编号）、重复编号只取一次，顺序保持模型给的相关度序。 */
+/** 把召回结果对到现有条目上：账里没有的编号丢弃（防模型编号）、已被软覆盖的旧账不再回场、重复编号只取一次，顺序保持模型给的相关度序。 */
 export function recallEntriesFromIds(snapshot = {}, ids = []) {
     const entries = Array.isArray(snapshot?.entries) ? snapshot.entries : [];
     const byId = new Map(entries.map(entry => [entry.id, entry]));
@@ -126,7 +155,7 @@ export function recallEntriesFromIds(snapshot = {}, ids = []) {
         const key = typeof id === 'string' ? id.trim() : '';
         if (!key || seen.has(key)) continue;
         const entry = byId.get(key);
-        if (!entry) continue;
+        if (!entry || entry.supersededBy) continue;
         seen.add(key);
         picked.push(entry);
     }

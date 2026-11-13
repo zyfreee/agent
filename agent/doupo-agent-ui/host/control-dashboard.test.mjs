@@ -15,7 +15,15 @@ const moduleOf = (view, id) => view.modules.find(module => module.id === id);
 for (const legacy of [undefined, true, false]) assert.equal(moduleOf(build({ settings: { setting: { enabled: false }, enableFactsLibrary: legacy } }), 'facts').configuration, '已关闭');
 assert.equal(moduleOf(build({ settings: { setting: { enabled: true }, enableFactsLibrary: true } }), 'facts').configuration, '已开启');
 const empty = build();
+// 剧情账本（剧情决定）是进阶版专属：默认口径（完整版）总控不显示该模块行。
 assert.equal(empty.modules.length, 9);
+assert.equal(moduleOf(empty, 'plot'), undefined);
+const advancedDashboard = build({ settings: { apiMode: 'advanced' } });
+assert.equal(advancedDashboard.modules.length, 10);
+assert.equal(moduleOf(advancedDashboard, 'plot').title, '剧情账本');
+assert.equal(moduleOf(build({ settings: { apiMode: 'advanced', plot: { enabled: false } } }), 'plot').configuration, '已关闭');
+assert.equal(moduleOf(advancedDashboard, 'plot').state, 'idle');
+assert.equal(moduleOf(build({ settings: { apiMode: 'lite' } }), 'plot'), undefined, '简略版总控同样不显示剧情账本行');
 assert.equal(moduleOf(empty, 'sandbox').title, '开放世界');
 assert.equal(moduleOf(empty, 'sandbox').id, 'sandbox');
 assert.equal(moduleOf(empty, 'self').title, '纳戒');

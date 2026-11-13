@@ -69,4 +69,10 @@ assert.equal(adjusted.ops[0].days, -3);
 assert.equal(adjusted.ops[0].ref, 'i1');
 assert.equal(adjusted.dropped, 1);
 
+// —— 结算裁定喂料：影响决定必须看到本轮判定的成败（BUG 1） ——
+const settleUser = buildImpactDecideUser({ snapshot: { clock: { day: 12 }, records: [] }, floors: [{ role: '角色', text: '正文' }], settleLines: ['- 药铺购凝血草：失败（骰16-2 对难度 11）'] });
+assert.ok(settleUser.includes('【本轮行动结算（生成前已判定，影响库只记与判定一致的世界变化）】'), '喂料带结算节');
+assert.ok(settleUser.includes('药铺购凝血草'));
+assert.ok(!buildImpactDecideUser({ snapshot: { clock: { day: 12 }, records: [] }, floors: [] }).includes('【本轮行动结算'), '没有结算时不出这一节');
+
 console.log('impact decide tests passed');

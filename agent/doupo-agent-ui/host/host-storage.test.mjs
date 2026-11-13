@@ -11,8 +11,8 @@ const context = {
 };
 const storage = createHostStorage({ getContext: () => context });
 assert.deepEqual(storage.settings().value, DEFAULT_SETTINGS);
-context.extensionSettings.doupo_agent_ui.debug = true;
-assert.equal(storage.settings().value.debug, true);
+context.extensionSettings.doupo_agent_ui.showOrb = false;
+assert.equal(storage.settings().value.showOrb, false);
 assert.equal(storage.settings().value.llm.model, '');
 assert.equal(storage.updateSettings({ llm: { model: 'test-model' }, enableWorldProgress: false }).value.llm.model, 'test-model');
 assert.equal(storage.settings().value.llm.maxTokens, 2048);
@@ -96,6 +96,23 @@ assert.equal(settleStorage.settings().value.settle.prompt.cultivation, '修炼�
 settleStorage.updateSettings({ settle: { temperature: 0.5 } });
 assert.equal(settleStorage.settings().value.settle.temperature, 0.5);
 assert.equal(settleStorage.settings().value.settle.prompt.alchemy, '丹药规则A', '改温度不丢提示词');
+// 语义检索（memory.embedding）二层嵌套：四个字段各存各的，改一个不能清掉其余三个。
+const embedContext = { extensionSettings: {} };
+const embedStorage = createHostStorage({ getContext: () => embedContext });
+assert.deepEqual(embedStorage.settings().value.memory.embedding, { enabled: false, baseUrl: '', apiKey: '', model: '' });
+embedStorage.updateSettings({ memory: { embedding: { baseUrl: 'https://api.example.com/v1' } } });
+assert.equal(embedStorage.settings().value.memory.embedding.baseUrl, 'https://api.example.com/v1');
+embedStorage.updateSettings({ memory: { embedding: { apiKey: 'sk-test', model: 'text-embedding-3-small' } } });
+assert.equal(embedStorage.settings().value.memory.embedding.baseUrl, 'https://api.example.com/v1', '改密钥不丢地址');
+assert.equal(embedStorage.settings().value.memory.embedding.apiKey, 'sk-test');
+embedStorage.updateSettings({ memory: { embedding: { enabled: true } } });
+assert.deepEqual(embedStorage.settings().value.memory.embedding, { enabled: true, baseUrl: 'https://api.example.com/v1', apiKey: 'sk-test', model: 'text-embedding-3-small' }, '四个字段齐全，互不覆盖');
+assert.equal(embedStorage.settings().value.memory.catalogBudget, 4000, 'embedding 深合并不伤 memory 同层其它键');
+// 载入愈合：修复前单层合并写出的"缺字段半截对象"，载入时按默认值补齐。
+const partialContext = { extensionSettings: { doupo_agent_ui: { memory: { embedding: { baseUrl: 'https://old.example.com/v1' } } } } };
+const partial = createHostStorage({ getContext: () => partialContext }).settings().value.memory.embedding;
+assert.deepEqual(partial, { enabled: false, baseUrl: 'https://old.example.com/v1', apiKey: '', model: '' });
+assert.equal(createHostStorage({ getContext: () => ({ extensionSettings: { doupo_agent_ui: { memory: { embedding: 'junk' } } } }) }).settings().value.memory.embedding.enabled, false, '坏值降级为默认');
 // 自定义判定：数组整存整取，和类别提示词互不干扰。
 assert.deepEqual(settleStorage.settings().value.settle.customCategories, []);
 settleStorage.updateSettings({ settle: { customCategories: [{ id: 'cabc1', name: '炼器判定', prompt: '规则' }] } });
@@ -285,4 +302,17 @@ assert.equal(v13Migrated.memory.decideMaxEntries, undefined);
 assert.equal(v13Migrated.impact.decideMaxEntries, undefined);
 const v13Once = createHostStorage({ getContext: () => ({ extensionSettings: { doupo_agent_ui: { schemaVersion: 13, memory: { decideMaxEntries: 8 } } } }) }).settings().value;
 assert.equal(v13Once.memory.decideMaxEntries, 8, '版本门已过（schemaVersion=13）不再清键');
+// schemaVersion 14：进阶版登场。既有非简略版安装自动落进阶版（增强原先默认全开，保行为）；
+// 简略版保持简略版；全新安装（无 schemaVersion）按默认留在完整版；跑过版本门的不再翻回去。
+const v13FullContext = { extensionSettings: { doupo_agent_ui: { schemaVersion: 13 } } };
+assert.equal(createHostStorage({ getContext: () => v13FullContext }).settings().value.apiMode, 'advanced', 'v13 完整版存档升级后自动切进阶版');
+const v13LiteContext = { extensionSettings: { doupo_agent_ui: { schemaVersion: 13, apiMode: 'lite' } } };
+assert.equal(createHostStorage({ getContext: () => v13LiteContext }).settings().value.apiMode, 'lite', '简略版存档升级后保持简略版');
+const freshSettings = createHostStorage({ getContext: () => ({ extensionSettings: {} }) }).settings().value;
+assert.equal(freshSettings.apiMode, 'full', '全新安装默认完整版');
+assert.equal(freshSettings.settle.diceEnabled, true, '进阶键默认值：难度骰子');
+assert.equal(freshSettings.npc.consistencyAuto, true, '进阶键默认值：一致性体检');
+assert.equal(freshSettings.npc.relationsInject, true, '进阶键默认值：关系网注入');
+const v14FullContext = { extensionSettings: { doupo_agent_ui: { schemaVersion: 14, apiMode: 'full' } } };
+assert.equal(createHostStorage({ getContext: () => v14FullContext }).settings().value.apiMode, 'full', '版本门已过，玩家手动选回完整版不再被翻回去');
 console.log('host storage tests passed');

@@ -13,42 +13,31 @@ const { captureAgentScope, captureAgentContinuation } = createCaptureAgents({
 });
 const currentAgentScope = createCurrentAgentScope({ getContext: getHostContext });
 import { renderEquipmentFigure } from './host/equipment-figure.js';
-import { createModuleRunner } from './core/module-runner.js';
-import { createTurnPipeline } from './core/turn-pipeline.js';
-import { createQualityGate } from './core/quality-gate.js';
-import { createDataContractRegistry } from './core/data-contract.js';
 import { createAuditLog } from './core/audit-log.js';
 import { createFactsLibrary } from './narrative/facts-library.js';
 import { createSettingSupply, trimToVolume } from './narrative/setting-supply.js';
+import { VERIFY_PROMPT, VERIFY_JSON_SCHEMA, buildVerifyUser, buildVerifyRetryUser, parseVerifyReply, shouldVerify, buildVerifyEntries, mergeVerifyEntries, markEntryFalsePositive, addExemption, listOpenFindings, normalizeVerifyLedger } from './narrative/verify-claims.js';
 import { createImpactRuntime } from './impact/impact-runtime.js';
 import { buildImpactInjection, buildImpactInjectionDetail, impactMark, isImpactDecideDue, WEIGHT_LABEL, STATE_LABEL, SHIFT_LABEL } from './impact/impact-ops.js';
 import { buildImpactDecideUser, parseImpactDecision, IMPACT_DECIDE_PROMPT, IMPACT_JSON_SCHEMA } from './impact/impact-decide.js';
 import { buildImpactInjectUser, buildImpactInjectionFromPicksDetail, parseImpactSelect, IMPACT_INJECT_PROMPT, IMPACT_INJECT_SCHEMA } from './impact/impact-select.js';
-import { createActionResolver } from './request/action-resolver.js';
 import { createNpcDecisionGuard } from './npc/npc-decision-guard.js';
 import { createNpcAutonomyPlanner } from './npc/npc-autonomy.js';
 import { createNpcPlanReassessment } from './npc/npc-plan-reassessment.js';
 import { createNpcConflictCoordinator } from './npc/npc-conflict.js';
-import { createNpcOutcomeBridge } from './npc/npc-outcome-bridge.js';
 import { createNpcCommitGate } from './npc/npc-commit-gate.js';
 import { createNpcLedger, normalizePatch, NPC_FIELDS, FAVOR_SCALE, FAVOR_STEP_MAX, favorLabel } from './npc/npc-ledger.js';
-import { NPC_RECORD_PROMPT, NPC_RECORD_JSON_SCHEMA, NPC_EXTRACT_PROMPT, buildNpcRecordUser, buildNpcExtractUser, playerContextLine, parseNpcRecordReply, EXP_CONDENSE_PROMPT, buildExpCondenseUser, parseExpCondenseReply } from './npc/npc-recorder.js';
-import { createNpcColdRuntime } from './npc/npc-cold-runtime.js';
+import { NPC_RECORD_PROMPT, NPC_RECORD_JSON_SCHEMA, NPC_EXTRACT_PROMPT, buildNpcRecordUser, buildNpcExtractUser, playerContextLine, parseNpcRecordReply, NPC_RECORD_RETRY_SYSTEM_NOTE, buildRecordRetryUser, EXP_CONDENSE_PROMPT, buildExpCondenseUser, parseExpCondenseReply } from './npc/npc-recorder.js';
+import { createNpcColdRuntime, filterColdPatches, mapWithLimit } from './npc/npc-cold-runtime.js';
+import { createNpcRelations } from './npc/npc-relations.js';
+import { GOSSIP_PROMPT, buildGossipUser, GOSSIP_FAVOR_STEP_MAX } from './npc/npc-gossip.js';
+import { CONSISTENCY_PROMPT, buildConsistencyUser, parseConsistencyReply } from './npc/npc-consistency.js';
 import { NPC_COLD_PROMPT, buildNpcColdUser } from './npc/npc-cold-recorder.js';
-import { createWorldSimulator } from './request/world-simulator.js';
 import { createSandboxMode } from './sandbox/sandbox-mode.js';
 import { SANDBOX_WORLD_PROMPT, buildSandboxDecideNote } from './sandbox/sandbox-world.js';
 import { createUiState } from './host/ui-state.js';
-import { createNarrativeGuard } from './narrative/narrative-guard.js';
 import { createStateStore } from './core/state-store.js';
-import { createCommitRecovery } from './core/commit-recovery.js';
-import { createOperationLedger } from './core/operation-ledger.js';
-import { createHistoryEventAdapter, chatFloorShape, findDeletedFloor } from './narrative/history-events.js';
-import { classifyHistoryOperation, classifyMappedHistoryOperation } from './narrative/history-operation.js';
-import { createHistoryRestore } from './narrative/history-restore.js';
-import { createRequestClassifier } from './request/request-classifier.js';
-import { registerAgentModules } from './core/agent-modules.js';
-import { createRequestRouter } from './request/request-router.js';
+import { chatFloorShape, findDeletedFloor } from './narrative/history-events.js';
 import { probeHostCapabilities } from './host/capability-preflight.js';
 import { createHostStorage } from './host/host-storage.js';
 import { buildControlDashboard, normalizeTheme } from './host/control-dashboard.js';
@@ -56,15 +45,13 @@ import { ORB_ITEMS, buildOrbPanels, createOrbState } from './host/orb-hud.js';
 import { createTurnStages } from './core/turn-stages.js';
 import { createLitePick } from './lite/lite-pick.js';
 import { createLiteSettle } from './lite/lite-settle.js';
-import { createOrchestrator } from './core/orchestrator.js';
-import { registerDefaultContracts, listWritableFields } from './core/turn-state.js';
 import { SETTLE_CATEGORIES, resolveCategory } from './core/settle-categories.js';
-import { SETTLE_RESULT_PROMPT, SETTLE_INJECTION_SOURCES, buildSettleResultUser, buildSettleState, buildSettleContextState, compareSettleState, parseSettleResult, reviewSettleEffects, renderSettleInjection } from './settle/settle-adjudicate.js';
+import { SETTLE_RESULT_PROMPT, SETTLE_INJECTION_SOURCES, buildSettleResultUser, buildSettleRetryUser, buildSettleState, buildSettleContextState, compareSettleState, parseSettleResult, reviewSettleEffects, renderSettleInjection } from './settle/settle-adjudicate.js';
+import { createSettleDiceRng, SETTLE_DIFFICULTY_LABELS } from './settle/settle-difficulty.js';
 import { createSettleSession, shouldClearSettleOnGenerationEnd } from './settle/settle-session.js';
 import { createLlmClient, listModels } from './host/llm-client.js';
 import { API_PRESETS_MAX, parseYamlBlock, presetToOverrides } from './host/api-presets.js';
 import { createMessageAdapter } from './host/message-adapter.js';
-import { createStatePersistence } from './host/state-persistence.js';
 import { createPromptInjection } from './host/prompt-injection.js';
 import { stripGlobalDisplayRegexScripts, ensureScopedDisplayRegexScripts, isDoupoCard } from './host/display-regex.js';
 import { loadWorldbookEntries, summarizeWorldbookEntries } from './narrative/worldbook-source.js';
@@ -73,6 +60,9 @@ import { createFactsSelector, DEFAULT_MAX_PICKS, LOOKUP_RULES, SELECT_RULES } fr
 import { createWorldRuntime, eventIntro } from './world/world-runtime.js';
 import { buildWorldInjection, extractOpsBlock, parseOps, stripOpsBlock, OPS_GUIDE, WORLD_HEADER, seasonOf } from './world/world-ops.js';
 import { buildDecideUser, parseDecision, WORLD_DECIDE_PROMPT, DECIDE_JSON_SCHEMA } from './world/world-decide.js';
+import { PLOT_DECIDE_PROMPT, PLOT_JSON_SCHEMA, buildPlotDecideUser, parsePlotDecision } from './plot/plot-decide.js';
+import { buildPlotInjection, PLOT_HEADER } from './plot/plot-ops.js';
+import { createPlotRuntime } from './plot/plot-runtime.js';
 import { createSelfRuntime } from './self/self-runtime.js';
 import { buildSelfInjection, extractOpsBlock as extractSelfOpsBlock, stripOpsBlock as stripSelfOpsBlock, SELF_GUIDE, SELF_HEADER } from './self/self-ops.js';
 import { SELF_DECIDE_PROMPT, SELF_JSON_SCHEMA, buildSelfDecideUser, parseSelfDecision } from './self/self-decide.js';
@@ -80,12 +70,17 @@ import { SELF_DECIDE_PROMPT, SELF_JSON_SCHEMA, buildSelfDecideUser, parseSelfDec
 import { createMemoryRuntime } from './memory/memory-runtime.js';
 import { buildMemoryInjection, renderMemoryEntriesDetail, recallHits, recallKeys, findMemoryConflicts, extractOpsBlock as extractMemoryOpsBlock, parseOps as parseMemoryOps, stripOpsBlock as stripMemoryOpsBlock, MEMORY_GUIDE, MEMORY_HEADER } from './memory/memory-ops.js';
 import { buildDecideUser as buildMemoryDecideUser, parseDecision as parseMemoryDecision, capRememberOps, MEMORY_DECIDE_PROMPT, MEMORY_JSON_SCHEMA } from './memory/memory-decide.js';
-import { buildRecallUser, parseRecallDecision, recallEntriesFromIds, MEMORY_RECALL_PROMPT, RECALL_JSON_SCHEMA } from './memory/memory-recall.js';
+import { buildRecallUser, buildRecallCatalog, parseRecallDecision, recallEntriesFromIds, MEMORY_RECALL_PROMPT, RECALL_JSON_SCHEMA } from './memory/memory-recall.js';
+import { relatedMemories } from './memory/memory-retrieve.js';
 
 import { MEMORY_CONSOLIDATE_PROMPT, MEMORY_CONSOLIDATE_JSON_SCHEMA, buildConsolidateUser, parseConsolidation } from './memory/memory-consolidate.js';
+import { createEmbeddingClient } from './host/embedding-client.js';
+import { createMemoryVectorStore, createMemoryVectorIndex } from './memory/memory-vectors.js';
+import { buildPersonView, PERSON_VIEW_KINDS } from './memory/person-view.js';
+import { auditMemory } from './memory/memory-audit.js';
+import { buildWakeUpSummary } from './memory/memory-wakeup.js';
 import { createDbBridge } from './host/db-bridge.js';
 import { createSelfMvuBridge } from './host/self-mvu.js';
-import { createMvuArbiter } from './host/mvu-arbiter.js';
 import { sameSelfState, sameMemoryState, selfStateFromTables, memoryStateFromTables, preserveUnmappedSelfFields } from './host/db-tables.js';
 
 const EXTENSION_ID = 'doupo-agent-ui';
@@ -115,8 +110,6 @@ const LABELS = {
 let root;
 let unsubscribe;
 let currentTaskId;
-let agentActiveScope;
-let dashboardScope;
 let settingsSaveSequence = 0;
 let agentCapabilities = Object.freeze({ status: 'unavailable', versions: Object.freeze({ sillytavern: null }), symbols: Object.freeze([]), missing: Object.freeze([]), fallback: '尚未执行宿主能力预检。' });
 let hostContext;
@@ -145,7 +138,9 @@ function invalidateAgentContinuations() {
     agentContinuationEpoch += 1;
     worldDecideRunning = selfDecideRunning = memoryDecideRunning = impactDecideRunning = false;
     memoryConsolidateRunning = memoryRecallRunning = npcRecordRunning = npcColdRunning = false;
+    verifyRunning = false;
     worldDecidedFloor = selfDecidedFloor = memoryDecidedFloor = null;
+    verifyDecidedFloor = null;
     lastImpactDecideIdentity = null;
     pendingExpCondense = null;
 }
@@ -225,16 +220,20 @@ function bindHostLifecycle() {
     const onReady = () => {
         hostContext = getHostContext();
         hostStorage = createHostStorage({ getContext: getHostContext });
-        initializeHistoryEvents();
+        probeAgentCapabilities();
         void installDisplayRegex();
         mount();
         restoreSandboxFromChat();
         restoreWorldFromChat();
+        restorePlotFromChat();
+        hydrateVerify();
         restoreImpactFromChat();
         restoreNpcLedgerFromChat();
         restoreNpcColdFromChat();
         restoreSelfFromChat();
         restoreMemoryFromChat();
+        // 开局摘要门闩：启动恢复完成后武装，应用启动后的第一条回复交底一次。
+        try { wakeUpPendingChatId = String(getHostContext()?.chatId ?? ''); } catch { /* 上下文不可用时保持关闭 */ }
         hydrateFactsLastInjection();
         hydrateMemoryLastInjection();
         hydrateSettleAdjudication();
@@ -261,7 +260,6 @@ function bindHostLifecycle() {
     if (typeof chatChanged === 'string' && chatChanged) {
         const handler = () => {
             invalidateAgentContinuations();
-            dashboardScope = undefined;
             resetSettleAdjudication();
             void installDisplayRegex();
             restoreSandboxFromChat();
@@ -271,18 +269,25 @@ function bindHostLifecycle() {
             try { agentImpactPromptInjection.clear(); } catch { /* 同上 */ }
             try { agentNpcLedgerInjection.clear(); } catch { /* 同上 */ }
             try { agentSelfPromptInjection.clear(); } catch { /* 同上 */ }
+            try { agentWakeUpPromptInjection.clear(); } catch { /* 同上 */ }
+            try { agentPlotPromptInjection.clear(); } catch { /* 同上 */ }
             try { restoreWorldFromChat(); } catch { /* 换聊天读不到世界台账时按开局处理 */ }
+            try { restorePlotFromChat(); } catch { /* 换聊天读不到剧情账本时按空账开局 */ }
+            try { hydrateVerify(); } catch { /* 换聊天读不到核验台账时按空表处理 */ }
             try { restoreImpactFromChat(); } catch { /* 换聊天读不到影响库时按空库开局 */ }
             try { restoreNpcLedgerFromChat(); } catch { /* 换聊天读不到人物簿时按空簿开局 */ }
+            try { restoreNpcRelationsFromChat(); } catch { /* 换聊天读不到关系图时按空图开局 */ }
             try { restoreNpcColdFromChat(); } catch { /* 换聊天读不到冷藏台时按空台开局 */ }
             try { restoreSelfFromChat(); } catch { /* 换聊天读不到纳戒时按空戒开局 */ }
             try { restoreMemoryFromChat(); } catch { /* 换聊天读不到记忆时按空账开局 */ }
+            // 开局摘要门闩：新聊天武装一次，下一轮生成时交底一次。
+            try { wakeUpPendingChatId = String(getHostContext()?.chatId ?? ''); } catch { /* 上下文不可用时保持原状 */ }
             hydrateFactsLastInjection();
             hydrateMemoryLastInjection();
-        hydrateSettleAdjudication();
-            try { agentOrchestrator.restore(currentAgentScope()); } catch { /* 未连接酒馆时跳过恢复 */ }
+            hydrateSettleAdjudication();
             refreshControlDashboard();
             refreshWorldPage();
+            refreshPlotPanel();
             try { renderImpactLibrary(); } catch { /* 面板未挂载时忽略 */ }
             try { refreshNpcLedgerPage(); } catch { /* 同上 */ }
             try { refreshSelfPage(); } catch { /* 同上 */ }
@@ -360,7 +365,7 @@ function bindHostLifecycle() {
                 if (currentSettings().apiMode === 'lite') {
                     // 简略版：五条记账链并成一次总结算；判定没跑成退回正文指令块降级，
                     // 不再发起任何单路调用。开局纳戒初始化的放行口径与完整版一致。
-                    void Promise.resolve(agentLiteSettle.run({ source: 'auto' })).then(result => {
+                    const liteChain = Promise.resolve(agentLiteSettle.run({ source: 'auto' })).then(result => {
                         try { recordAgentAudit({ event: 'turn_lite_settle', outcome: String(result?.status ?? 'unknown') }); } catch { /* 审计失败不影响记账 */ }
                         if (!['unavailable', 'stale', 'failed', 'rejected', 'busy', 'not_configured', 'invalid', 'error', 'no_input', 'no_reply', 'already_decided', 'disabled'].includes(result?.status) && creationInitPending()) clearCreationInitPending();
                         if (['failed', 'invalid', 'no_input'].includes(result?.status)) {
@@ -369,6 +374,8 @@ function bindHostLifecycle() {
                             try { applyMemoryOpsFromLatestReply(); } catch { /* 指令执行失败不影响生成 */ }
                         }
                     }).catch(() => {});
+                    // 正文事实核验排在总结算之后：台账没落地就开核，会把“本轮刚发生的变化”误判成矛盾。
+                    scheduleFactCheckAfter([liteChain]);
                 } else {
                 const decide = worldDecideSettings();
                 // 影响库要读“这一轮之后”的世界台账，所以排在决定/执行之后，串行跑。
@@ -405,7 +412,7 @@ function bindHostLifecycle() {
                             if (!continuation.current()) return;
                             if (creationInitPending() && result
                                 && !['unavailable', 'stale', 'failed', 'rejected', 'busy', 'not_configured', 'invalid', 'error', 'no_input', 'no_reply'].includes(result.status)) clearCreationInitPending();
-                            try { recordAgentAudit({ event: 'turn_mvu_arbitrate', stage: 'ring-decide', outcome: String(result?.status ?? 'unknown') }); } catch { /* 审计失败不影响记账 */ }
+                            try { recordAgentAudit({ event: 'turn_self_decide', stage: 'ring-decide', outcome: String(result?.status ?? 'unknown') }); } catch { /* 审计失败不影响记账 */ }
                         }
                     } catch { /* 纳戒记账失败不影响生成 */ }
                     // 记忆依赖纳戒/MVU完成；人物和影响仍可独立并行。
@@ -415,29 +422,40 @@ function bindHostLifecycle() {
                         if (memory.enabled && memory.decideEnabled && memory.decideAuto) void Promise.resolve(runMemoryDecision({ source: 'auto' })).then(result => { try { recordAgentAudit({ event: 'turn_memory_decide', outcome: String(result?.status ?? 'unknown') }); } catch { /* 审计失败不影响记账 */ } }).catch(() => {});
                     } catch { /* 记账失败不影响生成 */ }
                 };
+                let accountingChain = null;
+                // 世界决定链单独拎出来：人物记账要等它落定（世界钟先走到本轮，人物档案的「第N天」才是本轮的，
+                // 实测出现过记录员拿昨天的天数记账），影响/纳戒/记忆仍照旧跟在世界决定后面串行。
+                let worldDecisionChain = Promise.resolve();
                 if (decide.enabled && decide.auto) {
-                    try { void Promise.resolve(runWorldDecision({ source: 'auto' })).then(result => { try { recordAgentAudit({ event: 'turn_world_decision', outcome: String(result?.status ?? 'unknown') }); } catch { /* 审计失败不影响记账 */ } }).finally(afterWorld).catch(() => {}); } catch { afterWorld(); }
+                    try { worldDecisionChain = Promise.resolve(runWorldDecision({ source: 'auto' })).then(result => { try { recordAgentAudit({ event: 'turn_world_decision', outcome: String(result?.status ?? 'unknown') }); } catch { /* 审计失败不影响记账 */ } }); accountingChain = worldDecisionChain.finally(afterWorld).catch(() => {}); } catch { afterWorld(); accountingChain = Promise.resolve().catch(() => {}); }
                 } else {
                     try { applyWorldOpsFromLatestReply(); } catch { /* 指令执行失败不影响生成 */ }
                     try { applySelfOpsFromLatestReply(); } catch { /* 指令执行失败不影响生成 */ }
                     try { applyMemoryOpsFromLatestReply(); } catch { /* 指令执行失败不影响生成 */ }
-                    afterWorld();
+                    accountingChain = Promise.resolve().then(() => afterWorld()).catch(() => {});
                 }
-                // 人物簿独立记账：正文已经落地，记录员读这一轮把人物变化补进档案。
-                // 三条链（世界决定、影响记录、人物记账）互不阻塞，任何一条失败都不影响正文。
+                // 人物簿记账：正文已经落地，记录员读这一轮把人物变化补进档案；排在世界决定之后
+                // （世界钟先落定），与影响/纳戒/记忆链并行——世界决定失败也不拦人物记账。
                 const ledger = npcLedgerSettings();
+                let npcChain = null;
                 if (ledger.enabled && ledger.auto) {
-                    try { void Promise.resolve(runNpcLedgerRecord({ source: 'auto' })).then(result => { try { recordAgentAudit({ event: 'turn_npc_record', outcome: String(result?.status ?? 'unknown') }); } catch { /* 审计失败不影响记账 */ } }).catch(() => {}); } catch { /* 记账失败不影响生成 */ }
+                    try { npcChain = worldDecisionChain.catch(() => {}).then(() => Promise.resolve(runNpcLedgerRecord({ source: 'auto' }))).then(result => { try { recordAgentAudit({ event: 'turn_npc_record', outcome: String(result?.status ?? 'unknown') }); } catch { /* 审计失败不影响记账 */ } }).catch(() => {}); } catch { /* 记账失败不影响生成 */ }
                 }
+                // 正文事实核验排在记账链之后：台账没落地就开核，会把“本轮刚发生的变化”误判成矛盾。
+                scheduleFactCheckAfter([accountingChain, npcChain]);
+                // 剧情账本同样排在记账链之后：世界账落定才有可信的时钟，计划与线索才不会写成空中楼阁。
+                schedulePlotDecideAfter([accountingChain]);
                 }
             }
             try { agentPromptInjection.clear(); } catch { /* 清空失败不影响生成 */ }
             persistFactsLastInjection();
             try { agentWorldPromptInjection.clear(); } catch { /* 同上 */ }
+            try { agentPlotPromptInjection.clear(); } catch { /* 同上 */ }
             try { agentImpactPromptInjection.clear(); } catch { /* 同上 */ }
             try { agentNpcLedgerInjection.clear(); } catch { /* 同上 */ }
             try { agentSelfPromptInjection.clear(); } catch { /* 同上 */ }
             try { agentMemoryPromptInjection.clear(); } catch { /* 同上 */ }
+            try { agentWakeUpPromptInjection.clear(); } catch { /* 同上 */ }
             markMemoryLastInjectionCleared();
             try {
                 const cleared = agentActionPromptInjection.clear();
@@ -446,7 +464,7 @@ function bindHostLifecycle() {
             try {
                 const panel = typeof document !== 'undefined' ? document.getElementById(SETTINGS_PANEL_ID) : null;
                 // 面板即使收着也照常刷新：DOM 更新很便宜，省得用户打开时看到上一轮的旧内容。
-                if (panel) { renderFactsStatus(panel); refreshWorldbookStats(panel); refreshWorldPage(panel); refreshControlDashboard(); try { renderImpactLibrary(panel); } catch { /* 同上 */ } try { refreshNpcLedgerPage(panel); } catch { /* 同上 */ } try { refreshSelfPage(panel); } catch { /* 同上 */ } try { refreshMemoryPage(panel); } catch { /* 同上 */ } }
+                if (panel) { renderFactsStatus(panel); refreshWorldbookStats(panel); refreshWorldPage(panel); refreshPlotPanel(panel); refreshControlDashboard(); try { renderImpactLibrary(panel); } catch { /* 同上 */ } try { refreshNpcLedgerPage(panel); } catch { /* 同上 */ } try { refreshSelfPage(panel); } catch { /* 同上 */ } try { refreshMemoryPage(panel); } catch { /* 同上 */ } }
             } catch { /* 面板未挂载时忽略 */ }
             refreshChatShape();
         };
@@ -501,11 +519,33 @@ function bindHostLifecycle() {
     return { status: 'bound', eventCount: hostLifecycleBindings.length };
 }
 
+/** 审计行没带任务名时的兜底：按事件给一句人话（运行日志里不再满屏 unknown-task）。
+ *  真正的协调器任务仍用它自己的 id；这里只管各轮管线散落的审计调用。 */
+const AUDIT_EVENT_TASKS = Object.freeze({
+    turn_lite_settle: '简略总结算',
+    turn_impact_decide: '影响记录',
+    turn_self_decide: '纳戒决定',
+    turn_memory_decide: '记忆决定',
+    turn_world_decision: '世界决定',
+    turn_npc_record: '人物记录',
+    turn_facts_inject: '原著注入',
+    turn_settle_adjudicate: '行动判定',
+    turn_plot_decision: '剧情决定',
+    turn_fact_check: '正文核验',
+    turn_pregen_abort: '备料中止',
+    turn_mvu_arbitrate: 'MVU 仲裁',
+    npc_exp_auto_condense: '经历精简',
+    npc_consistency: '一致性体检',
+    npc_unbacked_change: '无依据变动',
+});
+
 export function recordAgentAudit(raw) {
     const item = raw && typeof raw === 'object' ? raw : {};
     const result = agentAuditLog.record({
         ...item,
-        taskId: typeof item.taskId === 'string' && item.taskId.trim() ? item.taskId : 'unknown-task',
+        taskId: typeof item.taskId === 'string' && item.taskId.trim()
+            ? item.taskId
+            : (typeof item.event === 'string' && AUDIT_EVENT_TASKS[item.event]) || 'unknown-task',
         sessionId: typeof item.sessionId === 'string' && item.sessionId.trim() ? item.sessionId : 'unknown-session',
         branchId: typeof item.branchId === 'string' && item.branchId.trim() ? item.branchId : 'unknown-branch',
         stateVersion: typeof item.stateVersion === 'string' && item.stateVersion.trim() ? item.stateVersion : 'unknown-version',
@@ -516,59 +556,33 @@ export function recordAgentAudit(raw) {
 
 export const agentCoordinator = createAgentCoordinator();
 export const agentAuditLog = createAuditLog();
-export const agentOperations = createOperationLedger();
-export const agentDataContracts = createDataContractRegistry();
-export const agentModuleRunner = createModuleRunner({ updateTask: updateCoordinatorTask, audit: { record: recordAgentAudit } });
 export const agentFactsLibrary = createFactsLibrary();
 export const agentSettingSupply = createSettingSupply();
 /** 世界影响库：记录“玩家把这局世界改成了什么样”，跨楼层累积，跟着聊天存档走。 */
 export const agentImpactRuntime = createImpactRuntime();
-export const agentActionResolver = createActionResolver();
 export const agentNpcDecisionGuard = createNpcDecisionGuard();
 export const agentNpcAutonomyPlanner = createNpcAutonomyPlanner();
 /** 人物簿：NPC 全信息的母库，跟着聊天存档走。决策、正文注入和面板都从这里读。 */
 export const agentNpcLedger = createNpcLedger();
 /** 冷藏人物推进台：只生成预览，确认后才把补丁交给人物簿。 */
 export const agentNpcColdRuntime = createNpcColdRuntime();
+/** 全局人物关系图：档案「对他人」的有向边汇总层，对称体检/二跳注入/关系扩散都从这里读。 */
+export const agentNpcRelations = createNpcRelations();
 export const agentNpcPlanReassessment = createNpcPlanReassessment({ autonomyPlanner: agentNpcAutonomyPlanner, onRequest: result => recordAgentAudit({ taskId: result.obstacleId, sessionId: result.sessionId, branchId: result.branchId, stateVersion: result.stateVersion, event: result.status === 'duplicate_reassessment' ? 'npc_plan_reassessment_duplicate' : result.status === 'needs_redecision' ? 'npc_plan_reassessment_requested' : result.status === 'cleared' ? 'npc_plan_reassessment_cleared' : 'npc_plan_reassessment_blocked', outcome: result.reason ?? result.status }) });
 export const agentNpcConflictCoordinator = createNpcConflictCoordinator();
-export const agentWorldSimulator = createWorldSimulator();
 export const agentSandboxMode = createSandboxMode();
-export const agentNpcOutcomeBridge = createNpcOutcomeBridge({ actionResolver: agentActionResolver, worldSimulator: agentWorldSimulator });
 export const agentUiState = createUiState();
-export const agentNarrativeGuard = createNarrativeGuard();
 export const agentStateStore = createStateStore();
 export const agentNpcCommitGate = createNpcCommitGate({ autonomyPlanner: agentNpcAutonomyPlanner, stateStore: agentStateStore });
-export const agentCommitRecovery = createCommitRecovery({ stateStore: agentStateStore });
-export const agentHistoryRestore = createHistoryRestore({ stateStore: agentStateStore, commitRecovery: agentCommitRecovery });
-export const agentRequestClassifier = createRequestClassifier();
-export const agentModuleRegistration = registerAgentModules(agentModuleRunner, { facts: agentFactsLibrary, actions: agentActionResolver, world: agentWorldSimulator });
-function getEnabledModuleIds() {
-    const settings = currentSettings();
-    const enabled = new Set();
-    if (settings.enableActionResolution) enabled.add('action-resolve');
-    if (settings.enableSandboxMode) enabled.add('sandbox-advance');
-    return agentModuleRunner.list().map(module => module.id).filter(id => enabled.has(id));
-}
-
-export const agentRequestRouter = createRequestRouter({ classifier: agentRequestClassifier, runner: agentModuleRunner, operationLedger: agentOperations, commitRecovery: agentCommitRecovery, npcCommitGate: agentNpcCommitGate, getCapabilities: () => agentCapabilities, getEnabledModuleIds });
-export const unsubscribeNpcPlanChanges = agentNpcAutonomyPlanner.subscribePlanChanges(change => {
-    const narrativeResult = agentNarrativeGuard.invalidateNpcPlanVersion({ sessionId: change.plan.sessionId, branchId: change.plan.branchId, stateVersion: change.plan.stateVersion, npcId: change.plan.npcId, planId: change.plan.planId, previousVersion: change.previousVersion });
-    if (narrativeResult.status === 'invalidated') for (const taskId of narrativeResult.taskIds) recordAgentAudit({ event: 'narrative_candidates_invalidated', taskId, sessionId: change.plan.sessionId, branchId: change.plan.branchId, stateVersion: change.plan.stateVersion, npcId: change.plan.npcId, planId: change.plan.planId, planVersion: change.previousVersion, currentPlanVersion: change.currentVersion, outcome: narrativeResult.reason });
-    const pipelineResult = agentTurnPipeline.invalidateNpcPlanVersion({ sessionId: change.plan.sessionId, branchId: change.plan.branchId, stateVersion: change.plan.stateVersion, npcId: change.plan.npcId, planId: change.plan.planId, previousVersion: change.previousVersion, currentVersion: change.currentVersion });
-    if (pipelineResult.status === 'invalidated') for (const item of pipelineResult.invalidated) recordAgentAudit({ event: item.status === 'save_uncertain' ? 'commit_uncertain' : 'npc_plan_candidates_invalidated', taskId: item.taskId, sessionId: change.plan.sessionId, branchId: change.plan.branchId, stateVersion: change.plan.stateVersion, npcId: change.plan.npcId, planId: change.plan.planId, planVersion: change.previousVersion, currentPlanVersion: change.currentVersion, outcome: item.status });
-    const result = agentRequestRouter.invalidateNpcPlanCandidates(change);
-    if (result.status === 'invalidated') for (const item of result.invalidated) recordAgentAudit({ event: 'npc_plan_candidates_invalidated', taskId: item.requestId, sessionId: change.plan.sessionId, branchId: change.plan.branchId, stateVersion: change.plan.stateVersion, npcId: change.plan.npcId, planId: change.plan.planId, planVersion: item.result.planVersion ?? change.previousVersion, currentPlanVersion: item.result.currentPlanVersion ?? change.currentVersion, outcome: result.reason ?? `plan_${change.type}` });
-});
-export const agentQualityGate = createQualityGate({ contracts: agentDataContracts });
-registerDefaultContracts(agentDataContracts);
 export const agentLlmClient = createLlmClient({ getSettings: () => currentSettings(), getContext: getHostContext, capture: captureAgentContinuation, isCurrent: owner => owner.current() });
 export const agentMessageAdapter = createMessageAdapter({ getContext: getHostContext, capture: captureAgentScope, isCurrent: owner => owner.current() });
-export const agentStatePersistence = createStatePersistence({ getContext: getHostContext });
 export const agentPromptInjection = createPromptInjection({ getContext: getHostContext });
 /** 世界事件系统：台账（时钟/基础信息/双栏事件）+ 独立的注入通道（key 与原著设定分开，互不清空）。 */
 export const agentWorldRuntime = createWorldRuntime({ maxOps: 12 });
 export const agentWorldPromptInjection = createPromptInjection({ getContext: getHostContext, key: 'doupo_world' });
+/** 剧情账本：滚动计划与线索账（叙事层的长篇一致性），独立的决定与注入通道（doupo_plot）。 */
+export const agentPlotRuntime = createPlotRuntime();
+export const agentPlotPromptInjection = createPromptInjection({ getContext: getHostContext, key: 'doupo_plot' });
 /** 世界影响库的独立注入通道：和世界台账、原著设定分开，谁也不清空谁。 */
 export const agentImpactPromptInjection = createPromptInjection({ getContext: getHostContext, key: 'doupo_impact' });
 /** 人物簿的独立注入通道：只写“本楼在场/重要人物的档案摘要”，和世界、影响、原著设定三路互不清空。 */
@@ -578,8 +592,10 @@ export const agentSelfRuntime = createSelfRuntime({ maxOps: 12 });
 export const agentSelfPromptInjection = createPromptInjection({ getContext: getHostContext, key: 'doupo_self' });
 /** 记忆（主角的四类叙事记忆：恩怨/情报/伏笔/大事记）：跟着聊天存档走；与纳戒（状态）、
  *  人物簿（别人）、世界（外界动态）互不重叠，只收"值得长期记住的叙事事实"。 */
-export const agentMemoryRuntime = createMemoryRuntime({ maxOps: 12 });
+export const agentMemoryRuntime = createMemoryRuntime({ maxOps: 12, advancedMode });
 export const agentMemoryPromptInjection = createPromptInjection({ getContext: getHostContext, key: 'doupo_memory' });
+/** 开局摘要的一次性注入通道：切换/载入聊天后的第一条回复前交底一次，之后清掉（doupo_wakeup）。 */
+export const agentWakeUpPromptInjection = createPromptInjection({ getContext: getHostContext, key: 'doupo_wakeup' });
 /** 行动结算·最终判定：生成前判出本轮行动结果写进独立通道（doupo_action），正文必须与判定一致。 */
 export const agentActionPromptInjection = createPromptInjection({ getContext: getHostContext, key: 'doupo_action' });
 /** 数据库桥：纳戒/世界台账镜像到「龙血玄黄·数据库」的表格里（表=账本，扩展面板=前端）。
@@ -594,18 +610,6 @@ export const agentDbBridge = createDbBridge({
 /** 纳戒 → MVU 变量桥：主角档案/境界/清单链投影到 stat_data.斗破纳戒，
  *  既是只读镜像、也是模型申报变量变化的入口（MVU 通道）。MVU 主脚本没装或被关时静默跳过，零回归。 */
 export const agentSelfMvu = createSelfMvuBridge({ capture: captureAgentContinuation, isCurrent: owner => owner.current(), getContext: getHostContext });
-/** MVU 仲裁器：模型经 <UpdateVariable> 申报纳戒变化，生成结束后读帧差分、按业务规则裁决，
- *  合法申报翻译成 self-runtime 操作落账，违规申报由下次同步自然写回。 */
-export const agentMvuArbiter = createMvuArbiter({
-    selfRuntime: agentSelfRuntime,
-    selfMvu: agentSelfMvu,
-    getContext: () => getHostContext(),
-    worldDay: () => worldDay(),
-    persistSelf,
-    capture: captureAgentContinuation,
-    isCurrent: owner => owner.current(),
-    waitMs: 1200,
-});
 /** World-book index (uid -> category/name/volumes/content) and the model-side selector that names uids. */
 export const agentFactsIndex = createFactsIndex();
 
@@ -616,9 +620,11 @@ export const agentFactsIndex = createFactsIndex();
 const API_PRESET_BINDINGS = Object.freeze({
     llm: 'llm.apiPreset', // 正文/默认调用（意图解析、正文撰写共用）
     facts: 'setting.apiPreset', // 原著选条/卷外点选
+    verify: 'verify.apiPreset', // 正文核验（生成后事实审计）
     settle: 'settle.apiPreset', // 行动结算分类判定（已并入最终判定同一套 API；绑定保留只为删方案时回收旧绑定）
     settleResult: 'settle.resultApiPreset', // 行动结算·判定调用（分类判定与最终判定共用）
     world: 'world.decideApiPreset', // 世界决定
+    plot: 'plot.decideApiPreset', // 剧情账本决定
     npcLedger: 'npc.ledgerApiPreset', // 人物簿记录员（生成后自动记账）
     npcExtract: 'npc.extractApiPreset', // 人物簿档案抄录（按世界书补空字段）
     npcExp: 'npc.expApiPreset', // 人物簿经历精简
@@ -660,11 +666,6 @@ export const agentFactsSelector = createFactsSelector({
     },
 });
 export const agentTurnStages = createTurnStages({
-    runner: agentModuleRunner,
-    actions: agentActionResolver,
-    world: agentWorldSimulator,
-    // 正文撰写/设定挑选绑定了 API设置方案就整套走方案；没绑定时 overrides 是 undefined，行为与旧版一致。
-    compose: args => agentLlmClient.compose({ ...args, overrides: presetOverrides('llm') }),
     settings: agentSettingSupply,
     select: args => agentLlmClient.selectSettings({ ...args, overrides: presetOverrides('facts') }),
     catalogIndex: agentFactsIndex,
@@ -712,57 +713,6 @@ export const agentTurnStages = createTurnStages({
         }
         const cleaned = await cleanFloorEntries(raws);
         return cleaned.map(floor => floor.text).filter(text => text.trim());
-    },
-    getState: ctx => agentStateStore.read({ sessionId: ctx.sessionId, branchId: ctx.branchId }).state ?? {},
-    settleAdjudicator: async ({ category, input, state, allowedFields, preliminary, signal }) => {
-        const settings = settleSettings();
-        return agentLlmClient.adjudicateAction({
-            system: settings.promptFor(category),
-            categoryLabel: settings.labelFor(category),
-            input,
-            state,
-            allowedFields,
-            preliminary,
-            signal,
-            overrides: settings.overrides,
-        });
-    },
-    getWritableFields: () => listWritableFields(agentDataContracts),
-    getSettleCategories: () => settleSettings().customCategories,
-    onSettingDrift: ({ taskId, sessionId, branchId, stateVersion, issues }) => recordAgentAudit({
-        taskId,
-        sessionId,
-        branchId,
-        stateVersion,
-        event: 'setting_drift',
-        outcome: 'unapproved_setting_use',
-        detail: issues.slice(0, 8).map(item => `${item.id}:${item.key}`).join(' '),
-    }),
-    getSourceIds: () => {
-        const facts = currentSettings().facts ?? {};
-        return Array.isArray(facts.sourceIds) ? facts.sourceIds : [];
-    },
-    getLimits: () => {
-        const facts = currentSettings().facts ?? {};
-        return { maxEntries: Number.isInteger(facts.maxEntries) && facts.maxEntries > 0 ? facts.maxEntries : 8, includeUnverified: facts.includeUnverified === true };
-    },
-    getWriter: targetId => agentDataContracts.get(targetId)?.writer ?? 'actions',
-});
-export const agentTurnPipeline = createTurnPipeline({ stages: agentTurnStages, qualityGate: agentQualityGate, narrativeGuard: agentNarrativeGuard, commitRecovery: agentCommitRecovery, onProgress: publishPipelineProgress, audit: agentAuditLog });
-export const agentOrchestrator = createOrchestrator({
-    pipeline: agentTurnPipeline,
-    router: agentRequestRouter,
-    coordinator: agentCoordinator,
-    stateStore: agentStateStore,
-    contracts: agentDataContracts,
-    settings: () => currentSettings(),
-    interpret: args => agentLlmClient.interpret({ ...args, categories: settleSettings().customCategories, overrides: presetOverrides('llm') }),
-    deliver: args => agentMessageAdapter.deliver(args),
-    placeholder: args => agentMessageAdapter.deliver({ text: '……', placeholder: true, ...args }),
-    discardMessage: args => agentMessageAdapter.discard(args),
-    persistence: agentStatePersistence,
-    onEvent: event => {
-        if (event?.type === 'turn_completed' || event?.type === 'turn_failed' || event?.type === 'turn_uncertain') refreshControlDashboard();
     },
 });
 function injectionSettings() {
@@ -830,6 +780,18 @@ function persistWorld() {
         .catch(error => ({ status: 'failed', reason: String(error?.message ?? error) }));
 }
 
+/** 剧情账本跟着聊天走：换聊天读那一份，读不到就按空账开局；悬置天数以世界台账的当前天数为准。 */
+function restorePlotFromChat() {
+    const record = hostStorage?.plotState?.();
+    return record?.status === 'ready' && record.value ? agentPlotRuntime.restore(record.value) : agentPlotRuntime.reset();
+}
+
+function persistPlot() {
+    const snapshot = agentPlotRuntime.snapshot();
+    return Promise.resolve(hostStorage?.savePlotState?.(snapshot) ?? { status: 'unavailable' })
+        .catch(error => ({ status: 'failed', reason: String(error?.message ?? error) }));
+}
+
 /** 生成前把世界现状和指令规则写进扩展提示词；与原著设定通道相互独立。 */
 function writeWorldInjectionForPrompt() {
     const world = currentSettings().world ?? {};
@@ -843,6 +805,18 @@ function writeWorldInjectionForPrompt() {
     const withGuide = !(world.decideEnabled !== false && world.decideAuto !== false);
     // 抬头+现状受预算约束，指令指南固定追加不截断（约 600 字，另留余量）。
     return agentWorldPromptInjection.write({ text: withGuide ? `${WORLD_HEADER}\n${body}\n\n${guide}` : `${WORLD_HEADER}\n${body}` }, { depth: injectionSettings().depth, maxChars: settings.budget + (withGuide ? 1200 : 0) });
+}
+
+/** 生成前把剧情前瞻（滚动计划 + 未回收线索）写进独立注入通道；与世界等各路互不清空。 */
+function writePlotInjectionForPrompt() {
+    const plot = currentSettings().plot ?? {};
+    const settings = plotLedgerSettings();
+    if (!plot.enabled || !settings.inject) { agentPlotPromptInjection.clear(); return { status: 'disabled' }; }
+    const probe = agentPlotPromptInjection.inspect();
+    if (probe.status !== 'ready') return probe;
+    const body = buildPlotInjection(agentPlotRuntime.snapshot(), { maxChars: settings.budget });
+    if (!body) { agentPlotPromptInjection.clear(); return { status: 'empty' }; }
+    return agentPlotPromptInjection.write({ text: `${PLOT_HEADER}\n${body}` }, { depth: injectionSettings().depth, maxChars: settings.budget + 200 });
 }
 
 /**
@@ -959,6 +933,18 @@ function memorySettings() {
         decideEnabled: memory.decideEnabled !== false,
         decideAuto: memory.decideAuto !== false,
         consolidateAfter: Number.isInteger(memory.consolidateAfter) && memory.consolidateAfter >= 0 ? Math.min(30, memory.consolidateAfter) : 6,
+        // 记忆目录字数预算：召回决定喂给模型的目录上限（混合检索分数序，超预算从尾部丢）。
+        catalogBudget: Number.isInteger(memory.catalogBudget) && memory.catalogBudget >= 1000 ? Math.min(20000, memory.catalogBudget) : 4000,
+        // 开局摘要：切聊天后第一条回复前的一次性交底；关掉后完全不注。
+        wakeUp: memory.wakeUp !== false,
+        wakeUpBudget: Number.isInteger(memory.wakeUpBudget) && memory.wakeUpBudget >= 200 ? Math.min(2000, memory.wakeUpBudget) : 500,
+        // 语义检索（可选）：没配置时全链路走纯本地混合检索，零行为变化。
+        embedding: {
+            enabled: memory.embedding?.enabled === true,
+            baseUrl: typeof memory.embedding?.baseUrl === 'string' ? memory.embedding.baseUrl.trim() : '',
+            apiKey: typeof memory.embedding?.apiKey === 'string' ? memory.embedding.apiKey.trim() : '',
+            model: typeof memory.embedding?.model === 'string' ? memory.embedding.model.trim() : '',
+        },
         maxFloors: Number.isInteger(memory.decideMaxFloors) && memory.decideMaxFloors > 0 ? Math.min(12, memory.decideMaxFloors) : Math.min(12, globalReadFloors()),
         prompt: typeof memory.decidePrompt === 'string' && memory.decidePrompt.trim() ? memory.decidePrompt.trim() : MEMORY_DECIDE_PROMPT,
         recallEnabled: memory.recallEnabled !== false,
@@ -987,18 +973,19 @@ function restoreMemoryFromChat() {
     return result;
 }
 
-/** 总控「运行口径」行：开放世界/主线 + 世界书通道状态。 */
+/** 总控「运行口径」行：调用版本（完整版/简略版/进阶版）+ 开放世界/主线 + 世界书通道状态。 */
 function renderRuntimeMode(panel) {
     const target = panel?.querySelector('[data-runtime-mode]');
     if (!target) return;
+    const modeText = apiMode() === 'advanced' ? '进阶版（完整版管线＋进阶增强）' : apiMode() === 'lite' ? '简略版（合并调用）' : '完整版（每功能一路，进阶增强关闭）';
     const sandbox = sandboxModeActive();
     const record = agentSandboxMode.read(currentAgentScope());
     const recordNote = record.status === 'ready'
         ? `正式记录：${record.mode === 'sandbox' ? '开放世界' : '主线'}${record.mode === 'sandbox' ? `（惯性·${record.inertia === 'strong' ? '强' : record.inertia === 'weak' ? '弱' : '中'}）` : ''}`
         : '正式记录：未建立（按设置开关走）';
     target.textContent = sandbox
-        ? `当前口径：开放世界。${recordNote}；世界书通道停用，内置斗气大陆基线注入中，决定喂料不带世界书条目。`
-        : `当前口径：主线。${recordNote}；世界书通道照常（开关与预算见「原著设定」页）。`;
+        ? `当前口径：${modeText}。开放世界；${recordNote}；世界书通道停用，内置斗气大陆基线注入中，决定喂料不带世界书条目。`
+        : `当前口径：${modeText}。主线；${recordNote}；世界书通道照常（开关与预算见「原著设定」页）。`;
 }
 
 /** 数据库表里已有记忆就收养（表=账本）；保留本地操作流水，表空则不动。 */
@@ -1027,10 +1014,42 @@ function persistMemory() {
     const result = Promise.resolve(hostStorage?.saveMemoryState?.(snapshot) ?? { status: 'unavailable' })
         .catch(error => ({ status: 'failed', reason: String(error?.message ?? error) }));
     void agentDbBridge.mirrorMemory(snapshot).catch(() => { /* 镜像失败记在桥状态里，不阻断记账 */ });
+    syncMemoryVectors(snapshot);
     return result;
 }
 
 // ---------- 记忆召回决定：用户输入之后、生成之前，由召回员挑注入哪些记忆 ----------
+
+// ---------- 记忆语义检索（可选）：OpenAI 兼容 embeddings + 向量索引，默认关 ----------
+// 与 MemPalace 的可插拔检索层同构：没配置端点时全链路走纯本地混合检索，零行为变化。
+
+const agentEmbeddingClient = createEmbeddingClient({ getSettings: () => memorySettings().embedding });
+const agentMemoryVectors = createMemoryVectorIndex({
+    store: createMemoryVectorStore({}),
+    embed: texts => agentEmbeddingClient.embed(texts),
+    model: () => memorySettings().embedding.model,
+    chatKey: () => String(getHostContext()?.chatId ?? 'default'),
+});
+
+/** 落账后差异化补嵌（fire-and-forget）：语义检索没开/没配齐/不在进阶版就安静跳过，失败不影响记账。 */
+function syncMemoryVectors(snapshot = null) {
+    try {
+        if (!advancedMode() || !memorySettings().embedding.enabled || !agentEmbeddingClient.available()) return;
+        void agentMemoryVectors.sync(snapshot ?? agentMemoryRuntime.snapshot(), { budget: 8 }).catch(() => { /* 补嵌失败留给下一轮落账 */ });
+    } catch { /* 语义检索永不阻断记账 */ }
+}
+
+/** 语义相似度表（Map<编号, 相似度>）：没开/没配齐/不在进阶版/失败一律 null，调用方退回纯本地混合检索。 */
+async function memoryVectorSim(snapshot, sceneForQuery) {
+    try {
+        if (!advancedMode() || !memorySettings().embedding.enabled || !agentEmbeddingClient.available()) return null;
+        const queryVector = await agentMemoryVectors.queryVector(sceneForQuery);
+        if (!queryVector) return null;
+        return await agentMemoryVectors.similarities(snapshot, queryVector);
+    } catch {
+        return null;
+    }
+}
 
 /** 召回结果缓存：同一楼（楼层数 + 最新玩家输入 + 账本未变）内重 roll/重注入不重复调用模型。 */
 let memoryRecallCache = { key: '', ids: [], note: '' };
@@ -1064,9 +1083,19 @@ function renderMemoryRecallResult(selection) {
  * 召回模型挑编号，脚本按编号取条目（坏号跳过）。结果按一轮缓存，重 roll 不重复调用。
  * 失败/关闭/模型忙时返回失败——由注入路径退回关键词兜底，绝不阻塞生成。
  */
-async function runMemoryRecall({ source = 'manual', chat = null } = {}) {
+/** 玩家在“让模型决定一次”弹窗里交代的方向：拼进用户提示词尾部；留空＝没填，原样返回。 */
+function withPlayerNote(user, note) {
+    const directive = typeof note === 'string' ? note.trim().slice(0, 500) : '';
+    if (!directive) return user;
+    return `${user}\n\n【玩家本轮补充指示】${directive}\n（这是玩家本人特别交代的方向，优先纳入考虑；落账仍要遵守上面的 JSON 字段与校验规则，没有依据的不要编。）`;
+}
+
+async function runMemoryRecall({ source = 'manual', chat = null, note = '' } = {}) {
     const settings = memorySettings();
-    if (!settings.enabled || !settings.inject || !settings.recallEnabled) return { status: 'disabled' };
+    if (!settings.enabled || !settings.inject || !settings.recallEnabled) {
+        setMemoryRecallStatus('记忆召回已关闭：先在记忆页打开「启用记忆」和召回开关。');
+        return { status: 'disabled' };
+    }
     if (memoryRecallRunning) return { status: 'busy' };
     const chatList = Array.isArray(chat) ? chat : (Array.isArray(getHostContext()?.chat) ? getHostContext().chat : []);
     const cacheKey = memoryRecallCacheKey(chatList);
@@ -1113,7 +1142,9 @@ async function runMemoryRecall({ source = 'manual', chat = null } = {}) {
         // 世界书侧输入：直接复用原著资料本轮注入通道里的现成内容（选条流程的产物），决定调用不自己翻世界书条目。
         const bookLines = !sandboxModeActive() ? factsInjectedLines() : [];
         const snapshot = agentMemoryRuntime.snapshot();
-        const user = buildRecallUser({ snapshot, floors, worldbookLines: bookLines });
+        // 语义检索（可选）：查询向量取相似度表喂给目录排序；没开/失败静默退回纯本地混合检索。
+        const vectorSim = await memoryVectorSim(snapshot, floors.map(floor => floor.text ?? '').join('\n'));
+        const user = withPlayerNote(buildRecallUser({ snapshot, floors, worldbookLines: bookLines, currentDay: worldDay(), vectorSim, catalogChars: settings.catalogBudget, advanced: advancedMode() }), note);
         const raw = await agentLlmClient.complete({
             label: '记忆召回',
             system: settings.recallPrompt,
@@ -1223,7 +1254,9 @@ async function writeMemoryInjectionForPrompt({ chat = null } = {}) {
     }
     if (!pickedSource) {
         pickedSource = 'keyword';
-        picked = recallHits(agentMemoryRuntime.snapshot(), { sceneText });
+        // 兜底也走混合检索：时间邻近参与排序，语义检索开着就叠加相似度表（失败静默退回纯本地）。
+        const fallbackVectorSim = await memoryVectorSim(agentMemoryRuntime.snapshot(), sceneText);
+        picked = recallHits(agentMemoryRuntime.snapshot(), { sceneText, currentDay: worldDay(), vectorSim: fallbackVectorSim, advanced: advancedMode() });
     }
     if (!current()) return { status: 'stale' };
     // 决定式自动开启时指令指南不进正文提示词（决定模型另行调用），只注入召回结果保住正文一致性。
@@ -1257,6 +1290,31 @@ async function writeMemoryInjectionForPrompt({ chat = null } = {}) {
         reason: injected ? '' : writeResult?.reason ?? writeResult?.status ?? 'write_failed',
     });
     return writeResult;
+}
+
+/* 开局摘要（wake-up，MemPalace wake-up 的模拟）：门闩记一个聊天号，启动恢复/换聊天时武装；
+ * 写入器命中即销——每次切聊天只在第一条回复前交底一次，之后通道保持空，各常驻通道照常。 */
+let wakeUpPendingChatId = null;
+
+function writeWakeUpInjectionForPrompt({ chat } = {}) {
+    const settings = memorySettings();
+    if (!settings.enabled || !settings.inject || !settings.wakeUp || !advancedMode()) {
+        agentWakeUpPromptInjection.clear();
+        return;
+    }
+    const chatId = String(getHostContext()?.chatId ?? '');
+    if (wakeUpPendingChatId === null || chatId !== wakeUpPendingChatId) return;
+    const floors = Array.isArray(chat) ? chat : getHostContext()?.chat;
+    if (!Array.isArray(floors) || floors.length === 0) return; // 空聊天没东西可交底，门闩留给下一次
+    wakeUpPendingChatId = null;
+    const summary = buildWakeUpSummary({
+        worldSnapshot: agentWorldRuntime.snapshot(),
+        memorySnapshot: agentMemoryRuntime.snapshot(),
+        npcRecords: agentNpcLedger.list(),
+        maxChars: settings.wakeUpBudget,
+    });
+    if (!summary) return;
+    agentWakeUpPromptInjection.write({ text: summary, usedIds: [] }, { depth: injectionSettings().depth, maxChars: settings.wakeUpBudget });
 }
 
 /** 手动操作与面板操作共用：落账、存档、刷新页面；天数取世界时钟。 */
@@ -1410,9 +1468,12 @@ let selfDecidedFloor = null;
  * 脚本逐条校验执行 → 结果呈现到面板。每轮生成结束后自动跑；同楼重roll时以楼层
  * 基线为输入（运行时 apply 会先撤销上一版贡献再应用新指令），正文申报块已退役。
  */
-async function runSelfDecision({ source = 'auto' } = {}) {
+async function runSelfDecision({ source = 'auto', note = '' } = {}) {
     const settings = selfLedgerSettings();
-    if (!settings.enabled || !settings.decideEnabled) return { status: 'disabled' };
+    if (!settings.enabled || !settings.decideEnabled) {
+        setSelfStatus('纳戒决定已关闭：先在纳戒页打开「启用模型决定」。');
+        return { status: 'disabled' };
+    }
     if (selfDecideRunning) return { status: 'busy' };
     // 自定义连接有自己的地址和密钥，不依赖全局配置；跟随酒馆才需要先检查全局连接。
     if (settings.overrides.connection !== 'custom' && agentLlmClient.availableFor('tavern') !== true) {
@@ -1456,7 +1517,7 @@ async function runSelfDecision({ source = 'auto' } = {}) {
         const raw = await agentLlmClient.complete({
             label: '纳戒决定',
             system: settings.prompt,
-            user: buildSelfDecideUser({ snapshot: decideSnapshot, floors, worldbookLines: bookLines }),
+            user: withPlayerNote(buildSelfDecideUser({ snapshot: decideSnapshot, floors, worldbookLines: bookLines, settleLines: settleVerdictLinesForDecide() }), note),
             jsonSchema: SELF_JSON_SCHEMA,
             overrides: settings.overrides,
         });
@@ -2310,6 +2371,45 @@ function persistNpcCold() {
         .catch(error => ({ status: 'failed', reason: String(error?.message ?? error) }));
 }
 
+/** 人物关系图跟着聊天走：换聊天读那一份，读不到就按空图开局。 */
+function restoreNpcRelationsFromChat() {
+    const record = hostStorage?.npcRelationsState?.();
+    if (record?.status === 'ready' && record.value) return agentNpcRelations.restore(record.value);
+    return agentNpcRelations.restore({ edges: [] });
+}
+
+function persistNpcRelations() {
+    return Promise.resolve(hostStorage?.saveNpcRelationsState?.(agentNpcRelations.snapshot()) ?? { status: 'unavailable' })
+        .catch(error => ({ status: 'failed', reason: String(error?.message ?? error) }));
+}
+
+/**
+ * 把关系图的边解析成「档案姓名 → 一跳关系人显示名」的映射：冷藏扫描的事件匹配只认
+ * 正文里的名字，别名/称号必须先折回主键姓名才能对上档案。
+ */
+function buildRelationsByPerson() {
+    const records = agentNpcLedger.list();
+    const lookup = new Map();
+    for (const record of records) {
+        for (const key of [record.name, ...record.aliases, ...record.titles]) {
+            const clean = String(key ?? '').trim().toLowerCase();
+            if (clean && !lookup.has(clean)) lookup.set(clean, record.name);
+        }
+    }
+    const resolve = name => lookup.get(String(name ?? '').trim().toLowerCase()) ?? null;
+    const map = {};
+    for (const edge of agentNpcRelations.list()) {
+        const from = resolve(edge.from);
+        const to = resolve(edge.to);
+        if (!from || !to || from === to) continue;
+        if (!Array.isArray(map[from])) map[from] = [];
+        if (!Array.isArray(map[to])) map[to] = [];
+        if (!map[from].includes(to)) map[from].push(to);
+        if (!map[to].includes(from)) map[to].push(from);
+    }
+    return map;
+}
+
 function npcColdSettings() {
     const settings = currentSettings();
     const npc = settings.npc ?? {};
@@ -2342,6 +2442,8 @@ function coldFloors(limit) {
 }
 
 let npcColdRunning = false;
+/** 冷藏扫描的并发路数：多人同时推，比串行快几倍；路数放太宽容易顶到接口限流。 */
+const NPC_COLD_CONCURRENCY = 3;
 
 async function runNpcColdPreview() {
     const settings = npcColdSettings();
@@ -2352,7 +2454,8 @@ async function runNpcColdPreview() {
         return { status: 'not_configured' };
     }
     const records = agentNpcLedger.list();
-    const candidates = agentNpcColdRuntime.candidates({ day: worldDay(), records, worldSnapshot: agentWorldRuntime.snapshot(), floors: await coldFloors(settings.floors) });
+    // 关系一跳扩散：把全局关系图折成「姓名 → 一跳关系人」映射交给扫描，师徒/亲属出事也算牵连。
+    const candidates = agentNpcColdRuntime.candidates({ day: worldDay(), records, worldSnapshot: agentWorldRuntime.snapshot(), floors: await coldFloors(settings.floors), relationsByPerson: buildRelationsByPerson() });
     // 第一次扫描可能只是建立当天基线；即使没有草稿，也要把这个基线存进当前聊天，避免刷新后把旧事件误当成新事件。
     persistNpcCold();
     if (!candidates.length) {
@@ -2364,35 +2467,71 @@ async function runNpcColdPreview() {
     setNpcLedgerStatus(`正在为 ${candidates.length} 个冷藏人物准备推进草稿……`);
     const previews = [];
     const failed = [];
+    const droppedForeign = [];
     try {
-        for (const candidate of candidates) {
+        // 有界并行：一次推 3 个人，每人仍带同款重试；结果按候选顺序回填，草稿顺序稳定。
+        const results = await mapWithLimit(candidates, NPC_COLD_CONCURRENCY, async candidate => {
             try {
+                const coldUser = buildNpcColdUser({ record: candidate.record, fromDay: candidate.fromDay, toDay: candidate.toDay, events: candidate.events, floors: candidate.floors, lastNote: candidate.lastNote });
                 const raw = await agentLlmClient.complete({
                     label: '冷藏推进',
                     system: settings.prompt,
-                    user: buildNpcColdUser({ record: candidate.record, fromDay: candidate.fromDay, toDay: candidate.toDay, events: candidate.events, floors: candidate.floors }),
+                    user: coldUser,
                     jsonSchema: NPC_RECORD_JSON_SCHEMA,
                     overrides: npcColdOverrides(settings),
                 });
                 if (!continuation.current()) return { status: 'stale' };
-                const parsed = parseNpcRecordReply(raw);
-                if (parsed.status !== 'ok') { failed.push(candidate.name); continue; }
-                const patches = parsed.patches.filter(item => item && typeof item === 'object').map(item => ({ ...item, 姓名: candidate.name }));
-                const preview = { ...candidate, patch: { 人物: patches } };
+                let parsed = parseNpcRecordReply(raw);
+                if (parsed.status !== 'ok') {
+                    // 与记录员同款：坏输出退回重问一次，仍不行才记失败——草稿模式不会写坏账。
+                    const retryRaw = await agentLlmClient.complete({
+                        label: '冷藏推进重试',
+                        system: settings.prompt + NPC_RECORD_RETRY_SYSTEM_NOTE,
+                        user: buildRecordRetryUser({ user: coldUser, raw, reason: parsed.reason }),
+                        jsonSchema: NPC_RECORD_JSON_SCHEMA,
+                        overrides: npcColdOverrides(settings),
+                    });
+                    if (!continuation.current()) return { status: 'stale' };
+                    const retryParsed = parseNpcRecordReply(retryRaw);
+                    if (retryParsed.status === 'ok') parsed = retryParsed;
+                }
+                if (parsed.status !== 'ok') return { status: 'failed', name: candidate.name };
+                // 模型写了名单外的人：丢弃并计数，不再把别人的字段并到目标头上。
+                const { kept, droppedNames } = filterColdPatches(parsed.patches, candidate.record);
+                const preview = { ...candidate, patch: { 人物: kept } };
                 agentNpcColdRuntime.rememberPreview({ id: candidate.id, name: candidate.name, fromDay: candidate.fromDay, toDay: candidate.toDay, previousDay: candidate.previousDay, baseVersion: candidate.record.version, eventIds: candidate.eventIds, patch: preview.patch });
-                previews.push(preview);
+                return { status: 'ok', preview, droppedNames };
             } catch (error) {
                 if (!continuation.current()) return { status: 'stale' };
-                failed.push(`${candidate.name}（${error?.message ?? error}）`);
+                return { status: 'failed', name: `${candidate.name}（${error?.message ?? error}）` };
+            }
+        });
+        if (!continuation.current()) return { status: 'stale' };
+        for (const item of results) {
+            if (!item || item.status === 'stale') { if (item) return { status: 'stale' }; continue; }
+            if (item.status === 'ok') {
+                previews.push(item.preview);
+                if (item.droppedNames.length) droppedForeign.push(`${item.preview.name}：${item.droppedNames.join('、')}`);
+            } else if (item.status === 'failed') {
+                failed.push(item.name);
             }
         }
         persistNpcCold();
     } finally {
         if (npcColdRunning === continuation) npcColdRunning = false;
     }
-    setNpcLedgerStatus(`冷藏草稿已生成 ${previews.length} 份${failed.length ? `；失败 ${failed.join('、')}` : ''}。请逐份确认后才会写回人物簿。`);
+    setNpcLedgerStatus(`冷藏草稿已生成 ${previews.length} 份${failed.length ? `；失败 ${failed.join('、')}` : ''}${droppedForeign.length ? `；丢弃名单外补丁 ${droppedForeign.join('；')}` : ''}。请逐份确认后才会写回人物簿。`);
     refreshNpcLedgerPage();
     return { status: 'previewed', previews, failed };
+}
+
+/** 补丁文本里提到的建档人物（含互写牵连到的）——确认前的撤销快照要把他们都罩住。 */
+function namesMentionedInPatch(patch, records) {
+    const body = JSON.stringify(patch ?? {}).toLowerCase();
+    return (Array.isArray(records) ? records : [])
+        .filter(record => [record?.name, ...(record?.aliases ?? []), ...(record?.titles ?? [])]
+            .some(name => name && body.includes(String(name).toLowerCase())))
+        .map(record => record.name);
 }
 
 function confirmNpcColdPreview(id) {
@@ -2402,15 +2541,43 @@ function confirmNpcColdPreview(id) {
     const validation = agentNpcColdRuntime.validatePreview(wanted, { recordVersion: agentNpcLedger.get(preview.name)?.version });
     if (validation.status !== 'ready') return validation;
     const patch = preview.patch && typeof preview.patch === 'object' ? preview.patch : { 人物: [] };
+    // 撤销快照：确认前把补丁涉及（含互写牵连）的人物整档存一份，只保留最近一次。
+    const undoRecords = {};
+    for (const name of namesMentionedInPatch(patch, agentNpcLedger.list())) {
+        const record = agentNpcLedger.get(name);
+        if (record) undoRecords[name] = record;
+    }
     // 流水逐条带 src:'冷藏'——档案流水页和不在场活动名单靠它区分“自行活动”与“正文记录”。
     const result = applyNpcLedgerPayload(patch, { source: '冷藏推进', floor: lastReplyIndex(getHostContext()?.chat || []), logSrc: '冷藏' });
     if (!['applied', 'ignored', 'empty'].includes(result.status)) return { status: 'failed', result };
     agentNpcColdRuntime.mark(preview.name, { previewId: wanted, day: preview.toDay, eventIds: preview.eventIds, floor: lastReplyIndex(getHostContext()?.chat || []), status: 'confirmed' });
+    if (Object.keys(undoRecords).length) agentNpcColdRuntime.rememberUndo({ previewId: wanted, name: preview.name, day: preview.toDay, previousDay: preview.previousDay, records: undoRecords });
     persistNpcLedger();
     persistNpcCold();
-    setNpcLedgerStatus(`已确认 ${preview.name} 的冷藏推进；人物簿已更新。`);
+    setNpcLedgerStatus(`已确认 ${preview.name} 的冷藏推进；人物簿已更新。确认错了可以点「撤销上次确认」退回。`);
     refreshNpcLedgerPage();
     return { status: 'confirmed', result };
+}
+
+/** 撤销最近一次冷藏确认：人物簿按快照原样退回，游标与草稿状态一并回滚。 */
+function undoLastNpcColdConfirm() {
+    const undo = agentNpcColdRuntime.getUndo();
+    if (!undo) {
+        setNpcLedgerStatus('没有可撤销的冷藏确认（只保留最近一次）。');
+        return { status: 'nothing_to_undo' };
+    }
+    const restored = agentNpcLedger.restoreSnapshots(undo.records);
+    if (!restored.restored?.length) {
+        setNpcLedgerStatus('撤销失败：人物簿里已找不到当时的档案（可能已改名或清空）。');
+        return { status: 'failed', restored };
+    }
+    const rolled = agentNpcColdRuntime.unmark(undo.previewId);
+    agentNpcColdRuntime.clearUndo();
+    persistNpcLedger();
+    persistNpcCold();
+    setNpcLedgerStatus(`已撤销 ${undo.name} 的最近一次冷藏确认：档案退回快照，游标回到第 ${rolled.status === 'unmarked' ? rolled.value.lastDay : undo.previousDay} 天，草稿回到待确认。`);
+    refreshNpcLedgerPage();
+    return { status: 'undone', rolled };
 }
 
 function discardNpcColdPreview(id) {
@@ -2419,6 +2586,296 @@ function discardNpcColdPreview(id) {
     setNpcLedgerStatus('已放弃这份冷藏草稿，人物簿没有变化。');
     refreshNpcLedgerPage();
     return result;
+}
+
+/* ── 经历精简的自动触发（reflection）────────────────────────
+ * 经历是“重大转变”的追加清单，超过阈值就自动请模型出精简草稿；
+ * 草稿停在人物簿页等确认——自动的只是“出草稿”，写回永远要人点头。 */
+
+/** 经历条数越过这条线就自动触发精简（真上限 120，这里提前减负防溢出丢最旧条目）。 */
+const NPC_EXP_AUTO_CONDENSE_THRESHOLD = 40;
+/** 待确认的自动精简草稿：name → { entries, recordVersion, at }，确认/放弃后清掉。 */
+const pendingAutoExpCondense = new Map();
+
+async function runAutoExpCondense(names = []) {
+    for (const rawName of names.slice(0, 3)) {
+        const name = String(rawName ?? '').trim();
+        if (!name || pendingAutoExpCondense.has(name)) continue;
+        const group = agentNpcLedger.exps().find(item => item.name === name);
+        if (!group || group.entries.length < NPC_EXP_AUTO_CONDENSE_THRESHOLD) continue;
+        const settings = npcLedgerSettings();
+        if (npcLedgerOverrides(settings, {}, 'npcExp').connection !== 'custom' && agentLlmClient.availableFor('tavern') !== true) break;
+        const continuation = captureAgentContinuation();
+        const recordVersion = JSON.stringify(agentNpcLedger.get(name));
+        try {
+            const raw = await agentLlmClient.complete({
+                label: '经历精简',
+                system: typeof currentSettings().npc?.expCondensePrompt === 'string' && currentSettings().npc.expCondensePrompt.trim()
+                    ? currentSettings().npc.expCondensePrompt.trim() : EXP_CONDENSE_PROMPT,
+                user: buildExpCondenseUser({ name: group.name, summary: agentNpcLedger.get(name)?.identity ?? '', entries: group.entries }),
+                jsonSchema: { type: 'object', properties: { 经历: { type: 'array' } }, required: ['经历'] },
+                overrides: npcLedgerOverrides(settings, { temperature: 0.2, maxTokens: 1600 }, 'npcExp'),
+            });
+            if (!continuation.current()) return;
+            const parsed = parseExpCondenseReply(raw);
+            if (parsed.status !== 'ok' || recordVersion !== JSON.stringify(agentNpcLedger.get(name))) continue;
+            pendingAutoExpCondense.set(name, { entries: parsed.entries, recordVersion, continuation, at: new Date().toISOString() });
+            recordAgentAudit({ event: 'npc_exp_auto_condense', outcome: `${name}：${group.entries.length} 条 → 草稿 ${parsed.entries.length} 条，待确认` });
+        } catch { /* 精简失败不影响记账主链路 */ }
+    }
+    if (pendingAutoExpCondense.size) {
+        setNpcLedgerStatus(`经历自动精简草稿已备好 ${pendingAutoExpCondense.size} 份（${[...pendingAutoExpCondense.keys()].join('、')}），在人物簿页确认后写回。`);
+        try { refreshNpcLedgerPage(); } catch { /* 面板没开时忽略 */ }
+    }
+}
+
+function confirmAutoExpCondense(name) {
+    const clean = String(name ?? '').trim();
+    const pending = pendingAutoExpCondense.get(clean);
+    if (!pending || !pending.continuation?.current() || pending.recordVersion !== JSON.stringify(agentNpcLedger.get(clean))) {
+        pendingAutoExpCondense.delete(clean);
+        setNpcLedgerStatus('精简草稿已过期，请手动重跑；当前经历未修改。');
+        refreshNpcLedgerPage();
+        return { status: 'stale' };
+    }
+    const result = agentNpcLedger.replaceExp(clean, pending.entries);
+    pendingAutoExpCondense.delete(clean);
+    if (result.status === 'replaced') {
+        persistNpcLedger();
+        setNpcLedgerStatus(`${result.name} 的经历已自动精简写回：${result.before} 条 → ${result.after} 条。`);
+    } else {
+        setNpcLedgerStatus(`精简写回没有成功（${result.status}），经历保持原样。`);
+    }
+    refreshNpcLedgerPage();
+    return result;
+}
+
+function discardAutoExpCondense(name) {
+    const clean = String(name ?? '').trim();
+    pendingAutoExpCondense.delete(clean);
+    setNpcLedgerStatus(`已放弃 ${clean} 的自动精简草稿，经历保持原样。`);
+    refreshNpcLedgerPage();
+    return { status: 'discarded', name: clean };
+}
+
+/* ── 传闻触达（gossip）────────────────────────────────────
+ * world 的 rumor 事件沿关系图跳一跳：不在场、但与传闻出场人物有一跳边的人会听到；
+ * 模型按各自性格出微调补丁（好感限 ±3），先出草稿、逐条确认后走正常落账。 */
+
+let npcGossipRunning = false;
+
+/** 从世界台账收 rumor 事件（未了结的）：传播上限跟氛围走——平静少传、风波多传（calm 2 / rising 3 / storm 4）。 */
+function collectRumorEvents() {
+    const snapshot = agentWorldRuntime.snapshot();
+    const events = [...(snapshot?.nearEvents ?? []), ...(snapshot?.worldEvents ?? [])];
+    const rumorLimit = snapshot?.tension === 'storm' ? 4 : snapshot?.tension === 'rising' ? 3 : 2;
+    return events.filter(event => event?.weight === 'rumor' && event?.done !== true)
+        .map(event => ({ day: Number.isFinite(Number(event.day)) ? Number(event.day) : null, text: String(event.text ?? ''), basis: String(event.basis ?? '') }))
+        .filter(event => event.text)
+        .slice(0, rumorLimit);
+}
+
+/** 挑传闻目标：不在场、且与传闻正文提到的建档人物有一跳边；最多 6 人。 */
+function selectGossipTargets(rumors) {
+    const records = agentNpcLedger.list();
+    const lookup = new Map();
+    for (const record of records) {
+        for (const key of [record.name, ...record.aliases, ...record.titles]) {
+            const clean = String(key ?? '').trim().toLowerCase();
+            if (clean && !lookup.has(clean)) lookup.set(clean, record.name);
+        }
+    }
+    const mentioned = new Set();
+    for (const rumor of rumors) {
+        const body = rumor.text.toLowerCase();
+        for (const [key, name] of lookup) if (body.includes(key)) mentioned.add(name);
+    }
+    if (!mentioned.size) return [];
+    const targets = [];
+    for (const record of records) {
+        if (record.presence === '在场' || targets.length >= 6) continue;
+        const heard = [];
+        for (const edge of agentNpcRelations.forPerson(record.name)) {
+            const other = edge.from === record.name ? edge.to : edge.from;
+            if (!mentioned.has(other)) continue;
+            for (const rumor of rumors) {
+                if (!rumor.text.toLowerCase().includes(other.toLowerCase())) continue;
+                heard.push({ from: other, via: `${edge.stance}${edge.relation ? `（${edge.relation}）` : ''}`, rumor: rumor.text });
+                if (heard.length >= 3) break;
+            }
+            if (heard.length >= 3) break;
+        }
+        if (heard.length) targets.push({ record, heard });
+    }
+    return targets.slice(0, 6);
+}
+
+/** 传闻传播：出草稿弹窗，逐条确认写回；不做自动落账。 */
+async function runNpcGossip(panel) {
+    const settings = npcLedgerSettings();
+    if (!settings.enabled) { setNpcLedgerStatus('人物簿已关闭，传闻不会传播。'); return { status: 'disabled' }; }
+    if (npcGossipRunning) return { status: 'busy' };
+    if (settings.connection !== 'custom' && agentLlmClient.availableFor('tavern') !== true) {
+        setNpcLedgerStatus('还没配好模型连接：先在“模型设置”页选好连接，传闻传播才能跑。');
+        return { status: 'not_configured' };
+    }
+    const rumors = collectRumorEvents();
+    if (!rumors.length) { setNpcLedgerStatus('当前没有未了结的传闻事件，没有可传播的传闻。'); return { status: 'no_rumors' }; }
+    const targets = selectGossipTargets(rumors);
+    if (!targets.length) { setNpcLedgerStatus('传闻里没有牵连到有关系的不在场人物，本轮没有传播目标。'); return { status: 'no_targets' }; }
+    const continuation = captureAgentContinuation();
+    npcGossipRunning = true;
+    setNpcLedgerStatus(`正在把 ${rumors.length} 条传闻传给 ${targets.length} 个不在场人物……`);
+    try {
+        const raw = await agentLlmClient.complete({
+            label: '传闻传播',
+            system: GOSSIP_PROMPT,
+            user: buildGossipUser({ rumors, targets, day: worldDay() }),
+            jsonSchema: NPC_RECORD_JSON_SCHEMA,
+            overrides: npcLedgerOverrides(settings, { temperature: 0.4, maxTokens: 1200 }, 'npcLedger'),
+        });
+        if (!continuation.current()) return { status: 'stale' };
+        let parsed = parseNpcRecordReply(raw);
+        if (parsed.status !== 'ok') {
+            const retryRaw = await agentLlmClient.complete({
+                label: '传闻传播重试',
+                system: GOSSIP_PROMPT + NPC_RECORD_RETRY_SYSTEM_NOTE,
+                user: buildRecordRetryUser({ user: buildGossipUser({ rumors, targets, day: worldDay() }), raw, reason: parsed.reason }),
+                jsonSchema: NPC_RECORD_JSON_SCHEMA,
+                overrides: npcLedgerOverrides(settings, { temperature: 0.4, maxTokens: 1200 }, 'npcLedger'),
+            });
+            if (!continuation.current()) return { status: 'stale' };
+            const retryParsed = parseNpcRecordReply(retryRaw);
+            if (retryParsed.status === 'ok') parsed = retryParsed;
+        }
+        if (parsed.status !== 'ok') { setNpcLedgerStatus(`传闻补丁读不懂，没有传播：${parsed.reason}`); return { status: 'invalid', reason: parsed.reason }; }
+        // 只认目标名单里的人 + 好感压回 ±3：传闻的动静本来就比当面交手小。
+        // 补丁保持原始形状（中文键），确认后走 applyNpcLedgerPayload 统一归一化，不在这里预折叠。
+        const allowed = new Set(targets.map(target => target.record.name.toLowerCase()));
+        const patches = parsed.patches
+            .filter(item => {
+                const name = String(item?.姓名 ?? item?.name ?? '').trim();
+                return name && allowed.has(name.toLowerCase());
+            })
+            .map(item => {
+                const patch = { ...item };
+                const favorRaw = Number(patch.好感 ?? patch.favor);
+                if (Number.isFinite(favorRaw) && favorRaw !== 0) {
+                    patch.好感 = Math.max(-GOSSIP_FAVOR_STEP_MAX, Math.min(GOSSIP_FAVOR_STEP_MAX, Math.round(favorRaw)));
+                }
+                return patch;
+            });
+        if (!patches.length) { setNpcLedgerStatus('模型判断这些人对传闻都波澜不惊，没有补丁。'); return { status: 'empty' }; }
+        showGossipDrafts(panel, patches);
+        setNpcLedgerStatus(`传闻补丁草稿 ${patches.length} 份已出，确认后才会写进人物簿。`);
+        return { status: 'previewed', patches };
+    } catch (error) {
+        if (!continuation.current()) return { status: 'stale' };
+        setNpcLedgerStatus(`传闻传播失败：${error?.message ?? error}`);
+        return { status: 'failed', reason: String(error?.message ?? error) };
+    } finally {
+        npcGossipRunning = false;
+    }
+}
+
+/** 传闻草稿弹窗：每份补丁一张卡，确认即走 applyNpcLedgerPayload(source='传闻') 落账。 */
+function showGossipDrafts(panel, patches) {
+    const dock = makeElement('div', 'dai-settings-card');
+    const head = makeElement('div', 'dai-card-heading');
+    head.append(makeElement('b', '', '传闻触达草稿'), makeElement('small', '', '不在场人物经关系人听到了传闻；逐份确认，确认即写进人物簿（流水标「传闻」）。'));
+    dock.append(head);
+    patches.forEach((patch, index) => {
+        const name = String(patch.姓名 ?? patch.name ?? '').trim();
+        const favorRaw = Number(patch.好感 ?? patch.favor);
+        const favorBit = Number.isFinite(favorRaw) && favorRaw !== 0 ? `，好感 ${favorRaw > 0 ? '+' : ''}${favorRaw}` : '';
+        const moodRaw = patch.情绪 ?? patch.mood ?? '';
+        const moodBit = typeof moodRaw === 'string' && moodRaw.trim() ? `，情绪 ${moodRaw.trim()}` : '';
+        const basis = String(patch.依据 ?? patch.basis ?? '').trim();
+        const logLines = (Array.isArray(patch.流水) ? patch.流水 : [patch.流水]).filter(line => typeof line === 'string' && line.trim());
+        const card = makeElement('div', 'dai-exp-preview');
+        card.append(makeElement('p', 'dai-turn-result', `${name}${favorBit}${moodBit}${basis ? `｜依据：${basis}` : ''}`));
+        for (const line of logLines) card.append(makeElement('p', 'dai-exp-entry', `流水：${line}`));
+        const attitude = String(patch.态度 ?? patch.attitude ?? '').trim();
+        if (attitude) card.append(makeElement('p', 'dai-exp-entry', `态度：${attitude}`));
+        const actions = makeElement('div', 'dai-turn-actions');
+        const confirm = makeElement('button', 'dai-run-button', '确认写回');
+        confirm.type = 'button';
+        confirm.dataset.npcGossipConfirm = String(index);
+        const discard = makeElement('button', 'dai-secondary-button', '放弃');
+        discard.type = 'button';
+        discard.dataset.npcGossipDiscard = String(index);
+        actions.append(confirm, discard);
+        card.append(actions);
+        dock.append(card);
+    });
+    dock.dataset.npcGossipPatches = JSON.stringify(patches);
+    const close = makeElement('button', 'dai-secondary-button', '全部关闭');
+    close.type = 'button';
+    close.dataset.agentModalClose = '';
+    dock.append(close);
+    openAgentModal(panel, '传闻触达', dock, { wide: true });
+}
+
+/* ── 人物一致性体检────────────────────────────────────
+ * 正文写完后的旁路小调用：档案 vs 正文，只报违反（OOC）不改账、不拦正文；
+ * 自动档查“在场且重要”的前 3 人，手动档查全量在场人物。 */
+
+let lastNpcConsistency = null;
+let npcConsistencyRunning = false;
+
+async function runNpcConsistencyCheck({ source = 'manual' } = {}) {
+    const settings = npcLedgerSettings();
+    if (!settings.enabled) return { status: 'disabled' };
+    if (npcConsistencyRunning) return { status: 'busy' };
+    if (settings.connection !== 'custom' && agentLlmClient.availableFor('tavern') !== true) {
+        if (source === 'manual') setNpcLedgerStatus('还没配好模型连接：先在“模型设置”页选好连接，体检才能跑。');
+        return { status: 'not_configured' };
+    }
+    const chat = Array.isArray(getHostContext()?.chat) ? getHostContext().chat : [];
+    const rawFloors = [];
+    for (let cursor = chat.length - 1; cursor >= 0 && rawFloors.length < 2; cursor -= 1) {
+        const message = chat[cursor];
+        if (!message || typeof message.mes !== 'string' || !message.mes.trim() || message.is_system === true) continue;
+        rawFloors.unshift({ role: message.is_user === true ? '玩家' : '角色', text: message.mes });
+    }
+    if (!rawFloors.length) return { status: 'no_floors' };
+    const floors = await cleanFloorEntries(rawFloors);
+    const presentImportant = agentNpcLedger.list().filter(record => record.presence === '在场');
+    const pool = source === 'auto'
+        ? presentImportant.filter(record => record.importance === '重要').slice(0, 3)
+        : presentImportant.slice(0, 6);
+    if (!pool.length) return { status: 'no_targets' };
+    const continuation = captureAgentContinuation();
+    npcConsistencyRunning = true;
+    if (source === 'manual') setNpcLedgerStatus(`正在给 ${pool.length} 个在场人物做一致性体检……`);
+    try {
+        const raw = await agentLlmClient.complete({
+            label: '人物一致性体检',
+            system: CONSISTENCY_PROMPT,
+            user: buildConsistencyUser({ profiles: pool.map(record => ({ record })), floors, day: worldDay() }),
+            jsonSchema: { type: 'object', properties: { 检查: { type: 'array' } }, required: ['检查'] },
+            overrides: npcLedgerOverrides(settings, { temperature: 0.2, maxTokens: 1200 }, 'npcLedger'),
+        });
+        if (!continuation.current()) return { status: 'stale' };
+        const parsed = parseConsistencyReply(raw);
+        if (parsed.status !== 'ok') {
+            if (source === 'manual') setNpcLedgerStatus(`体检输出读不懂：${parsed.reason}`);
+            recordAgentAudit({ event: 'npc_consistency', outcome: `invalid:${parsed.reason}` });
+            return { status: parsed.status, reason: parsed.reason };
+        }
+        lastNpcConsistency = { at: new Date().toISOString(), day: worldDay(), source, results: parsed.results };
+        const violations = parsed.results.reduce((sum, item) => sum + item.violations.length, 0);
+        recordAgentAudit({ event: 'npc_consistency', outcome: `${source}·checked:${pool.length}·violations:${violations}` });
+        if (source === 'manual') setNpcLedgerStatus(violations ? `体检完成：发现 ${violations} 处疑似违反档案的描写，详见人物簿页体检卡。` : '体检完成：在场人物的描写都对得上档案。');
+        try { refreshNpcLedgerPage(); } catch { /* 面板没开时忽略 */ }
+        return { status: 'checked', results: parsed.results, violations };
+    } catch (error) {
+        if (!continuation.current()) return { status: 'stale' };
+        if (source === 'manual') setNpcLedgerStatus(`体检失败：${error?.message ?? error}`);
+        return { status: 'failed', reason: String(error?.message ?? error) };
+    } finally {
+        npcConsistencyRunning = false;
+    }
 }
 
 function setNpcLedgerStatus(message) {
@@ -2454,10 +2911,39 @@ async function importNpcLedgerFile(file, panel) {
 /** 把“这条补丁”记进人物簿：面板手动记账和模型补丁走同一个入口。 */
 function applyNpcLedgerPayload(payload, { source = '手动', floor = null, logSrc = null } = {}) {
     // logSrc（'冷藏'＝冷藏推进的自行活动）必须原样带到 ledger.apply，流水标签和 coldTouch 盖章都靠它。
-    const result = agentNpcLedger.apply(payload, { floor, day: worldDay(), source, logSrc });
+    // crossWrite：自行活动（冷藏）的补丁流水提到其他已建档人物时，往对方流水里也记一条。
+    const result = agentNpcLedger.apply(payload, { floor, day: worldDay(), source, logSrc, crossWrite: Boolean(logSrc) });
     if (result.status !== 'applied' && result.status !== 'ignored' && result.status !== 'empty') return result;
-    if (result.created.length || result.changed) result.persistence = persistNpcLedger();
+    if (result.created.length || result.changed || result.crossWritten.length || result.decayedMoods) result.persistence = persistNpcLedger();
+    adoptNpcRelationsFromResult(result, source);
+    for (const audit of result.audits ?? []) {
+        try {
+            recordAgentAudit({ event: 'npc_unbacked_change', outcome: `${audit.name}·${audit.kind}${audit.delta ? `·${audit.delta > 0 ? '+' : ''}${audit.delta}` : ''}·无依据` });
+        } catch { /* 审计失败不影响落账 */ }
+    }
     return result;
+}
+
+/**
+ * 「对他人」改过的档案交上来的快照收进全局关系图（edges 表）。
+ * 记录员 recordReply 主路径不走 applyNpcLedgerPayload，也要调这个——两条落账路共用一个收边口。
+ */
+function adoptNpcRelationsFromResult(result, source = '正文') {
+    if (!result || !Array.isArray(result.relations) || !result.relations.length) return null;
+    const edges = [];
+    for (const item of result.relations) {
+        for (const triple of item.triples ?? []) {
+            if (!triple?.who) continue;
+            edges.push({ from: item.from, to: triple.who, relation: triple.relation ?? '', attitude: triple.attitude ?? '', day: item.day, floor: item.floor, basis: source === '手填' ? '' : source });
+        }
+    }
+    if (!edges.length) return null;
+    const relationResult = agentNpcRelations.upsert(edges);
+    if (relationResult.applied.length) {
+        result.relationPersistence = persistNpcRelations();
+        return relationResult;
+    }
+    return relationResult;
 }
 
 /**
@@ -2497,24 +2983,40 @@ async function runNpcLedgerRecord({ source = 'auto' } = {}) {
             rawFloors.unshift({ role: message.is_user === true ? '玩家' : '角色', text: message.mes, isUser: message.is_user === true, depth: chat.length - 1 - cursor });
         }
         floors.push(...await cleanFloorEntries(rawFloors));
+        const recordUser = buildNpcRecordUser({
+            floors,
+            records: agentNpcLedger.list(),
+            day: worldDay(),
+            worldbookLines: npcLedgerBookLines(floors),
+            playerContext: npcPlayerContext(),
+        });
         const raw = await agentLlmClient.complete({
             label: '人物记录',
             system: settings.prompt,
-            user: buildNpcRecordUser({
-                floors,
-                records: agentNpcLedger.list(),
-                day: worldDay(),
-                worldbookLines: npcLedgerBookLines(floors),
-                playerContext: npcPlayerContext(),
-            }),
+            user: recordUser,
             jsonSchema: NPC_RECORD_JSON_SCHEMA,
             overrides: npcLedgerOverrides(settings),
         });
         if (!continuation.current()) return { status: 'stale' };
-        const parsed = parseNpcRecordReply(raw);
+        let parsed = parseNpcRecordReply(raw);
+        // 解析失败自动重试一次：坏输出和拒绝原因退回模型重问（instructor 式 validate-retry），
+        // 落账成功率比直接作废高得多；仍失败才放弃这一轮。
         if (parsed.status === 'invalid') {
-            setNpcLedgerStatus(`记录员这次的输出读不懂，档案没动：${parsed.reason}`);
-            return { status: 'invalid', reason: parsed.reason };
+            setNpcLedgerStatus(`记录员输出读不懂（${parsed.reason}），自动重试一次……`);
+            const retryRaw = await agentLlmClient.complete({
+                label: '人物记录重试',
+                system: settings.prompt + NPC_RECORD_RETRY_SYSTEM_NOTE,
+                user: buildRecordRetryUser({ user: recordUser, raw, reason: parsed.reason }),
+                jsonSchema: NPC_RECORD_JSON_SCHEMA,
+                overrides: npcLedgerOverrides(settings),
+            });
+            if (!continuation.current()) return { status: 'stale' };
+            const retryParsed = parseNpcRecordReply(retryRaw);
+            if (retryParsed.status === 'ok') parsed = retryParsed;
+            else {
+                setNpcLedgerStatus(`记录员重试后仍读不懂，档案没动：${retryParsed.reason}`);
+                return { status: 'invalid', reason: retryParsed.reason };
+            }
         }
         if (parsed.status === 'empty') {
             // 重roll成“没有人物变化”也要先撤回上一份贡献；有手动改动挡住时保留原账并明说。
@@ -2540,18 +3042,29 @@ async function runNpcLedgerRecord({ source = 'auto' } = {}) {
             setNpcLedgerStatus(`这一轮的人物变化没有落账：${result.reason ?? result.status}`);
             return { status: result.status, reason: result.reason };
         }
+        // 记录员主路径也要收关系边：「对他人」改过的档案快照进全局关系图。
+        try { adoptNpcRelationsFromResult(result, '正文'); } catch { /* 收边失败不影响落账 */ }
         lastNpcLedgerFloor = index;
         lastNpcLedgerReplyIdentity = replyIdentity;
-        persistNpcLedger();        const words = [];
+        persistNpcLedger();
+        const words = [];
         if (result.created.length) words.push(`新进 ${result.created.length} 人（${result.created.join('、')}）`);
         if (result.changed) words.push(`更新 ${result.changed} 人`);
+        if (result.crossWritten?.length) words.push(`互写 ${result.crossWritten.length} 人`);
         if (result.skipped?.length) words.push(`跳过 ${result.skipped.length} 条`);
+        if (result.audits?.length) words.push(`无依据大变动 ${result.audits.length} 处（已记审计）`);
         setNpcLedgerStatus(words.length ? `第 ${index + 1} 楼记完：${words.join('，')}。` : '这一轮没有人物变化。');
         try { refreshNpcLedgerPage(); } catch { /* 面板没开时忽略 */ }
         if (result.created?.length) {
             // 新建的人自动按世界书补全一次（只填空字段；填满或没条目自然收手，之后不再拉该人物的条目）。
             setTimeout(() => { if (continuation.current()) void runNpcLedgerExtract({ names: result.created.slice(0, 4) }); }, 1500);
         }
+        // reflection 自动精简：这次写过「经历」且经历条数越过阈值的人，自动出精简草稿（确认后才写回）。
+        const condenseNames = [...new Set((result.applied ?? []).filter(item => Array.isArray(item.fields) && item.fields.includes('经历')).map(item => item.name))]
+            .filter(name => (agentNpcLedger.get?.(name)?.exp?.length ?? 0) >= NPC_EXP_AUTO_CONDENSE_THRESHOLD);
+        if (condenseNames.length) setTimeout(() => { if (continuation.current()) void runAutoExpCondense(condenseNames); }, 2000);
+        // 人物一致性体检（进阶版）：旁路小调用，只报违反档案的描写；改过档案的人才值得查。
+        if (result.changed && npcLedgerSettings().consistencyAuto !== false && advancedMode()) setTimeout(() => { if (continuation.current()) void runNpcConsistencyCheck({ source: 'auto' }); }, 2500);
         return { status: 'applied', result };
     } catch (error) {
         if (!continuation.current()) return { status: 'stale' };
@@ -2571,7 +3084,26 @@ function writeNpcLedgerInjectionForPrompt() {
     if (!settings.enabled || !settings.inject) { agentNpcLedgerInjection.clear(); return { status: 'disabled' }; }
     const probe = agentNpcLedgerInjection.inspect();
     if (probe.status !== 'ready') return probe;
+    // 注入前清一遍到期情绪：三天前的短期情绪不再占档案行；有清掉的就顺手存档。
+    try {
+        const decayed = agentNpcLedger.decayMoods(worldDay());
+        if (decayed.pruned) persistNpcLedger();
+    } catch { /* 情绪消散失败不影响注入 */ }
     const built = agentNpcLedger.injection({ budget: settings.budget, maxFull: settings.maxFull });
+    // 二跳关系网（进阶版）：在场人物一圈的间接关系（盟友的敌人、师门的仇家）一行带进提示词。
+    // 超出注入预算整段放弃——人物档案本身优先。
+    if (built.text && Array.isArray(built.used) && built.used.length && settings.relationsInject !== false && advancedMode()) {
+        try {
+            const hopLines = agentNpcRelations.hopLines(built.used);
+            if (hopLines.length) {
+                const relationsBlock = `\n【人物关系网】${hopLines.join('；')}`;
+                if (built.text.length + relationsBlock.length <= settings.budget + 200) {
+                    built.text += relationsBlock;
+                    built.chars = built.text.length;
+                }
+            }
+        } catch { /* 关系注入失败不影响人物注入 */ }
+    }
     lastNpcLedgerInjection = { ...built, at: new Date().toISOString() };
     if (!built.text) { agentNpcLedgerInjection.clear(); return { status: 'empty' }; }
     return agentNpcLedgerInjection.write({ text: built.text }, { depth: injectionSettings().depth, maxChars: settings.budget + 200 });
@@ -2590,6 +3122,18 @@ function npcLedgerCardRow(record, injected) {
     mark.title = record.presence === '在场' ? '在场' : '不在场';
     const name = makeElement('b', 'dai-npc-card-name', record.name);
     const favor = makeElement('span', 'dai-npc-card-favor', `${record.favor > 0 ? '+' : ''}${record.favor}`);
+    // 好感刻度条：-100~100 渐变底 + 金色指针，一眼看出关系冷暖与位置。
+    const favorBar = makeElement('span', 'dai-favor-bar');
+    const favorMark = makeElement('i');
+    favorMark.style.left = `${Math.max(0, Math.min(100, Math.round(((record.favor ?? 0) + 100) / 2)))}%`;
+    favorBar.append(favorMark);
+    favorBar.title = `好感 ${record.favor}${favorLabel(record.favor) ? `（${favorLabel(record.favor)}）` : ''}`;
+    // 情绪 chips：短期情绪 + 剩余天数（三天 TTL），黄点=人物在图谱里的情绪标记同源。
+    const moodChips = (Array.isArray(record.moods) ? record.moods : []).slice(0, 3).map(mood => {
+        const day = Number(worldDay());
+        const remain = Number.isFinite(Number(mood.expiresDay)) && Number.isFinite(day) ? Math.max(0, Number(mood.expiresDay) - day) : null;
+        return makeElement('span', 'dai-mood-chip', `${mood.label}${remain !== null ? `·剩${remain}天` : ''}`);
+    });
     const meta = makeElement('span', 'dai-npc-card-line is-muted');
     meta.textContent = [
         record.identity,
@@ -2597,7 +3141,7 @@ function npcLedgerCardRow(record, injected) {
         record.location ? `@${record.location}` : '',
         favorLabel(record.favor) || '',
     ].filter(Boolean).join(' · ') || '（身份待补）';
-    open.append(mark, name, meta, favor);
+    open.append(mark, name, meta, favor, favorBar, ...moodChips);
     const actions = makeElement('span', 'dai-npc-card-actions');
     const presence = makeElement('button', 'dai-npc-icon-button', record.presence === '在场' ? '离' : '到');
     presence.type = 'button';
@@ -2722,6 +3266,442 @@ function refreshNpcLedgerPage(panel) {
     renderNpcLedgerRecent(target);
     renderNpcColdBench(target);
     renderNpcColdPreviews(target);
+    renderNpcAutoCondenseChips(target);
+    renderNpcRelationsCard(target);
+    renderNpcConsistencyCard(target);
+}
+
+/** 自动精简草稿条：reflection 触发的草稿停在这里，确认/放弃各一枚按钮。 */
+function renderNpcAutoCondenseChips(target) {
+    const host = target.querySelector('[data-npc-exp-auto]');
+    if (!host) return;
+    if (!pendingAutoExpCondense.size) { host.replaceChildren(); return; }
+    const wrap = makeElement('div', 'dai-turn-actions');
+    for (const [name, pending] of pendingAutoExpCondense) {
+        const chip = makeElement('span', 'dai-state-strip');
+        chip.textContent = `${name} 的经历精简草稿（→ ${pending.entries.length} 条）`;
+        const confirm = makeElement('button', 'dai-run-button', '确认写回');
+        confirm.type = 'button';
+        confirm.dataset.expAutoConfirm = name;
+        const discard = makeElement('button', 'dai-secondary-button', '放弃');
+        discard.type = 'button';
+        discard.dataset.expAutoDiscard = name;
+        wrap.append(chip, confirm, discard);
+    }
+    host.replaceChildren(wrap);
+}
+
+/* ── 人物关系网图谱 · 力导向版 ─────────────────────────
+ * 参考 d3-force 的仿真模型手写零依赖实现：
+ * 斥力（多体逆平方）+ 连线弹簧 + 向心引力 + 速度阻尼 + 碰撞推挤，rAF 逐帧沉降；
+ * 自我中心布局：玩家钉在图心，NPC 自组织绕排；
+ * 边编码：颜色=立场、粗细=强度、箭头=方向（谁认谁）、药丸标签=关系；
+ * 节点=药丸（名字进节点）：金底=玩家、金边=在场、外虚环=重要、角标黄点=有情绪、
+ * 虚线=未建档；hover 高亮邻域、拖拽钉住微调、点节点开档案（走面板既有委托）。 */
+
+const NPC_REL_STANCE_COLORS = Object.freeze({
+    '血亲': '#b39ddb', '师徒': '#b39ddb', '同门': '#b39ddb',
+    '同盟': '#34d399', '友好': '#86efac',
+    '中立': '#9ca3af', '警惕': '#fbbf24', '敌对': '#f87171',
+});
+const NPC_REL_STANCE_KEYS = Object.freeze(Object.keys(NPC_REL_STANCE_COLORS));
+const REL_W = 520, REL_H = 340, REL_CX = REL_W / 2, REL_CY = REL_H / 2;
+/** 拖拽/沉降后的节点位置按名字记住：面板刷新、开关聊天都不重排。 */
+const npcRelGraphPositions = new Map();
+const npcRelSim = { nodes: new Map(), alpha: 0, raf: 0, sig: '' };
+
+function relPillWidth(name) {
+    return Math.min(104, Math.max(50, [...String(name)].length * 13 + 20));
+}
+
+function relEnsureSimNode(def) {
+    let node = npcRelSim.nodes.get(def.name);
+    if (!node) {
+        node = { x: def.x, y: def.y, vx: 0, vy: 0, pinned: !!def.isPlayer, r: def.w / 2 + 6, isPlayer: !!def.isPlayer };
+        npcRelSim.nodes.set(def.name, node);
+    } else {
+        node.r = def.w / 2 + 6;
+        if (def.isPlayer) node.pinned = true;
+    }
+    return node;
+}
+
+function relStepPhysics(simNodes, links, alpha) {
+    const list = [...simNodes.values()];
+    for (let i = 0; i < list.length; i++) {
+        for (let j = i + 1; j < list.length; j++) {
+            const p = list[i], q = list[j];
+            let dx = q.x - p.x, dy = q.y - p.y;
+            let d2 = dx * dx + dy * dy;
+            if (d2 < 4) { dx = Math.random() - 0.5; dy = Math.random() - 0.5; d2 = 1; }
+            const d = Math.sqrt(d2);
+            const f = (3600 * alpha) / d2;
+            const fx = (dx / d) * f, fy = (dy / d) * f;
+            if (!p.pinned) { p.vx -= fx; p.vy -= fy; }
+            if (!q.pinned) { q.vx += fx; q.vy += fy; }
+        }
+    }
+    for (const link of links) {
+        const dx = link.b.x - link.a.x, dy = link.b.y - link.a.y;
+        const d = Math.hypot(dx, dy) || 1;
+        const f = (d - link.rest) * 0.08 * alpha;
+        const fx = (dx / d) * f, fy = (dy / d) * f;
+        if (!link.a.pinned) { link.a.vx += fx; link.a.vy += fy; }
+        if (!link.b.pinned) { link.b.vx -= fx; link.b.vy -= fy; }
+    }
+    for (const node of list) {
+        if (node.pinned) { node.vx = 0; node.vy = 0; continue; }
+        node.vx += (REL_CX - node.x) * 0.012 * alpha;
+        node.vy += (REL_CY - node.y) * 0.014 * alpha;
+        node.vx *= 0.8; node.vy *= 0.8;
+        node.x = Math.max(54, Math.min(REL_W - 54, node.x + Math.max(-16, Math.min(16, node.vx))));
+        node.y = Math.max(36, Math.min(REL_H - 36, node.y + Math.max(-16, Math.min(16, node.vy))));
+    }
+    for (let i = 0; i < list.length; i++) {
+        for (let j = i + 1; j < list.length; j++) {
+            const p = list[i], q = list[j];
+            const dx = q.x - p.x, dy = q.y - p.y;
+            const d = Math.hypot(dx, dy) || 1;
+            const minD = p.r + q.r + 12;
+            if (d < minD) {
+                const push = (minD - d) / 2;
+                const fx = (dx / d) * push, fy = (dy / d) * push;
+                if (!p.pinned) { p.x -= fx; p.y -= fy; }
+                if (!q.pinned) { q.x += fx; q.y += fy; }
+            }
+        }
+    }
+}
+
+/** 二次贝塞尔几何：按节点半径修剪起终点（箭头贴药丸边缘），返回路径与标签锚点。 */
+function relEdgeGeometry(ax, ay, bx, by, ra, rb, bow) {
+    const dx = bx - ax, dy = by - ay;
+    const len = Math.hypot(dx, dy) || 1;
+    const cx = (ax + bx) / 2 - (dy / len) * bow, cy = (ay + by) / 2 + (dx / len) * bow;
+    const trim = (px, py, r) => {
+        const ddx = cx - px, ddy = cy - py;
+        const dl = Math.hypot(ddx, ddy) || 1;
+        return { x: px + (ddx / dl) * Math.min(r, dl * 0.45), y: py + (ddy / dl) * Math.min(r, dl * 0.45) };
+    };
+    const s = trim(ax, ay, ra);
+    const e = trim(bx, by, rb);
+    return {
+        d: `M ${s.x.toFixed(1)} ${s.y.toFixed(1)} Q ${cx.toFixed(1)} ${cy.toFixed(1)} ${e.x.toFixed(1)} ${e.y.toFixed(1)}`,
+        mx: 0.25 * s.x + 0.5 * cx + 0.25 * e.x,
+        my: 0.25 * s.y + 0.5 * cy + 0.25 * e.y,
+    };
+}
+
+function relEnsureLoop(update, links, simNodes) {
+    if (npcRelSim.raf || npcRelSim.alpha <= 0.02) return;
+    const tick = () => {
+        npcRelSim.alpha = Math.max(0, npcRelSim.alpha * 0.985);
+        relStepPhysics(simNodes, links, Math.max(0.06, npcRelSim.alpha));
+        update();
+        if (npcRelSim.alpha <= 0.02) { npcRelSim.raf = 0; return; }
+        npcRelSim.raf = requestAnimationFrame(tick);
+    };
+    npcRelSim.raf = requestAnimationFrame(tick);
+}
+
+function renderNpcRelationsGraph(target) {
+    const host = target.querySelector('[data-npc-relations-graph]');
+    if (!host) return;
+    if (typeof document === 'undefined') { host.replaceChildren(); return; }
+    const records = agentNpcLedger.list().slice(0, 14);
+    const edges = agentNpcRelations.list();
+    if (!records.length && !edges.length) {
+        host.replaceChildren();
+        if (npcRelSim.raf) { cancelAnimationFrame(npcRelSim.raf); npcRelSim.raf = 0; }
+        return;
+    }
+    const svgNS = 'http://www.w3.org/2000/svg';
+    const playerName = String(getHostContext()?.name1 ?? '').trim() || '玩家';
+    const playerActive = edges.some(edge => edge.from === playerName || edge.to === playerName)
+        || records.some(record => record.favor !== 0);
+    const defsNodes = [];
+    const byName = new Map();
+    const addDef = def => { byName.set(def.name.toLowerCase(), def); defsNodes.push(def); };
+    if (playerActive) addDef({ name: playerName, isPlayer: true, w: relPillWidth(playerName) + 12 });
+    for (const record of records) if (!byName.has(record.name.toLowerCase())) addDef({ name: record.name, record, w: relPillWidth(record.name) });
+    for (const edge of edges) for (const name of [edge.from, edge.to]) if (!byName.has(name.toLowerCase())) addDef({ name, ghost: true, w: relPillWidth(name) });
+    // 初始位置：记住的优先，否则圆周铺开（仿真接手后会自组织）
+    const ringCount = defsNodes.filter(def => !def.isPlayer).length;
+    let ringIndex = 0;
+    for (const def of defsNodes) {
+        if (def.isPlayer) { def.x = REL_CX; def.y = REL_CY; }
+        else {
+            const angle = -Math.PI / 2 + (ringIndex / Math.max(1, ringCount)) * Math.PI * 2;
+            const saved = npcRelGraphPositions.get(def.name);
+            def.x = saved?.x ?? REL_CX + Math.cos(angle) * 122;
+            def.y = saved?.y ?? REL_CY + Math.sin(angle) * 94;
+            ringIndex += 1;
+        }
+    }
+    const simNodes = new Map();
+    for (const def of defsNodes) {
+        const node = relEnsureSimNode(def);
+        def.x = node.x; def.y = node.y;
+        simNodes.set(def.name, node);
+    }
+    const links = [];
+    for (const edge of edges) {
+        const a = simNodes.get(edge.from), b = simNodes.get(edge.to);
+        if (a && b) links.push({ a, b, rest: a.pinned || b.pinned ? 98 : 130 });
+    }
+    const sig = `${records.length}:${edges.length}:${playerActive}`;
+    if (sig !== npcRelSim.sig) npcRelSim.alpha = Math.max(npcRelSim.alpha, 0.62);
+    npcRelSim.sig = sig;
+    if (npcRelSim.raf) { cancelAnimationFrame(npcRelSim.raf); npcRelSim.raf = 0; }
+    // ── DOM ──
+    const svg = document.createElementNS(svgNS, 'svg');
+    svg.setAttribute('viewBox', `0 0 ${REL_W} ${REL_H}`);
+    svg.classList.add('dai-rel-graph-svg');
+    const defs = document.createElementNS(svgNS, 'defs');
+    const grad = document.createElementNS(svgNS, 'linearGradient');
+    grad.setAttribute('id', 'dai-rel-gold');
+    grad.setAttribute('x1', '0'); grad.setAttribute('y1', '0'); grad.setAttribute('x2', '0'); grad.setAttribute('y2', '1');
+    for (const [offset, color] of [['0%', '#f8e9b4'], ['55%', '#e3bc55'], ['100%', '#c9962e']]) {
+        const stop = document.createElementNS(svgNS, 'stop');
+        stop.setAttribute('offset', offset);
+        stop.setAttribute('stop-color', color);
+        grad.append(stop);
+    }
+    defs.append(grad);
+    NPC_REL_STANCE_KEYS.forEach((stance, index) => {
+        const marker = document.createElementNS(svgNS, 'marker');
+        marker.setAttribute('id', `dai-rel-arrow-${index}`);
+        marker.setAttribute('viewBox', '0 0 10 10');
+        marker.setAttribute('refX', '8.5'); marker.setAttribute('refY', '5');
+        marker.setAttribute('markerWidth', '6'); marker.setAttribute('markerHeight', '6');
+        marker.setAttribute('orient', 'auto-start-reverse');
+        const arrow = document.createElementNS(svgNS, 'path');
+        arrow.setAttribute('d', 'M 0 0 L 10 5 L 0 10 z');
+        arrow.setAttribute('fill', NPC_REL_STANCE_COLORS[stance]);
+        marker.append(arrow);
+        defs.append(marker);
+    });
+    svg.append(defs);
+    // 边层
+    const edgeEls = [];
+    const showLabels = edges.length <= 12;
+    for (const edge of edges) {
+        const a = simNodes.get(edge.from), b = simNodes.get(edge.to);
+        if (!a || !b) continue;
+        const color = NPC_REL_STANCE_COLORS[edge.stance] ?? '#9ca3af';
+        const stanceIndex = NPC_REL_STANCE_KEYS.indexOf(edge.stance);
+        const path = document.createElementNS(svgNS, 'path');
+        path.classList.add('dai-rel-edge');
+        path.setAttribute('data-stance', edge.stance);
+        if (stanceIndex >= 0) path.setAttribute('marker-end', `url(#dai-rel-arrow-${stanceIndex})`);
+        svg.append(path);
+        const labelText = `${edge.stance}${edge.relation ? `·${edge.relation}` : ''}`;
+        const labelG = document.createElementNS(svgNS, 'g');
+        labelG.classList.add('dai-rel-elabel');
+        if (!showLabels) labelG.classList.add('is-dim');
+        const rect = document.createElementNS(svgNS, 'rect');
+        const labelW = [...labelText].length * 10.5 + 14;
+        rect.setAttribute('x', String(-labelW / 2)); rect.setAttribute('y', '-9.5');
+        rect.setAttribute('width', String(labelW)); rect.setAttribute('height', '19'); rect.setAttribute('rx', '9.5');
+        rect.setAttribute('fill', 'rgba(16, 13, 8, 0.94)');
+        rect.setAttribute('stroke', color);
+        rect.setAttribute('stroke-width', '1');
+        const text = document.createElementNS(svgNS, 'text');
+        text.setAttribute('y', '3.5');
+        text.setAttribute('fill', color);
+        text.textContent = labelText;
+        labelG.append(rect, text);
+        svg.append(labelG);
+        edgeEls.push({
+            from: edge.from, to: edge.to, path, labelG,
+            bow: edge.from.toLowerCase() < edge.to.toLowerCase() ? 18 : -18,
+        });
+    }
+    // 节点层（药丸）
+    const nodeEls = new Map();
+    for (const def of defsNodes) {
+        const h = def.isPlayer || def.record?.importance === '重要' ? 30 : 26;
+        const g = document.createElementNS(svgNS, 'g');
+        g.classList.add('dai-rel-node');
+        if (def.isPlayer) g.classList.add('is-player');
+        else if (def.ghost) g.classList.add('is-ghost');
+        if (def.record) {
+            if (def.record.importance === '重要') g.classList.add('is-important');
+            if (def.record.presence === '在场') g.classList.add('is-present');
+            if (Array.isArray(def.record.moods) && def.record.moods.length) g.classList.add('has-mood');
+            g.dataset.npcLedgerOpen = def.name;
+            g.setAttribute('role', 'button');
+            g.setAttribute('tabindex', '0');
+        }
+        const rect = document.createElementNS(svgNS, 'rect');
+        rect.setAttribute('x', String(-def.w / 2)); rect.setAttribute('y', String(-h / 2));
+        rect.setAttribute('width', String(def.w)); rect.setAttribute('height', String(h));
+        rect.setAttribute('rx', String(h / 2));
+        g.append(rect);
+        if (def.record?.importance === '重要' && !def.isPlayer) {
+            const ring = document.createElementNS(svgNS, 'rect');
+            ring.classList.add('dai-rel-ring');
+            ring.setAttribute('x', String(-def.w / 2 - 4)); ring.setAttribute('y', String(-h / 2 - 4));
+            ring.setAttribute('width', String(def.w + 8)); ring.setAttribute('height', String(h + 8));
+            ring.setAttribute('rx', String(h / 2 + 4));
+            g.append(ring);
+        }
+        const name = document.createElementNS(svgNS, 'text');
+        name.classList.add('dai-rel-node-name');
+        name.setAttribute('y', '1');
+        name.textContent = def.name;
+        g.append(name);
+        const sub = document.createElementNS(svgNS, 'text');
+        sub.classList.add('dai-rel-node-sub');
+        sub.setAttribute('y', String(h / 2 + 12));
+        sub.textContent = def.isPlayer ? '玩家' : def.ghost ? '未建档' : `好感 ${def.record.favor > 0 ? '+' : ''}${def.record.favor}`;
+        g.append(sub);
+        if (def.record && Array.isArray(def.record.moods) && def.record.moods.length) {
+            const dot = document.createElementNS(svgNS, 'circle');
+            dot.classList.add('dai-rel-mood-dot');
+            dot.setAttribute('cx', String(def.w / 2 - 2));
+            dot.setAttribute('cy', String(-h / 2));
+            dot.setAttribute('r', '3.4');
+            g.append(dot);
+        }
+        g.title = def.isPlayer ? `${def.name}（玩家）` : def.ghost ? `${def.name}（未建档）` : `${def.name}｜${def.record.presence}｜好感 ${def.record.favor}${favorLabel(def.record.favor) ? `（${favorLabel(def.record.favor)}）` : ''}｜点开档案，拖动微调`;
+        nodeEls.set(def.name, g);
+        svg.append(g);
+    }
+    // hover 高亮邻域
+    const adjacency = new Map();
+    for (const item of edgeEls) {
+        for (const key of [item.from.toLowerCase(), item.to.toLowerCase()]) {
+            if (!adjacency.has(key)) adjacency.set(key, []);
+            adjacency.get(key).push(item);
+        }
+    }
+    svg.addEventListener('pointerover', event => {
+        const g = event.target.closest?.('.dai-rel-node');
+        if (!g) return;
+        const name = g.querySelector('.dai-rel-node-name')?.textContent ?? '';
+        svg.classList.add('is-focus');
+        g.classList.add('is-hi');
+        for (const item of adjacency.get(name.toLowerCase()) ?? []) {
+            item.path.classList.add('is-hi');
+            item.labelG.classList.add('is-hi');
+            item.labelG.classList.remove('is-dim');
+        }
+    });
+    svg.addEventListener('pointerout', event => {
+        if (!event.target.closest?.('.dai-rel-node')) return;
+        svg.classList.remove('is-focus');
+        svg.querySelectorAll('.is-hi').forEach(el => el.classList.remove('is-hi'));
+        for (const item of edgeEls) if (edgeEls.length > 12) item.labelG.classList.add('is-dim');
+    });
+    // 拖拽：钉住 = 本帧由指针接管，松手交还物理；真拖过就吞 click 防误开档案
+    let drag = null;
+    let suppressClick = false;
+    const svgPoint = event => {
+        const rect = svg.getBoundingClientRect();
+        return { x: (event.clientX - rect.left) / rect.width * REL_W, y: (event.clientY - rect.top) / rect.height * REL_H };
+    };
+    const update = () => {
+        for (const [name, g] of nodeEls) {
+            const s = simNodes.get(name);
+            if (s) g.setAttribute('transform', `translate(${s.x.toFixed(1)},${s.y.toFixed(1)})`);
+        }
+        for (const item of edgeEls) {
+            const a = simNodes.get(item.from), b = simNodes.get(item.to);
+            if (!a || !b) continue;
+            const geo = relEdgeGeometry(a.x, a.y, b.x, b.y, a.r - 4, b.r - 1, item.bow);
+            item.path.setAttribute('d', geo.d);
+            item.labelG.setAttribute('transform', `translate(${geo.mx.toFixed(1)},${geo.my.toFixed(1)})`);
+        }
+        for (const [name, s] of simNodes) npcRelGraphPositions.set(name, { x: s.x, y: s.y });
+    };
+    svg.addEventListener('pointerdown', event => {
+        const g = event.target.closest?.('.dai-rel-node');
+        if (!g) return;
+        const name = g.querySelector('.dai-rel-node-name')?.textContent;
+        const sim = name ? simNodes.get(name) : null;
+        if (!sim) return;
+        const point = svgPoint(event);
+        drag = { name, sim, sx: point.x, sy: point.y, moved: false };
+        sim.pinned = true;
+        svg.setPointerCapture?.(event.pointerId);
+    });
+    svg.addEventListener('pointermove', event => {
+        if (!drag) return;
+        const point = svgPoint(event);
+        if (!drag.moved && Math.hypot(point.x - drag.sx, point.y - drag.sy) < 4) return;
+        drag.moved = true;
+        drag.sim.x = Math.max(54, Math.min(REL_W - 54, point.x));
+        drag.sim.y = Math.max(36, Math.min(REL_H - 36, point.y));
+        drag.sim.vx = 0; drag.sim.vy = 0;
+        npcRelSim.alpha = Math.max(npcRelSim.alpha, 0.38);
+        update();
+        relEnsureLoop(update, links, simNodes);
+    });
+    const endDrag = () => {
+        if (drag) {
+            if (!drag.sim.isPlayer) drag.sim.pinned = false;
+            if (drag.moved) suppressClick = true;
+        }
+        drag = null;
+    };
+    svg.addEventListener('pointerup', endDrag);
+    svg.addEventListener('pointercancel', endDrag);
+    svg.addEventListener('click', event => {
+        if (!suppressClick) return;
+        suppressClick = false;
+        event.stopPropagation();
+        event.preventDefault();
+    }, true);
+    update();
+    host.replaceChildren(svg);
+    relEnsureLoop(update, links, simNodes);
+}
+
+/** 关系网卡：图谱在上，明细与对称提醒收进折叠条，倒序排最近改过的。 */
+function renderNpcRelationsCard(target) {
+    const summary = target.querySelector('[data-npc-relations-summary]');
+    const list = target.querySelector('[data-npc-relations-list]');
+    if (!summary || !list) return;
+    const status = agentNpcRelations.status();
+    const edges = agentNpcRelations.list();
+    const problems = agentNpcRelations.asymmetries();
+    summary.textContent = status.total
+        ? `关系边 ${status.total} 条${problems.length ? ` · 提醒 ${problems.length} 处` : ''}（存到当前聊天）`
+        : '还没有关系边。记录员写「对他人」时自动收边；也可以在补丁里写。';
+    renderNpcRelationsGraph(target);
+    const items = [];
+    for (const problem of problems.slice(0, 4)) {
+        items.push(makeElement('p', 'dai-impact-edit', `⚠ ${problem.note}`));
+    }
+    for (const edge of edges.slice(0, 10)) {
+        const dayBit = Number.isFinite(Number(edge.day)) ? `第${Number(edge.day)}天·` : '';
+        items.push(makeElement('p', 'dai-impact-item', `${dayBit}${edge.from} —${edge.stance}${edge.relation ? `（${edge.relation}）` : ''}— ${edge.to}${edge.basis ? `｜${edge.basis}` : ''}`));
+    }
+    if (!items.length) items.push(makeElement('p', 'dai-impact-item', '图谱里还没有连线：记录员在正文里写下某人对某人的关系时，这里会自动长出边。'));
+    list.replaceChildren(...items);
+}
+
+/** 体检卡：最近一次一致性体检的结果，只展示不拦正文。 */
+function renderNpcConsistencyCard(target) {
+    const summary = target.querySelector('[data-npc-consistency-summary]');
+    const list = target.querySelector('[data-npc-consistency-list]');
+    if (!summary || !list) return;
+    if (!lastNpcConsistency) {
+        summary.textContent = '还没有体检过。点「一致性体检」立即查一次；之后每次记账会自动查在场重要人物。';
+        list.replaceChildren();
+        return;
+    }
+    const violations = lastNpcConsistency.results.reduce((sum, item) => sum + item.violations.length, 0);
+    summary.textContent = `上次体检：第 ${lastNpcConsistency.day} 天 · ${lastNpcConsistency.source === 'auto' ? '自动' : '手动'} · 发现 ${violations} 处疑似违反`;
+    const items = [];
+    for (const result of lastNpcConsistency.results) {
+        for (const violation of result.violations) {
+            items.push(makeElement('p', 'dai-impact-edit', `${result.name}·${violation.field || '人设'}：${violation.problem}${violation.quote ? `｜正文：「${violation.quote}」` : ''}`));
+        }
+    }
+    if (!items.length) items.push(makeElement('p', 'dai-impact-item', '上一轮体检没有发现违反档案的描写。'));
+    list.replaceChildren(...items);
 }
 
 /**
@@ -3305,9 +4285,17 @@ const restoreImpactFromChat = createImpactRestore({
 // —— 简略版（lite）合并调用：备料三路并成一次「素材总挑选」，记账五路并成一次「总结算」。——
 // 完整版每功能各一路的行为原样保留；apiMode() 决定走哪条路径，切换即时生效。
 
-/** 当前调用版本：'full' = 完整版（每功能一路）；'lite' = 简略版（合并调用）。 */
+/** 当前调用版本：'full' = 完整版（每功能一路，进阶增强关闭）；'lite' = 简略版（合并调用，
+ *  进阶增强关闭）；'advanced' = 进阶版（完整版逐路管线 + GitHub 系增强）。 */
 function apiMode() {
-    return currentSettings().apiMode === 'lite' ? 'lite' : 'full';
+    const mode = currentSettings().apiMode;
+    return mode === 'lite' || mode === 'advanced' ? mode : 'full';
+}
+
+/** 进阶版口径：GitHub 系增强（骰子/正文核验/一致性体检/关系网注入/开局摘要/剧情决定/
+ *  语义向量）只在进阶版生效；完整版/简略版下这些功能整体静默。各功能自己的开关仍然生效。 */
+function advancedMode() {
+    return apiMode() === 'advanced';
 }
 
 /** 功能读取楼层数：手动填了 readFloors 就用它；没填时默认跟随"当前角色卡自带、
@@ -3330,7 +4318,8 @@ let factsInjectedSnapshot = '';
 function factsInjectedLines() {
     const value = getHostContext()?.extensionPrompts?.doupo_facts?.value;
     const text = (typeof value === 'string' ? value.trim() : '') || factsInjectedSnapshot;
-    return text ? [text] : [];
+    // 按行拆开再返回：决定调用的 MAX_BOOK_LINES 行数上限要真起作用，整段单元素会让截断形同虚设。
+    return text ? text.split('\n').map(line => line.trim()).filter(Boolean) : [];
 }
 
 /** 人物簿已建档判定：条目是人物类且名字（含括号别名拆开）已建档时，原著设定不再重复注入。 */
@@ -3403,7 +4392,7 @@ const agentLitePick = createLitePick({
 
 /** 影响注入的挑选依赖：简略版取素材总挑选里 impact 一节，完整版照旧单路场记挑选。 */
 async function pickImpactsForPromptByMode({ snapshot, settings, chat }) {
-    if (apiMode() === 'full') return pickImpactsForPrompt({ snapshot, settings, chat });
+    if (apiMode() !== 'lite') return pickImpactsForPrompt({ snapshot, settings, chat });
     const pick = await agentLitePick.run({ chat });
     if (pick.status === 'failed' || pick.status === 'no_input') return { status: 'empty', note: pick.note };
     const known = new Set((snapshot?.records ?? []).map(record => String(record.id)));
@@ -3424,6 +4413,7 @@ const agentLiteSettle = createLiteSettle({
         memorySettings().maxFloors, npcLedgerSettings().floors,
     ),
     entriesMax: () => 12, // 原著候选匹配上限：固定默认（旧「世界书条目上限」设置已删除）
+    settleLines: settleVerdictLinesForDecide,
     npc: {
         list: () => agentNpcLedger.list(),
         parse: parseNpcRecordReply,
@@ -3486,6 +4476,8 @@ async function prepareInjectionForPrompt({ chat } = {}) {
     const continuation = captureAgentContinuation();
     // 世界通道先走：它不依赖原著设定的开关与预算，两路互不阻塞。
     try { writeWorldInjectionForPrompt(); } catch { /* 世界注入失败不影响原著设定注入 */ }
+    // 剧情前瞻：滚动方向 + 未回收线索，紧跟世界现状之后，两路互不清空。
+    try { writePlotInjectionForPrompt(); } catch { /* 剧情注入失败不影响正文生成 */ }
     try { await agentImpactInjection.write({ chat }); } catch { /* 影响库注入失败不影响正文生成 */ }
     if (!continuation.current()) return { status: 'stale' };
     // 人物档案与影响库同属“这一局已经发生成什么样”，排在原著设定之前写，预算各算各的。
@@ -3494,6 +4486,8 @@ async function prepareInjectionForPrompt({ chat } = {}) {
     try { writeSelfInjectionForPrompt(); } catch { /* 纳戒注入失败不影响正文生成 */ }
     // 记忆：召回决定（或关键词兜底）挑出的旧记忆，排在纳戒之后；与其它通道互不清空、预算各算各的。
     try { await writeMemoryInjectionForPrompt({ chat }); } catch { /* 记忆注入失败不影响正文生成 */ }
+    // 开局摘要：切聊天后的第一条回复前交底一次（门闩没命中就是空操作）。
+    try { writeWakeUpInjectionForPrompt({ chat }); } catch { /* 开局摘要失败不影响正文生成 */ }
     if (!continuation.current()) return { status: 'stale' };
     const settings = injectionSettings();
     if (!settings.enabled) { agentPromptInjection.clear(); factsInjectedSnapshot = ''; return { status: 'disabled' }; }
@@ -3569,6 +4563,8 @@ async function prepareInjectionForPrompt({ chat } = {}) {
 
 let lastSettleAdjudication = null;
 const settleSession = createSettleSession();
+// 难度+骰子判定的随机源：进程级一份；掷骰结果记进行动 dice 字段，可追溯不落盘。
+const settleDiceRng = createSettleDiceRng();
 let settleExtensionEnabled = true;
 
 function settleScopeKey() {
@@ -3602,6 +4598,28 @@ function settleBlockerStatus() {
 
 function settleAdjudicationView() {
     return lastSettleAdjudication ? { ...lastSettleAdjudication } : null;
+}
+
+/** 给各决定链喂料用的本轮结算裁定行：结算判过成败与后果，决定链就必须照着记，
+ *  不能照玩家输入想当然（实测出现过结算判"买药失败"、纳戒决定却记"金币购得"）。
+ *  只取本轮已注入的判定；没有结算/已作废时返回空数组（喂料里就不出现这一节）。 */
+function settleVerdictLinesForDecide() {
+    const record = lastSettleAdjudication;
+    if (!record || record.status !== 'injected' || record.cleared) return [];
+    const actions = Array.isArray(record.actions) ? record.actions : [];
+    const lines = [];
+    for (const action of actions) {
+        if (!action || typeof action !== 'object') continue;
+        const label = String(action.label ?? action.category ?? '行动').slice(0, 30);
+        const status = SETTLE_ACTION_STATUS_TEXT[action.status] ?? String(action.status);
+        const dice = action.dice && typeof action.dice === 'object' ? action.dice : null;
+        const diceText = dice && Number.isFinite(dice.die)
+            ? `（骰${dice.die}${Number(dice.modifier) >= 0 ? '+' : ''}${Number(dice.modifier) || 0} 对难度 ${dice.dc ?? '?'}）`
+            : '';
+        const outcome = String(action.outcome ?? '').replace(/\s+/g, ' ').trim().slice(0, 120);
+        lines.push(`- ${label}：${status}${diceText}${outcome ? `；${outcome}` : ''}`);
+    }
+    return lines;
 }
 
 /** 记一笔并落聊天存档（悬浮球换聊天/重启后仍能看到上一次判定）。 */
@@ -3698,6 +4716,7 @@ function renderSettleResultCard() {
         for (const [index, action] of actions.entries()) {
             const label = action.approved === false ? `${settleSettings().labelFor(action.category)}（未通过复核）` : action.label || settleSettings().labelFor(action.category);
             lines.push(`${index + 1}. ${label} · ${SETTLE_ACTION_STATUS_TEXT[action.status] ?? (action.approved === false ? '未通过复核' : '判定结果')}：${action.outcome || '暂无结果'}`);
+            if (action.dice) lines.push(`   判定：骰 ${action.dice.die}${action.dice.modifier >= 0 ? '+' : ''}${action.dice.modifier} 对难度 ${action.dice.dc}（${SETTLE_DIFFICULTY_LABELS[action.dice.difficulty] ?? '常规'}）→ ${SETTLE_ACTION_STATUS_TEXT[action.dice.status] ?? action.dice.status}${action.dice.override ? '（推翻模型判定）' : ''}`);
             for (const consequence of action.consequences ?? []) lines.push(`   后果：${consequence}`);
             for (const effect of action.effects ?? []) {
                 const value = effect.type === 'set' ? `→ ${effect.value}` : `${Number(effect.value) >= 0 ? '+' : ''}${effect.value}`;
@@ -3706,6 +4725,8 @@ function renderSettleResultCard() {
             for (const item of action.rejected ?? []) lines.push(`   拒收：${typeof item === 'string' ? item : item.reason ?? '规则未通过'}`);
             if (action.blockedReason) lines.push(`   原因：${action.blockedReason}`);
         }
+        if (record.oracle) lines.push(`变数：${record.oracle.title}（${record.oracle.detail}）`);
+        if (record.retried) lines.push('本轮经过一次带错重试后判定成功。');
         const comparison = record.reconciliation;
         if (comparison) {
             lines.push(`落账核对：${({ pending: '等待生成后记账', matched: '可比对字段一致', mismatch: '与批准结果不一致（未自动修账）', not_applicable: '仅文字后果，无数值可核对' })[comparison.status] ?? '尚未核对'}`);
@@ -3743,13 +4764,14 @@ async function collectSettleMaterials(chat = null) {
     }
     const user = buildSettleResultUser({ input, floors, worldbookLines, injections: readInjectedChannelTexts(), state: contextState });
     const customRules = settings.customCategories.map(item => `${item.id}（${item.name}）：${item.prompt}`).join('\n');
-    const system = `${settings.resultPrompt}\n\n【用户另行配置的类别补充规则，输出格式仍服从 v2】\n${SETTLE_CATEGORIES.filter(category => currentSettings().settle?.prompt?.[category.id]?.trim()).map(category => `${category.id}：${settings.promptFor(category.id)}`).join('\n\n') || '无，采用自适应默认规则'}\n\n【自定义类别，仅叙事扩展，不扩大字段权限】\n${customRules || '无'}\n\n【当前运行契约 v2】一次调用按明确行动输出 version:2、actions 数组；每项有 id/category/evidence/dependsOn/status/outcome/consequences/effects。无真实数值不编精确变化，有文字结果也可 effects:[]。类别旧模板中的单结果格式不覆盖本契约。`;
+    const system = `${settings.resultPrompt}\n\n【用户另行配置的类别补充规则，输出格式仍服从 v2】\n${SETTLE_CATEGORIES.filter(category => currentSettings().settle?.prompt?.[category.id]?.trim()).map(category => `${category.id}：${settings.promptFor(category.id)}`).join('\n\n') || '无，采用自适应默认规则'}\n\n【自定义类别，仅叙事扩展，不扩大字段权限】\n${customRules || '无'}\n\n【当前运行契约 v2】一次调用按明确行动输出 version:2、actions 数组；每项有 id/category/evidence/dependsOn/status/outcome/consequences/effects，并附 difficulty 与 modifiers——成败由脚本掷骰裁定（只降不升），你只报风险档位与带依据的修正；consequences 支持对象写法 {type,grade,text}。无真实数值不编精确变化，有文字结果也可 effects:[]。类别旧模板中的单结果格式不覆盖本契约。`;
     if (system.length > 24000) throw new RangeError('结算提示词和自定义规则合计超过 24000 字符；本轮不截断规则、不发起不完整判定');
     const scope = settleScopeKey();
     const liveChat = getHostContext()?.chat ?? [];
     const liveGuard = liveChat.slice(-6).map(message => [message?.is_user, message?.is_system, message?.mes, message?.swipe_id]);
     const fingerprint = JSON.stringify({ scope, user, system, state, overrides: settings.resultOverrides, connection: currentSettings().llm, day: worldDay(), userFloor, liveLength: liveChat.length, liveGuard });
-    return { input, state, settings, user, system, scope, fingerprint, userFloor, chatLength: sourceChat.length };
+    // npcs 供骰子裁定做战斗最低难度（证据点名的对手境界差抬档），不进本地审核快照。
+    return { input, state, settings, user, system, scope, fingerprint, userFloor, chatLength: sourceChat.length, npcs: contextState.npcs ?? [] };
 }
 
 /** 预览不占用正文通道；自动生成只写审核后的多行动结果。 */
@@ -3809,19 +4831,44 @@ async function writeSettleAdjudicationForPrompt({ chat = null, force = false, pr
             recordSettleAdjudication({ status: 'stale', actions: [], summary: '等待期间上下文、状态或规则已变化，旧结果未注入', at: Date.now(), cleared: true, scope });
             return { status: 'stale' };
         }
-        const parsed = parseSettleResult(raw);
+        let parsed = parseSettleResult(raw);
+        // 带错重试（instructor 模式）：坏 JSON/契约缺失把诊断喂回去重判一次；还坏才作废本轮。
+        let retried = false;
+        if (parsed.status === 'invalid') {
+            const retryUser = buildSettleRetryUser(materials.user, parsed);
+            if (retryUser && settleSession.isCurrent(token) && settleEnabled() && scope === settleScopeKey()) {
+                const retryRaw = await agentLlmClient.complete({ label: '行动结算重试', rawPrompt: true, system: materials.system, user: retryUser, overrides: materials.settings.resultOverrides });
+                if (!settleSession.isCurrent(token) || !settleEnabled() || scope !== settleScopeKey()) return { status: 'stale' };
+                const retryFresh = await collectSettleMaterials(chat);
+                if (retryFresh.fingerprint !== materials.fingerprint) {
+                    settleSession.fail(token);
+                    recordSettleAdjudication({ status: 'stale', actions: [], summary: '重试期间上下文、状态或规则已变化，旧结果未注入', at: Date.now(), cleared: true, scope });
+                    return { status: 'stale' };
+                }
+                parsed = parseSettleResult(retryRaw);
+                retried = parsed.status !== 'invalid';
+            }
+        }
         if (parsed.status === 'invalid') throw new Error(parsed.error ?? '判定结果不是有效 JSON');
-        const reviewed = reviewSettleEffects(parsed, materials.state, { input: materials.input, customCategories: materials.settings.customCategories });
+        // 难度+骰子裁定（只降不升，进阶版）在解析归一后、行动审核前应用；战斗对手境界差自动抬最低档，
+        // 波折轮掷一次变数 Oracle。进阶版关着或骰子开关关掉＝旧契约行为（不掷骰、无变数、无保底代价）。
+        // 降级后的失败/部分成功由既有审核规则照常复核效果。
+        const diceOn = settleSettings().diceEnabled !== false && advancedMode();
+        const reviewed = reviewSettleEffects(parsed, materials.state, {
+            input: materials.input, customCategories: materials.settings.customCategories,
+            ...(diceOn ? { dice: { rng: settleDiceRng, npcs: materials.npcs, playerRealm: materials.state?.player?.realm } } : {}),
+        });
         const text = renderSettleInjection(reviewed);
         const record = {
             ...reviewed, version: 2, at: Date.now(), scope, userFloor: materials.userFloor, userInput: materials.input,
+            ...(retried ? { retried: true } : {}),
             replyBefore: JSON.stringify((getHostContext()?.chat ?? []).slice(materials.userFloor + 1).filter(message => message?.is_user !== true && message?.is_system !== true && message?.mes).map(message => [message.mes, message.swipe_id])),
             reconciliation: { status: reviewed.effects.length ? 'pending' : 'not_applicable', differences: [] },
         };
         const applied = applyResult(record, text);
         if (applied.status === 'write_failed') settleSession.fail(token);
         else settleSession.finish(token, applied);
-        return { status: applied.status, actions: reviewed.actions.length };
+        return { status: applied.status, actions: reviewed.actions.length, retried };
     } catch (error) {
         // 已被替代或换聊天的请求不能清掉新请求的通道，也不能写入新聊天记录。
         if (scope !== settleScopeKey() || (token && !settleSession.isCurrent(token))) return { status: 'stale' };
@@ -3839,7 +4886,7 @@ async function writeSettleAdjudicationForPrompt({ chat = null, force = false, pr
 let pregenFailures = [];
 
 function registerPregenFailure(channel, reason) {
-    pregenFailures.push({ channel, reason: String(reason ?? '').slice(0, 160) });
+    pregenFailures.push({ channel, reason: String(reason ?? '').slice(0, 400) });
 }
 
 /** SillyTavern calls this global (declared in manifest.json) before every real generation. */
@@ -3858,7 +4905,7 @@ globalThis.doupoFactsInterceptor = async function doupoFactsInterceptor(chat, co
     }
     try {
         const settleOutcome = await writeSettleAdjudicationForPrompt({ chat });
-        try { recordAgentAudit({ event: 'turn_settle_adjudicate', outcome: `${settleOutcome?.status ?? 'unknown'}${Number.isInteger(settleOutcome?.actions) ? `·${settleOutcome.actions}项` : ''}` }); } catch { /* 审计失败不影响结算 */ }
+        try { recordAgentAudit({ event: 'turn_settle_adjudicate', outcome: `${settleOutcome?.status ?? 'unknown'}${Number.isInteger(settleOutcome?.actions) ? `·${settleOutcome.actions}项` : ''}${settleOutcome?.retried ? '·重试' : ''}` }); } catch { /* 审计失败不影响结算 */ }
         if (settleOutcome?.status === 'error' || settleOutcome?.status === 'write_failed') {
             registerPregenFailure('行动结算', settleOutcome.error ?? settleOutcome.status);
         }
@@ -3871,7 +4918,7 @@ globalThis.doupoFactsInterceptor = async function doupoFactsInterceptor(chat, co
     // 等重新生成（再发/重roll）时复用已成功的备料、只重调失败的，全部成功才放行。
     if (pregenFailures.length) {
         const detail = pregenFailures.map(item => `${item.channel}：${item.reason}`).join('；');
-        try { recordAgentAudit({ event: 'turn_pregen_abort', outcome: detail.slice(0, 200) }); } catch { /* 审计失败不影响终止 */ }
+        try { recordAgentAudit({ event: 'turn_pregen_abort', outcome: detail.slice(0, 400) }); } catch { /* 审计失败不影响终止 */ }
         try { console.warn(`[${EXTENSION_ID}] 备料失败，已终止本次正文调用：${detail}`); } catch { /* 记录失败不影响终止 */ }
         pregenFailures = [];
         abort(true);
@@ -3958,6 +5005,7 @@ const DAI_ICON_PATHS = Object.freeze({
     brush: '<path d="M17.6 3.4l3 3L9.4 17.6l-4.2 1.2 1.2-4.2L17.6 3.4z"/><path d="M14.8 6.2l3 3"/>',
     gear: '<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.6"/><path d="M12 2.6v2.6M12 18.8v2.6M2.6 12h2.6M18.8 12h2.6M5.4 5.4l1.8 1.8M16.8 16.8l1.8 1.8M18.6 5.4l-1.8 1.8M7.2 16.8l-1.8 1.8"/>',
     arrow: '<path d="M4 12h14.5"/><path d="M13.5 6.5 19 12l-5.5 5.5"/>',
+    reroll: '<path d="M20.2 12a8.2 8.2 0 1 1-2.6-6"/><path d="M20.2 3.4V8h-4.6"/>',
     plus: '<path d="M12 5.5v13M5.5 12h13"/>',
 });
 const DAI_ORB_ICON_NAMES = Object.freeze({
@@ -4054,7 +5102,7 @@ function apiPresetHtml(preset) {
     const text = value => escapeHtml(String(value ?? ''));
     const providerOption = (value, label) => `<option value="${value}"${preset.provider === value ? ' selected' : ''}>${label}</option>`;
     const numberRow = (name, label, small, max, step) => `<label class="dai-setting-row"><span><b>${label}</b><small>${small}</small></span><input type="number" min="0" max="${max}" step="${step}" data-api-preset-field="${name}" value="${text(preset[name] ?? 0)}"></label>`;
-    return `<details class="dai-settle-category dai-api-preset" data-api-preset-id="${id}"><summary><span class="dai-feature-icon" aria-hidden="true">${daiIcon("letter")}</span><span><b>${text(preset.name || '未命名方案')}</b><small>${text(preset.baseUrl || '还没填接口地址')}</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>方案名称</b><small>「模型设置」页各功能选方案时显示的名字。</small></span><input type="text" data-api-preset-field="name" value="${text(preset.name)}" maxlength="24" placeholder="例如：深修直连"></label><label class="dai-setting-row"><span><b>接口协议</b><small>留空按接口地址自动判断。</small></span><select data-api-preset-field="provider">${providerOption('', '自动判断')}${providerOption('openai', 'OpenAI 兼容')}${providerOption('anthropic', 'Anthropic')}</select></label><label class="dai-setting-row"><span><b>接口地址</b><small>OpenAI 兼容的 Base URL，填到 /v1 为止（同酒馆自定义接口）。</small></span><input type="text" data-api-preset-field="baseUrl" value="${text(preset.baseUrl)}" placeholder="https://api.example.com/v1"></label><label class="dai-setting-row"><span><b>API Key</b><small>只保存到扩展设置，不写入聊天消息。</small></span><input type="password" data-api-preset-field="apiKey" value="${text(preset.apiKey)}" autocomplete="off" placeholder="留空表示不使用密钥"></label><label class="dai-setting-row"><span><b>模型名称</b><small>填好地址后点“拉取模型”挑一个，也可以手填。</small></span><input type="text" data-api-preset-field="model" value="${text(preset.model)}" placeholder="例如 deepseek-chat"></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-api-preset-models="${id}">拉取模型</button><small role="status" data-api-preset-models-status="${id}"></small></div><div class="dai-setting-grid dai-param-grid">${numberRow('temperature', 'Temperature', '0 更稳，2 更发散；0 ＝不指定。', 2, 0.05)}${numberRow('maxTokens', '最大输出 Token', 'tokens；0 ＝不指定。', 32768, 64)}${numberRow('topP', 'top_p', '0–1；0 ＝不指定。', 1, 0.05)}${numberRow('presencePenalty', '存在惩罚', '0–2；0 ＝不指定。', 2, 0.1)}${numberRow('frequencyPenalty', '频率惩罚', '0–2；0 ＝不指定。', 2, 0.1)}</div><label class="dai-setting-row"><span><b>包括主体参数</b><small>YAML 对象，最后并进聊天补全请求体（酒馆附加参数同语义）；例：top_k: 20</small></span><textarea data-api-preset-field="includeBody" rows="3" spellcheck="false" placeholder="top_k: 20">${text(preset.includeBody)}</textarea></label><label class="dai-setting-row"><span><b>排除主体参数</b><small>YAML 数组，最后从请求体删掉这些顶层字段；例：- frequency_penalty</small></span><textarea data-api-preset-field="excludeBody" rows="3" spellcheck="false" placeholder="- frequency_penalty">${text(preset.excludeBody)}</textarea></label><label class="dai-setting-row"><span><b>包含请求标头</b><small>YAML 对象，合并覆盖请求头（可覆盖鉴权头）；例：CustomHeader: custom-value</small></span><textarea data-api-preset-field="headers" rows="3" spellcheck="false" placeholder="CustomHeader: custom-value">${text(preset.headers)}</textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-api-preset-copy="${id}">复制方案</button><button type="button" class="dai-button dai-button-ghost" data-api-preset-remove="${id}">删除方案</button><small>改动即时保存；删除后用到它的功能自动回到跟随酒馆主连接。</small></div></div></details>`;
+    return `<details class="dai-settle-category dai-api-preset" data-api-preset-id="${id}"><summary><span class="dai-feature-icon" aria-hidden="true">${daiIcon("letter")}</span><span><b>${text(preset.name || '未命名方案')}</b><small>${preset.tavern === true ? '走酒馆通道' : text(preset.baseUrl || '还没填接口地址')}</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row dai-setting-toggle"><span><b>走酒馆通道</b><small>开：绑定这个方案的功能经由酒馆当前的 API 连接发出，下面的地址、密钥、模型都用不上；关：按下面填的接口直连。</small></span><input type="checkbox" data-api-preset-field="tavern" ${preset.tavern === true ? 'checked' : ''}></label><label class="dai-setting-row"><span><b>方案名称</b><small>「模型设置」页各功能选方案时显示的名字。</small></span><input type="text" data-api-preset-field="name" value="${text(preset.name)}" maxlength="24" placeholder="例如：深修直连"></label><label class="dai-setting-row"><span><b>接口协议</b><small>留空按接口地址自动判断。</small></span><select data-api-preset-field="provider">${providerOption('', '自动判断')}${providerOption('openai', 'OpenAI 兼容')}${providerOption('anthropic', 'Anthropic')}</select></label><label class="dai-setting-row"><span><b>接口地址</b><small>OpenAI 兼容的 Base URL，填到 /v1 为止（同酒馆自定义接口）。</small></span><input type="text" data-api-preset-field="baseUrl" value="${text(preset.baseUrl)}" placeholder="https://api.example.com/v1"></label><label class="dai-setting-row"><span><b>API Key</b><small>只保存到扩展设置，不写入聊天消息。</small></span><input type="password" data-api-preset-field="apiKey" value="${text(preset.apiKey)}" autocomplete="off" placeholder="留空表示不使用密钥"></label><label class="dai-setting-row"><span><b>模型名称</b><small>填好地址后点“拉取模型”挑一个，也可以手填。</small></span><input type="text" data-api-preset-field="model" value="${text(preset.model)}" placeholder="例如 deepseek-chat"></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-api-preset-models="${id}">拉取模型</button><small role="status" data-api-preset-models-status="${id}"></small></div><div class="dai-setting-grid dai-param-grid">${numberRow('temperature', 'Temperature', '0 更稳，2 更发散；0 ＝不指定。', 2, 0.05)}${numberRow('maxTokens', '最大输出 Token', 'tokens；0 ＝不指定。', 32768, 64)}${numberRow('topP', 'top_p', '0–1；0 ＝不指定。', 1, 0.05)}${numberRow('presencePenalty', '存在惩罚', '0–2；0 ＝不指定。', 2, 0.1)}${numberRow('frequencyPenalty', '频率惩罚', '0–2；0 ＝不指定。', 2, 0.1)}</div><label class="dai-setting-row"><span><b>包括主体参数</b><small>YAML 对象，最后并进聊天补全请求体（酒馆附加参数同语义）；例：top_k: 20</small></span><textarea data-api-preset-field="includeBody" rows="3" spellcheck="false" placeholder="top_k: 20">${text(preset.includeBody)}</textarea></label><label class="dai-setting-row"><span><b>排除主体参数</b><small>YAML 数组，最后从请求体删掉这些顶层字段；例：- frequency_penalty</small></span><textarea data-api-preset-field="excludeBody" rows="3" spellcheck="false" placeholder="- frequency_penalty">${text(preset.excludeBody)}</textarea></label><label class="dai-setting-row"><span><b>包含请求标头</b><small>YAML 对象，合并覆盖请求头（可覆盖鉴权头）；例：CustomHeader: custom-value</small></span><textarea data-api-preset-field="headers" rows="3" spellcheck="false" placeholder="CustomHeader: custom-value">${text(preset.headers)}</textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-api-preset-copy="${id}">复制方案</button><button type="button" class="dai-button dai-button-ghost" data-api-preset-remove="${id}">删除方案</button><small>改动即时保存；删除后用到它的功能自动回到跟随酒馆主连接。</small></div></div></details>`;
 }
 
 function renderApiPresets(panel, openId = null) {
@@ -4093,7 +5141,7 @@ function renderApiPresetSelects(panel) {
         for (const preset of presets) {
             const option = document.createElement('option');
             option.value = preset.id;
-            option.textContent = preset.name || '未命名方案';
+            option.textContent = `${preset.name || '未命名方案'}${preset.tavern === true ? '（走酒馆）' : ''}`;
             select.appendChild(option);
         }
         select.value = presets.some(item => item?.id === bound) ? bound : '';
@@ -4123,7 +5171,7 @@ async function addApiPreset(panel) {
         const ok = await awaitPanelPersistence(pending.result, message => { if (status) status.textContent = message; });
         if (ok) {
             panel.__pendingApiSave = null;
-            if (status) status.textContent = '已添加：填好地址、密钥和模型，就能在「模型设置」页选它。';
+            if (status) status.textContent = '已添加：默认走酒馆通道，要直连就填上接口地址再把「走酒馆通道」关掉。';
         }
         return;
     }
@@ -4132,7 +5180,7 @@ async function addApiPreset(panel) {
         if (status) status.textContent = `方案最多 ${API_PRESETS_MAX} 个，先删一个再加。`;
         return;
     }
-    presets.push({ name: '新方案', provider: '', baseUrl: '', apiKey: '', model: '', temperature: 0, maxTokens: 0, topP: 0, presencePenalty: 0, frequencyPenalty: 0, includeBody: '', excludeBody: '', headers: '' });
+    presets.push({ name: '新方案', tavern: true, provider: '', baseUrl: '', apiKey: '', model: '', temperature: 0, maxTokens: 0, topP: 0, presencePenalty: 0, frequencyPenalty: 0, includeBody: '', excludeBody: '', headers: '' });
     const sequence = ++settingsSaveSequence;
     const result = saveApiPresets(presets);
     // 失败重试只补交宿主保存，方案已在内存里，不能重复 push。
@@ -4144,7 +5192,7 @@ async function addApiPreset(panel) {
     const newId = saved[saved.length - 1]?.id ?? null;
     renderApiPresets(panel, newId);
     renderApiPresetSelects(panel);
-    if (status) status.textContent = '已添加：填好地址、密钥和模型，就能在「模型设置」页选它。';
+    if (status) status.textContent = '已添加：默认走酒馆通道，要直连就填上接口地址再把「走酒馆通道」关掉。';
 }
 
 async function removeApiPreset(panel, id) {
@@ -4312,8 +5360,10 @@ function renderWorldDecisionResult(decision, result) {
     rows.push({ text: `模型说明：${note}` });
     const applied = Array.isArray(result?.applied) ? result.applied : [];
     const rejected = Array.isArray(result?.rejected) ? result.rejected : [];
+    const warnings = Array.isArray(result?.warnings) ? result.warnings : [];
     for (const item of applied) rows.push({ text: `✓ ${item.summary}`, ok: true });
     for (const item of rejected) rows.push({ text: `✗ ${item.op}：${item.reason}`, ok: false });
+    for (const item of warnings) rows.push({ text: `⚠ ${item}`, ok: false });
     if (decision?.dropped > 0) rows.push({ text: `⚠ ${decision.dropped} 条格式坏的被丢弃`, ok: false });
     if (!applied.length && !rejected.length) rows.push({ text: decision?.status === 'empty' ? '模型判断本轮世界无变化。' : '模型没有给出可执行的操作。', ok: false });
     target.replaceChildren(...rows.map(row => {
@@ -4332,9 +5382,12 @@ let worldDecidedFloor = null;
  * LLM 决定脚本执行的主入口：读聊天记录 + 世界书 + 世界台账 → 模型决定 →
  * 脚本逐条校验执行 → 结果呈现到面板。生成结束后自动跑，面板按钮可手动跑。
  */
-async function runWorldDecision({ source = 'auto' } = {}) {
+async function runWorldDecision({ source = 'auto', note = '' } = {}) {
     const settings = worldDecideSettings();
-    if (!settings.enabled) return { status: 'disabled' };
+    if (!settings.enabled) {
+        setWorldDecideStatus('世界决定已关闭：先在世界页打开「启用模型决定」。');
+        return { status: 'disabled' };
+    }
     if (worldDecideRunning) return { status: 'busy' };
     // 自定义连接有自己的地址和密钥，不依赖全局配置；跟随酒馆才需要先检查全局连接。
     if (settings.overrides.connection !== 'custom' && agentLlmClient.availableFor('tavern') !== true) {
@@ -4373,7 +5426,7 @@ async function runWorldDecision({ source = 'auto' } = {}) {
         // 沙盒口径：世界书整条换血——不带这份注入，改带内置斗气大陆基线。
         const sandbox = sandboxModeActive();
         const bookLines = !sandbox ? factsInjectedLines() : [];
-        let user = buildDecideUser({ snapshot: agentWorldRuntime.snapshot(), floors, worldbookLines: bookLines });
+        let user = buildDecideUser({ snapshot: agentWorldRuntime.snapshot(), floors, worldbookLines: bookLines, settleLines: settleVerdictLinesForDecide() });
         if (sandbox) {
             const modeRecord = agentSandboxMode.read(currentAgentScope());
             const sandboxSettings = currentSettings().sandbox;
@@ -4383,6 +5436,7 @@ async function runWorldDecision({ source = 'auto' } = {}) {
             });
             user = `${user}\n${note}\n\n${SANDBOX_WORLD_PROMPT}`;
         }
+        user = withPlayerNote(user, note);
         const raw = await agentLlmClient.complete({
             label: '世界决定',
             system: settings.prompt,
@@ -4410,6 +5464,471 @@ async function runWorldDecision({ source = 'auto' } = {}) {
         return { status: 'failed', reason: String(error?.message ?? error) };
     } finally {
         if (worldDecideRunning === continuation) worldDecideRunning = false;
+    }
+}
+
+// ---------- 剧情账本（plot）：生成后一次小调用，滚动维护计划与线索账 ----------
+
+/** 剧情账本的连接与参数：结构同世界决定，绑定了方案整套走方案；没绑＝跟随酒馆主连接。 */
+function plotLedgerSettings() {
+    const plot = currentSettings().plot ?? {};
+    return {
+        enabled: plot.enabled !== false,
+        inject: plot.inject !== false,
+        budget: Number.isInteger(plot.injectBudget) && plot.injectBudget > 0 ? plot.injectBudget : 500,
+        decideEnabled: plot.decideEnabled !== false,
+        decideAuto: plot.decideAuto !== false,
+        maxFloors: Number.isInteger(plot.decideMaxFloors) && plot.decideMaxFloors > 0 ? Math.min(12, plot.decideMaxFloors) : Math.min(12, globalReadFloors()),
+        prompt: typeof plot.decidePrompt === 'string' && plot.decidePrompt.trim() ? plot.decidePrompt.trim() : PLOT_DECIDE_PROMPT,
+        // 绑定了 API设置方案整套走方案；没绑＝跟随酒馆主连接。
+        overrides: presetOverrides('plot') ?? { connection: 'tavern' },
+    };
+}
+
+function setPlotDecideStatus(message) {
+    const panel = typeof document !== 'undefined' ? document.getElementById(SETTINGS_PANEL_ID) : null;
+    const target = panel?.querySelector('[data-plot-decide-status]');
+    if (target) target.textContent = message;
+}
+
+/** 把一次剧情决定的结果呈现到面板：note + 每条操作 ✓生效/✗被拒。 */
+function renderPlotDecisionResult(decision, result) {
+    const panel = typeof document !== 'undefined' ? document.getElementById(SETTINGS_PANEL_ID) : null;
+    const target = panel?.querySelector('[data-plot-decide-result]');
+    if (!target) return;
+    const rows = [];
+    const note = typeof decision?.note === 'string' && decision.note.trim() ? decision.note.trim() : '（模型没有给说明）';
+    rows.push({ text: `模型说明：${note}` });
+    const applied = Array.isArray(result?.applied) ? result.applied : [];
+    const rejected = Array.isArray(result?.rejected) ? result.rejected : [];
+    for (const item of applied) rows.push({ text: `✓ ${item.summary}`, ok: true });
+    for (const item of rejected) rows.push({ text: `✗ ${item.op}：${item.reason}`, ok: false });
+    if (decision?.dropped > 0) rows.push({ text: `⚠ ${decision.dropped} 条格式坏的被丢弃`, ok: false });
+    if (!applied.length && !rejected.length) rows.push({ text: decision?.status === 'empty' ? '模型判断本轮剧情线无变化。' : '模型没有给出可执行的操作。', ok: false });
+    target.replaceChildren(...rows.map(row => {
+        const item = makeElement('p', 'dai-turn-result');
+        if (row.ok === false) item.dataset.ok = 'false';
+        item.textContent = row.text;
+        return item;
+    }));
+}
+
+/** 剧情账本卡的账面视图：滚动计划 + 开放线索（悬置天数/超期标记）+ 指令流水。 */
+function refreshPlotPanel(panel) {
+    const target = panel ?? (typeof document !== 'undefined' ? document.getElementById(SETTINGS_PANEL_ID) : null);
+    if (!target || target.hidden) return;
+    const section = target.querySelector('[data-settings-section="world"]');
+    if (!section || section.hidden) return;
+    const status = agentPlotRuntime.status();
+    const snapshot = agentPlotRuntime.snapshot();
+    const view = section.querySelector('[data-plot-ledger-view]');
+    if (view) {
+        const rows = [];
+        const planLine = [status.plan.goal ? `本幕目标：${status.plan.goal}` : '', status.plan.next ? `下一步：${status.plan.next}` : ''].filter(Boolean).join('｜');
+        rows.push(makeElement('p', 'dai-turn-result', planLine || '还没有滚动计划——剧情决定会自动写出本幕目标与下一步。'));
+        const open = (snapshot.threads ?? []).filter(thread => thread.status === 'open');
+        const today = status.day ?? 1;
+        for (const thread of open) {
+            const overdue = thread.dueDay !== null && thread.dueDay !== undefined && thread.dueDay < today;
+            const hung = Number.isInteger(thread.day) && today > thread.day ? `，已悬 ${today - thread.day} 天` : '';
+            const item = makeElement('p', 'dai-turn-result');
+            if (overdue) item.dataset.ok = 'false';
+            item.textContent = `◆ ${thread.id}「${thread.title}」${overdue ? '（已超期未回收）' : ''}${hung}：${thread.detail || thread.basis}`;
+            rows.push(item);
+        }
+        if (!open.length) rows.push(makeElement('p', 'dai-turn-result', '开放线索空——正文里埋的钩子、未解的谜、人物恩怨会由剧情决定登记到这里。'));
+        view.replaceChildren(...rows);
+    }
+    const journal = section.querySelector('[data-plot-journal]');
+    if (journal) {
+        const entries = [...(snapshot.log ?? [])].reverse().slice(0, 6);
+        journal.replaceChildren(...(entries.length ? entries.map(entry => {
+            const item = makeElement('p', 'dai-turn-result');
+            item.append(makeElement('b', '', `${journalSourceLabel(entry.source)}：`), document.createTextNode(entry.summaries.join('；') || '（无变化）'));
+            return item;
+        }) : [makeElement('p', 'dai-turn-result', '还没有剧情指令执行记录。')]));
+    }
+}
+
+let plotDecideRunning = false;
+// 楼层防重：与世界决定同款——失败生成也会广播 GENERATION_ENDED，auto 决定只对没决定过的 AI 楼层跑一次。
+let plotDecidedFloor = null;
+
+/**
+ * 剧情决定主入口：读最近聊天 + 世界时钟 + 剧情账本 → 模型决定 → 脚本逐条校验执行 →
+ * 结果呈现到面板。生成结束后自动跑（排在世界决定之后），面板按钮可手动跑。
+ * 解析失败带错误信息自动重试一次（instructor 式），坏输出不再一票否决整轮决定。
+ */
+async function runPlotDecision({ source = 'auto', note = '' } = {}) {
+    const settings = plotLedgerSettings();
+    if (!settings.enabled) {
+        setPlotDecideStatus('剧情账本已关闭：先在「世界运转」页打开「启用剧情账本」。');
+        return { status: 'disabled' };
+    }
+    if (!settings.decideEnabled) return { status: 'decide_disabled' };
+    if (plotDecideRunning) return { status: 'busy' };
+    // 自定义连接有自己的地址和密钥，不依赖全局配置；跟随酒馆才需要先检查全局连接。
+    if (settings.overrides.connection !== 'custom' && agentLlmClient.availableFor('tavern') !== true) {
+        setPlotDecideStatus('模型连接未配置：先在“模型设置”页选好连接。');
+        return { status: 'not_configured' };
+    }
+    // auto 模式楼层防重：失败生成/旧楼层不重复决定；manual 按钮不受限。
+    const plotReplyFloor = lastReplyIndex(Array.isArray(getHostContext()?.chat) ? getHostContext().chat : []);
+    const plotReplyIdentity = replyIdentityOf(Array.isArray(getHostContext()?.chat) ? getHostContext().chat : [], plotReplyFloor);
+    if (source === 'auto') {
+        if (plotReplyFloor < 0) return { status: 'no_reply' };
+        if (plotDecidedFloor?.floor === plotReplyFloor && plotDecidedFloor.continuation.current()
+            && plotDecidedFloor.identity === plotReplyIdentity) return { status: 'already_decided' };
+    }
+    const continuation = captureAgentContinuation();
+    plotDecideRunning = continuation;
+    setPlotDecideStatus('剧情决定中……');
+    try {
+        const context = getHostContext();
+        const chat = Array.isArray(context?.chat) ? context.chat : [];
+        const floors = [];
+        const rawFloors = [];
+        for (let cursor = chat.length - 1; cursor >= 0 && rawFloors.length < settings.maxFloors; cursor -= 1) {
+            const message = chat[cursor];
+            if (!message || typeof message.mes !== 'string' || !message.mes.trim()) continue;
+            if (message.is_system === true) continue;
+            rawFloors.unshift({ role: message.is_user === true ? '玩家' : '角色', text: message.mes, isUser: message.is_user === true, depth: chat.length - 1 - cursor });
+        }
+        floors.push(...await cleanFloorEntries(rawFloors));
+        if (!floors.length) {
+            setPlotDecideStatus('聊天里还没有内容，模型无从决定。');
+            return { status: 'no_input' };
+        }
+        let user = buildPlotDecideUser({ snapshot: agentPlotRuntime.snapshot(), clockText: agentWorldRuntime.formatClock(), floors, settleLines: settleVerdictLinesForDecide() });
+        user = withPlayerNote(user, note);
+        // 解析失败带错误重试一次：把 validator 的拒绝原因喂回去，落账成功率比一票否决高得多。
+        let decision = null;
+        let raw = null;
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+            raw = await agentLlmClient.complete({
+                label: '剧情决定',
+                system: settings.prompt,
+                user,
+                jsonSchema: PLOT_JSON_SCHEMA,
+                overrides: settings.overrides,
+            });
+            if (!continuation.current()) return { status: 'stale' };
+            decision = parsePlotDecision(raw);
+            if (decision.status !== 'invalid') break;
+            if (attempt === 0) {
+                user = `${user}\n\n【重试】上一次输出无法解析：${decision.error}。请重新输出，只给一个 JSON 对象 {"note":"…","ops":[…]}，不要任何其他文字。`;
+                setPlotDecideStatus('输出无法解析，带错误重试一次……');
+            }
+        }
+        if (decision.status === 'invalid') {
+            setPlotDecideStatus(`模型输出无法解析：${decision.error}`);
+            return { status: 'invalid', error: decision.error };
+        }
+        const result = agentPlotRuntime.apply(decision.ops, { source: 'decide', floor: plotReplyFloor, today: agentWorldRuntime.status().clock.day });
+        plotDecidedFloor = { floor: plotReplyFloor, identity: plotReplyIdentity, continuation };
+        if (!result.applied.length) agentPlotRuntime.note(decision.note || '模型判断本轮剧情线无变化。', { source: 'decide' });
+        persistPlot();
+        renderPlotDecisionResult(decision, result);
+        setPlotDecideStatus(source === 'auto' ? '生成后自动剧情决定完成。' : '剧情决定完成。');
+        refreshPlotPanel();
+        return { status: 'ok', decision, result };
+    } catch (error) {
+        if (!continuation.current()) return { status: 'stale' };
+        setPlotDecideStatus(`剧情决定失败：${error?.message ?? error}`);
+        return { status: 'failed', reason: String(error?.message ?? error) };
+    } finally {
+        if (plotDecideRunning === continuation) plotDecideRunning = false;
+    }
+}
+
+/** 剧情决定排在记账链之后：世界账落定才有可信的时钟与事件，计划才不会写成空中楼阁。
+ *  调度时捕获本轮 continuation：等账落定时已经换了聊天/新一轮，这条链就随旧聊天作废，不再起飞。 */
+function schedulePlotDecideAfter(chains = []) {
+    const settings = plotLedgerSettings();
+    if (!advancedMode() || !settings.enabled || !settings.decideEnabled || !settings.decideAuto) return;
+    const continuation = captureAgentContinuation();
+    const pending = (Array.isArray(chains) ? chains : []).filter(Boolean);
+    void Promise.resolve(pending.length ? Promise.allSettled(pending) : Promise.resolve())
+        .then(() => {
+            if (!continuation.current()) return { status: 'stale' };
+            return Promise.resolve(runPlotDecision({ source: 'auto' }));
+        })
+        .then(result => { try { recordAgentAudit({ event: 'turn_plot_decision', outcome: String(result?.status ?? 'unknown') }); } catch { /* 审计失败不影响记账 */ } })
+        .catch(() => {});
+}
+
+// ---------- 正文事实核验（verify）：生成后旁路小调用，只记审计不拦正文 ----------
+
+/** 核验的连接与参数：绑定 API 设置方案整套走方案；没绑＝跟随酒馆主连接。 */
+function verifySettings() {
+    const verify = currentSettings().verify ?? {};
+    return {
+        enabled: verify.enabled !== false,
+        auto: verify.auto !== false,
+        gate: verify.gate !== false,
+        nameAudit: verify.nameAudit === true,
+        prompt: typeof verify.prompt === 'string' && verify.prompt.trim() ? verify.prompt.trim() : VERIFY_PROMPT,
+        overrides: presetOverrides('verify') ?? { connection: 'tavern' },
+    };
+}
+
+let verifyRunning = false;
+// 楼层防重：同世界决定，auto 核验只对没核验过的 AI 楼层跑一次。
+let verifyDecidedFloor = null;
+// 核验台账（内存正本，hydrateVerify 从聊天存档读入，persistVerify 写回）。
+let verifyLedger = normalizeVerifyLedger(null);
+
+function setVerifyStatus(message) {
+    const panel = typeof document !== 'undefined' ? document.getElementById(SETTINGS_PANEL_ID) : null;
+    const target = panel?.querySelector('[data-verify-status]');
+    if (target) target.textContent = message;
+}
+
+const VERIFY_VERDICT_LABELS = Object.freeze({ supported: '有据', contradicted: '矛盾', unverified: '无据' });
+
+/** 核验台账流水：开着的条目倒序，每条可标误报；设置页打开与每次核验后都重画。 */
+function renderVerifyEntries(panel = typeof document !== 'undefined' ? document.getElementById(SETTINGS_PANEL_ID) : null) {
+    if (!panel) return;
+    const target = panel.querySelector('[data-verify-entries]');
+    if (!target) return;
+    const findings = listOpenFindings(verifyLedger, { limit: 30 });
+    if (!findings.length) { target.textContent = '还没有核验记录。'; return; }
+    const rows = findings.map(item => {
+        const line = makeElement('p', 'dai-turn-result');
+        if (item.kind === 'unapproved_setting_use') {
+            line.textContent = `⚠ 未授权设定：正文用了没注入的条目「${item.subject}」（命中：${item.value}）· 第 ${item.floor ?? '?'} 楼`;
+        } else {
+            line.textContent = `${item.verdict === 'contradicted' ? '✗' : '·'} ${VERIFY_VERDICT_LABELS[item.verdict] ?? item.verdict}｜${item.subject}·${item.predicate}${item.value ? `＝${item.value}` : ''}（${item.basisRef}）· 第 ${item.floor ?? '?'} 楼`;
+        }
+        const button = makeElement('button', 'dai-button dai-button-ghost');
+        button.type = 'button';
+        button.dataset.verifyFp = item.id;
+        button.dataset.verifyFpRevision = String(item.revision ?? 1);
+        button.textContent = '误报';
+        line.append(' ', button);
+        return line;
+    });
+    target.replaceChildren(...rows);
+}
+
+/** 本轮裁决呈现：断言逐条 + 名字比对命中。 */
+function renderVerifyResult(claims, nameIssues) {
+    const panel = typeof document !== 'undefined' ? document.getElementById(SETTINGS_PANEL_ID) : null;
+    const target = panel?.querySelector('[data-verify-result]');
+    if (target) {
+        const rows = [];
+        for (const claim of claims) rows.push(`${claim.verdict === 'contradicted' ? '✗' : '·'} ${VERIFY_VERDICT_LABELS[claim.verdict] ?? claim.verdict}｜${claim.text}（${claim.basis}）`);
+        for (const issue of nameIssues) rows.push(`⚠ 未授权设定：「${issue.name}」（命中：${issue.key}）`);
+        if (!rows.length) rows.push('没有可验证断言，本轮无审计。');
+        target.replaceChildren(...rows.map(text => {
+            const item = makeElement('p', 'dai-turn-result');
+            item.textContent = text;
+            return item;
+        }));
+    }
+    renderVerifyEntries(panel);
+}
+
+function persistVerify() {
+    return Promise.resolve(hostStorage?.saveVerifyState?.(verifyLedger) ?? { status: 'unavailable' })
+        .catch(error => ({ status: 'failed', reason: String(error?.message ?? error) }));
+}
+
+/** 换聊天/启动时读入本聊天的核验台账；读不到就按空表开局。 */
+function hydrateVerify() {
+    try {
+        const record = hostStorage?.verifyState?.();
+        verifyLedger = normalizeVerifyLedger(record?.status === 'ready' ? record.value : null);
+    } catch {
+        verifyLedger = normalizeVerifyLedger(null);
+    }
+    renderVerifyEntries();
+}
+
+/** 台账现状行：世界/纳戒/人物三本账的最小投影，给核验模型当证据；哪本读不到就空着。 */
+function verifyEvidenceLines() {
+    let world = '';
+    try { world = buildWorldInjection(agentWorldRuntime.snapshot(), { maxChars: 700 }); } catch { /* 世界台账不可用不碍核验 */ }
+    let self = '';
+    try { self = buildSelfInjection(agentSelfRuntime.snapshot(), { maxChars: 400 }); } catch { /* 同上 */ }
+    let npc = '';
+    try {
+        npc = agentNpcLedger.list().slice(0, 14).map(record => {
+            const bits = [record?.presence === '不在场' ? '不在场' : '在场', `好感 ${Number(record?.favor ?? 0)}`,
+                record?.attitude ? `态度 ${record.attitude}` : '', record?.realm ? `修为 ${record.realm}` : ''].filter(Boolean);
+            return `${record?.name || '（未知名）'}（${bits.join('，')}）`;
+        }).filter(Boolean).join('；');
+    } catch { /* 同上 */ }
+    return { world, self, npc };
+}
+
+/** 误报标记：revision 乐观锁；翻成功后把断言键升级成豁免并落账，同断言后续不再记。 */
+function markVerifyFalsePositive(id, expectedRevision) {
+    const marked = markEntryFalsePositive(verifyLedger.entries, { id, expectedRevision: Number(expectedRevision) });
+    if (!marked.accepted) {
+        setVerifyStatus(`误报标记未生效：${marked.reason ?? '未知原因'}`);
+        return { status: marked.reason ?? 'rejected' };
+    }
+    verifyLedger.entries = marked.entries;
+    const exempted = addExemption(verifyLedger.exemptions, marked.entry);
+    if (exempted.accepted) verifyLedger.exemptions = exempted.exemptions;
+    persistVerify();
+    renderVerifyEntries();
+    setVerifyStatus('已标记误报；同一断言后续不再记。');
+    return { status: 'ok' };
+}
+
+/** 核验排程：等记账链（完整版＝世界链＋人物链，简略版＝总结算）落地后再跑——台账没记完就开核，
+ *  会把“本轮刚发生的变化”误判成矛盾。 */
+function scheduleFactCheckAfter(chains = []) {
+    const settings = verifySettings();
+    if (!advancedMode() || !settings.enabled || !settings.auto) return;
+    // 预快筛：注定跳过的楼层（闲聊、没有可验证特征、名字比对又没开）连排程都不进——
+    // 不产生审计事件、不碰存档，也避免后台写入在流程上造成异步污染。
+    try {
+        const chat = Array.isArray(getHostContext()?.chat) ? getHostContext().chat : [];
+        const newest = [...chat].reverse().find(message => message && message.is_user !== true && message.is_system !== true && typeof message.mes === 'string' && message.mes.trim());
+        let supplyKeys = [];
+        try { supplyKeys = agentSettingSupply.list().flatMap(entry => Array.isArray(entry?.keys) ? entry.keys : []); } catch { /* 库空就只靠台账 */ }
+        let npcNames = [];
+        try { npcNames = agentNpcLedger.names(); } catch { /* 同上 */ }
+        const gate = shouldVerify({ text: newest?.mes ?? '', supplyKeys, npcNames, gate: settings.gate });
+        if (gate.status !== 'ok' && !settings.nameAudit) return;
+    } catch { /* 预筛失败照常排程，运行时还有一道门 */ }
+    const pending = (Array.isArray(chains) ? chains : []).filter(Boolean);
+    void Promise.resolve(pending.length ? Promise.allSettled(pending) : Promise.resolve())
+        .then(() => Promise.resolve(runFactCheck({ source: 'auto' })))
+        .then(result => { try { recordAgentAudit({ event: 'turn_fact_check', outcome: String(result?.status ?? 'unknown') }); } catch { /* 审计失败不影响记账 */ } })
+        .catch(() => {});
+}
+
+/**
+ * 事实核验主入口：① 名字比对（确定性的“未注入条目出现”，零模型调用，每楼都跑）；
+ * ② 快筛通过后一次小调用拆断言裁决；③ 豁免命中与同楼重复不记，落账呈现。
+ * 手动“核验这一楼”不受楼层防重限制。
+ */
+async function runFactCheck({ source = 'auto' } = {}) {
+    const settings = verifySettings();
+    if (!settings.enabled) return { status: 'disabled' };
+    if (verifyRunning) return { status: 'busy' };
+    if (settings.overrides.connection !== 'custom' && agentLlmClient.availableFor('tavern') !== true) return { status: 'not_configured' };
+    const chat = Array.isArray(getHostContext()?.chat) ? getHostContext().chat : [];
+    const replyFloor = lastReplyIndex(chat);
+    const replyIdentity = replyIdentityOf(chat, replyFloor);
+    if (source === 'auto') {
+        if (replyFloor < 0) return { status: 'no_reply' };
+        if (verifyDecidedFloor?.floor === replyFloor && verifyDecidedFloor.continuation.current()
+            && verifyDecidedFloor.identity === replyIdentity) return { status: 'already_decided' };
+    }
+    const continuation = captureAgentContinuation();
+    verifyRunning = continuation;
+    // 可观测性：无论结果如何都落 lastRun——否则“跑了没结果”与“根本没跑”无法区分。
+    const lastRun = { floor: replyFloor, ts: new Date().toISOString(), status: 'started', claims: 0, nameIssues: 0, reason: '' };
+    try {
+        const floors = [];
+        for (let cursor = chat.length - 1; cursor >= 0 && floors.length < 2; cursor -= 1) {
+            const message = chat[cursor];
+            if (!message || typeof message.mes !== 'string' || !message.mes.trim()) continue;
+            if (message.is_system === true) continue;
+            floors.unshift({ role: message.is_user === true ? '玩家' : '角色', text: message.mes, isUser: message.is_user === true, depth: chat.length - 1 - cursor });
+        }
+        const cleaned = floors.length ? await cleanFloorEntries(floors) : [];
+        const newest = [...cleaned].reverse().find(item => item.role !== '玩家') ?? cleaned.at(-1) ?? null;
+        const proseText = newest?.text ?? '';
+        // ① 名字比对：setting-supply 的确定性审计（旧管线遗留能力）。实跑发现 lore 密集的正文
+        // 一楼能命中 40+ 条目名（酒馆原生世界书还在自己注入，正文引用非注入条目是常态），
+        // 默认关（verify.nameAudit）；开了才作为确定性车道随核验执行，零模型调用。
+        let nameIssues = [];
+        if (settings.nameAudit) {
+            try {
+                const usedIds = Array.isArray(agentPromptInjection.inspect().last?.usedIds) ? agentPromptInjection.inspect().last.usedIds : [];
+                if (proseText) nameIssues = agentSettingSupply.audit(proseText, usedIds)?.issues ?? [];
+            } catch { /* 名字比对失败不碍断言核验 */ }
+        }
+        // ② 快筛：闲聊楼层没有可验证断言的特征，不值得一次调用。
+        let supplyKeys = [];
+        try { supplyKeys = agentSettingSupply.list().flatMap(entry => Array.isArray(entry?.keys) ? entry.keys : []); } catch { /* 库空就只靠台账 */ }
+        let npcNames = [];
+        try { npcNames = agentNpcLedger.names(); } catch { /* 同上 */ }
+        const gate = shouldVerify({ text: proseText, supplyKeys, npcNames, gate: settings.gate });
+        if (gate.status !== 'ok' && !nameIssues.length) {
+            verifyDecidedFloor = { floor: replyFloor, identity: replyIdentity, continuation };
+            lastRun.status = 'skipped';
+            return { status: 'skipped' };
+        }
+        const claims = [];
+        if (gate.status === 'ok' && proseText) {
+            const evidence = verifyEvidenceLines();
+            const user = buildVerifyUser({ floors: cleaned, injectedText: factsInjectedLines(), worldLines: evidence.world, selfLines: evidence.self, npcLines: evidence.npc });
+            // rawPrompt：走 generateRaw 独立提示词，不拼角色卡/主聊天预设——证据在 user 里自含，
+            // 且避开卡片工具协议（实跑复现：卡片的 soliumbra_reply 工具会把静默生成劫持成
+            // tool_calls，generateQuietPrompt 只拿回工具返回值 {}，真正的 JSON 被工具执行器吃掉）。
+            const raw = await agentLlmClient.complete({
+                label: '正文核验',
+                system: settings.prompt,
+                user,
+                rawPrompt: true,
+                jsonSchema: VERIFY_JSON_SCHEMA,
+                overrides: settings.overrides,
+            });
+            if (!continuation.current()) { lastRun.status = 'stale'; return { status: 'stale' }; }
+            let parsed = parseVerifyReply(raw, { proseText });
+            if (parsed.status === 'invalid') {
+                // 带原因重试一次（npc-recorder 同款）。重试去掉 jsonSchema：结构化输出执行器
+                // 遇到不认的关键字会把生成约束成 {}（实跑复现），第二次靠提示词契约裸跑。
+                const retryRaw = await agentLlmClient.complete({
+                    label: '正文核验',
+                    system: settings.prompt,
+                    user: buildVerifyRetryUser({ user, raw, reason: parsed.reason ?? '' }),
+                    rawPrompt: true,
+                    overrides: settings.overrides,
+                });
+                if (!continuation.current()) { lastRun.status = 'stale'; return { status: 'stale' }; }
+                parsed = parseVerifyReply(retryRaw, { proseText });
+            }
+            if (parsed.status !== 'ok') {
+                lastRun.status = parsed.status === 'empty' ? 'empty' : 'invalid';
+                lastRun.reason = `${String(parsed.reason ?? '').slice(0, 120)}｜原始输出开头：${String(raw).slice(0, 160)}`;
+                return { status: lastRun.status, reason: lastRun.reason };
+            }
+            claims.push(...parsed.claims);
+        }
+        // ③ 落账：断言条目 + 名字比对条目（发号器在两次 buildVerifyEntries 之间前进，防 id 撞号）。
+        const claimEntries = buildVerifyEntries(claims, { floor: replyFloor }, verifyLedger);
+        verifyLedger.seq = (Number.isInteger(verifyLedger.seq) ? verifyLedger.seq : 0) + claimEntries.length;
+        const nameEntries = buildVerifyEntries(nameIssues.map(issue => ({
+            name: issue.name, predicate: '未注入条目', value: issue.key,
+            text: `正文出现未注入条目「${issue.name}」（命中：${issue.key}）`, id: issue.id,
+        })), { floor: replyFloor, kind: 'unapproved_setting_use' }, verifyLedger);
+        verifyLedger.seq = (Number.isInteger(verifyLedger.seq) ? verifyLedger.seq : 0) + nameEntries.length;
+        const additions = [...claimEntries, ...nameEntries];
+        if (additions.length) {
+            const result = mergeVerifyEntries(verifyLedger.entries, additions, { exemptions: verifyLedger.exemptions, floor: replyFloor });
+            verifyLedger.entries = result.entries;
+        }
+        lastRun.status = 'ok';
+        lastRun.claims = claims.length;
+        lastRun.nameIssues = nameIssues.length;
+        verifyDecidedFloor = { floor: replyFloor, identity: replyIdentity, continuation };
+        renderVerifyResult(claims, nameIssues);
+        setVerifyStatus(source === 'auto'
+            ? (claims.length || nameIssues.length ? `核验完成：${claims.length} 条断言，${nameIssues.length} 条名字比对。` : '核验完成：没有可验证断言。')
+            : '核验完成。');
+        return { status: 'ok', claims: claims.length, nameIssues: nameIssues.length };
+    } catch (error) {
+        if (!continuation.current()) { lastRun.status = 'stale'; return { status: 'stale' }; }
+        lastRun.status = 'failed';
+        lastRun.reason = String(error?.message ?? error).slice(0, 200);
+        setVerifyStatus(`核验失败：${lastRun.reason}`);
+        return { status: 'failed', reason: lastRun.reason };
+    } finally {
+        if (verifyRunning === continuation) verifyRunning = false;
+        // skipped 不落盘：闲聊楼层每楼写存档既浪费也会改变 chatMetadata 形状；歧义只存在于
+        // “跑过模型但没结果”（ok/invalid/empty/failed），那几种必落。
+        if (lastRun.status !== 'started' && lastRun.status !== 'skipped') {
+            verifyLedger.lastRun = { ...lastRun };
+            persistVerify();
+        }
     }
 }
 
@@ -4453,14 +5972,21 @@ function renderMemoryDecisionResult(decision, result) {
 function smallsForConsolidation(snapshot, settings) {
     const threshold = Number(settings.consolidateAfter);
     if (!Number.isInteger(threshold) || threshold <= 0) return [];
-    const smalls = (Array.isArray(snapshot?.entries) ? snapshot.entries : []).filter(entry => entry.tier === 'small');
+    // 已被软覆盖（supersededBy）的小记忆视为"已被新事覆盖"，不再进总结批。
+    const smalls = (Array.isArray(snapshot?.entries) ? snapshot.entries : []).filter(entry => entry.tier === 'small' && !entry.supersededBy);
     return smalls.length >= 1 && smalls.length + 1 >= threshold ? smalls : [];
 }
 
-async function runMemoryDecision({ source = 'auto' } = {}) {
+async function runMemoryDecision({ source = 'auto', note = '' } = {}) {
     const settings = memorySettings();
-    if (!settings.enabled) return { status: 'disabled' };
-    if (!settings.decideEnabled) return { status: 'disabled' };
+    if (!settings.enabled) {
+        setMemoryDecideStatus('记忆记账已关闭：先在记忆页打开「启用记忆」。');
+        return { status: 'disabled' };
+    }
+    if (!settings.decideEnabled) {
+        setMemoryDecideStatus('记忆决定已关闭：先在记忆页打开「启用模型决定」。');
+        return { status: 'disabled' };
+    }
     if (memoryDecideRunning) return { status: 'busy' };
     // 自定义连接有自己的地址和密钥，不依赖全局配置；跟随酒馆才需要先检查全局连接。
     if (settings.overrides.connection !== 'custom' && agentLlmClient.availableFor('tavern') !== true) {
@@ -4499,7 +6025,7 @@ async function runMemoryDecision({ source = 'auto' } = {}) {
         // 整合到期时一次调用两件事：本轮总结 + 把现有小记忆整批提炼成大记忆（consolidate 字段）。
         const snapshotBefore = agentMemoryRuntime.snapshot();
         const consolidateCandidates = smallsForConsolidation(snapshotBefore, settings);
-        const user = buildMemoryDecideUser({ snapshot: snapshotBefore, floors, consolidateIds: consolidateCandidates.map(entry => entry.id) });
+        const user = withPlayerNote(buildMemoryDecideUser({ snapshot: snapshotBefore, floors, consolidateIds: consolidateCandidates.map(entry => entry.id), settleLines: settleVerdictLinesForDecide() }), note);
         const raw = await agentLlmClient.complete({
             label: '记忆决定',
             system: settings.prompt,
@@ -4571,7 +6097,8 @@ async function runMemoryConsolidation({ source = 'auto' } = {}) {
     if (!settings.enabled) return { status: 'disabled' };
     if (memoryConsolidateRunning) return { status: 'busy' };
     const capturedMemory = JSON.stringify(agentMemoryRuntime.snapshot());
-    const smalls = agentMemoryRuntime.snapshot().entries.filter(entry => entry.tier === 'small');
+    // 已被软覆盖（supersededBy）的小记忆不再进总结批——它们已被新事覆盖，玩家可随时恢复。
+    const smalls = agentMemoryRuntime.snapshot().entries.filter(entry => entry.tier === 'small' && !entry.supersededBy);
     if (source === 'auto' && (!settings.consolidateAfter || smalls.length < settings.consolidateAfter)) {
         return { status: 'below_threshold', count: smalls.length, threshold: settings.consolidateAfter };
     }
@@ -4623,81 +6150,30 @@ async function runMemoryConsolidation({ source = 'auto' } = {}) {
     }
 }
 
-// ---------- 模型调用体检：每个功能最近一次调模型的结果 ----------
+// ---------- 模型调用体检：一行摘要 + 空回重试设置 ----------
+// 逐路的实时成败在悬浮球总控窗（渠道标记 ✓/✗），失败详情点「上次失败」行或 ✗ 弹卡——
+// 设置页不再铺长流水，只留一行统计摘要，观感优先。
 
-const CALLLOG_FUNCTIONS = Object.freeze([
-    ['总管决定', '总管书记官（纳戒+记忆，一次调用）'],
-    ['纳戒决定', '纳戒决定（独立调用）'],
-    ['记忆决定', '记忆决定（独立调用）'],
-    ['记忆召回', '记忆召回（挑选注入哪些记忆）'],
-    ['记忆总结', '小记忆总结成大记忆'],
-    ['世界决定', '世界主持人'],
-    ['影响决定', '世界记录员'],
-    ['场记挑选', '场记：挑选本轮注入的影响'],
-    ['人物记录', '人物记录员'],
-    ['档案抄录', '档案抄录员（按世界书补档案）'],
-    ['冷藏推进', '冷藏推进员'],
-    ['经历精简', '经历精简'],
-    ['事实检索', '事实检索员'],
-    ['意图解析', '意图解析'],
-    ['行动判定', '行动判定'],
-    ['行动结算', '行动结算（生成前直判本轮行动结果并注入）'],
-    ['设定挑选', '设定挑选'],
-    ['正文撰写', '正文撰写'],
-]);
-
-function formatCallDetail(item) {
-    if (!item) return '';
-    const time = typeof item.at === 'string' ? new Date(item.at).toLocaleTimeString() : '';
-    const model = item.model ? ` · ${item.model}` : '';
-    if (item.ok === true) return `${time} ✓ ${Math.round(Number(item.ms) || 0)}ms${model}`;
-    return `${time} ✗ ${item.error || '失败'}${model ? `（${model}）` : ''}`;
-}
-
-/** 体检流水折成每功能一行：最近一次结果 + 次数；没调过的功能也占一行（未调用）。 */
-function buildCallLogRows() {
-    const log = typeof agentLlmClient?.callLog === 'function' ? agentLlmClient.callLog() : [];
-    const byLabel = new Map();
-    for (const item of log) {
-        const key = typeof item?.label === 'string' && item.label ? item.label : '未标注调用';
-        const bucket = byLabel.get(key) ?? { label: key, count: 0, last: null };
-        bucket.count += 1;
-        bucket.last = item;
-        byLabel.set(key, bucket);
-    }
-    const rows = [];
-    for (const [label, title] of CALLLOG_FUNCTIONS) {
-        const bucket = byLabel.get(label);
-        byLabel.delete(label);
-        rows.push({
-            label,
-            title,
-            state: bucket ? (bucket.last?.ok === true ? 'ok' : 'failed') : 'idle',
-            count: bucket?.count ?? 0,
-            detail: bucket ? formatCallDetail(bucket.last) : '本次会话还没调用过',
-        });
-    }
-    // 名单外冒出来的调用（以后新增的功能）也照实列出。
-    for (const [label, bucket] of byLabel) {
-        rows.push({ label, title: '（名单外）', state: bucket.last?.ok === true ? 'ok' : 'failed', count: bucket.count, detail: formatCallDetail(bucket.last) });
-    }
-    return rows;
-}
-
-function renderCallLogList(panel) {
-    const host = panel?.querySelector('[data-calllog-list]');
+/** 体检摘要：本会话调用量 + 失败次数 + 最近失败短摘要；面板开着时有新调用就地刷新。 */
+function renderCallSummary(panel) {
+    const host = panel?.querySelector('[data-calllog-summary]');
     if (!host) return;
-    host.replaceChildren(...buildCallLogRows().map(item => {
-        const line = document.createElement('p');
-        line.className = 'dai-turn-result';
-        line.textContent = `${item.state === 'ok' ? '✓' : item.state === 'failed' ? '✗' : '·'} ${item.label}（${item.title}）：${item.detail}${item.state === 'idle' ? '' : `，共 ${item.count} 次`}`;
-        return line;
-    }));
-    // 面板开着时有新调用就自动刷新（llm-client 每记一笔广播一次）。
+    const update = () => {
+        const log = typeof agentLlmClient?.callLog === 'function' ? agentLlmClient.callLog() : [];
+        if (!log.length) { host.textContent = '本次会话还没有调用记录。逐路的实时成败看悬浮球总控窗。'; return; }
+        const failed = log.filter(item => item?.ok === false);
+        const last = failed.at(-1);
+        const error = String(last?.error ?? '').trim();
+        const briefError = error.length > 60 ? `${error.slice(0, 60)}…` : error;
+        host.textContent = `本会话共 ${log.length} 次调用，失败 ${failed.length} 次`
+            + (last ? `；最近失败：${last.label ?? '未标注调用'}：${briefError}` : '')
+            + '。逐路的实时成败在悬浮球总控窗，失败点那里弹详情卡。';
+    };
+    update();
     if (!panel.dataset.calllogListening) {
         panel.dataset.calllogListening = '1';
         window.addEventListener('dai-calllog', () => {
-            if (activeSettingsPage === 'overview' && document.contains(host)) renderCallLogList(panel);
+            if (activeSettingsPage === 'overview' && document.contains(host)) update();
         });
     }
 }
@@ -4752,22 +6228,6 @@ function probeCoverScriptStatus() {
 
 let unifiedDecideRunning = false;
 
-/** 合并决定已退役：纳戒申报统一走 MVU 变量通道（仲裁器自动裁决），记忆走独立决定。
- *  保留函数名只为兼容旧调用点；恒 false 让记忆注入/手动按钮全部回落到独立通道。 */
-function unifiedActive() {
-    return false;
-}
-
-/**
- * 合并决定（已退役）：曾经一次调用同时产出纳戒 ops、记忆 ops 和 cited（本轮用到的旧记忆编号）。
- * 纳戒申报现走 MVU 变量通道（仲裁器自动裁决），记忆走独立决定；函数只保留兼容旧调用点。
- */
-async function runUnifiedDecision({ source = 'auto' } = {}) {
-    // 合并决定已退役：纳戒走 MVU 变量通道（仲裁器自动裁决），记忆需要时直接走独立决定。
-    setSelfDecideStatus('合并决定已退役：纳戒经 MVU 变量通道自动仲裁；需要记忆决定请用记忆页的按钮。');
-    return { status: 'retired' };
-}
-
 let impactDecideRunning = false;
 let lastImpactDecideIdentity = null;
 let lastImpactResult = null;
@@ -4783,9 +6243,12 @@ function setImpactStatus(message) {
  * 只回一张 JSON 清单；脚本逐条校验落账（impact-runtime），坏条目单独丢弃、不整批作废。
  * 生成结束后自动跑；面板按钮或命名空间也能手动触发。
  */
-async function runImpactDecision({ source = 'auto' } = {}) {
+async function runImpactDecision({ source = 'auto', note = '' } = {}) {
     const settings = impactSettings();
-    if (!settings.enabled || !settings.decideEnabled) return { status: 'disabled' };
+    if (!settings.enabled || !settings.decideEnabled) {
+        setImpactStatus('世界影响记录已关闭：先在影响页打开「启用世界影响库」和决定开关。');
+        return { status: 'disabled' };
+    }
     if (impactDecideRunning) return { status: 'busy' };
     const plan = impactModelPlan(settings);
     if (plan.decide.connection !== 'custom' && agentLlmClient.availableFor('tavern') !== true) {
@@ -4819,7 +6282,7 @@ async function runImpactDecision({ source = 'auto' } = {}) {
         const raw = await agentLlmClient.complete({
             label: '影响决定',
             system: settings.prompt,
-            user: buildImpactDecideUser({ snapshot: { ...worldSnapshot, records: impactSnapshot.records }, floors, worldbookLines: bookLines }),
+            user: withPlayerNote(buildImpactDecideUser({ snapshot: { ...worldSnapshot, records: impactSnapshot.records }, floors, worldbookLines: bookLines, settleLines: settleVerdictLinesForDecide() }), note),
             jsonSchema: IMPACT_JSON_SCHEMA,
             overrides: {
                 connection: plan.decide.connection,
@@ -4870,18 +6333,6 @@ async function runImpactDecision({ source = 'auto' } = {}) {
     }
 }
 
-export let agentHistoryEvents;
-
-function publishPipelineProgress(progress) {
-    const lifecycle = agentTurnPipeline.inspect(progress.taskId);
-    if (lifecycle.status === 'missing_task') {
-        if (!agentCoordinator.get(progress.taskId)) agentCoordinator.begin({ taskId: progress.taskId, sessionId: progress.sessionId, branchId: progress.branchId, stateVersion: progress.stateVersion });
-    }
-    const status = progress.status === 'awaiting_message_evidence' ? 'save_uncertain' : progress.status === 'committed' ? 'completed_saved' : progress.status === 'failed' || progress.status === 'cancelled' ? 'failed_unapplied' : 'processing';
-    const outcome = agentCoordinator.update(progress.taskId, status, { sessionId: progress.sessionId, branchId: progress.branchId, stateVersion: progress.stateVersion, message: progress.message, applied: progress.status === 'committed' ? '状态已提交到当前会话' : '尚未确认生效', nextStep: status === 'save_uncertain' ? '先核对酒馆里的对应消息，再决定是否重新运行一轮。' : undefined });
-    if (!outcome.accepted && !['task_terminal', 'not_active_task'].includes(outcome.reason)) recordAgentAudit({ taskId: progress.taskId, sessionId: progress.sessionId, branchId: progress.branchId, stateVersion: progress.stateVersion, event: 'stage_failed', stage: progress.currentStage ?? null, outcome: `coordinator_${outcome.reason}` });
-}
-
 /** Namespaced integration point for the current feature modules. */
 export function probeAgentCapabilities(options) {
     agentCapabilities = probeHostCapabilities(options);
@@ -4891,40 +6342,11 @@ export function probeAgentCapabilities(options) {
 
 export function getAgentCapabilities() { return agentCapabilities; }
 
-export function initializeHistoryEvents() {
-    agentCapabilities = probeHostCapabilities();
-    const context = getHostContext();
-    if (!context?.eventSource || !context?.event_types) return { status: 'unavailable' };
-    agentHistoryEvents?.stop();
-    agentHistoryEvents = createHistoryEventAdapter({
-        eventSource: context.eventSource,
-        eventTypes: context.event_types,
-        pipeline: agentTurnPipeline,
-        invalidateCandidate: options => agentRequestRouter.invalidateCandidate(options),
-        getScope: () => {
-            const scope = currentAgentScope();
-            const matches = agentActiveScope?.sessionId === scope.sessionId && agentActiveScope?.branchId === scope.branchId;
-            return { ...scope, taskIds: matches ? [...(agentActiveScope.taskIds ?? [])] : [] };
-        },
-        onUnresolved: result => recordAgentAudit({ taskId: result.taskId, sessionId: agentActiveScope?.sessionId ?? 'unknown-session', branchId: agentActiveScope?.branchId ?? 'unknown-branch', stateVersion: agentActiveScope?.stateVersion ?? 'unknown-version', event: 'history_changed_after_commit', outcome: result.result.status }),
-        onInvalidated: result => {
-            const sessionId = agentActiveScope?.sessionId;
-            const task = agentTurnPipeline.inspect(result.taskId);
-            if (task.status !== 'missing_task') agentNarrativeGuard.clearTask(task.sessionId, task.branchId, task.stateVersion, result.taskId);
-            const branchId = agentActiveScope?.branchId;
-            const operation = agentOperations.list({ sessionId, branchId, limit: 500 }).find(item => item.taskId === result.taskId);
-            if (operation) agentOperations.update(operation.operationId, 'history_invalidated', { sessionId, branchId, stateVersion: operation.stateVersion, reason: result.result.reason });
-            recordAgentAudit({ taskId: result.taskId, sessionId: sessionId ?? 'unknown-session', branchId: branchId ?? 'unknown-branch', stateVersion: operation?.stateVersion ?? 'unknown-version', event: 'history_candidate_invalidated', outcome: result.result.status });
-        },
-    });
-    return agentHistoryEvents.start();
-}
-
 export const doupoAgent = Object.freeze({
     coordinator: agentCoordinator,
-    modules: agentModuleRunner,
-    moduleRegistration: agentModuleRegistration,
     facts: agentFactsLibrary,
+    factCheck: options => runFactCheck(options),
+    factStatus: () => ({ running: Boolean(verifyRunning), lastFloor: verifyDecidedFloor?.floor ?? null, entries: verifyLedger.entries.length, exemptions: verifyLedger.exemptions.length, lastRun: verifyLedger.lastRun ?? null }),
     impacts: agentImpactRuntime,
     impactRuntime: agentImpactRuntime,
     impactInjection: options => agentImpactInjection.write(typeof options === 'object' && options ? options : {}),
@@ -4935,12 +6357,10 @@ export const doupoAgent = Object.freeze({
     impactArchived: () => agentImpactRuntime.archived(),
     impactInjectedIds: () => agentImpactInjection.injectedIds(),
     impactLast: () => lastImpactResult,
-    actions: agentActionResolver,
     npcs: agentNpcDecisionGuard,
     npcAutonomy: agentNpcAutonomyPlanner,
     npcPlanReassessment: agentNpcPlanReassessment,
     npcConflict: agentNpcConflictCoordinator,
-    npcOutcome: agentNpcOutcomeBridge,
     npcCommitGate: agentNpcCommitGate,
     reviewNpcCandidate: options => agentNpcAutonomyPlanner.reviewCandidate({ ...options, decisionGuard: agentNpcDecisionGuard }),
     registerNpcPlan: options => agentNpcAutonomyPlanner.registerPlan(options),
@@ -4969,8 +6389,23 @@ export const doupoAgent = Object.freeze({
     npcColdPreview: () => runNpcColdPreview(),
     npcColdConfirm: id => confirmNpcColdPreview(id),
     npcColdDiscard: id => discardNpcColdPreview(id),
+    npcColdUndo: () => undoLastNpcColdConfirm(),
     npcColdStatus: () => agentNpcColdRuntime.status(),
     npcColdRestoreFromChat: () => restoreNpcColdFromChat(),
+    // 全局人物关系图：收边/体检/二跳关系/随聊天存取。
+    npcRelations: () => agentNpcRelations.snapshot(),
+    npcRelationsUpsert: edges => agentNpcRelations.upsert(edges),
+    npcRelationsRemove: name => agentNpcRelations.remove(name),
+    npcRelationsAsymmetries: () => agentNpcRelations.asymmetries(),
+    npcRelationsHopLines: names => agentNpcRelations.hopLines(names),
+    npcRelationsRestore: value => agentNpcRelations.restore(value),
+    npcRelationsRestoreFromChat: () => restoreNpcRelationsFromChat(),
+    // 传闻触达与一致性体检：都是草稿确认/旁路审计，不自动写账、不拦正文。
+    npcGossipRun: panel => runNpcGossip(panel),
+    npcConsistencyRun: options => runNpcConsistencyCheck(options),
+    npcConsistencyState: () => lastNpcConsistency,
+    // 情绪快变量：手动按当前世界天数清一遍到期情绪（注入路径已自动调用）。
+    npcDecayMoods: day => agentNpcLedger.decayMoods(day),
     selfRuntime: agentSelfRuntime,
     selfInjection: writeSelfInjectionForPrompt,
     selfDecide: options => runSelfDecision(options),
@@ -4982,73 +6417,35 @@ export const doupoAgent = Object.freeze({
     selfSnapshot: () => agentSelfRuntime.snapshot(),
     selfMvuStatus: () => agentSelfMvu.status(),
     selfMvuSync: () => agentSelfMvu.sync(agentSelfRuntime.snapshot()),
-    mvuArbitrate: () => agentMvuArbiter.runArbitration({ source: 'manual' }),
     worldPersist: () => { persistWorld(); return 'ok'; },
     selfJournal: () => agentSelfRuntime.journal(),
     dbBridgeStatus: () => agentDbBridge.status(),
     dbBridgeAdopt: () => Promise.all([adoptSelfFromDb(), adoptMemoryFromDb()]),
     memoryRuntime: agentMemoryRuntime,
     memoryInjection: writeMemoryInjectionForPrompt,
+    wakeUpInjection: writeWakeUpInjectionForPrompt,
     memoryRecall: runMemoryRecall,
     memoryDecide: options => runMemoryDecision(options),
-    unifiedDecide: options => runUnifiedDecision(options),
     factsSelect: options => agentFactsSelector.select(options),
     memoryApplyPersisted: operations => applyMemoryOps(operations),
     memoryApplyFromLatestReply: () => applyMemoryOpsFromLatestReply(),
     memoryRestoreFromChat: () => restoreMemoryFromChat(),
     memoryStatus: () => agentMemoryRuntime.status(),
     memorySnapshot: () => agentMemoryRuntime.snapshot(),
-    world: agentWorldSimulator,
     worldRuntime: agentWorldRuntime,
     worldInjection: writeWorldInjectionForPrompt,
     worldApplyFromLatestReply: () => applyWorldOpsFromLatestReply(),
     worldRestoreFromChat: () => restoreWorldFromChat(),
     ui: agentUiState,
-    narrative: agentNarrativeGuard,
     state: agentStateStore,
-    commits: agentCommitRecovery,
-    historyRestore: agentHistoryRestore,
-    requests: agentRequestClassifier,
-    router: agentRequestRouter,
     capabilities: Object.freeze({ probe: options => probeAgentCapabilities(options), get: () => getAgentCapabilities() }),
-    pipeline: agentTurnPipeline,
     stages: agentTurnStages,
-    orchestrator: agentOrchestrator,
     llm: agentLlmClient,
     messages: agentMessageAdapter,
-    persistence: agentStatePersistence,
-    runTurn: options => agentOrchestrator.runTurn(options),
-    inspectTurnState: options => agentOrchestrator.inspect(options),
-    quality: agentQualityGate,
-    contracts: agentDataContracts,
     audit: agentAuditLog,
-    operations: agentOperations,
-    get historyEvents() { return agentHistoryEvents; },
-    classifyHistoryOperation,
-    classifyMappedHistoryOperation,
     beginTask: task => agentCoordinator.begin(task),
     updateTask: (taskId, status, fields) => agentCoordinator.update(taskId, status, fields),
-    plan: options => agentModuleRunner.plan(options),
-    validatePlan: (plan, context) => agentModuleRunner.validatePlan(plan, context),
-    run: options => agentModuleRunner.execute(options),
-    runPlan: async ({ plan, enabledModuleIds, ...options } = {}) => {
-        const validation = agentModuleRunner.validatePlan(plan, { taskType: options.taskType, enabledModuleIds });
-        if (validation.status !== 'validated') throw new Error(`执行计划无效：${validation.reason}`);
-        return agentModuleRunner.execute({ ...options, plan, enabledModuleIds, moduleIds: validation.moduleIds });
-    },
-    routeRequest: options => agentRequestRouter.prepare(options),
-    runRequest: options => agentRequestRouter.run(options),
-    invalidateCandidate: options => agentRequestRouter.invalidateCandidate(options),
-    invalidateNpcPlanCandidates: change => agentRequestRouter.invalidateNpcPlanCandidates(change),
-    revalidateCandidate: options => agentRequestRouter.revalidateCandidate(options),
-    prepareCommit: options => agentRequestRouter.prepareCommit(options),
-    confirmMessage: options => agentRequestRouter.confirmMessage(options),
-    commitCandidate: options => agentRequestRouter.commitCandidate(options),
 });
-
-function updateCoordinatorTask(taskId, status, fields) {
-    return agentCoordinator.update(taskId, status, fields);
-}
 
 function text(value, fallback = '') {
     return typeof value === 'string' ? value : fallback;
@@ -5139,6 +6536,59 @@ function agentModalCurrent(panel) {
         && (modal.__pendingSave || !modal.__agentNpc || modal.__agentNpc.snapshot === JSON.stringify(agentNpcLedger.get(modal.__agentNpc.name)));
     if (!current) setNpcLedgerStatus('此表单已过期：聊天或档案已变更，请重新打开后编辑。');
     return Boolean(current);
+}
+
+/** 「让模型决定一次」的想法弹窗：dock 懒挂到面板根部，五个决定/召回/记录按钮共用一份表单。 */
+function ensureDecideNoteDock(panel) {
+    let dock = panel?.querySelector(':scope > [data-modal-dock="decide-note"]');
+    if (dock) return dock;
+    dock = makeElement('div', 'dai-modal-dock');
+    dock.dataset.modalDock = 'decide-note';
+    dock.hidden = true;
+    const card = makeElement('div', 'dai-settings-card');
+    const head = makeElement('div', 'dai-card-heading');
+    const title = makeElement('b', null, '这轮想让模型特别注意什么？');
+    const hint = makeElement('small');
+    hint.dataset.decideNoteHint = '';
+    head.append(title, hint);
+    const row = makeElement('label', 'dai-setting-row');
+    const small = makeElement('span', null, '想法');
+    const smallText = makeElement('small', null, '留空＝按提示词正常决定；填了就作为「玩家本轮补充指示」随提示词一起发给模型。');
+    const area = makeElement('textarea');
+    area.rows = 5;
+    area.spellcheck = false;
+    area.maxLength = 500;
+    area.placeholder = '例如：让老执事对萧炎起疑；这轮重点检查丹药库存。';
+    small.append(smallText);
+    row.append(small, area);
+    const actions = makeElement('div', 'dai-setting-row dai-setting-actions');
+    const run = makeElement('button', 'dai-button', '就这样，跑一次');
+    run.type = 'button';
+    run.dataset.decideNoteRun = '';
+    const cancel = makeElement('button', 'dai-secondary-button', '算了');
+    cancel.type = 'button';
+    cancel.dataset.agentModalClose = '';
+    actions.append(run, cancel);
+    card.append(head, row, actions);
+    dock.append(card);
+    panel.append(dock);
+    return dock;
+}
+
+/** 打开想法弹窗：run(note) 是点「就这样，跑一次」后真正发起的决定调用。 */
+function openDecideNoteModal(panel, { title, hint, placeholder, run } = {}) {
+    const dock = ensureDecideNoteDock(panel);
+    if (!dock || typeof run !== 'function') return;
+    const area = dock.querySelector('textarea');
+    const hintElement = dock.querySelector('[data-decide-note-hint]');
+    if (hintElement) hintElement.textContent = hint ?? '';
+    if (area) {
+        area.value = '';
+        area.placeholder = placeholder ?? '这轮想让模型特别注意什么？（可留空）';
+    }
+    dock.__decideRun = note => run(note);
+    openAgentModal(panel, title ?? '让模型决定一次', dock);
+    area?.focus?.();
 }
 
 function trapAgentDialogFocus(panel, event) {
@@ -5521,15 +6971,26 @@ function mountOrbHud() {
 
 function syncOrbHud() {
     if (!orbElement) return;
+    // 开放世界随开关存在：开关关＝没有这个功能，图标整个隐藏；开着窗时连窗一起收。
+    const sandboxOff = currentSettings().enableSandboxMode !== true;
+    if (sandboxOff && orbState.panelId === 'sandbox') orbState.select('sandbox');
     const icons = [...orbElement.querySelectorAll('.dai-orb-icon')];
-    icons.forEach((icon, index) => {
+    const visibleIcons = [];
+    icons.forEach(icon => {
+        const hidden = icon.dataset.orbItem === 'sandbox' && sandboxOff;
+        icon.hidden = hidden;
+        if (!hidden) visibleIcons.push(icon);
+    });
+    visibleIcons.forEach((icon, index) => {
         icon.style.transitionDelay = orbState.collapsed ? '0ms' : `${90 + index * 26}ms`;
         icon.classList.toggle('is-active', orbState.panelId === icon.dataset.orbItem);
     });
     orbElement.dataset.state = orbState.collapsed ? 'collapsed' : 'expanded';
+    // 调用版本落在球根上：进阶版的徽章、描边光环等视觉区分走 CSS 的 data-api-mode 钩子。
+    orbElement.dataset.apiMode = apiMode();
     const capsule = orbElement.querySelector('.dai-orb-capsule');
-    // 收起＝只剩顶上的球；展开＝球帽 + 图标 + 底帽，两态都给显式高度，过渡才连得上。
-    if (capsule) capsule.style.height = orbState.collapsed ? '3rem' : `${icons.length * 2.9 + 3.7}rem`;
+    // 收起＝只剩顶上的球；展开＝球帽 + 可见图标 + 底帽，两态都给显式高度，过渡才连得上。
+    if (capsule) capsule.style.height = orbState.collapsed ? '3rem' : `${visibleIcons.length * 2.9 + 3.7}rem`;
     orbElement.querySelector('.dai-orb-ball')?.setAttribute('aria-expanded', orbState.collapsed ? 'false' : 'true');
     const panel = orbElement.querySelector('.dai-orb-panel');
     if (!panel) return;
@@ -5560,7 +7021,7 @@ function refreshOpenOrbPanel() {
     if (itemRef) openOrbItemPopup(itemRef);
 }
 
-/** 收集十一个信息窗的只读数据；哪路运行时没就绪就缺哪块，窗里显示“暂无”。 */
+/** 收集各信息窗的只读数据；哪路运行时没就绪就缺哪块，窗里显示“暂无”。 */
 function collectOrbData() {
     const settings = currentSettings();
     const safe = getter => { try { return getter(); } catch { return undefined; } };
@@ -5570,7 +7031,7 @@ function collectOrbData() {
     return {
         calls: safe(() => agentLlmClient.callLog()) ?? [],
         active: safe(() => agentLlmClient.activeLabels()) ?? [],
-        mode: settings.apiMode === 'lite' ? 'lite' : 'full',
+        mode: settings.apiMode === 'lite' || settings.apiMode === 'advanced' ? settings.apiMode : 'full',
         // 简略版总控的动态分路：功能开关拨了谁，合并调用的说明文字就带谁。
         litePickParts: (() => { const jobs = safe(litePickConsumers) ?? {}; return [jobs.facts && '原著', jobs.impact && '影响', jobs.memory && '记忆'].filter(Boolean); })(),
         liteSettleParts: (() => { const gatesNow = safe(liteSettleGates) ?? {}; return [gatesNow.npc && '人物', gatesNow.world && '世界', gatesNow.impact && '影响', gatesNow.self && '纳戒', gatesNow.memory && '记忆'].filter(Boolean); })(),
@@ -5578,7 +7039,6 @@ function collectOrbData() {
             settings,
             records: safe(() => agentAuditLog.list({ limit: 2000 })) ?? [],
             tasks: safe(() => agentCoordinator.list()) ?? [],
-            scope: dashboardScope,
             injectionNote: safe(() => agentPromptInjection.inspect().note),
         }),
         world: {
@@ -5605,14 +7065,16 @@ function collectOrbData() {
         },
         mirror: { bridge: safe(() => agentDbBridge.status()), mvu: safe(() => agentSelfMvu.status()) },
         journal: { records: safe(() => agentAuditLog.list({ limit: 40 })) },
-        sandbox: { read: safe(() => agentSandboxMode.read({ sessionId: agentActiveScope?.sessionId, branchId: agentActiveScope?.branchId })) },
+        sandbox: {
+            // 开关关＝这个功能不存在（图标都隐藏）；开＝读本局的正式口径记录。
+            enabled: settings.enableSandboxMode === true,
+            read: safe(() => agentSandboxMode.read(currentAgentScope())),
+        },
     };
 }
 
 /** 悬浮球信息窗的控制条：每功能一个启用开关，每一路模型调用一个重 roll 按钮。
- *  重 roll 只给「正文生成后」的自动链调用——生成前的选条/判定/召回/场记决定的是
- *  下一轮正文会带什么，不该从信息窗里手动触发。重跑全部走设置页同款入口
- *  （source:'manual' 绕过防重缓存），同楼重 roll 由各 runtime 的
+ *  重跑统一走设置页同款入口（source:'manual' 绕过防重缓存），同楼重 roll 由各 runtime 的
  *  「撤销上一版贡献再落账」机制兜底，不会双份记账。 */
 const ORB_PANEL_CONTROLS = Object.freeze({
     facts: { setting: 'setting.enabled', title: '原著设定注入', rerolls: [] },
@@ -5704,21 +7166,82 @@ function buildOrbCallStatusMark(status) {
 }
 
 /**
- * 模块行尾的调用标记组：每个标记悬停能看渠道名+状态详情；一行挂多个渠道时
- * （记忆＝召回+决定、影响＝挑选+决定）在记号前补短名，免得看不出哪个勾是哪路的。
+ * 模块行尾的调用标记组：短名常显（列才对得齐），每个标记悬停能看渠道名+状态详情；
+ * 可重roll 的渠道在标记上再挂一枚圆圈箭头——箭头长在谁身上，重跑的就是谁那一路。
  */
 function buildOrbRowMarks(marks) {
     const host = makeElement('span', 'dai-orb-row-marks');
-    const multi = Array.isArray(marks) && marks.length > 1;
     for (const item of Array.isArray(marks) ? marks : []) {
         if (!item || typeof item.status !== 'string') continue;
         const shortName = item.short ?? String(item.label ?? '').replace(/^记忆/, '');
-        const chip = makeElement('span', 'dai-orb-channel-mark', multi ? shortName : '');
+        const chip = makeElement('span', 'dai-orb-channel-mark', shortName);
         chip.title = `${item.label ?? ''}：${item.detail ?? ''}`;
         chip.append(buildOrbCallStatusMark(item.status));
+        // 失败的渠道标记可点：弹出该路的详情小卡（手机没有悬停，点击是唯一入口）。
+        if (item.status === 'failed') {
+            chip.classList.add('is-clickable');
+            const time = typeof item.at === 'string' && item.at ? new Date(item.at).toLocaleTimeString() : '';
+            chip.addEventListener('click', () => toggleOrbItemPopup({
+                kind: 'callfail',
+                id: `${item.label ?? '未标注调用'}@${item.at ?? ''}`,
+                label: item.label ?? '未标注调用',
+                time, model: item.model ?? '',
+                status: null, endpoint: item.endpoint ?? '',
+                error: item.error ?? item.detail ?? '失败',
+                body: item.body ?? '',
+            }));
+        }
+        const reroll = buildOrbMarkReroll(item.reroll);
+        if (reroll) chip.append(reroll);
         host.append(chip);
     }
     return host;
+}
+
+/** 总控渠道标记上「重roll 圆圈箭头」的执行函数表：id 与 orb-hud 的 MODULE_CHANNELS reroll / LITE_REROLL_ACTIONS 对号。
+ *  每一路请求一枚箭头，生成前/生成后的调用都覆盖（选条/召回/挑选决定下一轮正文带什么，重roll＝立刻按当前聊天重挑一遍，
+ *  下一次生成前拦截器会照常重跑）；重跑统一走 source:'manual' 绕过防重缓存，同楼重 roll 由各 runtime 撤销上一版再落账；
+ *  行动结算例外——手动口径与设置页同款「预览一次（不注入）」，注入仍只发生在生成前拦截器。 */
+const ORB_OVERVIEW_REROLLS = Object.freeze({
+    world: () => runWorldDecision({ source: 'manual' }),
+    self: () => runSelfDecision({ source: 'manual' }),
+    memory: () => runMemoryDecision({ source: 'manual' }),
+    npc: () => runNpcLedgerRecord({ source: 'manual' }),
+    impact: () => runImpactDecision({ source: 'manual' }),
+    plot: () => runPlotDecision({ source: 'manual' }),
+    facts: () => runFactCheck({ source: 'manual' }),
+    action: () => writeSettleAdjudicationForPrompt({ force: true, preview: true }),
+    recall: () => runMemoryRecall({ source: 'manual' }),
+    factsselect: () => prepareInjectionForPrompt({ chat: getHostContext()?.chat }),
+    impactpick: () => { agentImpactInjection.invalidate(); return agentImpactInjection.write({ chat: getHostContext()?.chat }); },
+    litepick: () => { agentLitePick.invalidate(); return agentLitePick.run({ chat: getHostContext()?.chat }); },
+    litesettle: () => agentLiteSettle.run({ source: 'manual' }),
+});
+
+/** 渠道标记上的重roll 圆圈箭头：一键重跑该渠道的模型调用。忙碌态由标记的 running 态数据驱动
+ *  （总控窗会被调用活动高频重画，按钮本地状态守不住），在途时禁用并让箭头自转。 */
+function buildOrbMarkReroll(reroll) {
+    if (!reroll || typeof reroll.id !== 'string') return null;
+    const run = ORB_OVERVIEW_REROLLS[reroll.id];
+    if (!run) return null;
+    const button = makeElement('button', 'dai-orb-mark-reroll');
+    button.type = 'button';
+    button.title = `${reroll.hint ?? '重roll'}：对最近一楼重跑这一路调用`;
+    button.setAttribute('aria-label', reroll.hint ?? '重roll');
+    button.innerHTML = daiIcon('reroll');
+    if (reroll.busy) {
+        button.disabled = true;
+        button.classList.add('is-busy');
+    }
+    button.addEventListener('click', () => {
+        if (button.disabled) return;
+        button.disabled = true;
+        void (async () => {
+            try { await run(); } catch (error) { console.warn('[doupo-agent] 总控重roll失败：', error?.message ?? error); }
+            finally { syncOrbHud(); }
+        })();
+    });
+    return button;
 }
 
 function renderOrbPanel(panel, id) {    const view = buildOrbPanels(collectOrbData())[id];
@@ -5732,6 +7255,11 @@ function renderOrbPanel(panel, id) {    const view = buildOrbPanels(collectOrbDa
         headIconHost.innerHTML = headIconHtml;
         headTitle.prepend(headIconHost.firstChild);
     }
+    // 进阶版徽章：总控窗标题旁一枚小牌，信息窗本体另有描边光环（根上的 data-api-mode 出）。
+    // 面板自己的 data-api-mode 三个版本都落：简略版的标记槽收窄走这份。
+    if (view.apiMode === 'advanced') headTitle.append(makeElement('span', 'dai-orb-mode-badge', '进阶'));
+    if (view.apiMode) panel.dataset.apiMode = view.apiMode;
+    else delete panel.dataset.apiMode;
     titleBox.append(headTitle, makeElement('small', '', view.summary));
     heading.append(titleBox);
     const close = makeElement('button', 'dai-orb-panel-close', '×');
@@ -5746,6 +7274,20 @@ function renderOrbPanel(panel, id) {    const view = buildOrbPanels(collectOrbDa
     for (const row of view.rows) {
         const line = makeElement('p', 'dai-orb-row');
         if (row.tone) line.dataset.tone = row.tone;
+        if (row.hint) line.title = row.hint;
+        // 带引用的行（如「上次失败」）整行可点：手机没有悬停，点击弹详情小卡。
+        if (row.ref) {
+            line.classList.add('is-clickable');
+            line.tabIndex = 0;
+            line.setAttribute('role', 'button');
+            line.setAttribute('aria-label', `查看${row.label}详情`);
+            line.addEventListener('click', () => toggleOrbItemPopup(row.ref));
+            line.addEventListener('keydown', event => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                toggleOrbItemPopup(row.ref);
+            });
+        }
         const labelSpan = makeElement('span', 'dai-orb-row-label', row.label);
         if (row.status) labelSpan.prepend(buildOrbCallStatusMark(row.status));
         line.append(labelSpan, makeElement('span', 'dai-orb-row-value', row.value));
@@ -6254,6 +7796,18 @@ function buildOrbItemPopup(model) {
 function buildOrbItemPopModel(ref) {
     if (!ref || typeof document === 'undefined') return null;
     const safe = getter => { try { return getter(); } catch { return undefined; } };
+    // 调用失败详情：数据直接骑在 ref 上（体检条目随出随没，不做回查）；手机点失败行/✗ 标记就弹这张卡。
+    if (ref.kind === 'callfail') {
+        const statusText = [ref.status ? `HTTP ${ref.status}` : '', ref.recovered ? '已恢复' : ''].filter(Boolean).join(' · ');
+        return {
+            title: ref.label ?? '调用失败',
+            sub: [ref.time, ref.model].filter(Boolean).join(' · ') || '调用失败详情',
+            groups: [
+                { heading: '错误详情', rows: [['状态', statusText], ['端点', popText(ref.endpoint)], ['错误', popText(ref.error)], ['响应体', popText(ref.body)]] },
+                { heading: '说明', rows: [['自定义接口', '响应体是服务商返回的真实原因，密钥已自动打码'], ['酒馆连接', 'ST 只抛裸错误、拿不到响应体；完整输出去 F12 控制台看'], ['下一步', '模型名/端点错就改方案绑定，额度或策略问题去服务商后台核对']] },
+            ],
+        };
+    }
     if (ref.kind === 'event') {
         const snapshot = safe(() => agentWorldRuntime.snapshot());
         const event = [...(snapshot?.nearEvents ?? []), ...(snapshot?.worldEvents ?? [])].find(item => String(item?.id) === ref.id);
@@ -6395,15 +7949,43 @@ function applyAppearance(settings = currentSettings()) {
     }
 }
 
+/* ── Agent 能力地图：一屏看全扩展能做什么 ─────────────────
+ * 12 个模块一枚图标卡（悬浮球同款图标/名称），绿点=本局启用，灰点=停用；
+ * 悬停看一句话说明。纯展示，不改任何设置。 */
+
+const CAPABILITY_ENABLE_KEYS = Object.freeze({
+    world: 'enableWorldProgress', self: 'enableSelfLedger', memory: 'enableMemoryLedger',
+    npcledger: 'enableNpcLedger', cold: 'enableNpcLedger', impact: 'enablePlayerImpact',
+    facts: 'enableFactsLibrary', settle: 'enableActionResolution', mirror: 'enableDbBridge',
+    sandbox: 'enableSandboxMode', overview: null, journal: null,
+});
+
+function renderAgentCapabilityMap(target) {
+    const grid = target?.querySelector?.('[data-agent-capability-grid]');
+    if (!grid) return;
+    const settings = currentSettings();
+    grid.replaceChildren(...ORB_ITEMS.map(item => {
+        const key = CAPABILITY_ENABLE_KEYS[item.id] ?? null;
+        const enabled = key ? settings?.[key] !== false : true;
+        const cell = makeElement('div', `dai-cap-cell${enabled ? ' is-on' : ''}`);
+        cell.title = `${item.title}｜${item.hint}${key ? `（开关：${key}）` : ''}`;
+        const head = makeElement('div', 'dai-cap-head');
+        head.append(makeElement('span', 'dai-cap-icon', item.icon), makeElement('b', '', item.title), makeElement('span', 'dai-cap-dot'));
+        cell.append(head, makeElement('small', '', item.hint));
+        return cell;
+    }));
+}
+
 function refreshControlDashboard() {
     if (typeof document === 'undefined') return;
     const panel = document.getElementById(SETTINGS_PANEL_ID);
     if (!panel || panel.hidden) return;
+    renderAgentCapabilityMap(panel);
     const list = panel.querySelector('[data-module-list]');
     if (!list) return;
     const view = buildControlDashboard({
         settings: currentSettings(), records: agentAuditLog.list({ limit: 2000 }),
-        tasks: agentCoordinator.list(), scope: dashboardScope,
+        tasks: agentCoordinator.list(),
         injectionNote: agentPromptInjection.inspect().note,
     });
     const summary = panel.querySelector('[data-dashboard-summary]');
@@ -6450,16 +8032,16 @@ const SANDBOX_MODE_MESSAGES = Object.freeze({
     failed: '模式记录写入失败，设置已保存，但本局口径未改变。',
     confirmRequired: '本局口径切换已登记，待确认：确认前仍按原口径运行。',
     switched: '本局口径已切换，正式记录已更新；已发生的事实不回退。',
-    followed: '口径已跟随开关换向：开＝开放世界，关＝主线；下一轮生成生效，沙盒任务与历史保留。',
+    followed: '口径已跟随开关换向：开＝开放世界，关＝主线；立即生效并已落存档，沙盒任务与历史保留。',
     cancelled: '已取消本局口径切换，维持原口径。',
     nothingPending: '没有待确认的口径切换。',
 });
 
 // 沙盒口径接线（实现在 sandbox/wiring.js）：运行时与宿主存储注入，测试直接喂桩。
-const { confirmSandboxSwitch, persistSandboxMode, restoreSandboxFromChat, sandboxModeActive } = createSandboxWiring({
+const { persistSandboxMode, restoreSandboxFromChat, sandboxModeActive } = createSandboxWiring({
     scopeOf: currentAgentScope, runtime: agentSandboxMode, hostStorage: () => hostStorage, currentSettings,
     coordinator: agentCoordinator, stateStore: agentStateStore, invalidateContinuations: invalidateAgentContinuations,
-    setSandboxStatus, messages: SANDBOX_MODE_MESSAGES, syncPendingRow: syncSandboxPendingRow,
+    setSandboxStatus, messages: SANDBOX_MODE_MESSAGES,
     renderRuntime: renderRuntimeMode, getPanel: () => document.getElementById(SETTINGS_PANEL_ID),
 });
 
@@ -6468,33 +8050,10 @@ function setSandboxStatus(text) {
     if (element) element.textContent = text;
 }
 
-/**
- * 把设置面板里的沙盒选项同步到正式模式记录。
- * 这里只做“建立/核对”和“指出需要确认”，不代替玩家确认切换：
- * 中途改口径必须绑定当回合的任务与状态版本，属于本局内的确认动作。
- */
-/** 待确认切换的提示条：正式记录与设置口径不一致、且允许中途切换时出现。 */
-function syncSandboxPendingRow() {
-    const panel = document.getElementById(SETTINGS_PANEL_ID);
-    const row = panel?.querySelector('[data-sandbox-pending]');
-    if (!row) return;
-    const settings = currentSettings();
-    const scope = agentActiveScope;
-    const record = scope ? agentSandboxMode.read(scope) : { status: 'empty' };
-    const desired = settings.enableSandboxMode ? 'sandbox' : 'mainline';
-    row.hidden = !(record.status === 'ready' && record.mode !== desired && settings.sandbox.allowMidgameSwitch === true);
-}
-
-function cancelSandboxSwitch() {
-    const scope = agentActiveScope;
-    if (scope) agentSandboxMode.cancelSwitch(scope);
-    setSandboxStatus(SANDBOX_MODE_MESSAGES.cancelled);
-    syncSandboxPendingRow();
-    renderRuntimeMode(document.getElementById(SETTINGS_PANEL_ID));
-}
+/** 把设置面板里的沙盒开关与惯性/自主选项同步到本局口径记录：随开随关，拨了立即换向并落存档。 */
 function syncSandboxModeFromSettings() {
     const settings = currentSettings();
-    const scope = agentActiveScope;
+    const scope = currentAgentScope();
     if (!scope?.sessionId || !scope?.branchId) {
         setSandboxStatus(SANDBOX_MODE_MESSAGES.unavailable);
         return { status: 'unavailable' };
@@ -6511,7 +8070,6 @@ function syncSandboxModeFromSettings() {
         });
         void persistSandboxMode();
         setSandboxStatus(SANDBOX_MODE_MESSAGES.followed);
-        syncSandboxPendingRow();
         renderRuntimeMode(document.getElementById(SETTINGS_PANEL_ID));
         return flipped;
     } catch {
@@ -6578,12 +8136,11 @@ function openSettingsPanel() {
     // 每次打开都重画一次总控页：调用体检在长会话里随时长新条目，卡面脚本探测依赖
     // "此刻有没有开卡"，面板是启动时建好的，不能只画启动时那一份。
     if (activeSettingsPage === 'overview') {
-        renderCallLogList(panel);
+        renderCallSummary(panel);
         const cover = panel.querySelector('[data-cover-script-status]');
         if (cover) cover.textContent = probeCoverScriptStatus().text;
     }
     syncSettingsForm();
-    syncSandboxPendingRow();
     panel.querySelector('[data-settings-close]')?.focus();
 }
 
@@ -6614,6 +8171,7 @@ function syncSettingsForm() {
         ['self.guide', SELF_GUIDE],
         ['npc.ledgerPrompt', NPC_RECORD_PROMPT],
         ['npc.coldPrompt', NPC_COLD_PROMPT],
+        ['verify.prompt', VERIFY_PROMPT],
         ...SETTLE_CATEGORIES.map(category => [`settle.prompt.${category.id}`, category.prompt]),
         ['settle.resultPrompt', SETTLE_RESULT_PROMPT],
     ]);
@@ -6630,6 +8188,7 @@ function syncSettingsForm() {
     applyAppearance(settings);
     refreshControlDashboard();
     renderImpactLibrary(panel);
+    renderVerifyEntries(panel);
     const status = panel.querySelector(`#${SETTINGS_STATUS_ID}`);
     if (status) status.textContent = hostContext ? '设置会保存到酒馆扩展设置。' : '尚未连接酒馆，当前只展示本地默认值。';
 }
@@ -6700,31 +8259,35 @@ function createSettingsPanel() {
                 <div class="dai-settings-body">
                     <section class="dai-settings-page is-active" data-settings-section="overview" role="tabpanel">
                         <div class="dai-page-heading"><h3>模块运行简况</h3><p>查看各项功能最近做了什么，再进入对应页面调整设置。</p></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>Agent 能力地图</b><small>这个扩展替你管着什么：12 个模块一枚一卡，绿点=本局启用、灰点=停用，悬停看说明。详细开关在各模块页与「简单设置」里。</small></div><div class="dai-cap-grid" data-agent-capability-grid></div></div>
                         <p class="dai-dashboard-summary" data-dashboard-summary role="status">暂无任务</p>
                         <div class="dai-module-list" data-module-list></div>
-                        <div class="dai-settings-card dai-turn-card"><div class="dai-card-heading"><b>回合流水线</b><small>正文由酒馆主生成；原著设定召回与行动判定都在生成前自动完成。旧版“扩展自己写正文”的手动结算已退役。</small></div><p class="dai-state-strip" data-agent-state>还没有载入状态。</p><p class="dai-turn-result" data-agent-run-result role="status">还没有运行。</p><div class="dai-version-list" data-agent-versions></div></div>
                         <p class="dai-dashboard-note">显示当前会话与分支的任务记录。每次运行都会把结果写进会话状态，刷新页面后仍在。</p>
                         <div class="dai-section-heading"><h3>简单设置</h3></div>
                         <div class="dai-overview-grid"><label class="dai-overview-switch"><span><b>启用 Agent 总控</b><small>关闭后不会运行回合，也不会写入状态。</small></span><input type="checkbox" data-setting="enabled"></label><label class="dai-overview-switch"><span><b>显示运行反馈</b><small>在右下角显示任务状态与失败原因。</small></span><input type="checkbox" data-setting="showStatusPanel"></label><label class="dai-overview-switch"><span><b>显示悬浮球</b><small>屏幕边上的小球，点开拉成长条，可查看各功能的只读信息。</small></span><input type="checkbox" data-setting="showOrb"></label></div>
                         <fieldset class="dai-theme-picker"><legend>界面颜色</legend><label class="dai-theme-option"><input type="radio" name="dai-theme" value="gilt" data-setting="ui.theme"><span class="dai-theme-swatch" data-swatch="gilt" aria-hidden="true"></span><b>暗金</b></label><label class="dai-theme-option"><input type="radio" name="dai-theme" value="graphite" data-setting="ui.theme"><span class="dai-theme-swatch" data-swatch="graphite" aria-hidden="true"></span><b>玄铁</b></label><label class="dai-theme-option"><input type="radio" name="dai-theme" value="parchment" data-setting="ui.theme"><span class="dai-theme-swatch" data-swatch="parchment" aria-hidden="true"></span><b>米纸</b></label></fieldset>
                         <p class="dai-dashboard-note">只改变 Agent 界面，不改变酒馆整体配色。</p>
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>运行口径</b><small>沙盒口径不用世界书：世界常识由内置斗气大陆基线承担，决定喂料与世界书条目一并停用；主线口径一切照旧。</small></div><p class="dai-turn-result" data-runtime-mode role="status">打开本页时读取。</p></div>
-                        <div class="dai-settings-card"><div class="dai-card-heading"><b>模型调用体检</b><small>扩展各功能最近一次调模型的结果（本次会话内，可"清零"重计）。主文生成与天之音·时间召回走酒馆本体/数据库脚本，不经过扩展，这里看不到。空回（接口通了但没内容）会按下面两个参数自动重试，改完立即生效。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>空回重试次数</b><small>模型调用返回空内容时自动再问几次：0 ＝ 不重试（清空输入框会存成 0，等于关掉重试），负数或非整数按默认 1 处理。只对空回重试，报错（限流 429、超时等）仍然立刻上抛。</small></span><input type="number" min="0" step="1" data-setting="llm.emptyRetry" placeholder="默认 1"></label><label class="dai-setting-row"><span><b>重试间隔（秒）</b><small>两次尝试之间等多久。站点有 RPM 限制就把这里调大（比如 15～30），别让重试把额度烧光；0、负数或留空都按默认 0.6 秒。</small></span><input type="number" min="0" step="0.1" data-setting="llm.emptyRetryWait" placeholder="默认 0.6"></label></div><div data-calllog-list></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-calllog-refresh>刷新</button><button type="button" class="dai-button dai-button-ghost" data-calllog-clear>清零</button></div></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>模型调用体检</b><small>本会话调用量与失败统计（可"清零"重计）。主文生成与天之音·时间召回走酒馆本体/数据库脚本，不经过扩展，这里看不到。空回（接口通了但没内容）会按下面两个参数自动重试，改完立即生效。逐路的实时成败与失败详情在悬浮球总控窗——失败行 / ✗ 标记点击弹卡。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>空回重试次数</b><small>模型调用返回空内容时自动再问几次：0 ＝ 不重试（清空输入框会存成 0，等于关掉重试），负数或非整数按默认 1 处理。只对空回重试，报错（限流 429、超时等）仍然立刻上抛。</small></span><input type="number" min="0" step="1" data-setting="llm.emptyRetry" placeholder="默认 1"></label><label class="dai-setting-row"><span><b>重试间隔（秒）</b><small>两次尝试之间等多久。站点有 RPM 限制就把这里调大（比如 15～30），别让重试把额度烧光；0、负数或留空都按默认 0.6 秒。</small></span><input type="number" min="0" step="0.1" data-setting="llm.emptyRetryWait" placeholder="默认 0.6"></label></div><p class="dai-turn-result" data-calllog-summary role="status">打开本页时读取。</p><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-calllog-clear>清零</button></div></div>
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>卡面脚本</b><small>首楼"开始创建身份"由卡内脚本接管；换设备或换人导入后点不动，多半是它没启用。</small></div><p class="dai-state-strip" data-cover-script-status>还没有检测。</p></div>
                     </section>
                     
                     <section class="dai-settings-page" data-settings-section="apis" role="tabpanel" hidden>
-                        <div class="dai-page-heading"><h3>API设置</h3><p>把每套接口配置（地址、密钥、模型、采样参数、附加参数）存成命名方案，「模型设置」页里每个功能直接选一套，不用再逐项手填。附加参数与酒馆「自定义接口 · 附加参数」同语义：包括主体参数并进请求体、排除主体参数删字段、包含请求标头覆盖请求头。</p></div>
+                        <div class="dai-page-heading"><h3>API设置</h3><p>把每套接口配置（地址、密钥、模型、采样参数、附加参数）存成命名方案，「模型设置」页里每个功能直接选一套，不用再逐项手填。每个方案自己决定走不走酒馆通道（卡上的「走酒馆通道」开关）。附加参数与酒馆「自定义接口 · 附加参数」同语义：包括主体参数并进请求体、排除主体参数删字段、包含请求标头覆盖请求头。</p></div>
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>接口方案</b><small>方案只保存在扩展设置里（密钥也是），不进聊天消息；改完方案下一轮调用就生效，不用重启。功能在「模型设置」页绑定方案。</small></div><div data-api-preset-list></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-api-add-preset>＋ 新建 API 设置</button><small role="status" data-api-preset-status>最多 20 个方案。</small></div></div>
                     </section>
                                         <section class="dai-settings-page" data-settings-section="hub" role="tabpanel" hidden>
                         <div class="dai-page-heading"><h3>模型设置</h3><p>扩展会发起的每一次独立模型调用，在这一页只回答一个问题：这个功能用哪套方案。方案（地址、密钥、模型、采样参数、附加参数）在「API设置」页维护，改方案下一轮调用就生效；不绑方案＝跟随酒馆主连接。各功能的提示词不在这一页——到对应功能页里改。</p></div>
-                        <div class="dai-settings-card dai-api-mode-card"><div class="dai-card-heading"><b>调用版本</b><small>完整版＝每个功能各一路调用（原有行为，精细可控）；简略版＝备料三路并成一次「素材总挑选」、记账五路并成一次「总结算」，一轮最多 3 次模型调用。切换立即生效，下一轮开始按新版本跑；两版各自记住自己的方案绑定，互不覆盖。</small></div><div class="dai-api-mode-switch" role="radiogroup" aria-label="调用版本"><button type="button" class="dai-api-mode-option" data-api-mode="full"><b>完整版</b><small>每功能一路调用</small></button><button type="button" class="dai-api-mode-option" data-api-mode="lite"><b>简略版</b><small>合并调用省次数</small></button></div></div><div class="dai-settings-card"><div class="dai-card-heading"><b>功能读取楼层数（全局默认）</b><small>各功能的"看最近几楼 / 喂最近几楼"没单独填就用这个。留空或 0＝自动跟随当前角色卡自带的提示词侧"整楼隐藏"正则深度（主模型能看几楼，功能调用就默认读几楼），卡上没有这类正则时回落 8；只看角色脚本，不看全局正则。功能调用读楼层本身会按主提示词同款口径套用角色正则——被隐藏的块（变量块、状态栏占位等）不进功能调用，被整楼隐藏的楼层自动剔除。</small></div><label class="dai-setting-row"><span><b>默认读几楼</b><small>想单独调某个功能，去该功能页填自己的楼数即可，单独填的优先。</small></span><input type="number" min="1" step="1" data-setting="readFloors" placeholder="留空或 0＝跟随角色正则"></label></div>
-                        <div data-api-mode-section="full">
-                        <div class="dai-settings-card"><div class="dai-card-heading"><b>全局连接（正文与默认调用）</b><small>扩展侧的意图解析、正文撰写、设定挑选等默认调用走哪套；正文由酒馆自己生成，不经过这里。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案（接口、参数、附加参数全按方案来）。</small></span><select data-setting="llm.apiPreset" data-api-preset-select></select></label><label class="dai-setting-row"><span><b>单次等待上限（毫秒）</b><small>所有扩展调用的超时上限，方案不能覆盖这一项。</small></span><input type="number" min="1000" max="600000" step="1000" data-setting="llm.timeoutMs" placeholder="默认 60000"></label></div>
+                        <div class="dai-settings-card dai-api-mode-card"><div class="dai-card-heading"><b>调用版本</b><small>简略版＝备料三路并成一次「素材总挑选」、记账五路并成一次「总结算」，一轮最多 3 次模型调用（进阶增强关闭）；完整版＝每个功能各一路调用（原有行为，进阶增强关闭）；进阶版＝完整版逐路管线，再叠上全部进阶增强（难度骰子、正文核验、一致性体检、人物关系网、开局摘要、剧情账本决定、语义检索）。切换立即生效，下一轮开始按新版本跑；各版各自记住自己的方案绑定，互不覆盖。</small></div><div class="dai-api-mode-switch" role="radiogroup" aria-label="调用版本"><button type="button" class="dai-api-mode-option" data-api-mode="lite"><b>简略版</b><small>合并调用省次数</small></button><button type="button" class="dai-api-mode-option" data-api-mode="full"><b>完整版</b><small>每功能一路调用</small></button><button type="button" class="dai-api-mode-option" data-api-mode="advanced"><b>进阶版</b><small>完整版＋进阶增强</small></button></div></div><div class="dai-settings-card"><div class="dai-card-heading"><b>功能读取楼层数（全局默认）</b><small>各功能的"看最近几楼 / 喂最近几楼"没单独填就用这个。留空或 0＝自动跟随当前角色卡自带的提示词侧"整楼隐藏"正则深度（主模型能看几楼，功能调用就默认读几楼），卡上没有这类正则时回落 8；只看角色脚本，不看全局正则。功能调用读楼层本身会按主提示词同款口径套用角色正则——被隐藏的块（变量块、状态栏占位等）不进功能调用，被整楼隐藏的楼层自动剔除。</small></div><label class="dai-setting-row"><span><b>默认读几楼</b><small>想单独调某个功能，去该功能页填自己的楼数即可，单独填的优先。</small></span><input type="number" min="1" step="1" data-setting="readFloors" placeholder="留空或 0＝跟随角色正则"></label></div>
+                        <div data-api-mode-section="advanced" hidden>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>进阶功能一览</b><small>进阶版＝完整版逐路管线，再叠上学 GitHub 仓库的全部增强，只有进阶版生效，切回完整版/简略版整体静默。各卡位置：难度骰子与变数在「行动结算」页；正文核验在「原著资料」页；一致性体检、人物关系网、传播传闻在「人物簿」页；记忆体检、按人整合、开局摘要在「记忆存储」页；剧情账本在「世界运转」页；语义检索在本页下方。每项仍有自己的开关，进阶版只是放行的总闸。</small></div><ul class="dai-status-list"><li><b>记忆混合检索打分</b><span>钥匙/引文/标题/词面/时间邻近/重要度多路合分排序（Generative Agents 三因子）；完整版/简略版退回钥匙整词命中的旧排序</span></li><li><b>记忆写入查重</b><span>共钥匙且词面相似 ≥0.85 的复述在写入时拦住（MemPalace）；旧口径只查同层同文</span></li><li><b>记忆体检</b><span>孤立钥匙、目录覆盖率、疑似矛盾对的纯本地统计卡</span></li><li><b>按人整合＋相关记忆跳转</b><span>跨账本时间线与共钥匙详情跳转（A-MEM）</span></li><li><b>开局摘要（wake-up）</b><span>切聊天后第一条回复前一次跨账本交底，只注一次</span></li><li><b>语义向量检索</b><span>embeddings 端点叠加余弦相似度，失败静默退回纯本地检索</span></li><li><b>难度＋骰子裁定</b><span>模型报风险档位与带依据修正，脚本掷 d20 对难度判成败，只降不升；波折轮掷变数 Oracle，部分成功补结构化保底代价</span></li><li><b>正文核验（VeriScore 三标签）</b><span>生成后旁路小调用把正文拆成断言对照台账裁决，只记审计不拦正文</span></li><li><b>人物一致性体检</b><span>记账后自动对照档案查「写违反人设的地方」，引正文原句作证据</span></li><li><b>人物关系网注入</b><span>在场人物的一跳/二跳关系链一行带进提示词，超预算整段放弃</span></li><li><b>剧情账本决定</b><span>滚动计划与线索账的自动维护调用，排在世界决定之后</span></li></ul></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>语义检索（可选）</b><small>记忆召回与兜底的语义增强：OpenAI 兼容 /v1/embeddings 独立端点（不走酒馆连接、不绑 API 方案——酒馆连接做不了 embeddings）。开启后混合检索在关键词/词面/时间邻近之外叠加语义相似度，同义改述（"陨落心炎"写成"心火"）也能勾回旧账；没配置时全部走纯本地混合检索，零行为变化。向量按聊天存在浏览器 IndexedDB，落账后后台自动补嵌，改文本或换模型会自动重嵌。</small></div><label class="dai-setting-row dai-setting-toggle"><span><b>启用语义检索</b><small>开关在这里，记忆召回决定与关键词兜底自动吃到相似度加成。</small></span><input type="checkbox" data-setting="memory.embedding.enabled"></label><label class="dai-setting-row"><span><b>接口地址</b><small>如 https://api.example.com/v1（/v1 结尾自动接 /embeddings）。</small></span><input type="text" data-setting="memory.embedding.baseUrl" placeholder="https://api.example.com/v1" spellcheck="false"></label><label class="dai-setting-row"><span><b>密钥</b><small>本地服务（LM Studio 等）可留空。</small></span><input type="password" data-setting="memory.embedding.apiKey" spellcheck="false"></label><label class="dai-setting-row"><span><b>向量模型</b><small>如 text-embedding-3-small / embedding-3 / bge-m3；换模型会自动重嵌。</small></span><input type="text" data-setting="memory.embedding.model" spellcheck="false"></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-memory-vector-rebuild>重建本聊天向量</button><small role="status" data-memory-vector-stats>语义检索未开启。</small></div></div>
+                        </div>
+                        <div data-api-mode-section="full advanced">
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>全局连接（正文与默认调用）</b><small>扩展侧的意图解析、正文撰写、设定挑选等默认调用走哪套；正文由酒馆自己生成，不经过这里。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案（接口、参数、附加参数全按方案来）。</small></span><select data-setting="llm.apiPreset" data-api-preset-select></select></label><label class="dai-setting-row"><span><b>单次等待上限（秒）</b><small>所有扩展调用的超时上限，按秒填：60 就是一分钟；范围 1～600 秒，方案不能覆盖这一项。</small></span><input type="number" min="1" max="600" step="1" data-setting="llm.timeoutSec" placeholder="默认 60"></label></div>
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>原著设定 · 选条与卷外点选</b><small>每轮生成前“挑哪些原著条目进正文”的独立调用。选条与卷外点选的提示词在「原著资料」页修改。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="setting.apiPreset" data-api-preset-select></select></label></div>
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>行动结算 · 判定调用</b><small>分类判定与最终判定共用这一套 API：生成前一次调用直判本轮全部行动（旧分类管线也走这套）。判定开关与提示词在「行动结算」页改。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="settle.resultApiPreset" data-api-preset-select></select></label></div>
-                        <div class="dai-settings-card"><div class="dai-card-heading"><b>世界运转 · 模型决定</b><small>世界事件决定调用；决定提示词与降级指令指南在「世界运转」页改。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="world.decideApiPreset" data-api-preset-select></select></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>喂最近几楼聊天</b></span><input type="number" min="1" max="12" step="1" data-setting="world.decideMaxFloors" placeholder="留空或 0＝跟随角色正则"></label></div></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>世界运转 · 模型决定</b><small>世界事件决定调用；决定提示词与降级指令指南在「世界运转」页改。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="world.decideApiPreset" data-api-preset-select></select></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>喂最近几楼聊天</b></span><input type="number" min="1" max="12" step="1" data-setting="world.decideMaxFloors" placeholder="留空或 0＝跟随角色正则"></label></div></div><div class="dai-settings-card"><div class="dai-card-heading"><b>剧情账本 · 决定模型</b><small>滚动计划与线索账的维护调用，排在世界决定之后；决定开关与提示词在「世界运转」页改。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="plot.decideApiPreset" data-api-preset-select></select></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>喂最近几楼聊天</b><small>剧情决定自己的一份，与世界决定分开。</small></span><input type="number" min="1" max="12" step="1" data-setting="plot.decideMaxFloors" placeholder="留空或 0＝跟随角色正则"></label></div></div><div class="dai-settings-card"><div class="dai-card-heading"><b>正文核验 · 事实审计</b><small>生成后拆断言对照台账的旁路小调用；开关、审计列表与提示词在「原著资料」页改。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="verify.apiPreset" data-api-preset-select></select></label></div>
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>人物簿 · 记录员</b><small>生成后补人物档案的小调用；记录员提示词在「人物簿」页改，档案抄录与经历精简各有独立连接卡。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="npc.ledgerApiPreset" data-api-preset-select></select></label></div><div class="dai-settings-card"><div class="dai-card-heading"><b>人物簿 · 档案抄录</b><small>按世界书给人物补空字段的小调用（面板「按世界书重抽」也会用到）。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="npc.extractApiPreset" data-api-preset-select></select></label></div><div class="dai-settings-card"><div class="dai-card-heading"><b>人物簿 · 经历精简</b><small>把某人的经历清单压缩成草稿、确认后写回的手动调用。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="npc.expApiPreset" data-api-preset-select></select></label></div>
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>人物簿 · 冷藏推进员</b><small>给勾选的冷藏人物补世界时间走过那一段的小调用；推进员提示词在「人物簿」页改。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="npc.coldApiPreset" data-api-preset-select></select></label></div>
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>纳戒 · 决定模型</b><small>纳戒决定是一条独立调用（生成后自动跑或手动“让模型决定一次”）；决定开关与提示词在「纳戒」页改。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="self.decideApiPreset" data-api-preset-select></select></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>喂最近几楼聊天</b><small>纳戒决定自己的一份，与记忆分开。</small></span><input type="number" min="1" max="12" step="1" data-setting="self.decideMaxFloors" placeholder="留空或 0＝跟随角色正则"></label></div></div>
@@ -6732,16 +8295,16 @@ function createSettingsPanel() {
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>世界影响 · 记录员与场记</b><small>生成后记账与生成前挑选的两个调用；提示词在「世界影响」页改。场记不绑方案就跟着记录员走。</small></div><label class="dai-setting-row"><span><b>记录员用哪套API设置</b><small>生成结束后记账的那个。</small></span><select data-setting="impact.decideApiPreset" data-api-preset-select></select></label><label class="dai-setting-row"><span><b>场记用哪套API设置</b><small>生成前挑影响的那个；不绑＝跟记录员同一套。</small></span><select data-setting="impact.injectApiPreset" data-api-preset-select></select></label></div>
                         </div>
                         <div data-api-mode-section="lite" hidden>
-                        <div class="dai-settings-card"><div class="dai-card-heading"><b>全局（简略版）</b><small>简略版只有两条合并调用，正文仍由酒馆主连接生成；行动结算不合并，仍按「行动结算」页的开关单独调用。切回完整版后，完整版卡片上的绑定原样生效。</small></div><label class="dai-setting-row"><span><b>单次等待上限（毫秒）</b><small>所有扩展调用的超时上限，方案不能覆盖这一项。</small></span><input type="number" min="1000" max="600000" step="1000" data-setting="llm.timeoutMs" placeholder="默认 60000"></label></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>全局（简略版）</b><small>简略版只有两条合并调用，正文仍由酒馆主连接生成；行动结算不合并，仍按「行动结算」页的开关单独调用。切回完整版后，完整版卡片上的绑定原样生效。</small></div><label class="dai-setting-row"><span><b>单次等待上限（秒）</b><small>所有扩展调用的超时上限，按秒填：60 就是一分钟；范围 1～600 秒，方案不能覆盖这一项。</small></span><input type="number" min="1" max="600" step="1" data-setting="llm.timeoutSec" placeholder="默认 60"></label></div>
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>素材总挑选（生成前一次）</b><small>一次调用挑完三路素材：原著设定条目、世界影响旧账、要召回的旧记忆——判定标准与完整版各路一致。各功能的启用开关关了哪路，提示词里就不带那路；全关时这次调用整轮不发。候选先用脚本按关键词缩圈，模型只在候选里点名，不许编编号。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案（接口、参数、附加参数全按方案来）。</small></span><select data-setting="lite.pickApiPreset" data-api-preset-select></select></label></div>
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>行动结算 · 判定调用</b><small>简略版里不合并：它必须赶在正文之前判定并写进提示词，而总结算在正文之后，时序接不上。没有可判定的行动时这轮不调用；判定开关与提示词在「行动结算」页改（与完整版共用同一绑定）。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="settle.resultApiPreset" data-api-preset-select></select></label></div>
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>总结算（生成后一次）</b><small>一次调用记完五本账：人物、世界、影响、纳戒、记忆。脚本仍按节逐条校验落账，坏条目单条丢弃不连累其他账；各功能页的手动按钮照常可用（那是单独调用，不受版本影响）。各功能的启用与自动开关逐节生效：关了哪个功能，提示词里就不带那本账，总结算也不落它。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案（接口、参数、附加参数全按方案来）。</small></span><select data-setting="lite.settleApiPreset" data-api-preset-select></select></label></div>
                         </div>
                     </section>
                     <section class="dai-settings-page" data-settings-section="facts" role="tabpanel" hidden>
-                        <div class="dai-page-heading"><h3>原著设定</h3><p>把世界书条目变成“按需注入”的设定库：建索引、按卷出目录、模型点名、按预算注入正文提示词。</p></div><div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon" aria-hidden="true">${daiIcon('book')}</span><span><b>启用原著设定注入</b><small>每轮先按本轮输入召回候选，再由模型挑出真正要用的设定，按预算注入正文提示词。</small></span><input type="checkbox" data-setting="setting.enabled"></div></div><div class="dai-settings-card"><div class="dai-card-heading"><b>运行状态</b><small>打开这一页时读取，生成结束后也会刷新。</small></div><ul class="dai-status-list" data-facts-status><li><b>状态</b><span>正在读取……</span></li></ul></div><div class="dai-settings-card"><div class="dai-card-heading"><b>检索库状态</b><small>只读世界书，不改原文件；改完世界书后重新导入一次即可。</small></div><p class="dai-turn-result" data-worldbook-stats role="status">还没有导入。</p><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>选择世界书</b><small>扫描到的名字会记住；选过之后刷新酒馆不用重选。</small></span><select data-worldbook-pick><option value="">（尚未选择）</option></select></label><label class="dai-setting-row"><span><b>手动填写</b><small>列表里没有就填世界书面板里的名字。</small></span><input type="text" list="dai-worldbook-options" data-setting="setting.worldbook" placeholder="例如 斗破世界书"></label></div><datalist id="dai-worldbook-options"></datalist><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-agent-worldbook-scan>扫描可选世界书</button><button type="button" class="dai-secondary-button" data-agent-worldbook-import>从世界书导入</button></div><p class="dai-turn-result" data-agent-worldbook-status role="status">还没有导入。</p></div><div class="dai-settings-card"><div class="dai-card-heading"><b>检索库 · 条目浏览</b><small>整库条目在这里翻：按类别/卷过滤、按关键词搜（标题、别名、摘要、正文都算），点行看全文。纯本地过滤，不花模型调用。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>关键词</b></span><input type="text" data-facts-search placeholder="例如 加列家 / 乌坦城 / 萧炎"></label><label class="dai-setting-row"><span><b>类别</b></span><select data-facts-cat><option value="">全部类别</option></select></label><label class="dai-setting-row"><span><b>范围</b></span><select data-facts-scope><option value="volume">当前剧情卷</option><option value="all">全书</option></select></label></div><p class="dai-turn-result" data-facts-browser-status role="status">打开页面后自动列出。</p><div class="dai-facts-browser" data-facts-browser></div></div><div class="dai-settings-card"><div class="dai-card-heading"><b>上次注入</b><small>最近一轮实际写进提示词的原著条目；与上面的运行状态分开看。</small></div><div class="dai-facts-injection" data-facts-last-injection role="status">本轮还没有注入过。</div></div><div class="dai-settings-card"><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>当前剧情卷</b><small>自动＝按本轮输入和模型估计；手动选＝锁定这一卷，识别到更后面的卷也会被压回。</small></span><select data-setting="setting.progress"><option value="0">自动判定</option><option value="1">第 1 卷</option><option value="2">第 2 卷</option><option value="3">第 3 卷</option><option value="4">第 4 卷</option><option value="5">第 5 卷</option><option value="6">第 6 卷</option><option value="7">第 7 卷</option><option value="8">第 8 卷</option><option value="9">第 9 卷</option><option value="10">第 10 卷</option><option value="11">第 11 卷</option><option value="12">第 12 卷</option><option value="13">第 13 卷</option><option value="14">第 14 卷</option><option value="15">第 15 卷</option><option value="16">第 16 卷</option><option value="17">第 17 卷</option><option value="18">第 18 卷</option><option value="19">第 19 卷</option><option value="20">第 20 卷</option><option value="21">第 21 卷</option></select></label><label class="dai-setting-row"><span><b>单次注入字数</b><small>0 = 不限制，选中几条就注入几条全文。</small></span><input type="number" min="0" step="100" data-setting="setting.injectionBudget"></label><label class="dai-setting-row"><span><b>单次检索出条目上限</b><small>选条模型单次最多挑几条原著条目（含本卷故事线背景），直接按你填的来，不设天花板；留空默认 8，填 0 或负数也按默认处理。上下文里提到的条目多于上限时按相关度取前几条。改完下一轮选条就生效。</small></span><input type="number" min="1" step="1" data-setting="setting.maxItems" placeholder="默认 8"></label></div></div><div class="dai-settings-card"><div class="dai-card-heading"><b>注入通道</b><small data-injection-status role="status">打开这一页时检测。</small></div><div class="dai-setting-grid"><label class="dai-setting-row dai-setting-toggle"><span><b>启用注入</b><small>关闭后不往提示词里写任何原著内容，正文照常生成。</small></span><input type="checkbox" data-setting="injection.enabled"></label><label class="dai-setting-row"><span><b>插入深度</b><small>从最新一楼往回数；0 表示紧贴末尾、离生成最近。</small></span><input type="number" min="0" max="99" step="1" data-setting="injection.depth"></label><label class="dai-setting-row"><span><b>最大字数</b><small>0 = 不截断；填了才在写入时截断。</small></span><input type="number" min="0" step="100" data-setting="injection.maxChars"></label></div></div><details class="dai-settle-category"><summary><span class="dai-feature-icon" aria-hidden="true">${daiIcon("slip")}</span><span><b>选条提示词</b><small>模型判断“本轮要用哪些原著条目”时收到的 system 指令；点开修改，清空恢复内置默认；MAX_PICKS 会换成每条上限。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>规则正文</b><small>改完下一轮生效，不用重启。</small></span><textarea data-setting="prompt.select" rows="9" spellcheck="false" placeholder="打开页面会自动铺入当前生效的规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-prompt-default>填入默认规则</button><small>默认规则口径：提到的就出、本卷故事线默认带、不许编 uid、只输出 JSON。</small></div></div></details><details class="dai-settle-category"><summary><span class="dai-feature-icon" aria-hidden="true">${daiIcon("slip")}</span><span><b>卷外点选提示词</b><small>模型在目录里找不到、报出名字后，脚本搜到候选再问它一次时用的 system 指令；点开修改，清空恢复内置默认。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>规则正文</b><small>只影响“卷外二次点选”，改完下一轮生效。</small></span><textarea data-setting="prompt.lookup" rows="7" spellcheck="false" placeholder="打开页面会自动铺入当前生效的规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-prompt-default="lookup">填入默认规则</button><small>默认规则含“只从候选里挑、后续卷默认不选”。</small></div></div></details></section>
+                        <div class="dai-page-heading"><h3>原著设定</h3><p>把世界书条目变成“按需注入”的设定库：建索引、按卷出目录、模型点名、按预算注入正文提示词。</p></div><div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon" aria-hidden="true">${daiIcon('book')}</span><span><b>启用原著设定注入</b><small>每轮先按本轮输入召回候选，再由模型挑出真正要用的设定，按预算注入正文提示词。</small></span><input type="checkbox" data-setting="setting.enabled"></div></div><div class="dai-settings-card"><div class="dai-card-heading"><b>运行状态</b><small>打开这一页时读取，生成结束后也会刷新。</small></div><ul class="dai-status-list" data-facts-status><li><b>状态</b><span>正在读取……</span></li></ul></div><div class="dai-settings-card"><div class="dai-card-heading"><b>检索库状态</b><small>只读世界书，不改原文件；改完世界书后重新导入一次即可。</small></div><p class="dai-turn-result" data-worldbook-stats role="status">还没有导入。</p><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>选择世界书</b><small>扫描到的名字会记住；选过之后刷新酒馆不用重选。</small></span><select data-worldbook-pick><option value="">（尚未选择）</option></select></label><label class="dai-setting-row"><span><b>手动填写</b><small>列表里没有就填世界书面板里的名字。</small></span><input type="text" list="dai-worldbook-options" data-setting="setting.worldbook" placeholder="例如 斗破世界书"></label></div><datalist id="dai-worldbook-options"></datalist><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-agent-worldbook-scan>扫描可选世界书</button><button type="button" class="dai-secondary-button" data-agent-worldbook-import>从世界书导入</button></div><p class="dai-turn-result" data-agent-worldbook-status role="status">还没有导入。</p></div><div class="dai-settings-card"><div class="dai-card-heading"><b>检索库 · 条目浏览</b><small>整库条目在这里翻：按类别/卷过滤、按关键词搜（标题、别名、摘要、正文都算），点行看全文。纯本地过滤，不花模型调用。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>关键词</b></span><input type="text" data-facts-search placeholder="例如 加列家 / 乌坦城 / 萧炎"></label><label class="dai-setting-row"><span><b>类别</b></span><select data-facts-cat><option value="">全部类别</option></select></label><label class="dai-setting-row"><span><b>范围</b></span><select data-facts-scope><option value="volume">当前剧情卷</option><option value="all">全书</option></select></label></div><p class="dai-turn-result" data-facts-browser-status role="status">打开页面后自动列出。</p><div class="dai-facts-browser" data-facts-browser></div></div><div class="dai-settings-card"><div class="dai-card-heading"><b>上次注入</b><small>最近一轮实际写进提示词的原著条目；与上面的运行状态分开看。</small></div><div class="dai-facts-injection" data-facts-last-injection role="status">本轮还没有注入过。</div></div><div class="dai-settings-card"><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>当前剧情卷</b><small>自动＝按本轮输入和模型估计；手动选＝锁定这一卷，识别到更后面的卷也会被压回。</small></span><select data-setting="setting.progress"><option value="0">自动判定</option><option value="1">第 1 卷</option><option value="2">第 2 卷</option><option value="3">第 3 卷</option><option value="4">第 4 卷</option><option value="5">第 5 卷</option><option value="6">第 6 卷</option><option value="7">第 7 卷</option><option value="8">第 8 卷</option><option value="9">第 9 卷</option><option value="10">第 10 卷</option><option value="11">第 11 卷</option><option value="12">第 12 卷</option><option value="13">第 13 卷</option><option value="14">第 14 卷</option><option value="15">第 15 卷</option><option value="16">第 16 卷</option><option value="17">第 17 卷</option><option value="18">第 18 卷</option><option value="19">第 19 卷</option><option value="20">第 20 卷</option><option value="21">第 21 卷</option></select></label><label class="dai-setting-row"><span><b>单次注入字数</b><small>0 = 不限制，选中几条就注入几条全文。</small></span><input type="number" min="0" step="100" data-setting="setting.injectionBudget"></label><label class="dai-setting-row"><span><b>单次检索出条目上限</b><small>选条模型单次最多挑几条原著条目（含本卷故事线背景），直接按你填的来，不设天花板；留空默认 8，填 0 或负数也按默认处理。上下文里提到的条目多于上限时按相关度取前几条。改完下一轮选条就生效。</small></span><input type="number" min="1" step="1" data-setting="setting.maxItems" placeholder="默认 8"></label></div></div><div class="dai-settings-card"><div class="dai-card-heading"><b>注入通道</b><small data-injection-status role="status">打开这一页时检测。</small></div><div class="dai-setting-grid"><label class="dai-setting-row dai-setting-toggle"><span><b>启用注入</b><small>关闭后不往提示词里写任何原著内容，正文照常生成。</small></span><input type="checkbox" data-setting="injection.enabled"></label><label class="dai-setting-row"><span><b>插入深度</b><small>从最新一楼往回数；0 表示紧贴末尾、离生成最近。</small></span><input type="number" min="0" max="99" step="1" data-setting="injection.depth"></label><label class="dai-setting-row"><span><b>最大字数</b><small>0 = 不截断；填了才在写入时截断。</small></span><input type="number" min="0" step="100" data-setting="injection.maxChars"></label></div></div><details class="dai-settle-category"><summary><span class="dai-feature-icon" aria-hidden="true">${daiIcon("slip")}</span><span><b>选条提示词</b><small>模型判断“本轮要用哪些原著条目”时收到的 system 指令；点开修改，清空恢复内置默认；MAX_PICKS 会换成每条上限。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>规则正文</b><small>改完下一轮生效，不用重启。</small></span><textarea data-setting="prompt.select" rows="9" spellcheck="false" placeholder="打开页面会自动铺入当前生效的规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-prompt-default>填入默认规则</button><small>默认规则口径：提到的就出、本卷故事线默认带、不许编 uid、只输出 JSON。</small></div></div></details><details class="dai-settle-category"><summary><span class="dai-feature-icon" aria-hidden="true">${daiIcon("slip")}</span><span><b>卷外点选提示词</b><small>模型在目录里找不到、报出名字后，脚本搜到候选再问它一次时用的 system 指令；点开修改，清空恢复内置默认。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>规则正文</b><small>只影响“卷外二次点选”，改完下一轮生效。</small></span><textarea data-setting="prompt.lookup" rows="7" spellcheck="false" placeholder="打开页面会自动铺入当前生效的规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-prompt-default="lookup">填入默认规则</button><small>默认规则含“只从候选里挑、后续卷默认不选”。</small></div></div></details><div class="dai-settings-card" data-api-mode-section="advanced"><div class="dai-card-heading"><b>正文核验（事实审计）</b><small>生成结束后一次旁路小调用：把正文拆成可验证断言，对照本轮注入条目与三本台账裁决（有据/矛盾/无据），只记审计、不拦正文。排在世界/纳戒/人物记账之后跑。整卡只在进阶版显示；接口在「模型设置」页「正文核验」卡。</small></div><div class="dai-feature-toggle"><span class="dai-feature-icon" aria-hidden="true">${daiIcon('book')}</span><span><b>启用正文核验</b><small>关闭后自动与手动都不再跑。</small></span><input type="checkbox" data-setting="verify.enabled"></div><label class="dai-setting-row dai-setting-toggle"><span><b>每轮生成后自动核验</b><small>关闭后只能点“核验这一楼”手动跑。</small></span><input type="checkbox" data-setting="verify.auto"></label><label class="dai-setting-row dai-setting-toggle"><span><b>快筛（省调用）</b><small>正文命中条目名/人物名/境界/数量才发起调用；关闭则每个 AI 楼层都核。闲聊楼层永不产生核验调用。</small></span><input type="checkbox" data-setting="verify.gate"></label><label class="dai-setting-row dai-setting-toggle"><span><b>名字比对（未注入条目审计）</b><small>正文出现没注入过的条目名就记一条。实跑在设定密集的卡上一楼能记 40+ 条（原生世界书注入的设定被正文引用是常态），默认关；要漂移报告再开。</small></span><input type="checkbox" data-setting="verify.nameAudit"></label><p class="dai-turn-result" data-verify-status role="status">还没有运行。生成结束后会自动核验。</p><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-verify-run>核验这一楼</button></div><div class="dai-world-decide-result" data-verify-result></div><div class="dai-facts-injection" data-verify-entries role="status">还没有核验记录。</div><details class="dai-prompt-fold"><summary><span><b>核验提示词</b><small>核验模型收到的 system 规则；点开修改，清空恢复内置默认。改写时保持“只输出 JSON”与 claims/verdict 字段名不变。</small></span></summary><label class="dai-setting-row"><span><b>规则正文</b><small>三标签裁决、传闻只判无据、断言不抄原句的规矩都在这里，可按玩法改写。</small></span><textarea data-setting="verify.prompt" rows="10" spellcheck="false" placeholder="打开页面会自动铺入当前生效的规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-secondary-button" data-verify-default>填入默认规则</button><small>默认规则含“矛盾必须有明确反证、传闻不当事实”。</small></div></details></div></section>
                     <section class="dai-settings-page" data-settings-section="action" role="tabpanel" hidden>
-                        <div class="dai-page-heading"><h3>行动结算</h3><p>把玩家行动拆成条件、结果和资源变化候选，再决定是否提交。</p></div><div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon" aria-hidden="true">${daiIcon("arrow")}</span><span><b>启用行动结算（总开关）</b><small>关闭后行动不再结算：不拆条件、不算数值变化，也不再要求确认行动细节；正文照常生成，状态保持原样。</small></span><input type="checkbox" data-setting="enableActionResolution"></div><label class="dai-setting-row dai-setting-toggle"><span><b>提交前要求确认</b><small>只生成候选，不自动写入状态。</small></span><input type="checkbox" data-setting="action.requireConfirmation"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>最多候选结果</b></span><input type="number" min="1" max="20" step="1" data-setting="action.maxCandidates"></label><label class="dai-setting-row dai-setting-toggle"><span><b>显示资源变化预览</b><small>在确认前展示影响范围。</small></span><input type="checkbox" data-setting="action.showCostPreview"></label></div></div><div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon" aria-hidden="true">${daiIcon("balance")}</span><span><b>行动结算注入（生成前直判）</b><small>一次调用按实际行动分别判定，读取相关世界书正文、六路已注入提示词和真账本；有文字后果也正常裁决。只有审核后的结果进入正文通道。生成后仍由原入口记账，并只读核对金币、境界和库存，不会双份扣账。关闭后不调用不注入。</small></span><input type="checkbox" data-setting="settle.resultEnabled"></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button" data-settle-adjudicate-run>手动预览一次（不注入）</button><span class="dai-turn-result" data-settle-result-status role="status">还没有判定过。生成前判定员会直判这一轮的行动结果并注入正文提示词。</span></div><div class="dai-turn-result" data-settle-result>本轮还没有判定结果。</div><details class="dai-settle-category"><summary><span class="dai-feature-icon" aria-hidden="true">${daiIcon("flame")}</span><span><b>判定提示词</b><small>一次调用输出 version:2 与 actions；每项有行动依据、依赖、结果、文字后果和 effects。清空恢复内置默认。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>提示词正文</b></span><textarea data-setting="settle.resultPrompt" rows="9" spellcheck="false"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-prompt-default="settleResult">载入新版多行动模板</button><button type="button" class="dai-button dai-button-ghost" data-settle-follow-default>恢复跟随默认</button><small role="status" data-settle-prompt-warning>自定义原文保留，旧单行动结果可兼容。</small></div></div></details></div><div class="dai-settings-card"><div class="dai-card-heading"><b>类别规则与自定义判定</b><small>生成前一次调用分别裁决多个行动；本页自定义规则作为补充，不会每类再调一次模型。旧分类管线保留，下面的候选确认选项只作用于旧管线，不影响生成前只判不动账的原则。</small></div>${SETTLE_CATEGORY_HTML}<div data-settle-custom-list></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-settle-add-category>＋ 添加自定义判定</button><small role="status" data-settle-custom-status>自定义判定只有名字和提示词：判定走你写的规则，脚本仍做字段白名单把关；最多 8 个。</small></div></div></section>
+                        <div class="dai-page-heading"><h3>行动结算</h3><p>生成前一次调用直判本轮行动的结果与资源变化，只有审核后的结果进入正文通道。</p></div><div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon" aria-hidden="true">${daiIcon("arrow")}</span><span><b>启用行动结算（总开关）</b><small>关闭后行动不再结算：不判定、不算数值变化；正文照常生成，状态保持原样。</small></span><input type="checkbox" data-setting="enableActionResolution"></div></div><div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon" aria-hidden="true">${daiIcon("balance")}</span><span><b>行动结算注入（生成前直判）</b><small>一次调用按实际行动分别判定，读取相关世界书正文、六路已注入提示词和真账本；有文字后果也正常裁决。只有审核后的结果进入正文通道。生成后仍由原入口记账，并只读核对金币、境界和库存，不会双份扣账。关闭后不调用不注入。</small></span><input type="checkbox" data-setting="settle.resultEnabled"></div><div data-api-mode-section="advanced" hidden><label class="dai-setting-row dai-setting-toggle"><span><b>难度＋骰子裁定（进阶版）</b><small>模型报风险档位（受控/常规/冒险/绝望）与带依据修正（单条 ±3、总计 ±4），脚本掷 d20 对难度判成败，只降不升；对手境界每高一大境界抬一档；波折轮 25% 掷变数 Oracle；部分成功补【类型·等级】结构化保底代价。关闭＝不掷骰，模型怎么判就怎么记。</small></span><input type="checkbox" data-setting="settle.diceEnabled"></label></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button" data-settle-adjudicate-run>手动预览一次（不注入）</button><span class="dai-turn-result" data-settle-result-status role="status">还没有判定过。生成前判定员会直判这一轮的行动结果并注入正文提示词。</span></div><div class="dai-turn-result" data-settle-result>本轮还没有判定结果。</div><details class="dai-settle-category"><summary><span class="dai-feature-icon" aria-hidden="true">${daiIcon("flame")}</span><span><b>判定提示词</b><small>一次调用输出 version:2 与 actions；每项有行动依据、依赖、结果、文字后果和 effects。清空恢复内置默认。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>提示词正文</b></span><textarea data-setting="settle.resultPrompt" rows="9" spellcheck="false"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-prompt-default="settleResult">载入新版多行动模板</button><button type="button" class="dai-button dai-button-ghost" data-settle-follow-default>恢复跟随默认</button><small role="status" data-settle-prompt-warning>自定义原文保留，旧单行动结果可兼容。</small></div></div></details></div><div class="dai-settings-card"><div class="dai-card-heading"><b>类别规则与自定义判定</b><small>生成前一次调用分别裁决多个行动；本页自定义规则作为补充，不会每类再调一次模型。</small></div>${SETTLE_CATEGORY_HTML}<div data-settle-custom-list></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-settle-add-category>＋ 添加自定义判定</button><small role="status" data-settle-custom-status>自定义判定只有名字和提示词：判定走你写的规则，脚本仍做字段白名单把关；最多 8 个。</small></div></div></section>
                     <section class="dai-settings-page" data-settings-section="world" role="tabpanel" hidden>
                         <div class="dai-page-heading"><h3>世界运转</h3><p>世界时间和事件由扩展的独立决定请求自动记账（正文保持干净）；这一页是台账展示和手动控制。添加表单都收进了弹窗，页面只看现状。</p></div>
                         <div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon" aria-hidden="true">${daiIcon("mountain")}</span><span><b>启用世界事件系统</b><small>关闭后不再读模型指令、不再注入世界现状。</small></span><input type="checkbox" data-setting="world.eventEnabled"></div><label class="dai-setting-row dai-setting-toggle"><span><b>注入世界现状</b><small>生成前把时钟、现状和进行中的事件写进提示词。</small></span><input type="checkbox" data-setting="world.eventInject"></label><label class="dai-setting-row"><span><b>现状注入字数上限</b><small>超预算先丢事件，保住时钟；0 为默认 900。</small></span><input type="number" min="0" step="100" data-setting="world.eventBudget"></label></div><div class="dai-settings-card"><div class="dai-card-heading"><b>世界时间与现状</b><small>随每轮生成自动更新；点数值旁的 ✎ 就地修正。</small></div><div class="dai-world-tiles"><div class="dai-world-tile"><span class="dai-world-tile-label">天数</span><b class="dai-world-tile-value" data-world-tile="day">—</b><small class="dai-world-tile-sub" data-world-tile-sub="clock"></small></div><div class="dai-world-tile"><span class="dai-world-tile-label">时期</span><b class="dai-world-tile-value" data-world-tile="era">—</b><button type="button" class="dai-world-tile-edit" data-world-tile-edit="era" title="修改时期">✎</button><span class="dai-world-tile-editor" data-world-tile-editor="era" hidden><input type="text" data-world-info="era" placeholder="如 萧家废物时期"><button type="button" class="dai-secondary-button" data-world-info-set="era">确定</button></span></div><div class="dai-world-tile"><span class="dai-world-tile-label">所在地</span><b class="dai-world-tile-value" data-world-tile="location">—</b><button type="button" class="dai-world-tile-edit" data-world-tile-edit="location" title="修改所在地">✎</button><span class="dai-world-tile-editor" data-world-tile-editor="location" hidden><input type="text" data-world-info="location" placeholder="如 乌坦城"><button type="button" class="dai-secondary-button" data-world-info-set="location">确定</button></span></div><div class="dai-world-tile"><span class="dai-world-tile-label">天气</span><b class="dai-world-tile-value" data-world-tile="weather">—</b><button type="button" class="dai-world-tile-edit" data-world-tile-edit="weather" title="修改天气">✎</button><span class="dai-world-tile-editor" data-world-tile-editor="weather" hidden><input type="text" data-world-info="weather" placeholder="如 晴"><button type="button" class="dai-secondary-button" data-world-info-set="weather">确定</button></span></div><div class="dai-world-tile"><span class="dai-world-tile-label">名声</span><b class="dai-world-tile-value" data-world-tile="reputation">—</b><button type="button" class="dai-world-tile-edit" data-world-tile-edit="reputation" title="修改名声">✎</button><span class="dai-world-tile-editor" data-world-tile-editor="reputation" hidden><input type="text" data-world-info="reputation" placeholder="如 乌坦城小有名气"><button type="button" class="dai-secondary-button" data-world-info-set="reputation">确定</button></span></div><div class="dai-world-tile"><span class="dai-world-tile-label">通缉度</span><b class="dai-world-tile-value" data-world-tile="wanted">—</b><button type="button" class="dai-world-tile-edit" data-world-tile-edit="wanted" title="修改通缉度">✎</button><span class="dai-world-tile-editor" data-world-tile-editor="wanted" hidden><input type="text" data-world-info="wanted" placeholder="如 被米特尔家族记恨"><button type="button" class="dai-secondary-button" data-world-info-set="wanted">确定</button></span></div></div><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-world-advance="1">推进 1 天</button><button type="button" class="dai-secondary-button" data-world-advance="7">推进 7 天</button><input type="number" min="1" max="365" step="1" data-world-days placeholder="天数" aria-label="自定义推进天数"><button type="button" class="dai-secondary-button" data-world-advance-custom>推进</button></div><label class="dai-setting-row"><span><b>改为第几天</b><small>直接设定时钟，用于修正跳变。</small></span><span class="dai-setting-inline"><input type="number" min="1" max="99999" step="1" data-world-setday placeholder="如 30"><button type="button" class="dai-secondary-button" data-world-setday-apply>设定</button></span></label><label class="dai-setting-row"><span><b>世界氛围</b><small>决定模型投放事件的频率和烈度。</small></span><span class="dai-segmented"><span class="dai-world-tension" data-world-tension-display role="status"></span><button type="button" class="dai-segmented-button" data-world-tension="calm">平静</button><button type="button" class="dai-segmented-button" data-world-tension="rising">升温</button><button type="button" class="dai-segmented-button" data-world-tension="storm">风波</button></span></label></div>
@@ -6753,6 +8316,7 @@ function createSettingsPanel() {
                         <div class="dai-modal-dock" data-modal-dock="world-task" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>接一个任务</b><small>模型没立但你想要的，自己记一笔。</small></div><label class="dai-setting-row"><span><b>任务名</b><small>必填，不超过 20 字；列表只显示这一行。</small></span><input type="text" maxlength="20" required data-world-task-title placeholder="例：查出城东窃贼的来历"></label><label class="dai-setting-row"><span><b>详细资料</b><small>目标、背景、现状，写多少都行。</small></span><input type="text" data-world-task-detail placeholder="例：连日失窃，掌柜悬赏；已知窃贼夜行、身法利落"></label><label class="dai-setting-row"><span><b>来源</b><small>这任务从哪来：谁托付、什么契机。</small></span><input type="text" data-world-task-basis placeholder="例：药铺掌柜悬赏托付"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>时限（天）</b><small>留空不限期。</small></span><input type="number" min="1" max="90" step="1" data-world-task-days placeholder="如 7"></label></div><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-world-addtask>接下任务</button><button type="button" class="dai-secondary-button" data-agent-modal-close>取消</button></div></div></div><div class="dai-modal-dock" data-modal-dock="world-faction" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>登记势力</b><small>与主角有恩怨往来的势力；同名直接更新，留空的档案字段保持原值。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>势力名</b></span><input type="text" maxlength="30" data-world-faction-name placeholder="例：云岚宗"></label><label class="dai-setting-row"><span><b>类型</b><small>宗门/家族/帝国/学院/佣兵团/商会/联盟…</small></span><input type="text" maxlength="10" data-world-faction-type placeholder="例：宗门"></label><label class="dai-setting-row"><span><b>态度</b></span><select data-world-faction-stance><option value="hostile">敌对</option><option value="wary">警惕</option><option value="neutral">中立</option><option value="friendly">友好</option><option value="allied">同盟</option></select></label><label class="dai-setting-row"><span><b>首领</b><small>名字 + 称谓境界。</small></span><input type="text" maxlength="30" data-world-faction-leader placeholder="例：云韵（宗主·斗王）"></label></div><label class="dai-setting-row"><span><b>实力档次</b><small>这方势力有多强。</small></span><input type="text" maxlength="20" data-world-faction-level placeholder="例：加玛帝国一流"></label><label class="dai-setting-row"><span><b>高层阵容</b><small>太上长老/大长老/长老/护法/客卿。</small></span><input type="text" maxlength="120" data-world-faction-elders placeholder="例：老宗主云山、大长老云棱、客卿海波东"></label><label class="dai-setting-row"><span><b>成员构成</b><small>规模与强者数量。</small></span><input type="text" maxlength="120" data-world-faction-members placeholder="例：弟子千余，斗王三人"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>驻地/地盘</b></span><input type="text" maxlength="40" data-world-faction-location placeholder="例：云岚宗山门·加玛帝国"></label><label class="dai-setting-row"><span><b>势力关系</b><small>与其他势力的恩怨与依附。</small></span><input type="text" maxlength="160" data-world-faction-relations placeholder="例：世仇萧家；背靠皇室"></label></div><label class="dai-setting-row"><span><b>底蕴与产业</b><small>传承功法、异火、拍卖行、附属势力。</small></span><input type="text" maxlength="160" data-world-faction-assets placeholder="例：镇派功法、名下拍卖行"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>动向</b><small>势力现在在干什么。</small></span><input type="text" data-world-faction-dynamics placeholder="例：为退婚一事派使者常驻乌坦城"></label><label class="dai-setting-row"><span><b>依据</b></span><input type="text" data-world-faction-basis placeholder="例：本楼使者登门"></label></div><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-world-setfaction>登记 / 更新</button><button type="button" class="dai-secondary-button" data-agent-modal-close>取消</button></div></div></div><div class="dai-modal-dock" data-modal-dock="world-person" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>登记人物</b><small>与主角有交情或恩怨的人及态度；同名直接更新。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>人物名</b></span><input type="text" data-world-person-name placeholder="例：药老"></label><label class="dai-setting-row"><span><b>对主角的态度</b></span><input type="text" data-world-person-attitude placeholder="例：严厉但护短，亦师亦父"></label></div><label class="dai-setting-row"><span><b>依据</b></span><input type="text" data-world-person-basis placeholder="例：第二楼药老出手相护"></label><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-world-setperson>登记 / 更新</button><button type="button" class="dai-secondary-button" data-agent-modal-close>取消</button></div></div></div><div class="dai-modal-dock" data-modal-dock="world-event" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>登记事件</b><small>模型漏记时在这里补一笔，格式与模型指令一致。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>范围</b></span><select data-world-add-scope><option value="near">主角身边</option><option value="world">世界大事</option></select></label><label class="dai-setting-row"><span><b>分量</b></span><select data-world-add-weight><option value="minor">普通</option><option value="major">重大</option><option value="rumor">传闻（未证实）</option></select></label></div><label class="dai-setting-row"><span><b>短标题</b><small>必填；列表页只显示这一行。</small></span><input type="text" maxlength="16" required data-world-add-title placeholder="例：城东连环失窃"></label><label class="dai-setting-row"><span><b>事件内容</b><small>一句话说清发生了什么，不拘题材；全文进详情弹窗。</small></span><input type="text" data-world-add-text placeholder="例：城东连着三家铺子夜里失窃"></label><label class="dai-setting-row"><span><b>依据</b><small>它从哪来：哪楼、谁、什么事引出的。</small></span><input type="text" data-world-add-basis placeholder="例：上一楼酒馆闲谈提到的失窃传闻"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>地点</b><small>跨地发生的事写明地点。</small></span><input type="text" maxlength="40" data-world-add-location placeholder="例：乌坦城·城东坊市"></label><label class="dai-setting-row"><span><b>有效期（天）</b><small>留空长期有效；到期自动了结。</small></span><input type="number" min="1" max="90" step="1" data-world-add-days placeholder="如 5"></label></div><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-world-add>登记事件</button><button type="button" class="dai-secondary-button" data-agent-modal-close>取消</button></div></div></div>
                         <details class="dai-settle-category"><summary><span class="dai-feature-icon" aria-hidden="true">${daiIcon("mountain")}</span><span><b>指令指南（降级模式）</b><small>关闭自动决定时随世界现状注入的规则正文；点开修改，清空恢复内置默认。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>规则正文</b><small>事件取材规则、时限要求都写在这里，可按你的玩法改写。</small></span><textarea data-setting="world.eventGuide" rows="9" spellcheck="false" placeholder="打开页面会自动铺入当前生效的规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-secondary-button" data-world-guide-default>填入默认规则</button><small>默认规则含“事件要有依据、不照搬原著、时限必带 days”。</small></div></div></details>
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>模型决定（LLM 决定脚本执行）</b><small>生成结束后，模型读最近聊天 + 原著资料已注入的原著条目 + 世界台账做一次独立决定，输出严格 JSON，脚本逐条校验执行并显示在这里。决定用的接口与参数在「模型设置」页。</small></div><div class="dai-feature-toggle"><span class="dai-feature-icon" aria-hidden="true">${daiIcon("mountain")}</span><span><b>启用模型决定</b><small>关闭后退回“只认正文指令块”的降级模式。</small></span><input type="checkbox" data-setting="world.decideEnabled"></div><label class="dai-setting-row dai-setting-toggle"><span><b>每轮生成后自动决定</b><small>关闭后只能点“让模型决定一次”手动跑。</small></span><input type="checkbox" data-setting="world.decideAuto"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>喂最近几楼聊天</b></span><input type="number" min="1" max="12" step="1" data-setting="world.decideMaxFloors" placeholder="留空或 0＝跟随角色正则"></label></div><p class="dai-turn-result" data-world-decide-status role="status">还没有运行。生成结束后会自动决定。</p><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-world-decide-run>让模型决定一次</button></div><div class="dai-world-decide-result" data-world-decide-result></div><details class="dai-prompt-fold"><summary><span><b>决定提示词</b><small>模型做决定时收到的 system 规则；点开修改，清空恢复内置默认。改写时保持“只输出 JSON”和操作字段名不变。</small></span></summary><label class="dai-setting-row"><span><b>规则正文</b><small>事件取材、传闻、机遇危机、名声通缉的规则都在这里，可按玩法改写。</small></span><textarea data-setting="world.decidePrompt" rows="10" spellcheck="false" placeholder="打开页面会自动铺入当前生效的规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-secondary-button" data-world-decide-default>填入默认规则</button><small>默认规则含“事件要有依据、传闻不当事实、机遇危机偶尔投放”。</small></div></details></div>
+                        <div class="dai-settings-card" data-api-mode-section="advanced"><div class="dai-card-heading"><b>剧情账本（长篇一致性）</b><small>滚动计划（本幕目标/下一步走向）+ 线索账（伏笔/悬念/恩怨）。生成后一次小调用读最近聊天和世界时钟滚动维护，生成前把“剧情前瞻”注入正文提示词——正文顺着方向推进、别跟已埋线索唱反调。决定用的接口在「模型设置」页。整卡只在进阶版显示；关闭决定后已记的线索照旧注入。</small></div><div class="dai-feature-toggle"><span class="dai-feature-icon" aria-hidden="true">${daiIcon("compass")}</span><span><b>启用剧情账本</b><small>关闭后不注入、不决定；已记的线索留在聊天存档里。</small></span><input type="checkbox" data-setting="plot.enabled"></div><label class="dai-setting-row dai-setting-toggle"><span><b>注入剧情前瞻</b><small>生成前把滚动方向与未回收线索写进提示词。</small></span><input type="checkbox" data-setting="plot.inject"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>注入字数预算</b><small>超预算先丢线索保计划；0 为默认 500。</small></span><input type="number" min="0" step="100" data-setting="plot.injectBudget"></label><label class="dai-setting-row"><span><b>喂最近几楼聊天</b><small>剧情决定自己的一份。</small></span><input type="number" min="1" max="12" step="1" data-setting="plot.decideMaxFloors" placeholder="留空或 0＝跟随角色正则"></label></div><div class="dai-feature-toggle"><span class="dai-feature-icon" aria-hidden="true">${daiIcon("compass")}</span><span><b>启用剧情决定</b><small>生成后滚动维护计划与线索；关闭后只注入不更新。</small></span><input type="checkbox" data-setting="plot.decideEnabled"></div><label class="dai-setting-row dai-setting-toggle"><span><b>每轮生成后自动决定</b><small>排在世界决定之后跑；关闭后只能点“让模型决定一次”手动跑。</small></span><input type="checkbox" data-setting="plot.decideAuto"></label><p class="dai-turn-result" data-plot-decide-status role="status">还没有运行。生成结束后会自动决定。</p><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-plot-decide-run>让模型决定一次</button></div><div class="dai-world-decide-result" data-plot-decide-result></div><div data-plot-ledger-view role="status"></div><div class="dai-settings-card"><div class="dai-card-heading"><b>剧情指令流水</b><small>最近几批剧情指令的执行结果；重 roll 一楼会先撤销它上一版指令。</small></div><div class="dai-world-journal" data-plot-journal></div></div><details class="dai-prompt-fold"><summary><span><b>决定提示词</b><small>模型做剧情决定时收到的 system 规则；点开修改，清空恢复内置默认。改写时保持“只输出 JSON”和操作字段名不变。</small></span></summary><label class="dai-setting-row"><span><b>规则正文</b><small>计划怎么滚、线索怎么埋怎么收的规矩都在这里，可按玩法改写。</small></span><textarea data-setting="plot.decidePrompt" rows="10" spellcheck="false" placeholder="打开页面会自动铺入当前生效的规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-secondary-button" data-plot-decide-default>填入默认规则</button><small>默认规则含“计划从剧情长出来、线索要有依据、回收不硬凑”。</small></div></details></div>
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>世界指令流水</b><small>最近几批指令的执行结果；重 roll 一楼会先撤销它上一版指令。</small></div><div class="dai-world-journal" data-world-journal></div></div>
                                             </section>
                     <section class="dai-settings-page" data-settings-section="npc" role="tabpanel" hidden>
@@ -6760,10 +8324,12 @@ function createSettingsPanel() {
                     <section class="dai-settings-page" data-settings-section="npcledger" role="tabpanel" hidden>
                         <div class="dai-page-heading"><h3>人物簿</h3><p>每个人按同一套格式记账：身份、外貌、修为、性格、对你的好感、资产、处境、秘密和经历流水。正文写完后由“人物记录员”补一笔，下一楼再按“在场 × 重要”决定给正文模型看多少人、看多少细节。点人名看完整档案；重大转变单独记在「人物经历」页。</p></div>
                         <div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon" aria-hidden="true">${daiIcon("ledger")}</span><span><b>启用人物簿</b><small>关闭后不记账、不注入；已经记下的档案仍留在聊天存档里，不会被删。</small></span><input type="checkbox" data-setting="enableNpcLedger"></div><label class="dai-setting-row dai-setting-toggle"><span><b>生成后自动记账</b><small>每轮正文结束后让“人物记录员”读最近两楼，把这一轮的变化记进档案；关掉后只能手动记一次。</small></span><input type="checkbox" data-setting="npc.ledgerAuto"></label><label class="dai-setting-row"><span><b>记账节奏</b><small>每轮都记更像实时，但每轮多一次小调用；每三轮更省，代价是中间两轮的变化要等下次记账才进档。</small></span><select data-setting="npc.ledgerEvery"><option value="1">每轮生成后</option><option value="2">每两轮生成后</option><option value="3">每三轮生成后</option></select></label><label class="dai-setting-row dai-setting-toggle"><span><b>把人物档案写进正文提示词</b><small>关掉后只记账、不告诉正文模型——人物就会“忘了自己身上发生过什么”。</small></span><input type="checkbox" data-setting="npc.ledgerInject"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>注入字数预算</b><small>每轮最多花多少字写人物档案；超了就把最不重要的人先降成一行。</small></span><input type="number" min="0" step="100" data-setting="npc.ledgerBudget"></label><label class="dai-setting-row"><span><b>全字段最多几个人</b><small>“在场且重要”的人按完整档案写，超出这个数就只写一行。</small></span><input type="number" min="1" max="20" step="1" data-setting="npc.ledgerMaxFull"></label><label class="dai-setting-row"><span><b>记录员看最近几楼</b><small>看太少会漏，看太多会慢；留空或 0＝跟随角色正则（主模型能看几楼，记录员就看几楼）。</small></span><input type="number" min="1" max="12" step="1" data-setting="npc.ledgerFloors" placeholder="留空或 0＝跟随角色正则"></label></div></div>
-                        <div class="dai-settings-card"><div class="dai-card-heading"><b>本局人物</b><small>主界面只铺最近活动的 8 个人（点名字开信息面板，行尾小图标=在场/重要/冷藏）；全部人物、筛选和搜索收进「人物总簿」。</small></div><p class="dai-state-strip" data-npc-ledger-summary>还没有载入人物簿。</p><p class="dai-turn-result" data-npc-ledger-status role="status">还没有记账。生成结束后，人物记录员会把这一轮的人物变化写进档案。</p><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-modal-open="npc-ledger-browser" data-modal-title="人物总簿">打开人物总簿</button><button type="button" class="dai-secondary-button" data-npc-ledger-run>让记录员记一次</button><button type="button" class="dai-secondary-button" data-npc-ledger-refresh>刷新名单</button><button type="button" class="dai-secondary-button" data-npc-ledger-extract>按世界书补空字段</button><button type="button" class="dai-secondary-button" data-modal-open="npc-patch" data-modal-title="记进人物簿">＋ 补一笔</button></div><ul class="dai-status-list dai-npc-grid" data-npc-ledger-recent></ul></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>本局人物</b><small>主界面只铺最近活动的 8 个人（点名字开信息面板，行尾小图标=在场/重要/冷藏）；全部人物、筛选和搜索收进「人物总簿」。</small></div><p class="dai-state-strip" data-npc-ledger-summary>还没有载入人物簿。</p><p class="dai-turn-result" data-npc-ledger-status role="status">还没有记账。生成结束后，人物记录员会把这一轮的人物变化写进档案。</p><div data-npc-exp-auto></div><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-modal-open="npc-ledger-browser" data-modal-title="人物总簿">打开人物总簿</button><button type="button" class="dai-secondary-button" data-npc-ledger-run>让记录员记一次</button><button type="button" class="dai-secondary-button" data-npc-ledger-refresh>刷新名单</button><button type="button" class="dai-secondary-button" data-npc-ledger-extract>按世界书补空字段</button><button type="button" class="dai-secondary-button" data-api-mode-section="advanced" data-npc-gossip-run>传播传闻</button><button type="button" class="dai-secondary-button" data-npc-consistency-run>一致性体检</button><button type="button" class="dai-secondary-button" data-modal-open="npc-patch" data-modal-title="记进人物簿">＋ 补一笔</button></div><ul class="dai-status-list dai-npc-grid" data-npc-ledger-recent></ul></div>
+                        <div class="dai-settings-card" data-api-mode-section="advanced"><div class="dai-card-heading"><b>人物关系网</b><small>档案「对他人」的有向边汇总：谁认谁是什么关系。金边=在场、黄点=有情绪、虚线=未建档；力导向自动排版（玩家居中），拖动可钉住微调、点节点开档案；箭头=关系的方向。单边强绑定、两边立场打架会列在明细里提醒；进阶版下生成前本楼人物的一跳/二跳关系会随人物注入带进提示词。跟着聊天存档。</small></div><p class="dai-state-strip" data-npc-relations-summary>还没有关系边。</p><div data-npc-relations-graph></div><div class="dai-rel-legend"><span><i style="background:#b39ddb"></i>血亲/师徒/同门</span><span><i style="background:#34d399"></i>同盟</span><span><i style="background:#86efac"></i>友好</span><span><i style="background:#9ca3af"></i>中立</span><span><i style="background:#fbbf24"></i>警惕</span><span><i style="background:#f87171"></i>敌对</span></div><details class="dai-rel-details"><summary>关系明细与提醒</summary><div class="dai-world-events" data-npc-relations-list></div></details><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-npc-relations-refresh>刷新关系网</button></div></div>
+                        <div class="dai-settings-card" data-api-mode-section="advanced"><div class="dai-card-heading"><b>一致性体检</b><small>旁路小调用：拿在场人物档案对照最近正文，只报「写违反档案的地方」（说话风格/雷区/称呼/境界/态度方向），不改档案、不拦正文。进阶版下每次记账后自动查在场重要人物，也可手动全量查。</small></div><p class="dai-state-strip" data-npc-consistency-summary>还没有体检过。</p><div class="dai-world-events" data-npc-consistency-list></div></div>
                         <div class="dai-modal-dock" data-modal-dock="npc-ledger-browser" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>人物总簿</b><small>本局全部人物都在这里：筛选、搜索、行尾小图标照常用；点名字打开信息面板。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>只看</b></span><select data-npc-ledger-filter><option value="">全部</option><option value="present">在场的</option><option value="absent">不在场的</option><option value="important">重要的</option></select></label><label class="dai-setting-row"><span><b>搜名字</b><small>姓名、别名、称号都能搜。</small></span><input type="search" data-npc-ledger-search placeholder="如 萧战"></label></div><ul class="dai-status-list dai-npc-grid" data-npc-ledger-list></ul></div><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-agent-modal-close>关闭</button></div></div>
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>冷藏推进台</b><small>只给勾选的人补世界时间已经走过的那一段；不会自行推进时间，先出草稿，确认后才写回人物簿。勾选在人物行尾的「❄」。</small></div><p class="dai-state-strip" data-npc-cold-summary>当前世界日：第 1 天 · 未选择冷藏人物</p><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-modal-open="npc-cold-bench" data-modal-title="冷藏推进台">打开冷藏推进台</button></div><details class="dai-prompt-fold"><summary><span><b>推进员提示词</b><small>留空使用内置规则；必须保留“先出草稿、只输出 JSON”等边界；点开修改。</small></span></summary><label class="dai-setting-row"><span><b>规则正文</b><small>改完下一轮生效；清空恢复内置默认。</small></span><textarea data-setting="npc.coldPrompt" rows="8" spellcheck="false" placeholder="打开页面会自动铺入当前生效规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-secondary-button" data-npc-cold-default>填入默认推进规则</button></div></details></div>
-                        <div class="dai-modal-dock" data-modal-dock="npc-cold-bench" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>冷藏推进台</b><small>勾选名单、扫描与草稿确认都在这里；先出草稿，确认后才写回。</small></div><ul class="dai-status-list dai-npc-grid" data-npc-cold-bench></ul><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-npc-cold-scan>扫描需要推进的人物</button><button type="button" class="dai-secondary-button" data-npc-cold-clear>清空冷藏选择</button></div><div data-npc-cold-previews></div></div><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-agent-modal-close>关闭</button></div></div>
+                        <div class="dai-modal-dock" data-modal-dock="npc-cold-bench" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>冷藏推进台</b><small>勾选名单、扫描与草稿确认都在这里；先出草稿，确认后才写回。</small></div><ul class="dai-status-list dai-npc-grid" data-npc-cold-bench></ul><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-npc-cold-scan>扫描需要推进的人物</button><button type="button" class="dai-secondary-button" data-npc-cold-undo>撤销上次确认</button><button type="button" class="dai-secondary-button" data-npc-cold-clear>清空冷藏选择</button></div><div data-npc-cold-previews></div></div><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-agent-modal-close>关闭</button></div></div>
                         <details class="dai-settle-category"><summary><span class="dai-feature-icon" aria-hidden="true">${daiIcon("ledger")}</span><span><b>记录员提示词</b><small>人物记录员收到的 system 规则；点开修改，清空恢复内置默认。改写时保持“只输出 JSON”不变。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>规则正文</b><small>好感只记增减、流水只追加、没变化就不写。</small></span><textarea data-setting="npc.ledgerPrompt" rows="9" spellcheck="false" placeholder="打开页面会自动铺入当前生效的规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-secondary-button" data-npc-ledger-default>填入默认规则</button><small>默认规则含“好感只记增减、流水只追加、没变化就不写”。</small></div></div></details>
                         <div class="dai-modal-dock" data-modal-dock="npc-patch" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>手动记账</b><small>一条补丁 = 一个人这一轮的变化；认不出的字段会被跳过，不会打断整条补丁。</small></div><label class="dai-setting-row"><span><b>补丁</b><small>例：{"人物":[{"姓名":"萧战","好感":3,"好感理由":"护住族人","态度":"对这个后辈多了几分认可","位置":"萧家议事厅","在场":"在场","流水":["主持族会，压下二长老的质疑"]}]}</small></span><textarea data-npc-ledger-patch rows="7" spellcheck="false" placeholder="粘贴或手写一条补丁"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-secondary-button" data-npc-ledger-apply>记进人物簿</button><button type="button" class="dai-secondary-button" data-npc-ledger-export>导出全簿</button><button type="button" class="dai-secondary-button" data-npc-ledger-import>导入全簿</button><button type="button" class="dai-secondary-button" data-npc-ledger-clear>清空本局人物簿</button><button type="button" class="dai-secondary-button" data-npc-ledger-extract-all>按世界书重抽：只填空着的字段</button></div></div><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-agent-modal-close>取消</button></div></div>
                     </section>
@@ -6824,14 +8390,16 @@ function createSettingsPanel() {
                     </section>
                     <section class="dai-settings-page" data-settings-section="memory" role="tabpanel" hidden>
                         <div class="dai-page-heading"><h3>记忆存储</h3><p>记忆分小记忆（轻量近事）与大记忆（总结出来的长期大事），都永久保存、按需召回——"关联"里的人名/地名出现在最近剧情里才会注入提示词。书记官只记小记忆；小记忆攒够阈值就自动总结成一条大记忆，原条目随之退役。删除只由书记官或你手动做，脚本从不过期任何记忆。</p></div>
-                        <div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon" aria-hidden="true">${daiIcon("brush")}</span><span><b>启用记忆存储</b><small>关闭后不记账、不召回；已记下的内容仍留在聊天存档里。</small></span><input type="checkbox" data-setting="enableMemoryLedger"></div><label class="dai-setting-row dai-setting-toggle"><span><b>按需召回进正文提示词</b><small>生成前注入记忆；主路由「召回决定」按目录挑选，没跑成退回关键词匹配。</small></span><input type="checkbox" data-setting="memory.inject"></label><label class="dai-setting-row"><span><b>召回字数上限</b><small>本轮注入的记忆总字数上限；超了从尾部丢；0 为默认 900。</small></span><input type="number" min="0" step="100" data-setting="memory.injectBudget"></label><label class="dai-setting-row dai-setting-toggle"><span><b>自动决定（书记官）</b><small>每轮生成后由模型决定新记忆；关掉后只认正文里的 memory 指令块。</small></span><input type="checkbox" data-setting="memory.decideAuto"></label><label class="dai-setting-row dai-setting-toggle"><span><b>启用记忆决定调用</b><small>关闭后不再发起书记官调用，只走降级指令。</small></span><input type="checkbox" data-setting="memory.decideEnabled"></label><label class="dai-setting-row dai-setting-toggle"><span><b>启用召回决定调用</b><small>关闭后注入退回关键词匹配，不发起召回模型调用。</small></span><input type="checkbox" data-setting="memory.recallEnabled"></label><label class="dai-setting-row dai-setting-toggle"><span><b>生成前自动召回</b><small>用户输入之后、生成之前，召回员按记忆目录+上下文挑要注入的旧记忆；关掉后注入退回关键词匹配。</small></span><input type="checkbox" data-setting="memory.recallAuto"></label><label class="dai-setting-row"><span><b>小记忆攒几条自动总结成大记忆</b><small>书记官只记小记忆；攒够这个数，就自动调一次模型把这批小记忆提炼成一条大记忆，原条目退役。0 = 关闭自动总结；「现在就总结一次」不受阈值限制。</small></span><input type="number" min="0" max="30" step="1" data-setting="memory.consolidateAfter"></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-memory-consolidate>现在就总结一次</button><small role="status" data-memory-consolidate-status></small></div><details class="dai-settle-category"><summary><span class="dai-feature-icon" aria-hidden="true">${daiIcon("brush")}</span><span><b>指令指南（降级模式）</b><small>关闭自动决定时随召回结果注入的规则正文；保持"只输出 JSON"与操作字段名不变，清空恢复内置默认。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>指南正文</b></span><textarea data-setting="memory.guide" rows="9" spellcheck="false"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-memory-guide-default>填入默认指南</button></div></div></details></div><div class="dai-settings-card"><div class="dai-card-heading"><b>记忆总览</b><small>按层统计；注入哪些记忆由「召回决定」按记忆目录+上下文挑选，召回没跑成退回关键词匹配。旧记忆永不作废。排序与按人过滤在「记忆总库」里。</small></div><p class="dai-state-strip" data-memory-overview>还没有载入记忆。</p><p class="dai-turn-result" data-memory-conflicts hidden></p><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-modal-open="memory-browser" data-modal-title="记忆总库">打开记忆总库</button><button type="button" class="dai-secondary-button" data-modal-open="memory-add" data-modal-title="手动登记一条记忆">＋ 手动登记</button></div></div>
-                        <div class="dai-settings-card"><div class="dai-card-heading"><b>记忆注入</b><small>最近一轮实际进入正文提示词的记忆：来源（召回决定/关键词兜底）、条数与内容；点条目看完整记录。生成结束会标「已清理」。</small></div><p class="dai-state-strip" data-memory-injection-status>还没有注入记录：下一轮生成时由召回决定（或关键词兜底）挑选。</p><div class="dai-world-events" data-memory-injection-list></div></div>
+                        <div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon" aria-hidden="true">${daiIcon("brush")}</span><span><b>启用记忆存储</b><small>关闭后不记账、不召回；已记下的内容仍留在聊天存档里。</small></span><input type="checkbox" data-setting="enableMemoryLedger"></div><label class="dai-setting-row dai-setting-toggle"><span><b>按需召回进正文提示词</b><small>生成前注入记忆；主路由「召回决定」按目录挑选，没跑成退回关键词匹配。</small></span><input type="checkbox" data-setting="memory.inject"></label><label class="dai-setting-row"><span><b>召回字数上限</b><small>本轮注入的记忆总字数上限；超了从尾部丢；0 为默认 900。</small></span><input type="number" min="0" step="100" data-setting="memory.injectBudget"></label><label class="dai-setting-row dai-setting-toggle"><span><b>自动决定（书记官）</b><small>每轮生成后由模型决定新记忆；关掉后只认正文里的 memory 指令块。</small></span><input type="checkbox" data-setting="memory.decideAuto"></label><label class="dai-setting-row dai-setting-toggle"><span><b>启用记忆决定调用</b><small>关闭后不再发起书记官调用，只走降级指令。</small></span><input type="checkbox" data-setting="memory.decideEnabled"></label><label class="dai-setting-row dai-setting-toggle"><span><b>启用召回决定调用</b><small>关闭后注入退回关键词匹配，不发起召回模型调用。</small></span><input type="checkbox" data-setting="memory.recallEnabled"></label><label class="dai-setting-row dai-setting-toggle"><span><b>生成前自动召回</b><small>用户输入之后、生成之前，召回员按记忆目录+上下文挑要注入的旧记忆；关掉后注入退回关键词匹配。</small></span><input type="checkbox" data-setting="memory.recallAuto"></label><label class="dai-setting-row"><span><b>小记忆攒几条自动总结成大记忆</b><small>书记官只记小记忆；攒够这个数，就自动调一次模型把这批小记忆提炼成一条大记忆，原条目退役。0 = 关闭自动总结；「现在就总结一次」不受阈值限制。</small></span><input type="number" min="0" max="30" step="1" data-setting="memory.consolidateAfter"></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-memory-consolidate>现在就总结一次</button><small role="status" data-memory-consolidate-status></small></div><details class="dai-settle-category"><summary><span class="dai-feature-icon" aria-hidden="true">${daiIcon("brush")}</span><span><b>指令指南（降级模式）</b><small>关闭自动决定时随召回结果注入的规则正文；保持"只输出 JSON"与操作字段名不变，清空恢复内置默认。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>指南正文</b></span><textarea data-setting="memory.guide" rows="9" spellcheck="false"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-memory-guide-default>填入默认指南</button></div></div></details></div><div class="dai-settings-card"><div class="dai-card-heading"><b>记忆总览</b><small>按层统计；注入哪些记忆由「召回决定」按记忆目录+上下文挑选，召回没跑成退回关键词匹配。旧记忆永不作废。排序与按人过滤在「记忆总库」里。</small></div><p class="dai-state-strip" data-memory-overview>还没有载入记忆。</p><p class="dai-turn-result" data-memory-conflicts hidden></p><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-modal-open="memory-browser" data-modal-title="记忆总库">打开记忆总库</button><button type="button" class="dai-secondary-button" data-api-mode-section="advanced" data-modal-open="memory-person" data-modal-title="按人整合">按人整合</button><button type="button" class="dai-secondary-button" data-modal-open="memory-add" data-modal-title="手动登记一条记忆">＋ 手动登记</button></div></div>
+                        <div class="dai-settings-card" data-api-mode-section="advanced"><div class="dai-card-heading"><b>记忆体检</b><small>纯本地统计，不发模型调用：疑似重复/矛盾对、认领不到任何台账实体的孤立钥匙（多半是笔误）、当前目录预算下召回员实际可见几条、已被覆盖几条。整卡只在进阶版显示；向量覆盖在「模型设置」页看。</small></div><p class="dai-state-strip" data-memory-audit-stats>打开记忆页时自动体检。</p><div class="dai-world-events" data-memory-audit-list></div></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>记忆注入</b><small>最近一轮实际进入正文提示词的记忆：来源（召回决定/关键词兜底）、条数与内容；点条目看完整记录。生成结束会标「已清理」。</small></div><p class="dai-state-strip" data-memory-injection-status>还没有注入记录：下一轮生成时由召回决定（或关键词兜底）挑选。</p><div class="dai-world-events" data-memory-injection-list></div><div data-api-mode-section="advanced" hidden><label class="dai-setting-row dai-setting-toggle"><span><b>开局摘要</b><small>切换/载入聊天后的第一条回复前，注入一次跨账本交底（时间·在场人物·待办任务·未了线头·旧账恩怨）；只注一次，生成结束即清。进阶版功能。</small></span><input type="checkbox" data-setting="memory.wakeUp"></label><label class="dai-setting-row"><span><b>开局摘要字数上限</b><small>一次性交底的总字数上限，200-2000；摘要为空（空库空账）时本轮不注。</small></span><input type="number" min="200" max="2000" step="50" data-setting="memory.wakeUpBudget"></label></div></div>
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>大记忆</b><small>值得一直记住的事；★=关键；召回优先于小记忆。主界面只铺最新 6 条，全部与翻页在「记忆总库」。</small></div><div class="dai-world-events" data-memory-recent-big></div></div>
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>小记忆</b><small>轻量近事；攒够阈值自动总结成一条大记忆（原条目退役）。主界面只铺最新 8 条，全部与翻页在「记忆总库」。</small></div><div class="dai-world-events" data-memory-recent-small></div></div>
                         <div class="dai-modal-dock" data-modal-dock="memory-browser" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>记忆总库</b><small>全部大记忆与小记忆：排序、按人过滤、翻页都在这里；行内转大/提关键/删除照常用，点行看详情。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>排序</b></span><select data-memory-sort><option value="time">按生成时间</option><option value="weight">按分量（关键优先）</option><option value="tag">按标签分类</option></select></label><label class="dai-setting-row"><span><b>只看关联</b><small>下场对手戏前按人扫一遍旧账。</small></span><select data-memory-person><option value="">全部</option></select></label></div><div class="dai-card-heading"><b>大记忆</b><small>★=关键；召回优先于小记忆。每页固定 6 条，翻页看更多。</small></div><div class="dai-world-events" data-memory-list-big></div><div class="dai-pager" data-memory-pager-big></div><div class="dai-card-heading"><b>小记忆</b><small>轻量近事；攒够阈值自动总结成一条大记忆（原条目退役）。每页固定 8 条，翻页看更多。</small></div><div class="dai-world-events" data-memory-list-small></div><div class="dai-pager" data-memory-pager-small></div></div><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-agent-modal-close>关闭</button></div></div>
+                        <div class="dai-modal-dock" data-modal-dock="memory-person" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>按人整合</b><small>选一个人，把他散在三本账里的叙事并成一条时间线：记忆（按关联钥匙命中）、好感流水、人物簿经历与流水、世界事件与任务——按世界天新→旧排列，行首角标标注来源。</small></div><label class="dai-setting-row"><span><b>人物</b><small>人物簿里的人优先；没建人物簿时退回记忆关联里的钥匙。</small></span><select data-memory-person-view><option value="">选一个人</option></select></label><p class="dai-state-strip" data-memory-person-summary hidden></p><div class="dai-world-events" data-memory-person-timeline></div></div><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-agent-modal-close>关闭</button></div></div>
                         
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>模型决定（LLM 决定脚本执行）</b><small>生成结束后，书记官读最近聊天 + 相关世界书条目 + 本场召回的记忆做一次独立决定，输出严格 JSON，脚本逐条校验执行。</small></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button" data-memory-decide-run>手动决定一次</button><span data-memory-decide-status></span></div><div data-memory-decide-result></div><details class="dai-settle-category"><summary><span class="dai-feature-icon" aria-hidden="true">${daiIcon("flame")}</span><span><b>决定提示词</b><small>书记官的 system 指令；保持"只输出 JSON"与操作字段名不变，清空恢复内置默认。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>提示词正文</b></span><textarea data-setting="memory.decidePrompt" rows="9" spellcheck="false"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-memory-decide-default>填入默认提示词</button></div></div></details></div>
-                        <div class="dai-settings-card"><div class="dai-card-heading"><b>召回决定（LLM 挑选注入哪些记忆）</b><small>用户输入之后、生成之前，召回员读记忆目录（标题+钥匙）+ 最近聊天 + 世界书命中，挑出本轮要注入的旧记忆编号，脚本执行注入；失败或关闭时退回关键词匹配，不阻塞生成。</small></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button" data-memory-recall-run>手动召回一次</button><span data-memory-recall-status></span></div><div data-memory-recall-result></div><details class="dai-settle-category"><summary><span class="dai-feature-icon" aria-hidden="true">${daiIcon("flame")}</span><span><b>召回提示词</b><small>召回员的 system 指令；保持"只输出 JSON"与 ids 字段名不变，清空恢复内置默认。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>提示词正文</b></span><textarea data-setting="memory.recallPrompt" rows="9" spellcheck="false"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-memory-recall-default>填入默认提示词</button></div></div></details></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>召回决定（LLM 挑选注入哪些记忆）</b><small>用户输入之后、生成之前，召回员读记忆目录（标题+钥匙）+ 最近聊天 + 世界书命中，挑出本轮要注入的旧记忆编号，脚本执行注入；目录按混合检索分数序排（钥匙/引文/词面/时间邻近/语义），场景勾得越深的排得越靠前；失败或关闭时退回同款混合分数的兜底匹配，不阻塞生成。</small></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button" data-memory-recall-run>手动召回一次</button><span data-memory-recall-status></span></div><div data-memory-recall-result></div><label class="dai-setting-row"><span><b>目录字数上限</b><small>发给召回员的记忆目录总字数；账本变大后可以调高，让召回员看到更多旧账。超预算从尾部丢。</small></span><input type="number" min="1000" max="20000" step="500" data-setting="memory.catalogBudget"></label><details class="dai-settle-category"><summary><span class="dai-feature-icon" aria-hidden="true">${daiIcon("flame")}</span><span><b>召回提示词</b><small>召回员的 system 指令；保持"只输出 JSON"与 ids 字段名不变，清空恢复内置默认。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>提示词正文</b></span><textarea data-setting="memory.recallPrompt" rows="9" spellcheck="false"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-memory-recall-default>填入默认提示词</button></div></div></details></div>
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>记忆指令流水</b><small>最近几批指令的执行结果；重 roll 一楼会先撤销它上一版指令。</small></div><div class="dai-world-journal" data-memory-journal></div></div>
                     <div class="dai-modal-dock" data-modal-dock="memory-add" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>手动登记</b><small>书记官漏记时在这里补一笔，校验与模型指令完全一致。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>层级</b></span><select data-memory-new-tier><option value="small">小记忆</option><option value="big">大记忆</option></select></label><label class="dai-setting-row"><span><b>标签（大记忆可选）</b></span><select data-memory-new-tag><option value="">不标</option><option value="grudge">恩怨</option><option value="intel">情报</option><option value="thread">伏笔</option><option value="milestone">大事记</option></select></label><label class="dai-setting-row"><span><b>分量</b></span><select data-memory-new-weight><option value="minor">一般</option><option value="major">关键</option></select></label></div><label class="dai-setting-row"><span><b>短标题</b><small>必填；列表主页只显示这一行。</small></span><input type="text" data-memory-new-title maxlength="14" required></label><label class="dai-setting-row"><span><b>内容</b><small>一句话说清记住了什么、为什么值得记。</small></span><input type="text" data-memory-new-text maxlength="300"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>依据</b><small>从哪来：哪楼/谁/什么事。</small></span><input type="text" data-memory-new-basis maxlength="80"></label><label class="dai-setting-row"><span><b>关联（必填）</b><small>人名/地名/物名，顿号分隔最多 4 个——这是日后按需召回的钥匙。</small></span><input type="text" data-memory-new-related maxlength="140"></label></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>别名（可选）</b><small>同一记忆的其余叫法（药老/药尘），也算召回钥匙。</small></span><input type="text" data-memory-new-aliases maxlength="140"></label><label class="dai-setting-row"><span><b>引文（可选）</b><small>当时的一句原话，召回时以「」带回正文。</small></span><input type="text" data-memory-new-quote maxlength="60"></label></div><label class="dai-setting-row"><span><b>备注（可选）</b><small>细节、背景、后续影响——列表行内只显示内容一句，这些都在详情弹窗里。</small></span><input type="text" data-memory-new-note maxlength="200"></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button" data-memory-add>登记这条记忆</button></div></div><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-agent-modal-close>取消</button></div></div></section>
                     <section class="dai-settings-page" data-settings-section="impact" role="tabpanel" hidden>
@@ -6843,24 +8411,26 @@ function createSettingsPanel() {
                         <div class="dai-modal-dock" data-modal-dock="impact-form" hidden><div class="dai-settings-card"><div class="dai-impact-form" data-impact-form hidden><input type="hidden" data-impact-field="ref"><div class="dai-impact-form-head"><b data-impact-form-title>记一条世界影响</b><small>手动记的条目和记录员记的一样：会进正文、会发酵，也保留在聊天存档里。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>标题</b></span><input type="text" maxlength="20" data-impact-field="title" placeholder="世界哪一块变了（≤20字）"></label><label class="dai-setting-row"><span><b>对象</b></span><input type="text" maxlength="40" data-impact-field="target" placeholder="哪个地方/势力/规矩"></label></div><label class="dai-setting-row"><span><b>详情</b><small>具体变了什么、有什么能被看见的后果。</small></span><textarea rows="3" maxlength="240" data-impact-field="detail" placeholder="例如：城中药材涨价，加列家族开始暗中追查纵火者"></textarea></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>性质</b></span><select data-impact-field="kind"><option value="direct">直接 · 玩家亲手</option><option value="ripple">涟漪 · 旁人因此改主意</option><option value="butterfly">蝴蝶 · 隔了时间才显形</option></select></label><label class="dai-setting-row"><span><b>分量</b></span><select data-impact-field="weight"><option value="minor">小事</option><option value="major">大事</option><option value="world">世界级</option></select></label><label class="dai-setting-row"><span><b>确定性</b></span><select data-impact-field="certainty"><option value="certain">确凿</option><option value="rumor">传闻</option></select></label></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>依据</b></span><input type="text" maxlength="120" data-impact-field="evidence" placeholder="哪一楼、哪句话"></label><label class="dai-setting-row"><span><b>对上台账事件</b><small>世界运转里的事件编号，如 e2；没有就留空。</small></span><input type="text" maxlength="40" data-impact-field="eventId" placeholder="例如：e2"></label><label class="dai-setting-row"><span><b>原著节点</b><small>没牵动就留空。</small></span><input type="text" maxlength="60" data-impact-field="canon" placeholder="例如：退婚"></label><label class="dai-setting-row"><span><b>原著偏移</b></span><select data-impact-field="shift"><option value="none">不牵动</option><option value="accelerate">加速</option><option value="delay">延后</option><option value="avoid">避过</option><option value="alter">改写</option></select></label></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button" data-impact-save>保存</button><button type="button" class="dai-button dai-button-ghost" data-impact-form-close>取消</button><small role="status" data-impact-form-status></small></div></div></div></div>
                     </section>
                     <section class="dai-settings-page" data-settings-section="sandbox" role="tabpanel" hidden>
-                        <div class="dai-page-heading"><h3>开放世界</h3><p>开启后进入开放世界口径：不跟随原著剧情、不用世界书，斗气大陆照自己的逻辑运转，任务与传闻就是世界递到玩家手里的方向；关回主线一切照旧。</p><p role="status" data-sandbox-status>改动会先保存；本局真正切换口径需要在本局内确认。</p></div>
+                        <div class="dai-page-heading"><h3>开放世界</h3><p>开启后进入开放世界口径：不跟随原著剧情、不用世界书，斗气大陆照自己的逻辑运转，任务与传闻就是世界递到玩家手里的方向；关回主线一切照旧。</p><p role="status" data-sandbox-status>开关随开随关：拨了立刻按新口径换向并落存档，下一轮生成就按它跑。</p></div>
                         <div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon" aria-hidden="true">${daiIcon('compass')}</span><span><b>启用开放世界</b><small>开启＝开放世界口径：不跟剧情、不用世界书，斗气大陆基线注入正文。关闭＝主线口径：原著节点到点发生，玩家只影响过程。</small></span><input type="checkbox" data-setting="enableSandboxMode"></div>
-<div class="dai-sandbox-pending" data-sandbox-pending hidden role="alert"><p><b>本局口径切换待确认</b><small>确认后本局按新口径继续：不回退已发生的事实、代价与关系，只做重新对齐。</small></p><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-sandbox-confirm>确认切换</button><button type="button" class="dai-secondary-button" data-sandbox-cancel>先不切</button></div></div>
-<label class="dai-setting-row"><span><b>世界惯性</b><small>决定原著事件在开放世界里多积极地自行发生。强＝窗口一开始就发生；中＝到窗口结束才发生；弱＝不再自动发生，只留候选。</small></span><select data-setting="sandbox.inertia"><option value="strong">强 · 世界推着走</option><option value="medium">中 · 有人介入才偏离</option><option value="weak">弱 · 默认不动</option></select></label><label class="dai-setting-row dai-setting-toggle"><span><b>原著人物保留自主行动</b><small>关闭后原著人物只对玩家作出反应，不再主动推进自身轨迹。</small></span><input type="checkbox" data-setting="sandbox.canonCharactersAutonomous"></label></div>
-                        <div class="dai-settings-card"><div class="dai-card-heading"><b>世界推进预算</b><small>开放世界的推进节奏与宽限；目标的载体就是世界运转的任务，这里不再单设。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>单回合最多新增对象</b><small>限制一回合内新冒出的线索与目标数量。</small></span><input type="number" min="0" max="8" step="1" disabled aria-label="单回合新增对象预算暂不可用" title="当前运行链未实现此预算；仅保留旧配置" data-setting="sandbox.maxNewObjectsPerTurn"></label></div><label class="dai-setting-row"><span><b>节点宽限天数</b><small>节点窗口结束后再等这么多游戏日，仍未发生才记为过期。</small></span><input type="number" min="0" max="60" step="1" disabled aria-label="节点宽限暂不可用" title="当前运行链未实现节点窗口；仅保留旧配置" data-setting="sandbox.nodeWindowSlackDays"></label></div>
+<label class="dai-setting-row"><span><b>世界惯性</b><small>决定原著事件在开放世界里多积极地自行发生。强＝窗口一开始就发生；中＝到窗口结束才发生；弱＝不再自动发生，只留候选。</small></span><select data-setting="sandbox.inertia"><option value="strong">强 · 世界推着走</option><option value="medium">中 · 有人介入才偏离</option><option value="weak">弱 · 不再自动发生</option></select></label><label class="dai-setting-row dai-setting-toggle"><span><b>原著人物保留自主行动</b><small>关闭后原著人物只对玩家作出反应，不再主动推进自身轨迹。</small></span><input type="checkbox" data-setting="sandbox.canonCharactersAutonomous"></label></div>
                     </section>
                     <section class="dai-settings-page" data-settings-section="runtime" role="tabpanel" hidden>
-                        <div class="dai-page-heading"><h3>运行与界面</h3><p>这里放全局开关、预算保护和诊断选项。</p></div><div class="dai-settings-card"><div class="dai-card-heading"><b>运行预算</b><small>这是保护上限，不代表模型一定会消耗这些额度。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>单次最多模块数</b></span><input type="number" min="1" max="32" step="1" data-setting="budget.maxModules"></label><label class="dai-setting-row"><span><b>最多 NPC 决策数</b></span><input type="number" min="0" max="20" step="1" data-setting="budget.maxNpcDecisions"></label></div><label class="dai-setting-row"><span><b>总等待上限（毫秒）</b></span><input type="number" min="1000" max="600000" step="1000" data-setting="budget.totalTimeoutMs"></label></div><div class="dai-settings-card"><div class="dai-card-heading"><b>反馈显示</b><small>控制页面和右下角反馈的显示内容。</small></div><label class="dai-setting-row dai-setting-toggle"><span><b>显示历史状态</b></span><input type="checkbox" data-setting="status.showHistory"></label><label class="dai-setting-row dai-setting-toggle"><span><b>显示能力检测提示</b></span><input type="checkbox" data-setting="status.showCapabilityBadge"></label><label class="dai-setting-row dai-setting-toggle"><span><b>紧凑界面</b></span><input type="checkbox" data-setting="ui.compact"></label><label class="dai-setting-row dai-setting-toggle"><span><b>先占位再补正文</b><small>等待模型时先在对话里放一条“……”，正文回来后再替换。</small></span><input type="checkbox" data-setting="ui.placeholder"></label><label class="dai-setting-row dai-setting-toggle"><span><b>调试信息</b><small>只记录本地诊断信息，不记录提示词或密钥。</small></span><input type="checkbox" data-setting="debug"></label></div></section>
+                        <div class="dai-page-heading"><h3>运行与界面</h3><p>这里放全局开关和显示选项。</p></div><div class="dai-settings-card"><div class="dai-card-heading"><b>反馈显示</b><small>控制页面和右下角反馈的显示内容。</small></div><label class="dai-setting-row dai-setting-toggle"><span><b>紧凑界面</b></span><input type="checkbox" data-setting="ui.compact"></label><label class="dai-setting-row dai-setting-toggle"><span><b>先占位再补正文</b><small>等待模型时先在对话里放一条“……”，正文回来后再替换。</small></span><input type="checkbox" data-setting="ui.placeholder"></label></div></section>
                 </div>
                 <footer class="dai-settings-footer"><span>修改会自动保存到酒馆扩展设置</span><button type="button" class="dai-secondary-button" data-settings-close>完成</button></footer>
             </main>
         </div>`;
     document.body.append(panel);
-    /** 模型设置页的调用版本切换：按钮高亮 + 按版本只显示各自的连接卡（两版绑定互不覆盖）。 */
+    /** 调用版本切换：按钮高亮 + 按 `data-api-mode-section`（空格分隔多版本）只显示属于当前版本的卡片。
+     *  完整版与进阶版共用逐路连接卡；进阶版另有一组 GitHub 系增强卡（完整版/简略版下整体隐藏）。 */
     function renderApiMode(target = panel) {
-        const mode = currentSettings().apiMode === 'lite' ? 'lite' : 'full';
+        const mode = apiMode();
         for (const button of target.querySelectorAll('[data-api-mode]')) button.classList.toggle('is-active', button.dataset.apiMode === mode);
-        for (const section of target.querySelectorAll('[data-api-mode-section]')) section.hidden = section.dataset.apiModeSection !== mode;
+        for (const section of target.querySelectorAll('[data-api-mode-section]')) {
+            const modes = String(section.dataset.apiModeSection ?? '').split(/\s+/).filter(Boolean);
+            section.hidden = !modes.includes(mode);
+        }
     }
     const selectPage = page => {
         const wanted = page === 'llm' ? 'hub' : page;
@@ -6870,8 +8440,10 @@ function createSettingsPanel() {
         const title = panel.querySelector('[data-settings-title]');
         const selected = panel.querySelector(`[data-settings-page="${activeSettingsPage}"] b`);
         if (title && selected) title.textContent = selected.textContent;
+        // 进阶卡片散在各页：每次切页都按当前调用版本重算显隐（不只模型设置页）。
+        renderApiMode(panel);
         if (activeSettingsPage === 'overview') {
-            renderCallLogList(panel);
+            renderCallSummary(panel);
             renderRuntimeMode(panel);
             const cover = panel.querySelector('[data-cover-script-status]');
             if (cover) cover.textContent = probeCoverScriptStatus().text;
@@ -6882,11 +8454,15 @@ function createSettingsPanel() {
             renderFactsStatus(panel);
             refreshWorldbookStats(panel);
             renderFactsBrowser(panel);
+            renderVerifyEntries(panel);
         }
         if (activeSettingsPage === 'world') refreshWorldPage(panel);
         if (activeSettingsPage === 'memory') refreshMemoryPage(panel);
         if (activeSettingsPage === 'impact') renderImpactLibrary(panel);
-        if (activeSettingsPage === 'hub') renderApiMode(panel);
+        if (activeSettingsPage === 'hub') {
+            renderApiMode(panel);
+            refreshMemoryVectorStats(panel);
+        }
         if (activeSettingsPage === 'npcledger') {
             // 打开页面时把当前生效的记录员规则铺进文本框，改完即用，清空则回默认。
             const area = panel.querySelector('[data-setting="npc.ledgerPrompt"]');
@@ -6913,12 +8489,17 @@ function createSettingsPanel() {
         const manualSelf = operations => panelMutation(panel, operations, applySelfOps, persistSelf, setSelfStatus);
         const close = event.target.closest?.('[data-settings-close]');
         if (close) return closeSettingsPanel();
-        const sandboxConfirm = event.target.closest?.('[data-sandbox-confirm]');
-        if (sandboxConfirm) return confirmSandboxSwitch();
-        const sandboxCancel = event.target.closest?.('[data-sandbox-cancel]');
-        if (sandboxCancel) return cancelSandboxSwitch();
-        const rollbackButton = event.target.closest?.('[data-agent-rollback]');
-        if (rollbackButton) return rollbackFromPanel(panel, rollbackButton.dataset.agentRollback);
+        const noteRun = event.target.closest?.('[data-decide-note-run]');
+        if (noteRun) {
+            const dock = noteRun.closest('[data-modal-dock="decide-note"]');
+            const area = dock?.querySelector('textarea');
+            const action = dock?.__decideRun;
+            if (typeof action === 'function') {
+                closeAgentModal(panel);
+                void Promise.resolve(action(area?.value ?? '')).catch(() => { /* 决定失败的状态已写进各自页面状态行 */ });
+            }
+            return;
+        }
         const scanButton = event.target.closest?.('[data-agent-worldbook-scan]');
         if (scanButton) return scanWorldbookNames(panel);
         const importButton = event.target.closest?.('[data-agent-worldbook-import]');
@@ -6990,8 +8571,33 @@ function createSettingsPanel() {
             }
             return;
         }
+        if (event.target.closest?.('[data-verify-run]')) {
+            void Promise.resolve(runFactCheck({ source: 'manual' })).then(result => {
+                try { recordAgentAudit({ event: 'turn_fact_check', outcome: String(result?.status ?? 'unknown') }); } catch { /* 审计失败不影响记账 */ }
+            }).catch(() => {});
+            return;
+        }
+        const verifyDefault = event.target.closest?.('[data-verify-default]');
+        if (verifyDefault) {
+            const area = panel.querySelector('[data-setting="verify.prompt"]');
+            if (area) {
+                area.value = VERIFY_PROMPT;
+                area.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            return;
+        }
+        const verifyFp = event.target.closest?.('[data-verify-fp]');
+        if (verifyFp) {
+            markVerifyFalsePositive(verifyFp.dataset.verifyFp, verifyFp.dataset.verifyFpRevision);
+            return;
+        }
         if (event.target.closest?.('[data-world-decide-run]')) {
-            void runWorldDecision({ source: 'manual' });
+            openDecideNoteModal(panel, {
+                title: '让模型决定一次 · 世界运转',
+                hint: '决定结果落进世界台账，状态行会回报本次判定。',
+                placeholder: '例如：这轮让乌坦城传来炼药师大会的消息。',
+                run: note => runWorldDecision({ source: 'manual', note }),
+            });
             return;
         }
         const decideDefault = event.target.closest?.('[data-world-decide-default]');
@@ -6999,6 +8605,24 @@ function createSettingsPanel() {
             const area = panel.querySelector('[data-setting="world.decidePrompt"]');
             if (area) {
                 area.value = WORLD_DECIDE_PROMPT;
+                area.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            return;
+        }
+        if (event.target.closest?.('[data-plot-decide-run]')) {
+            openDecideNoteModal(panel, {
+                title: '让模型决定一次 · 剧情账本',
+                hint: '决定结果落进剧情账本，状态行会回报本次判定。',
+                placeholder: '例如：下一步重点推进异火线索。',
+                run: note => runPlotDecision({ source: 'manual', note }),
+            });
+            return;
+        }
+        const plotDecideDefault = event.target.closest?.('[data-plot-decide-default]');
+        if (plotDecideDefault) {
+            const area = panel.querySelector('[data-setting="plot.decidePrompt"]');
+            if (area) {
+                area.value = PLOT_DECIDE_PROMPT;
                 area.dispatchEvent(new Event('input', { bubbles: true }));
             }
             return;
@@ -7209,12 +8833,13 @@ function createSettingsPanel() {
             if (insideModal) closeAgentModal(panel);
             return;
         }
-        const selfDecideRun = event.target.closest?.('[data-self-decide-run]');
-        if (selfDecideRun) {
-            selfDecideRun.disabled = true;
-            // 合并决定开着就走一次调用（纳戒+记忆一起出结果），关了才单跑纳戒。
-            const run = unifiedActive() ? runUnifiedDecision({ source: 'manual' }) : runSelfDecision({ source: 'manual' });
-            void run.finally(() => { selfDecideRun.disabled = false; });
+        if (event.target.closest?.('[data-self-decide-run]')) {
+            openDecideNoteModal(panel, {
+                title: '让模型决定一次 · 纳戒',
+                hint: '决定结果直接落进纳戒账本，状态行会回报本次记账。',
+                placeholder: '例如：这轮把回气丹用掉两枚；突破后记得更新境界。',
+                run: note => runSelfDecision({ source: 'manual', note }),
+            });
             return;
         }
         const selfInitRun = event.target.closest?.('[data-self-init-run]');
@@ -7285,15 +8910,49 @@ function createSettingsPanel() {
             if (typeof window === 'undefined' || !window.confirm(`删除记忆 ${memoryForget.dataset.memoryForget}？此操作不能撤销。`)) return;
             return memoryApplyFromPanel(panel, [{ op: 'forgetMemory', id: memoryForget.dataset.memoryForget }]);
         }
-        if (event.target.closest?.('[data-memory-add]')) return memoryAddFromPanel(panel);
-        if (event.target.closest?.('[data-memory-decide-run]')) {
-            void (unifiedActive() ? runUnifiedDecision({ source: 'manual' }) : runMemoryDecision({ source: 'manual' }));
+        const memoryUnsupersede = event.target.closest?.('[data-memory-unsupersede]');
+        if (memoryUnsupersede) {
+            return memoryApplyFromPanel(panel, [{ op: 'unsupersede', id: memoryUnsupersede.dataset.memoryUnsupersede }]);
+        }
+        const memoryVectorRebuild = event.target.closest?.('[data-memory-vector-rebuild]');
+        if (memoryVectorRebuild) {
+            const statsTarget = panel.querySelector('[data-memory-vector-stats]');
+            const run = async () => {
+                try {
+                    if (!memorySettings().embedding.enabled || !agentEmbeddingClient.available()) {
+                        if (statsTarget) statsTarget.textContent = '语义检索未开启：先填好接口地址与向量模型。';
+                        return;
+                    }
+                    if (statsTarget) statsTarget.textContent = '正在重建向量……';
+                    await agentMemoryVectors.clear();
+                    const result = await agentMemoryVectors.sync(agentMemoryRuntime.snapshot(), { budget: 40 });
+                    if (statsTarget) {
+                        statsTarget.textContent = `已重嵌 ${result.embedded} 条${result.remaining ? `，剩 ${result.remaining} 条随后台补嵌` : ''}。`;
+                    }
+                } catch (error) {
+                    if (statsTarget) statsTarget.textContent = `重建失败：${error?.message ?? error}`;
+                }
+            };
+            void run();
             return;
         }
-        const memoryRecallRun = event.target.closest?.('[data-memory-recall-run]');
-        if (memoryRecallRun) {
-            memoryRecallRun.disabled = true;
-            void runMemoryRecall({ source: 'manual' }).finally(() => { memoryRecallRun.disabled = false; });
+        if (event.target.closest?.('[data-memory-add]')) return memoryAddFromPanel(panel);
+        if (event.target.closest?.('[data-memory-decide-run]')) {
+            openDecideNoteModal(panel, {
+                title: '手动决定一次 · 记忆',
+                hint: '书记官读最近聊天与召回材料落账，状态行会回报本次记账。',
+                placeholder: '例如：这轮记下与药老约定的炼丹时间。',
+                run: note => runMemoryDecision({ source: 'manual', note }),
+            });
+            return;
+        }
+        if (event.target.closest?.('[data-memory-recall-run]')) {
+            openDecideNoteModal(panel, {
+                title: '手动召回一次 · 记忆',
+                hint: '召回员按本轮输入挑旧记忆注入，状态行会回报本次注入。',
+                placeholder: '例如：把关于异火古籍的旧记忆调出来。',
+                run: note => runMemoryRecall({ source: 'manual', note }),
+            });
             return;
         }
         const settleAdjudicateRun = event.target.closest?.('[data-settle-adjudicate-run]');
@@ -7310,11 +8969,9 @@ function createSettingsPanel() {
             void runMemoryConsolidation({ source: 'manual' });
             return;
         }
-        const calllogRefresh = event.target.closest?.('[data-calllog-refresh]');
-        if (calllogRefresh) return renderCallLogList(panel);
         if (event.target.closest?.('[data-calllog-clear]')) {
             agentLlmClient.clearCallLog();
-            return renderCallLogList(panel);
+            return renderCallSummary(panel);
         }
         const memoryDecideDefault = event.target.closest?.('[data-memory-decide-default]');
         if (memoryDecideDefault) {
@@ -7366,10 +9023,13 @@ function createSettingsPanel() {
             }
             return;
         }
-        const recordButton = event.target.closest?.('[data-impact-record]');
-        if (recordButton) {
-            recordButton.disabled = true;
-            void runImpactDecision({ source: 'manual' }).finally(() => { recordButton.disabled = false; });
+        if (event.target.closest?.('[data-impact-record]')) {
+            openDecideNoteModal(panel, {
+                title: '现在记录一次 · 世界影响',
+                hint: '记录员读世界台账与最近聊天落账，状态行会回报本次记录。',
+                placeholder: '例如：重点记录当铺掌柜对萧炎态度的转变。',
+                run: note => runImpactDecision({ source: 'manual', note }),
+            });
             return;
         }
         const refreshButton = event.target.closest?.('[data-impact-refresh]');
@@ -7409,6 +9069,62 @@ function createSettingsPanel() {
         if (unarchiveButton) { runImpactOp(panel, { op: 'unarchive', ref: unarchiveButton.dataset.impactUnarchive }, `已从档案恢复 #${unarchiveButton.dataset.impactUnarchive}。`); return; }
         if (event.target.closest?.('[data-impact-save]')) { saveImpactForm(panel); return; }
         if (event.target.closest?.('[data-impact-form-close]')) { closeImpactForm(panel); return; }
+        const gossipRun = event.target.closest?.('[data-npc-gossip-run]');
+        if (gossipRun) {
+            gossipRun.disabled = true;
+            const before = gossipRun.textContent;
+            gossipRun.textContent = '传播中……';
+            void runNpcGossip(panel).catch(error => setNpcLedgerStatus(`传闻传播失败：${error?.message ?? error}`)).finally(() => {
+                gossipRun.disabled = false;
+                gossipRun.textContent = before;
+            });
+            return;
+        }
+        const gossipConfirm = event.target.closest?.('[data-npc-gossip-confirm]');
+        if (gossipConfirm) {
+            const dock = gossipConfirm.closest('[data-npc-gossip-patches]');
+            let patches = [];
+            try { patches = JSON.parse(dock?.dataset.npcGossipPatches ?? '[]'); } catch { patches = []; }
+            const patch = patches[Number(gossipConfirm.dataset.npcGossipConfirm)];
+            if (!patch) { setNpcLedgerStatus('这份传闻补丁已经不在了。'); return; }
+            const result = applyNpcLedgerPayload({ 人物: [patch] }, { source: '传闻', floor: lastReplyIndex(getHostContext()?.chat || []), logSrc: '传闻' });
+            if (result.persistence) void awaitPanelPersistence({ persistence: result.persistence }, setNpcLedgerStatus);
+            gossipConfirm.closest('.dai-exp-preview')?.remove();
+            return;
+        }
+        const gossipDiscard = event.target.closest?.('[data-npc-gossip-discard]');
+        if (gossipDiscard) {
+            gossipDiscard.closest('.dai-exp-preview')?.remove();
+            setNpcLedgerStatus('已放弃这份传闻补丁，人物簿没有变化。');
+            return;
+        }
+        const consistencyRun = event.target.closest?.('[data-npc-consistency-run]');
+        if (consistencyRun) {
+            consistencyRun.disabled = true;
+            const before = consistencyRun.textContent;
+            consistencyRun.textContent = '体检中……';
+            void runNpcConsistencyCheck({ source: 'manual' }).catch(error => setNpcLedgerStatus(`体检失败：${error?.message ?? error}`)).finally(() => {
+                consistencyRun.disabled = false;
+                consistencyRun.textContent = before;
+                refreshNpcLedgerPage(panel);
+            });
+            return;
+        }
+        const relationsRefresh = event.target.closest?.('[data-npc-relations-refresh]');
+        if (relationsRefresh) {
+            refreshNpcLedgerPage(panel);
+            return;
+        }
+        const expAutoConfirm = event.target.closest?.('[data-exp-auto-confirm]');
+        if (expAutoConfirm) {
+            confirmAutoExpCondense(expAutoConfirm.dataset.expAutoConfirm);
+            return;
+        }
+        const expAutoDiscard = event.target.closest?.('[data-exp-auto-discard]');
+        if (expAutoDiscard) {
+            discardAutoExpCondense(expAutoDiscard.dataset.expAutoDiscard);
+            return;
+        }
         const coldScan = event.target.closest?.('[data-npc-cold-scan]');
         if (coldScan) {
             coldScan.disabled = true;
@@ -7439,6 +9155,13 @@ function createSettingsPanel() {
         }
         const coldDiscard = event.target.closest?.('[data-npc-cold-discard]');
         if (coldDiscard) { discardNpcColdPreview(coldDiscard.dataset.npcColdDiscard); return; }
+        const coldUndo = event.target.closest?.('[data-npc-cold-undo]');
+        if (coldUndo) {
+            const receipt = undoLastNpcColdConfirm();
+            const persistence = receipt?.persistence ?? receipt?.result?.persistence;
+            if (persistence) void awaitPanelPersistence({ persistence }, setNpcLedgerStatus);
+            return;
+        }
         const ledgerRun = event.target.closest?.('[data-npc-ledger-run]');
         if (ledgerRun) {
             ledgerRun.disabled = true;
@@ -7640,7 +9363,12 @@ function createSettingsPanel() {
             if (!agentModalCurrent(panel) || typeof window === 'undefined' || !window.confirm(`删除 ${ledgerForget.dataset.npcLedgerForget} 的完整档案和经历？此操作不能撤销。`)) return;
             const result = await panelMutation(panel, { name: ledgerForget.dataset.npcLedgerForget }, operation => {
                 const changed = agentNpcLedger.remove(operation.name);
-                if (changed.status === 'removed') changed.persistence = persistNpcLedger();
+                if (changed.status === 'removed') {
+                    changed.persistence = persistNpcLedger();
+                    // 人走了，关系边也清掉：关系图不留指向空档案的悬空边。
+                    const removedEdges = agentNpcRelations.remove(operation.name);
+                    if (removedEdges.removed) persistNpcRelations();
+                }
                 return changed;
             }, persistNpcLedger, setNpcLedgerStatus);
             if (['save_failed', 'stale', 'busy', 'pending_save'].includes(result.status)) return;
@@ -7653,17 +9381,19 @@ function createSettingsPanel() {
         }
         const modeButton = event.target.closest?.('[data-api-mode]');
         if (modeButton) {
-            const wanted = modeButton.dataset.apiMode === 'lite' ? 'lite' : 'full';
+            const wanted = ['lite', 'advanced'].includes(modeButton.dataset.apiMode) ? modeButton.dataset.apiMode : 'full';
             if (currentSettings().apiMode !== wanted) {
                 const result = updateSetting('apiMode', wanted);
                 void Promise.resolve(hostStorage.saveSettings?.()).catch(() => { /* 保存失败下次启动仍会重存 */ });
                 const status = panel.querySelector(`#${SETTINGS_STATUS_ID}`);
                 if (status) status.textContent = result.status === 'ready'
-                    ? `已切换到${wanted === 'lite' ? '简略版（合并调用）' : '完整版（每功能一路）'}，下一轮开始生效。`
+                    ? `已切换到${wanted === 'lite' ? '简略版（合并调用）' : wanted === 'advanced' ? '进阶版（完整版管线＋进阶增强）' : '完整版（每功能一路，进阶增强关闭）'}，下一轮开始生效。`
                     : '切换失败：酒馆设置不可用，这次没有保存。';
             }
             renderApiMode(panel);
             refreshControlDashboard();
+            // 悬浮球立刻跟上：角标（data-api-mode）与开着的总控窗不等下一次模型活动才换脸。
+            syncOrbHud();
             return;
         }
         const page = event.target.closest?.('[data-settings-page]');
@@ -7720,13 +9450,15 @@ function createSettingsPanel() {
             return;
         }
         // API设置方案的各字段：同样不走 data-setting 通道，按 id 改数组条目并即时保存。
+        // 复选框（走酒馆通道）取 checked 存布尔，文本/下拉取 value。
         const presetField = event.target.closest?.('[data-api-preset-field]');
         if (presetField) {
             const holder = presetField.closest('[data-api-preset-id]');
             if (holder) {
                 const field = presetField.dataset.apiPresetField;
+                const rawValue = presetField.type === 'checkbox' ? presetField.checked : presetField.value;
                 const sequence = ++settingsSaveSequence;
-                const result = updateApiPresetField(holder.dataset.apiPresetId, field, presetField.value);
+                const result = updateApiPresetField(holder.dataset.apiPresetId, field, rawValue);
                 if (result.status === 'missing') {
                     const missingStatus = panel.querySelector('[data-api-preset-status]');
                     if (missingStatus) missingStatus.textContent = '这条方案已经不在了，已按存储重画列表，请重新填一次。';
@@ -7742,6 +9474,16 @@ function createSettingsPanel() {
                 if (field === 'baseUrl') {
                     const summary = holder.querySelector('summary small');
                     if (summary) summary.textContent = presetField.value.trim() || '还没填接口地址';
+                }
+                if (field === 'tavern') {
+                    // 通道切换：摘要与各功能下拉的标记即时跟上
+                    const summary = holder.querySelector('summary small');
+                    if (summary) {
+                        summary.textContent = presetField.checked
+                            ? '走酒馆通道'
+                            : ((currentSettings().api?.presets ?? []).find(item => item?.id === holder.dataset.apiPresetId)?.baseUrl?.trim() || '还没填接口地址');
+                    }
+                    renderApiPresetSelects(panel);
                 }
                 const status = panel.querySelector('[data-api-preset-status]');
                 const ok = await awaitPanelPersistence(result, message => { if (status && sequence === settingsSaveSequence) status.textContent = message; });
@@ -7759,7 +9501,7 @@ function createSettingsPanel() {
         if (input.tagName === 'SELECT' && input.dataset.setting === 'npc.ledgerEvery') value = Number(value) || 1;
         const sequence = ++settingsSaveSequence;
         const result = updateSetting(input.dataset.setting, value);
-        if (input.dataset.setting === 'enableSandboxMode' || input.dataset.setting.startsWith('sandbox.')) syncSandboxModeFromSettings();
+        if (input.dataset.setting === 'enableSandboxMode' || input.dataset.setting.startsWith('sandbox.')) { syncSandboxModeFromSettings(); syncOrbHud(); }
         if (input.dataset.setting === 'setting.worldbook') scheduleWorldbookSync(panel);
         if (input.dataset.setting === 'setting.progress') refreshWorldbookStats(panel);
         if (/^(setting|injection|llm)\./.test(input.dataset.setting)) renderFactsStatus(panel);
@@ -7922,7 +9664,6 @@ export function onDisable() {
     invalidateAgentContinuations();
     settleExtensionEnabled = false;
     resetSettleAdjudication();
-    agentHistoryEvents?.stop();
     const context = hostContext ?? getHostContext();
     for (const { event, handler } of hostLifecycleBindings.splice(0)) context?.eventSource?.removeListener?.(event, handler);
     agentCapabilities = Object.freeze({ status: 'unavailable', versions: Object.freeze({ sillytavern: null }), symbols: Object.freeze([]), missing: Object.freeze([]), fallback: '扩展已停用，尚未连接宿主。' });
@@ -7943,7 +9684,6 @@ export function onDisable() {
     disposeOrbHud();
     root = undefined;
     currentTaskId = undefined;
-    dashboardScope = undefined;
     settingsSaveSequence += 1;
 }
 
@@ -7951,7 +9691,7 @@ export function onEnable() {
     settleExtensionEnabled = true;
     bindHostLifecycle();
     mount();
-    initializeHistoryEvents();
+    probeAgentCapabilities();
 }
 
 function start() {
@@ -7985,7 +9725,6 @@ if (import.meta.hot) {
     import.meta.hot.dispose(() => {
         onDisable();
         agentCoordinator.clear();
-        agentModuleRunner.clear?.();
         hostContext = undefined;
         hostStorage = undefined;
         hostLifecycleBindings = [];
@@ -8000,48 +9739,10 @@ export function publishAgentStatus(detail) {
     window.dispatchEvent(new CustomEvent(STATUS_EVENT, { detail }));
 }
 
-// Stable public helpers for the next modules to register and report their work.
-export function beginAgentTask(task) {
-    if (task?.sessionId && task?.branchId && task?.taskId) {
-        const current = agentActiveScope?.sessionId === task.sessionId && agentActiveScope?.branchId === task.branchId ? agentActiveScope.taskIds : [];
-        agentActiveScope = { sessionId: task.sessionId, branchId: task.branchId, taskIds: [...new Set([...current, task.taskId])] };
-        dashboardScope = agentActiveScope;
-    }
-    const result = agentCoordinator.begin(task);
-    initializeHistoryEvents();
-    return result;
-}
-
-export function setAgentHistoryScope(scope) {
-    if (!scope || typeof scope.sessionId !== 'string' || typeof scope.branchId !== 'string' || !Array.isArray(scope.taskIds) || scope.taskIds.some(id => typeof id !== 'string')) throw new TypeError('scope 必须包含会话、分支和任务 ID 列表');
-    agentActiveScope = { sessionId: scope.sessionId, branchId: scope.branchId, taskIds: [...new Set(scope.taskIds)] };
-    dashboardScope = agentActiveScope;
-    refreshControlDashboard();
-    const scopeResult = agentHistoryEvents?.refreshScope?.();
-    return { status: 'set', taskCount: agentActiveScope.taskIds.length, scopeResult: scopeResult?.status ?? 'not_listening' };
-}
-
 export function updateAgentTask(taskId, status, fields) {
     return agentCoordinator.update(taskId, status, fields);
 }
 
-const STATE_LABELS = {
-    player: { hp: '气血', hpMax: '气血上限', douqi: '斗气', gold: '金币', reputation: '声望', realm: '境界', location: '位置' },
-    world: { day: '天数', weather: '天气', region: '区域' },
-};
-
-function describeState(record) {
-    if (!record?.exists) return '还没有载入状态。';
-    const parts = [];
-    for (const [targetId, fields] of Object.entries(STATE_LABELS)) {
-        for (const [field, label] of Object.entries(fields)) {
-            const value = record.state?.[targetId]?.[field];
-            if (value === undefined || value === null || value === '') continue;
-            parts.push(`${label} ${value}`);
-        }
-    }
-    return `版本 ${record.stateVersion}${parts.length ? ` · ${parts.join(' · ')}` : ''}`;
-}
 
 
 /** Renders every live value the facts page can show: index, catalog, channel, last injection, model. */
@@ -8202,6 +9903,8 @@ async function memoryAddFromPanel(panel) {
 
 const MEMORY_PAGE_SIZE = Object.freeze({ big: 6, small: 8 });
 const memoryPages = { big: 0, small: 0 };
+// 按人整合弹窗当前选中的人：页面本地状态，不进设置。
+let memoryPersonViewName = '';
 
 /** recent=true：主界面“最新几条”模式——固定第一页、不接分页器，也不动总库的页码状态。 */
 function renderMemoryEntryList(container, entries, { conflicts = null, tier = 'small', pager = null, recent = false } = {}) {
@@ -8227,16 +9930,25 @@ function renderMemoryEntryList(container, entries, { conflicts = null, tier = 's
         const title = makeElement('b', '', `${clash ? '⚠ ' : ''}${entry.weight === 'major' ? '★' : '·'} ${entry.title ? introText(entry.title, 18) : introText(entry.text, 26)}`);
         head.append(title);
         row.append(head);
-        const meta = [tierLabel + tagLabel, `第 ${entry.day} 天`, `#${entry.id}`];
+        const meta = [tierLabel + tagLabel, `第 ${entry.day} 天`, `#${entry.id}`, `重要度 ${Number.isFinite(Number(entry.importance)) ? entry.importance : (entry.weight === 'major' ? 7 : 4)}`];
         row.append(makeElement('small', 'dai-world-event-basis', meta.join(' · ')));
         if (typeof entry.quote === 'string' && entry.quote.trim()) {
             row.append(makeElement('small', 'dai-world-event-basis', `「${entry.quote.trim()}」`));
+        }
+        if (typeof entry.supersededBy === 'string' && entry.supersededBy) {
+            row.append(makeElement('small', 'dai-world-event-basis', `已替代→${entry.supersededBy}：默认不再进召回目录与注入，账仍保留`));
         }
         // 别名/关联/依据/备注收进详情弹窗，行内只留一句简介。
         if (clash) {
             row.append(makeElement('small', 'dai-world-event-basis', `⚠ 与 ${clash.join('、')} 疑似重复/矛盾，请核对后删除或合并`));
         }
         const actions = makeElement('div', 'dai-world-event-actions');
+        if (typeof entry.supersededBy === 'string' && entry.supersededBy) {
+            const restore = makeElement('button', 'dai-secondary-button', '恢复');
+            restore.type = 'button';
+            restore.dataset.memoryUnsupersede = entry.id;
+            actions.append(restore);
+        }
         if (entry.tier === 'small') {
             const promote = makeElement('button', 'dai-secondary-button', '转大');
             promote.type = 'button';
@@ -8253,12 +9965,7 @@ function renderMemoryEntryList(container, entries, { conflicts = null, tier = 's
         forget.dataset.memoryForget = entry.id;
         actions.append(forget);
         row.append(actions);
-        wireRowDetail(row, panel => {
-            openReadonlyDetailModal(panel, capDetailTitle(entry.text), [
-                { rows: [['内容', typeof entry.text === 'string' ? entry.text.trim() : ''], ['层级', `${tierLabel}${entry.tag ? ` · ${agentMemoryRuntime.tagLabels[entry.tag] ?? entry.tag}` : ''}`], ['登记', `第 ${entry.day} 天`], ['原文', typeof entry.quote === 'string' ? entry.quote.trim() : '']] },
-                { title: '关联与出处', rows: [['别名', Array.isArray(entry.aliases) ? entry.aliases.join('、') : ''], ['关联', Array.isArray(entry.related) ? entry.related.join('、') : ''], ['依据', typeof entry.basis === 'string' ? entry.basis.trim() : ''], ['备注', typeof entry.note === 'string' ? entry.note.trim() : '']] },
-            ]);
-        });
+        wireRowDetail(row, panel => { openMemoryEntryDetail(panel, entry); });
         return row;
     });
     container.replaceChildren(...rows);
@@ -8327,7 +10034,173 @@ function renderMemoryInjectionCard(section) {
     listEl.replaceChildren(...rows);
 }
 
-/** 记忆页整页刷新：总览、排序/按人过滤、大/小两层分页清单、矛盾提醒、指令流水。 */
+/** 记忆页整页刷新：总览、体检卡、排序/按人过滤、大/小两层分页清单、矛盾提醒、指令流水、按人整合弹窗。 */
+/** 语义检索统计（模型设置页语义检索卡，异步 fire-and-forget）：没开就说明当前走纯本地混合检索。 */
+function refreshMemoryVectorStats(panel) {
+    const vectorStats = panel?.querySelector?.('[data-memory-vector-stats]');
+    if (!vectorStats) return;
+    if (!memorySettings().embedding.enabled || !agentEmbeddingClient.available()) {
+        vectorStats.textContent = '语义检索未开启（当前走纯本地混合检索）。';
+        return;
+    }
+    vectorStats.textContent = '向量统计中……';
+    void agentMemoryVectors.stats(agentMemoryRuntime.snapshot()).then(stats => {
+        vectorStats.textContent = `已向量化 ${stats.embedded}/${stats.total}（模型 ${stats.model || '未填'}），落账后后台自动补嵌。`;
+    }).catch(() => {
+        vectorStats.textContent = '向量统计不可用。';
+    });
+}
+
+/* ── 记忆体检卡（MemPalace audit 的模拟）：纯本地健康统计，跟 refreshMemoryPage 一起刷。 */
+
+/** 台账实体名全集：人物簿 name/aliases/titles + 世界台账 people/factions + 世界事件/任务文本 +
+ *  纳戒物品名——记忆钥匙的"认领"名单。认领面要够宽：地名/物名（药铺、凝血草）出现在
+ *  任何一本账里都算有人认得，只有哪个账都对不上的钥匙才报"孤立"（多半是笔误）。 */
+function ledgerKnownNames() {
+    const names = new Set();
+    const push = value => { const name = typeof value === 'string' ? value.trim() : ''; if (name) names.add(name); };
+    try {
+        for (const record of agentNpcLedger.list()) {
+            push(record?.name);
+            for (const item of record?.aliases ?? []) push(item);
+            for (const item of record?.titles ?? []) push(item);
+        }
+    } catch { /* 人物簿不可用只影响认领判定，体检照常出其余统计 */ }
+    try {
+        const world = agentWorldRuntime.snapshot();
+        for (const item of world?.people ?? []) push(item?.name);
+        for (const item of world?.factions ?? []) push(item?.name);
+        push(world?.info?.location);
+        push(world?.info?.era);
+        for (const event of [...(world?.nearEvents ?? []), ...(world?.worldEvents ?? [])]) {
+            push(event?.title);
+            push(event?.text);
+            push(event?.basis);
+        }
+        for (const task of world?.tasks ?? []) {
+            push(task?.title);
+            push(task?.detail);
+        }
+    } catch { /* 世界台账不可用时同上 */ }
+    try {
+        const self = agentSelfRuntime.snapshot?.();
+        for (const list of Object.values(self ?? {})) {
+            if (!Array.isArray(list)) continue;
+            for (const item of list) {
+                if (item && typeof item === 'object') { push(item?.name); push(item?.title); }
+            }
+        }
+    } catch { /* 纳戒不可用时同上 */ }
+    return [...names];
+}
+
+function refreshMemoryAuditCard(section, { pairs } = {}) {
+    const statsEl = section.querySelector('[data-memory-audit-stats]');
+    const listEl = section.querySelector('[data-memory-audit-list]');
+    if (!statsEl && !listEl) return;
+    const snapshot = agentMemoryRuntime.snapshot();
+    const settings = memorySettings();
+    const audit = auditMemory({
+        snapshot,
+        pairs: Array.isArray(pairs) ? pairs : null,
+        catalogText: buildRecallCatalog(snapshot, { maxChars: settings.catalogBudget }),
+        catalogBudget: settings.catalogBudget,
+        knownNames: ledgerKnownNames(),
+    });
+    if (statsEl) {
+        statsEl.textContent = [
+            `目录可见 ${audit.coverage.cataloged}/${audit.coverage.total}`,
+            `疑似矛盾 ${audit.pairs.length} 对`,
+            `孤立钥匙 ${audit.deadKeys.length} 个`,
+            `已覆盖 ${audit.superseded} 条`,
+            audit.major ? `关键 ${audit.major} 条` : '',
+        ].filter(Boolean).join(' · ');
+    }
+    if (!listEl) return;
+    const rows = [];
+    for (const pair of audit.pairs.slice(0, 4)) {
+        const item = makeElement('div', 'dai-world-event');
+        item.append(makeElement('b', '', `⚠ ${pair.a} ↔ ${pair.b}`), document.createTextNode(`文本相似 ${Math.round(pair.similarity * 100)}%：核对后在列表里删掉旧的，或用「标记替代」把旧账让给新账。`));
+        rows.push(item);
+    }
+    for (const dead of audit.deadKeys.slice(0, 6)) {
+        const item = makeElement('div', 'dai-world-event');
+        item.append(makeElement('b', '', `◇ 孤立钥匙「${dead.key}」`), document.createTextNode(`只有 ${dead.ids.join('、')} 在用它，人物簿/纳戒/世界台账里都认领不到——多半是笔误，要么这条记忆是孤本；编辑那条记忆的「关联/别名」即可修正。`));
+        rows.push(item);
+    }
+    if (audit.coverage.total > audit.coverage.cataloged) {
+        const item = makeElement('div', 'dai-world-event');
+        item.append(makeElement('b', '', `□ ${audit.coverage.total - audit.coverage.cataloged} 条在召回目录里看不见`), document.createTextNode(`目录预算 ${audit.coverage.budgetChars} 字装不下全部在用记忆，召回员只能看到打分靠前的 ${audit.coverage.cataloged} 条；要更多就把「召回决定」页的目录字数上限调高。`));
+        rows.push(item);
+    }
+    if (!rows.length) rows.push(makeElement('p', 'dai-turn-result', '账本干净：没有疑似矛盾，也没有孤立钥匙，目录装得下全部在用记忆。'));
+    listEl.replaceChildren(...rows);
+}
+
+/* ── 按人整合视图（MemPalace Wings/Tunnels 的模拟）：记忆 × 人物簿 × 世界台账并成一条时间线。 */
+
+function renderMemoryPersonView(panel) {
+    const target = panel ?? (typeof document !== 'undefined' ? document.getElementById(SETTINGS_PANEL_ID) : null);
+    if (!target || target.hidden) return;
+    const section = target.querySelector('[data-settings-section="memory"]');
+    if (!section || section.hidden) return;
+    // 弹窗打开时 dock 被搬进面板级弹层（section 之外），所以按面板作用域找元素，别按 section。
+    const select = target.querySelector('[data-memory-person-view]');
+    const summaryEl = target.querySelector('[data-memory-person-summary]');
+    const timelineEl = target.querySelector('[data-memory-person-timeline]');
+    if (!select || !timelineEl) return;
+    // 选项：人物簿记录优先（list 已按重要+最近排序）；簿里没人时退回记忆关联钥匙。
+    const records = (() => { try { return agentNpcLedger.list(); } catch { return []; } })();
+    const options = records.length
+        ? records.map(record => ({ value: record.name, label: `${record.name}${record.importance === '重要' ? '（重要）' : ''}` }))
+        : (() => {
+            const wanted = new Map();
+            for (const entry of agentMemoryRuntime.snapshot().entries) for (const key of recallKeys(entry)) wanted.set(key, (wanted.get(key) ?? 0) + 1);
+            return [...wanted.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'zh')).slice(0, 40).map(([key, count]) => ({ value: key, label: `${key}（${count}）` }));
+        })();
+    const previous = select.value || memoryPersonViewName;
+    const current = options.some(option => option.value === previous) ? previous : (options[0]?.value ?? '');
+    memoryPersonViewName = current;
+    const optionEls = [document.createElement('option')];
+    optionEls[0].value = '';
+    optionEls[0].textContent = '选一个人';
+    for (const option of options) {
+        const el = document.createElement('option');
+        el.value = option.value;
+        el.textContent = option.label;
+        optionEls.push(el);
+    }
+    select.replaceChildren(...optionEls);
+    select.value = current;
+    if (!select.onchange) select.onchange = () => { memoryPersonViewName = select.value; renderMemoryPersonView(target); };
+    const snapshot = agentMemoryRuntime.snapshot();
+    const record = records.find(item => item.name === memoryPersonViewName) ?? null;
+    const world = (() => { try { return agentWorldRuntime.snapshot(); } catch { return null; } })();
+    const view = buildPersonView({ record, fallbackName: record ? '' : memoryPersonViewName, entries: snapshot.entries, worldSnapshot: world, limit: 60 });
+    if (summaryEl) {
+        summaryEl.hidden = !view.summary;
+        if (view.summary) summaryEl.textContent = view.summary;
+    }
+    const rows = [];
+    if (!memoryPersonViewName) rows.push(makeElement('p', 'dai-turn-result', '先选一个人：时间线会把他的记忆、好感流水、经历、世界事件与任务按天并排。'));
+    else if (!view.timeline.length) rows.push(makeElement('p', 'dai-turn-result', `${memoryPersonViewName} 名下暂时没有叙事：记忆、人物簿、世界台账里都还没提到这个人。`));
+    else {
+        let lastDay = null;
+        for (const item of view.timeline) {
+            if (item.day !== lastDay) {
+                lastDay = item.day;
+                rows.push(makeElement('div', 'dai-timeline-day', item.day ? `第 ${item.day} 天` : '（无日期）'));
+            }
+            const row = makeElement('div', 'dai-world-event');
+            row.append(makeElement('b', '', `${PERSON_VIEW_KINDS[item.kind] ?? '记录'}｜${item.text}`));
+            if (item.meta) row.append(makeElement('small', 'dai-world-event-basis', item.meta));
+            rows.push(row);
+        }
+        if (view.total > view.timeline.length) rows.push(makeElement('p', 'dai-turn-result', `只显示最近 ${view.timeline.length} 条（共 ${view.total} 条），要更早的翻「记忆总库」。`));
+    }
+    timelineEl.replaceChildren(...rows);
+}
+
 function refreshMemoryPage(panel) {
     const target = panel ?? (typeof document !== 'undefined' ? document.getElementById(SETTINGS_PANEL_ID) : null);
     if (!target || target.hidden) return;
@@ -8341,6 +10214,7 @@ function refreshMemoryPage(panel) {
         overview.textContent = [
             `共 ${status.total} 条`,
             ...Object.entries(labels).map(([key, label]) => `${label} ${status.byTier[key]?.total ?? 0}`),
+            ...(status.superseded ? [`已被覆盖 ${status.superseded}`] : []),
         ].join(' · ');
     }
     renderMemoryInjectionCard(section);
@@ -8433,19 +10307,50 @@ function refreshMemoryPage(panel) {
             return item;
         }) : [makeElement('p', 'dai-turn-result', '还没有记忆指令。')]));
     }
+    // 体检卡复用上面已算好的矛盾对（免一次 O(n²) 重算）；按人整合弹窗跟着页面刷新保持新鲜。
+    refreshMemoryAuditCard(section, { pairs });
+    renderMemoryPersonView(target);
 }
 
-/** 只读详情弹窗：与人物信息面板同一套“标签 + 值”分块观感；空值的行直接不渲染。 */
+/** 记忆条目详情弹窗：基本信息/关联出处两节 + 共钥匙的相关记忆（A-MEM 链接思路，可点连环跳）。 */
+function openMemoryEntryDetail(panel, entry) {
+    if (!entry) return;
+    const importance = Number.isFinite(Number(entry.importance)) ? Number(entry.importance) : (entry.weight === 'major' ? 7 : 4);
+    const tierLabel = agentMemoryRuntime.tierLabels[entry.tier] ?? '记忆';
+    const sections = [
+        { rows: [['内容', typeof entry.text === 'string' ? entry.text.trim() : ''], ['层级', `${tierLabel}${entry.tag ? ` · ${agentMemoryRuntime.tagLabels[entry.tag] ?? entry.tag}` : ''}`], ['登记', `第 ${entry.day} 天`], ['重要度', `${importance}（分量 ${entry.weight === 'major' ? '关键' : '一般'}）`], ['原文', typeof entry.quote === 'string' ? entry.quote.trim() : '']] },
+        { title: '关联与出处', rows: [['别名', Array.isArray(entry.aliases) ? entry.aliases.join('、') : ''], ['关联', Array.isArray(entry.related) ? entry.related.join('、') : ''], ['依据', typeof entry.basis === 'string' ? entry.basis.trim() : ''], ['备注', typeof entry.note === 'string' ? entry.note.trim() : ''], ['覆盖状态', typeof entry.supersededBy === 'string' && entry.supersededBy ? `已被 ${entry.supersededBy} 覆盖（默认不再召回，可点列表里的「恢复」找回）` : '']] },
+    ];
+    // 相关记忆跳转（A-MEM 共钥匙思路）是进阶版功能：完整版/简略版下详情弹窗不带这一节。
+    const links = advancedMode()
+        ? relatedMemories(entry, agentMemoryRuntime.snapshot().entries).map(item => ({
+            label: `${item.id}｜${(typeof item.title === 'string' && item.title.trim()) || String(item.text ?? '').slice(0, 18)}`,
+            onPick: () => openMemoryEntryDetail(panel, item),
+        }))
+        : [];
+    if (links.length) sections.push({ title: '相关记忆（共钥匙）', links });
+    openReadonlyDetailModal(panel, capDetailTitle(entry.text), sections);
+}
+
+/** 只读详情弹窗：与人物信息面板同一套“标签 + 值”分块观感；空值的行直接不渲染。
+ *  section 支持 links: [{ label, onPick }]——渲染成可点击行，点击执行 onPick（相关记忆跳转用）。 */
 function openReadonlyDetailModal(panel, title, sections, { wide = false } = {}) {
     const page = makeElement('div', 'dai-npc-read');
     for (const section of Array.isArray(sections) ? sections : []) {
         const rows = (section?.rows ?? []).filter(([, value]) => value !== null && value !== undefined && String(value).trim() !== '');
-        if (!rows.length) continue;
+        const links = Array.isArray(section?.links) ? section.links.filter(link => link && typeof link.onPick === 'function') : [];
+        if (!rows.length && !links.length) continue;
         const block = makeElement('section', 'dai-profile-group');
         if (section.title) block.append(makeElement('b', 'dai-profile-group-title', section.title));
         for (const [label, value] of rows) {
             const row = makeElement('div', 'dai-profile-row');
             row.append(makeElement('span', 'dai-profile-label', label), makeElement('span', 'dai-profile-value', String(value)));
+            block.append(row);
+        }
+        for (const link of links) {
+            const row = makeElement('div', 'dai-profile-row is-clickable');
+            row.append(makeElement('span', 'dai-profile-label', '↗'), makeElement('span', 'dai-profile-value', String(link.label ?? '')));
+            row.addEventListener('click', () => link.onPick());
             block.append(row);
         }
         page.append(block);
@@ -9544,51 +11449,5 @@ async function importWorldbookFromPanel(panel) {
         if (!current()) return { status: 'stale' };
         if (target) target.textContent = `导入失败：${error?.message ?? error}`;
         return { status: 'failed', reason: String(error?.message ?? error) };
-    }
-}
-
-function renderTurnExtras(panel) {
-    if (!panel) return;
-    const record = agentStateStore.read(currentAgentScope());
-    const chip = panel.querySelector('[data-agent-state]');
-    if (chip) chip.textContent = describeState(record);
-    const list = panel.querySelector('[data-agent-versions]');
-    if (!list) return;
-    list.textContent = '';
-    if (!record?.exists) return;
-    const seen = new Set();
-    const entries = [{ version: record.stateVersion, label: '当前' }];
-    for (const item of [...(record.history ?? [])].reverse()) {
-        if (!item?.stateVersion || seen.has(item.stateVersion)) continue;
-        seen.add(item.stateVersion);
-        entries.push({ version: item.stateVersion, label: item.rolledBackTo ? `回到 ${item.rolledBackTo}` : '历史' });
-        if (entries.length >= 5) break;
-    }
-    for (const entry of entries) {
-        const button = makeElement('button', 'dai-version-button', entry.version);
-        button.type = 'button';
-        button.dataset.agentRollback = entry.version;
-        button.title = `${entry.label} · 点一下回到这个版本`;
-        button.disabled = entry.version === record.stateVersion;
-        list.append(button);
-    }
-}
-
-async function rollbackFromPanel(panel, version) {
-    const target = panel.querySelector('[data-agent-run-result]');
-    if (!version) return;
-    if (target) target.textContent = `正在回到 ${version}……`;
-    try {
-        const result = await agentOrchestrator.rollback({ ...currentAgentScope(), targetVersion: version });
-        if (target) {
-            target.textContent = result?.status === 'rolled_back'
-                ? `已回到 ${version}，作为新版本 ${result.stateVersion} 提交。`
-                : `没有回退：${result?.status ?? '未知原因'}。`;
-        }
-    } catch (error) {
-        if (target) target.textContent = `回退失败：${error?.message ?? error}`;
-    } finally {
-        renderTurnExtras(panel);
-        refreshControlDashboard();
     }
 }

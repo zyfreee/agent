@@ -441,4 +441,123 @@ for (const source of ['llm', 'decide']) {
     restored.restore(rt.snapshot());
     assert.equal(restored.manualVersion(), 2, '存档往返保留手改序号');
 }
+// —— supersede / unsupersede：软覆盖标记、防环、引用完整性、恢复只归玩家 ——
+{
+    const rt = createMemoryRuntime({ now: NOW });
+    rt.apply([{ op: 'remember', title: '旧账：穆蛇在坊市', text: '穆蛇在坊市勒索被赶跑', related: ['穆蛇'] }], { source: 'panel', day: 3 });
+    rt.apply([{ op: 'remember', title: '新账：穆蛇已伏诛', text: '穆蛇在迦南城被萧炎伏诛', related: ['穆蛇'] }], { source: 'panel', day: 9 });
+    // 模型通道可以 supersede
+    const supersede = rt.apply([{ op: 'supersede', id: 'm1', by: 'm2' }], { source: 'decide', floor: 9 });
+    assert.equal(supersede.status, 'applied');
+    let old = rt.snapshot().entries.find(entry => entry.id === 'm1');
+    assert.equal(old.supersededBy, 'm2', '旧账标记了覆盖者');
+    assert.equal(rt.status().superseded, 1, 'status 报软覆盖计数');
+    // 校验：缺条目、自指、直接环、重复标记
+    assert.equal(rt.apply([{ op: 'supersede', id: 'mX', by: 'm2' }]).rejected[0].reason, 'entry_not_found');
+    assert.equal(rt.apply([{ op: 'supersede', id: 'm2', by: 'm2' }]).rejected[0].reason, 'bad_supersede', '不能自己覆盖自己');
+    assert.equal(rt.apply([{ op: 'supersede', id: 'm2', by: 'm1' }]).rejected[0].reason, 'supersede_cycle', '反向覆盖成环要拒绝');
+    assert.equal(rt.apply([{ op: 'supersede', id: 'm1', by: 'm2' }]).rejected[0].reason, 'supersede_unchanged', '重复标记拒绝');
+    // 模型通道不能恢复；手动可以
+    assert.equal(rt.apply([{ op: 'unsupersede', id: 'm1' }], { source: 'decide', floor: 9 }).rejected[0].reason, 'manual_only', '恢复只归玩家');
+    // 上一步的同楼重roll已把标记回滚，重新标记后再手动恢复
+    rt.apply([{ op: 'supersede', id: 'm1', by: 'm2' }], { source: 'panel' });
+    const restore = rt.apply([{ op: 'unsupersede', id: 'm1' }], { source: 'panel' });
+    assert.equal(restore.status, 'applied');
+    assert.equal(rt.snapshot().entries.find(entry => entry.id === 'm1').supersededBy, '', '恢复后指针清空');
+    assert.equal(rt.status().superseded, 0);
+    // 没被覆盖过的条目不能恢复
+    assert.equal(rt.apply([{ op: 'unsupersede', id: 'm2' }], { source: 'panel' }).rejected[0].reason, 'not_superseded');
+    // 重 roll：同楼撤销后标记回到上一版
+    rt.apply([{ op: 'supersede', id: 'm1', by: 'm2' }], { source: 'decide', floor: 9 });
+    rt.apply([{ op: 'supersede', id: 'm1', by: 'm2' }], { source: 'decide', floor: 9 });
+    assert.equal(rt.snapshot().entries.find(entry => entry.id === 'm1').supersededBy, 'm2', '同楼重标记幂等落账');
+}
+
+// —— 引用完整性：覆盖者被删/被并/随楼删时，指向它的标记清空；坏档归一化清理悬空指针 ——
+{
+    const rt = createMemoryRuntime({ now: NOW });
+    rt.apply([{ op: 'remember', title: '旧账', text: '旧账内容', related: ['旧账'] }], { source: 'panel', day: 1 });
+    rt.apply([{ op: 'remember', title: '新账', text: '新账内容', related: ['旧账'] }], { source: 'panel', day: 2 });
+    rt.apply([{ op: 'supersede', id: 'm1', by: 'm2' }], { source: 'panel' });
+    // 覆盖者被 forget：被覆盖的旧账恢复有效
+    rt.apply([{ op: 'forgetMemory', id: 'm2' }], { source: 'panel' });
+    assert.equal(rt.snapshot().entries.find(entry => entry.id === 'm1').supersededBy, '', '覆盖者被删，标记清空');
+    // 重新标记后走总结：被并小记忆身上的指针也要清
+    rt.apply([{ op: 'remember', title: '再次覆盖', text: '再次覆盖的内容', related: ['旧账'] }], { source: 'panel', day: 3 });
+    rt.apply([{ op: 'supersede', id: 'm1', by: 'm3' }], { source: 'panel' });
+    const merged = rt.consolidate({ ids: ['m1'], big: { text: '总结出的大记忆', title: '总结大记忆', related: ['旧账'] } });
+    assert.equal(merged.ok, true);
+    assert.ok(rt.snapshot().entries.every(entry => !entry.supersededBy || entry.supersededBy === 'm3'), '总结退役条目的指针只可能指向仍在账的条目');
+    assert.equal(rt.snapshot().entries.find(entry => entry.id === 'm1'), undefined, '被并条目已退役');
+}
+
+// —— restore 归一化：悬空 supersededBy 指针原地清空 ——
+{
+    const rt = createMemoryRuntime({ now: NOW });
+    const restored = rt.restore({ entries: [
+        { id: 'm1', tier: 'big', text: '旧账', related: ['旧账'], supersededBy: 'm2' },
+        { id: 'm3', tier: 'small', text: '无关', related: ['无关'] },
+    ] });
+    assert.equal(restored.status, 'restored');
+    assert.equal(rt.snapshot().entries[0].supersededBy, '', '指向不存在条目的标记被清空');
+    const okRestore = createMemoryRuntime({ now: NOW });
+    okRestore.restore({ entries: [
+        { id: 'm1', tier: 'big', text: '旧账', related: ['旧账'], supersededBy: 'm2' },
+        { id: 'm2', tier: 'small', text: '新账', related: ['旧账'] },
+    ] });
+    assert.equal(okRestore.snapshot().entries[0].supersededBy, 'm2', '有效指针原样保留');
+}
+
+
+// —— 写入查重（MemPalace check_duplicate）：共钥匙且 ≥0.85 相似的新账直接拒绝 ——
+{
+    const rt = createMemoryRuntime({ now: NOW });
+    rt.apply([{ op: 'remember', title: '药铺问价', text: '萧炎在百草药铺问过凝血草的价钱，掂量钱袋后没买。', related: ['凝血草', '百草药铺'] }]);
+    const dup = rt.apply([{ op: 'remember', title: '药铺问价', text: '萧炎在百草药铺问过凝血草的价钱，掂量钱袋后没有买。', related: ['凝血草'] }]);
+    assert.equal(dup.status, 'rejected');
+    assert.equal(dup.rejected[0].reason, 'duplicate_of_m1', '近似复述被写入时拦住并指向旧账');
+    assert.equal(rt.snapshot().entries.length, 1, '被拒绝的操作不落账');
+    const other = rt.apply([{ op: 'remember', title: '坊市闲逛', text: '萧炎在乌坦城坊市闲逛了一下午。', related: ['乌坦城'] }]);
+    assert.equal(other.status, 'applied', '钥匙不相交则查重不介入');
+}
+
+// —— 重要度：显式 1-10 落账；缺省按分量推默认（关键 7 / 一般 5）；越界回退默认 ——
+{
+    const rt = createMemoryRuntime({ now: NOW });
+    rt.apply([{ op: 'remember', title: '大事', text: '突破斗宗。', related: ['萧炎'], weight: 'major', importance: 10 }]);
+    rt.apply([{ op: 'remember', title: '琐事', text: '买了一袋盐。', related: ['盐铺'] }]);
+    rt.apply([{ op: 'remember', title: '越界', text: '胡写的条目。', related: ['胡写'], importance: 99 }]);
+    const entries = rt.snapshot().entries;
+    assert.equal(entries.find(entry => entry.id === 'm1').importance, 10, '显式重要度原样落账');
+    assert.equal(entries.find(entry => entry.id === 'm2').importance, 5, 'minor 缺省中性 5');
+    assert.equal(entries.find(entry => entry.id === 'm3').importance, 5, '越界回退分量默认');
+    const old = createMemoryRuntime({ now: NOW });
+    old.restore({ entries: [{ id: 'm1', tier: 'big', text: '旧档账目', related: ['旧档'], weight: 'major' }] });
+    assert.equal(old.snapshot().entries[0].importance, 7, '老档归一化按分量补默认（major 7）');
+}
+
+// —— 总结大记忆继承原小记忆的最高重要度 ——
+{
+    const rt = createMemoryRuntime({ now: NOW });
+    rt.apply([
+        { op: 'remember', title: '事一', text: '第一件重要的事。', related: ['甲'], importance: 3 },
+        { op: 'remember', title: '事二', text: '第二件重要的事。', related: ['乙'], importance: 9 },
+    ]);
+    const merged = rt.consolidate({ ids: ['m1', 'm2'], big: { title: '两件事', text: '两件事合起来的总账。', related: ['甲', '乙'] } });
+    assert.equal(merged.ok, true);
+    const bigEntry = rt.snapshot().entries.find(entry => entry.tier === 'big');
+    assert.equal(bigEntry.importance, 9, '大记忆取原小记忆最高重要度');
+}
+
 console.log('memory runtime tests passed');
+
+// —— 完整版/简略版口径（advancedMode=false）：跳过近似查重，只留同层同文精确查重（旧行为） ——
+{
+    const rt = createMemoryRuntime({ now: NOW, advancedMode: () => false });
+    rt.apply([{ op: 'remember', title: '药铺问价', text: '萧炎在百草药铺问过凝血草的价钱，掂量钱袋后没买。', related: ['凝血草', '百草药铺'] }]);
+    const dup = rt.apply([{ op: 'remember', title: '药铺问价', text: '萧炎在百草药铺问过凝血草的价钱，掂量钱袋后没有买。', related: ['凝血草'] }]);
+    assert.equal(dup.status, 'applied', '非进阶版不做近似查重（近似复述照旧落账）');
+    const exact = rt.apply([{ op: 'remember', title: '药铺问价', text: '萧炎在百草药铺问过凝血草的价钱，掂量钱袋后没买。', related: ['凝血草'] }]);
+    assert.equal(exact.status, 'rejected', '同层同文的精确查重保留（旧行为）');
+    assert.equal(exact.rejected[0].reason, 'duplicate_text');
+}

@@ -22,7 +22,7 @@ for (const page of ['apis', 'hub', 'facts', 'action', 'world', 'npc', 'npcledger
 }
 assert.doesNotMatch(entry, /data-settings-page="llm"/, '「模型与连接」页已并入「模型设置」，不该再出现');
 assert.doesNotMatch(entry, /data-settings-page="exp"/, '独立「经历」页已并入人物信息面板弹窗，不该再出现');
-for (const setting of ['action.requireConfirmation', 'npc.maxCandidates', 'impact.maxChainDepth', 'enableSandboxMode', 'sandbox.inertia', 'budget.maxModules', 'status.showHistory', 'setting.progress', 'injection.depth', 'prompt.select']) {
+for (const setting of ['npc.maxCandidates', 'impact.maxChainDepth', 'enableSandboxMode', 'sandbox.inertia', 'setting.progress', 'injection.depth', 'prompt.select']) {
     assert.match(entry, new RegExp(`data-setting="${setting.replace('.', '\\.')}`), `缺少设置绑定：${setting}`);
 }
 for (const retired of ['enableFactsLibrary', 'facts.sourceMode', 'facts.maxEntries', 'facts.includeUnverified', 'enableWorldProgress', 'world.autoAdvance', 'world.tickMinutes', 'world.preserveUnconfirmed', 'ui.legacyTurn']) {
@@ -65,8 +65,8 @@ for (const legacyButton of ['data-llm-models', 'data-facts-models', 'data-settle
     assert.doesNotMatch(entry, new RegExp(legacyButton.replace(/-/g, '\\-')), `每卡拉取模型按钮应已删除（方案卡上保留）：${legacyButton}`);
 }
 assert.doesNotMatch(entry, /CONNECTION_MODE_TOGGLERS/, '连接模式登记表应随模式选择一起删除');
-// 非连接类的运行参数保留在卡上：全局超时、世界/记忆的喂楼数（条目上限已退役——决定改读原著资料注入内容）。
-for (const keep of ['llm.timeoutMs', 'world.decideMaxFloors', 'memory.decideMaxFloors']) {
+// 非连接类的运行参数保留在卡上：全局超时（按秒填）、世界/记忆的喂楼数（条目上限已退役——决定改读原著资料注入内容）。
+for (const keep of ['llm.timeoutSec', 'world.decideMaxFloors', 'memory.decideMaxFloors']) {
     assert.match(hubMarkup, new RegExp(`data-setting="${keep.replace('.', '\\.')}"`), `模型设置页应保留运行参数：${keep}`);
 }
 for (const retired of ['world.decideMaxEntries', 'self.decideMaxEntries', 'memory.decideMaxEntries', 'impact.decideMaxEntries']) {
@@ -79,11 +79,28 @@ assert.ok(apisStart >= 0 && apisEnd > apisStart, '找不到「API设置」页');
 const apisMarkup = entry.slice(apisStart, apisEnd);
 assert.match(apisMarkup, /data-api-preset-list/, 'API设置页缺少方案列表容器');
 assert.match(apisMarkup, /data-api-add-preset/, 'API设置页缺少新建方案按钮');
-for (const binding of ['llm.apiPreset', 'setting.apiPreset', 'world.decideApiPreset', 'npc.ledgerApiPreset', 'npc.extractApiPreset', 'npc.expApiPreset', 'npc.coldApiPreset', 'self.decideApiPreset', 'memory.decideApiPreset', 'memory.recallApiPreset', 'memory.consolidateApiPreset', 'impact.decideApiPreset', 'impact.injectApiPreset']) {
+for (const binding of ['llm.apiPreset', 'setting.apiPreset', 'verify.apiPreset', 'world.decideApiPreset', 'plot.decideApiPreset', 'npc.ledgerApiPreset', 'npc.extractApiPreset', 'npc.expApiPreset', 'npc.coldApiPreset', 'self.decideApiPreset', 'memory.decideApiPreset', 'memory.recallApiPreset', 'memory.consolidateApiPreset', 'impact.decideApiPreset', 'impact.injectApiPreset']) {
     assert.equal(boundPaths.filter(path => path === binding).length, 1, `方案绑定下拉应只在模型设置页出现一次：${binding}`);
 }
 assert.match(hubMarkup, /data-api-preset-select/g ? /data-api-preset-select/ : /never/, '模型设置页缺少方案绑定下拉');
-assert.equal([...hubMarkup.matchAll(/data-api-preset-select/g)].length, 17, '方案绑定下拉应恰好 17 个（完整版 14 张功能卡 + 简略版素材总挑选/总结算两张合并卡 + 简略版行动结算判定卡）');
+assert.equal([...hubMarkup.matchAll(/data-api-preset-select/g)].length, 19, '方案绑定下拉应恰好 19 个（完整版 16 张功能卡 + 简略版素材总挑选/总结算两张合并卡 + 简略版行动结算判定卡；进阶版卡片不新增绑定）');
+// 进阶版（apiMode 'advanced'）：三档切换按钮 + 进阶区块；完整版区块对进阶版同样可见（共用逐路连接卡）。
+assert.match(hubMarkup, /data-api-mode="advanced"/, '调用版本卡缺少进阶版按钮');
+assert.match(hubMarkup, /data-api-mode-section="full advanced"/, '完整版连接卡区块应对进阶版共用（标记 "full advanced"）');
+assert.match(hubMarkup, /data-api-mode-section="advanced"/, '缺少进阶功能区块（进阶功能一览 + 语义检索）');
+// 进阶卡片散在各页：正文核验/剧情账本/一致性体检/关系网/开局摘要/骰子都带 advanced 显隐标记（字面量锁定）。
+for (const advancedCard of [
+    '<div class="dai-settings-card" data-api-mode-section="advanced"><div class="dai-card-heading"><b>正文核验（事实审计）</b>',
+    '<div class="dai-settings-card" data-api-mode-section="advanced"><div class="dai-card-heading"><b>剧情账本（长篇一致性）</b>',
+    '<div class="dai-settings-card" data-api-mode-section="advanced"><div class="dai-card-heading"><b>人物关系网</b>',
+    '<div class="dai-settings-card" data-api-mode-section="advanced"><div class="dai-card-heading"><b>一致性体检</b>',
+    '<button type="button" class="dai-secondary-button" data-api-mode-section="advanced" data-npc-gossip-run>',
+    '<div data-api-mode-section="advanced" hidden><label class="dai-setting-row dai-setting-toggle"><span><b>开局摘要</b>',
+    '<div data-api-mode-section="advanced" hidden><label class="dai-setting-row dai-setting-toggle"><span><b>难度＋骰子裁定（进阶版）</b>',
+]) {
+    assert.ok(entry.includes(advancedCard), `进阶卡片缺 advanced 显隐标记：${advancedCard.slice(0, 60)}…`);
+}
+assert.match(entry, /function advancedMode/, '缺少进阶版口径函数');
 // settle.resultApiPreset 在完整版与简略版各出现一次（同一绑定、两版各一张卡，同屏只显示其一）。
 assert.equal(boundPaths.filter(path => path === 'settle.resultApiPreset').length, 2, '行动结算判定绑定应完整版/简略版各一张卡');
 assert.doesNotMatch(entry, /data-setting="settle\.apiPreset"/, '分类判定已并入最终判定同一套 API，不再有独立绑定下拉');
@@ -113,7 +130,7 @@ assert.match(entry, /closest\?\.\('\[data-api-preset-models\]'\)/, '方案卡拉
 // 纳戒侧的独立连接卡、模式下拉与拉取按钮不该再出现。
 assert.doesNotMatch(entry, /data-setting="self\.decideMode"/, '纳戒决定连接已并入记忆侧共用卡，不该再有 self.decideMode 绑定');
 assert.doesNotMatch(entry, /data-selfdecide-models/, '纳戒侧拉取模型按钮已随合并卡删除');
-for (const prompt of ['world.decidePrompt', 'npc.ledgerPrompt', 'npc.coldPrompt', 'self.decidePrompt', 'memory.decidePrompt', 'impact.prompt', 'impact.injectPrompt']) {
+for (const prompt of ['world.decidePrompt', 'plot.decidePrompt', 'npc.ledgerPrompt', 'npc.coldPrompt', 'self.decidePrompt', 'memory.decidePrompt', 'impact.prompt', 'impact.injectPrompt']) {
     assert.doesNotMatch(hubMarkup, new RegExp(`data-setting="${prompt.replace('.', '\\.')}"`), `提示词不该在模型设置页：${prompt}`);
     assert.ok(boundPaths.includes(prompt), `功能页缺少提示词绑定：${prompt}`);
 }
@@ -126,7 +143,7 @@ assert.match(entry, /data-exp-condense/, '经历精简应挂在信息面板里')
 assert.match(entry, /data-sandbox-status/);
 assert.match(entry, /function syncSandboxModeFromSettings/);
 assert.match(entry, /agentSandboxMode\.(?:sync|followSwitch)\(\{/, '设置页的沙盒开关必须把开关状态交给模式运行时');
-assert.match(entry, /agentSandboxMode\.read\(\{/);
+assert.match(entry, /agentSandboxMode\.read\(currentAgentScope\(\)\)/, '沙盒读取要走真实会话作用域，不再依赖无人赋值的任务作用域');
 // 光看调用名不够：开关动作要真的落到模式记录里，界面开关与提示词口径才一致。
 {
     const runtime = createSandboxMode();
@@ -199,10 +216,13 @@ assert.match(entry, /'武器': 'weapon', '防具': 'body', '饰品': 'accessory'
 assert.match(entry, /systemIcon\.addEventListener\('click', \(\) => openSettingsPanel\(\)\)/, '悬浮球系统图标要一键打开设置面板');
 assert.doesNotMatch(entry, /function mountSettingsButton/, '左上角设置按钮已退役，不该再挂载');
 assert.doesNotMatch(styleCss, /\.dai-settings-button/, '旧按钮样式应随手删掉');
-// 沙盒口径：惯性要真的进决定提示词；本局内切换要有确认/取消按钮。
+// 沙盒口径：惯性要真的进决定提示词；口径随开关随开随关，不再有“本局内确认”流程。
 assert.match(entry, /buildSandboxDecideNote\(\{/, '沙盒决定说明要按惯性动态生成');
 assert.doesNotMatch(entry, /SANDBOX_DECIDE_NOTE/, '静态决定说明应退役');
-assert.match(entry, /data-sandbox-confirm/, '缺少切换确认按钮');
-assert.match(entry, /data-sandbox-cancel/, '缺少切换取消按钮');
-assert.match(entry, /function syncSandboxPendingRow/, '缺少待确认提示条同步');
+assert.doesNotMatch(entry, /data-sandbox-confirm|data-sandbox-cancel|syncSandboxPendingRow|data-sandbox-pending/, '待确认切换流程应随随开随关退役');
+// 挂空 UI 退役卡：回合流水线（自举死锁）、运行预算、世界推进预算、三个无读者开关。
+assert.doesNotMatch(entry, /回合流水线|data-agent-state|data-agent-run-result|data-agent-versions|data-agent-rollback|renderTurnExtras|rollbackFromPanel/, '回合流水线卡与回退死链应已删除');
+assert.doesNotMatch(entry, /运行预算|budget\.maxModules|budget\.maxNpcDecisions|budget\.totalTimeoutMs/, '运行预算卡应已删除');
+assert.doesNotMatch(entry, /世界推进预算|sandbox\.maxNewObjectsPerTurn|sandbox\.nodeWindowSlackDays/, '世界推进预算卡应已删除');
+assert.doesNotMatch(entry, /status\.showHistory|status\.showCapabilityBadge|data-setting="debug"/, '无读者的显示/调试开关应已删除');
 console.log(`settings template smoke checks passed: ${directory}`);

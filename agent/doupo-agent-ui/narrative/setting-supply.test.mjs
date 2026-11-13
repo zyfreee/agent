@@ -103,51 +103,23 @@ const skipped = await client.selectSettings({ input: '青莲地心火', candidat
 assert.equal(skipped.needs.length, 0);
 assert.equal(selectCalls, 1, '没有候选就不该发请求');
 
-// 接入回合阶段：召回→选条→注入正文提示词→生成后对账
-let composeArgs = null;
+// 接入生成拦截器：召回→选条→按预算组装→注入文本（带抬头）——旧回合阶段 gather/compose 已随旧架构退役
 const stages = createTurnStages({
-    runner: { execute: async () => ({ ok: false, results: [] }) },
-    actions: {},
-    world: {},
-    compose: async args => {
-        composeArgs = args;
-        return { text: '萧炎握紧拳头，青莲地心火在掌心跳动。', claims: [] };
-    },
-    getState: () => ({}),
     settings: supply,
     select: async ({ candidates }) => ({ needs: [{ id: candidates[0].id, layer: 'full' }], gaps: [] }),
     getSettingBudget: () => ({ maxCandidates: 40, maxItems: 8, injectionBudget: 400 }),
     getProgress: () => 100,
     getRecentTexts: () => ['萧炎走进沙漠。'],
 });
-const gatherCtx = {
-    taskId: 'task-1',
-    sessionId: 'session-1',
-    branchId: 'branch-1',
-    stateVersion: 'v1',
-    playerInput: '青莲地心炎到底在什么地方',
-    signal: undefined,
-    previous: {},
-    data: { taskType: 'ordinary_interaction', plan: { moduleIds: [] } },
-};
-const gathered = await stages.gather(gatherCtx);
+const gathered = await stages.resolveInjection({ input: '青莲地心炎到底在什么地方', recentTexts: ['萧炎走进沙漠。'], sessionId: 'session-1', branchId: 'branch-1' });
 assert.equal(gathered.status, 'supported');
-assert.deepEqual(gathered.visibleFactIds, ['set-qinglian']);
-assert.match(gathered.injection, /^\[set-qinglian\] 异火·青莲地心火：/);
-assert.ok(gathered.settingCandidates >= 1);
-
-const composed = await stages.compose({ ...gatherCtx, previous: { gather: gathered, adjudicate: { changes: [], nextState: {}, approvedChangeIds: [], outcome: '' } } });
-assert.equal(composeArgs.injection, gathered.injection, '注入文本必须原样进正文提示词');
-assert.equal(composed.settingAudit.ok, true);
-assert.match(composed.text, /青莲地心火/);
-
-const drifted = await stages.compose({ ...gatherCtx, previous: { gather: { ...gathered, injection: '', visibleFactIds: [], candidateIds: ['set-bone'] }, adjudicate: { changes: [], nextState: {}, approvedChangeIds: [], outcome: '' } } });
-assert.equal(composed.claims.length, 0);
-assert.equal(drifted.settingAudit.issues.length, 0, '候选范围外的条目不在本轮对账范围内');
+assert.deepEqual(gathered.usedIds, ['set-qinglian']);
+assert.match(gathered.text, /【原著设定·本轮】/);
+assert.match(gathered.text, /\[set-qinglian\] 异火·青莲地心火：/);
 
 // 没有登记设定时给明确状态，不静默跳过
-const emptyStages = createTurnStages({ runner: {}, actions: {}, world: {}, compose: async () => ({ text: 'x' }), getState: () => ({}), settings: createSettingSupply() });
-const none = await emptyStages.gather(gatherCtx);
+const emptyStages = createTurnStages({ settings: createSettingSupply() });
+const none = await emptyStages.resolveInjection({ input: '随便', recentTexts: [] });
 assert.equal(none.status, 'no_settings');
 assert.match(none.note, /还没有登记原著设定/);
 

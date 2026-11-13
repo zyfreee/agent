@@ -83,4 +83,21 @@ assert.equal(acceptsOp({ op: 'setTension', level: 'rising' }), true);
 assert.equal(acceptsOp({ op: 'setTension', level: 'bad' }), false);
 assert.equal(acceptsOp({ op: 'setTension' }), false);
 
+// —— A1/A2/A3 契约：点名、了结结论、事件推进都在提示词与 schema 里 ——
+assert.ok(WORLD_DECIDE_PROMPT.includes('participants'), '提示词教事件点名用法');
+assert.ok(WORLD_DECIDE_PROMPT.includes('outcome'), '提示词教了结结论');
+assert.ok(WORLD_DECIDE_PROMPT.includes('updateEvent'), '提示词含事件推进操作');
+assert.ok(WORLD_DECIDE_PROMPT.includes('空窗'), '时间跳跃要有空窗提醒闭环');
+assert.equal(DECIDE_JSON_SCHEMA.properties.ops.items.properties.op.enum.includes('updateEvent'), true, 'schema 认事件推进');
+assert.ok(DECIDE_JSON_SCHEMA.properties.ops.items.properties.outcome, 'schema 认 outcome 字段');
+assert.ok(DECIDE_JSON_SCHEMA.properties.ops.items.properties.participants, 'schema 认 participants 字段');
+assert.equal(acceptsOp({ op: 'updateEvent', id: 'e1', text: '开幕' }), true);
+assert.equal(acceptsOp({ op: 'addEvent', title: '城东失窃', participants: ['萧炎', '云韵'] }), true);
+
+// —— 结算裁定喂料：世界推进必须看到本轮判定的成败（BUG 1） ——
+const settleUser = buildDecideUser({ snapshot: {}, floors: [{ role: '角色', text: '正文' }], settleLines: ['- 药铺购凝血草：失败（骰16-2 对难度 11）'] });
+assert.ok(settleUser.includes('【本轮行动结算（生成前已判定，世界推进须与判定一致）】'), '喂料带结算节');
+assert.ok(settleUser.includes('药铺购凝血草'));
+assert.ok(!buildDecideUser({ snapshot: {}, floors: [] }).includes('【本轮行动结算'), '没有结算时不出这一节');
+
 console.log('world decide tests passed');

@@ -69,4 +69,56 @@ assert.equal(index.get(1041), null);
 assert.equal(createFactsIndex().load({}).total, 0);
 assert.equal(createFactsIndex().load(null).total, 0);
 
+// —— rankCatalogFor：与本轮词面相关的行置顶，零分行的摘要降级成 —；候选集合与 catalogFor 一致，只排序不取舍。
+const rankIndex = createFactsIndex({ volumeIndex: { 10: [2], 11: [2], 12: [2], 13: [1, 2] } });
+rankIndex.load({
+    entries: {
+        10: { uid: 10, comment: '青莲地心火（物品-青莲地心火）', key: ['青莲地心火'], content: '【物品：青莲地心火】简介：异火榜第十九，藏于塔戈尔沙漠。' },
+        11: { uid: 11, comment: '云岚宗（势力-云岚宗）', key: ['云岚宗'], content: '【势力：云岚宗】简介：加玛帝国东部的宗门势力。' },
+        12: { uid: 12, comment: '萧家（势力-萧家）', key: ['萧家'], content: '【势力：萧家】简介：乌坦城的小家族。' },
+        13: { uid: 13, comment: '药尘（人物-药尘）', key: ['药尘'], content: '【人物：药尘】简介：灵魂状态的炼药师。' },
+    },
+});
+const ranked = rankIndex.rankCatalogFor(2, { input: '我想炼化青莲地心火', recentTexts: [] });
+assert.equal(ranked.ranked, true);
+assert.equal(ranked.firstCount, 3);
+assert.equal(ranked.prevCount, 1);
+assert.equal(ranked.total, 4);
+assert.equal(ranked.scoredFirst, 1, '只有青莲地心火与本轮沾边');
+assert.equal(ranked.scoredPrev, 0);
+assert.ok(ranked.lines[0].startsWith('10|物品|青莲地心火|异火榜第十九'), '强命中行排第一且摘要保留');
+assert.equal(ranked.lines[1], '11|势力|云岚宗|—', '零分行的摘要降级，防目录铺张');
+assert.equal(ranked.lines[2], '12|势力|萧家|—');
+assert.equal(ranked.lines[3], '13|人物|药尘|卷01 前情', '前情段行式不变');
+
+// 命中来自最近对话也算分，命中行摘要保留。
+const viaRecent = rankIndex.rankCatalogFor(2, { input: '', recentTexts: ['云岚宗的人找上门来了'] });
+assert.ok(viaRecent.lines[0].startsWith('11|势力|云岚宗|'), '最近对话里的命中照样置顶');
+assert.ok(viaRecent.lines[0].includes('加玛帝国'), '命中行摘要保留');
+assert.equal(viaRecent.scoredFirst, 1);
+
+// 摘要二字窗也能命中：输入没写全名，但沾了摘要里的词面。
+const summaryHit = rankIndex.rankCatalogFor(2, { input: '听说加玛帝国最近不太平', recentTexts: [] });
+assert.ok(summaryHit.lines[0].startsWith('11|势力|云岚宗|'), '摘要词面重叠的行也置顶');
+
+// 空输入谈不上相关度：回落 uid 序并保留摘要，不上降级。
+const unranked = rankIndex.rankCatalogFor(2, { input: '', recentTexts: [] });
+assert.equal(unranked.ranked, false);
+assert.ok(unranked.lines[0].startsWith('10|物品|青莲地心火|异火榜第十九'));
+assert.ok(unranked.lines[1].startsWith('11|势力|云岚宗|加玛帝国'));
+assert.equal(unranked.scoredFirst, 0);
+assert.deepEqual(rankIndex.rankCatalogFor(99, { input: '随便' }).lines, [], '不认识的卷号照旧返回空');
+
+// —— searchByName 字符级模糊：变体名（少写/写错一个字）也捞得回候选；毫不沾边的不出。
+const fuzzyIndex = createFactsIndex({ volumeIndex: { 1041: [2], 217: [1] } });
+fuzzyIndex.load({
+    entries: {
+        1041: { uid: 1041, comment: '青莲地心火（物品-青莲地心火）', key: ['青莲地心火'], content: '【物品：青莲地心火】简介：异火榜第十九。' },
+        217: { uid: 217, comment: '药老（人物-药尘（药老））', key: ['药老', '药尘'], content: '【人物：药尘】简介：戒指中的灵魂体。' },
+    },
+});
+assert.deepEqual(fuzzyIndex.searchByName('青莲地火').map(entry => entry.uid), [1041], '变体名按字符命中率捞回');
+assert.deepEqual(fuzzyIndex.searchByName(['青莲地心火']).map(entry => entry.uid), [1041], '全名照旧精确命中');
+assert.equal(fuzzyIndex.searchByName('陨落斗帝').length, 0, '毫不沾边的词不出候选');
+
 console.log('facts index tests passed');

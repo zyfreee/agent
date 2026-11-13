@@ -78,6 +78,22 @@ assert.equal(buildMemoryInjection({ entries: [] }, { maxChars: 900, sceneText: '
 // 5. recallKeys：related + 别名去重
 assert.deepEqual(recallKeys({ related: ['药老', '药尘'], aliases: ['药尘', '老师'] }), ['药老', '药尘', '老师']);
 
+// 5b. 兜底召回升级：词面包含（场景复述记忆内容，钥匙不在场也召回）+ 时间邻近参与排序
+{
+    const fuzzy = { entries: [{ id: 'm1', tier: 'small', text: '云韵在云岚宗留了半句话', related: ['云韵'], day: 5 }] };
+    assert.equal(recallHits(fuzzy, { sceneText: '完全无关的场面' }).length, 0, '词面无关不召回');
+    const hits = recallHits(fuzzy, { sceneText: '云韵在云岚宗留了半句话没说完', limit: 5 });
+    assert.equal(hits.length, 1, '场景复述记忆内容时按词面包含召回（钥匙没在场也算勾到）');
+    // 时间邻近只参与排序不触发：底分再高、离得再近，没场景信号就不进兜底
+    assert.deepEqual(recallHits(
+        { entries: [{ id: 'm2', tier: 'big', weight: 'major', text: '毫不相干', related: [], day: 9 }] },
+        { sceneText: '别的剧情', currentDay: 9 },
+    ), [], '纯底分+时间邻近不触发兜底');
+    // 被软覆盖的旧账不进兜底
+    const covered = { entries: [{ id: 'm3', tier: 'big', text: '旧账', related: ['旧账'], day: 2, supersededBy: 'm4' }] };
+    assert.deepEqual(recallHits(covered, { sceneText: '旧账被人提起' }), [], '软覆盖的旧账不进兜底');
+}
+
 // 3b. renderMemoryEntries：召回决定选中的显式条目直接渲染，超预算从尾部丢
 {
     const picked = [snapshot.entries[0], snapshot.entries[1], snapshot.entries[3]];
@@ -161,3 +177,11 @@ assert.ok(MEMORY_GUIDE.includes('自动总结成大记忆'), '指南要写明大
 assert.ok(MEMORY_GUIDE.includes('related'));
 assert.ok(MEMORY_GUIDE.includes('人物簿') && MEMORY_GUIDE.includes('纳戒'));
 assert.ok(MEMORY_HEADER.includes('按需召回'));
+
+// —— 完整版/简略版口径（advanced:false）：兜底召回退回旧行为——钥匙整词命中才算，无词面/向量分量 ——
+{
+    const snapshot = { entries: [{ id: 'm1', tier: 'small', text: '穆蛇在坊市拦路勒索被赶跑了', related: [], day: 5 }] };
+    assert.deepEqual(recallHits(snapshot, { sceneText: '穆蛇在坊市拦路勒索，被赶跑了', advanced: false }), [], '旧口径：词面复述不勾（只有钥匙整词命中才算）');
+    const withKey = { entries: [{ id: 'm2', tier: 'big', text: '旧账大事', related: ['穆蛇'], day: 2 }] };
+    assert.equal(recallHits(withKey, { sceneText: '穆蛇登场', advanced: false }).length, 1, '旧口径：钥匙命中照常勾');
+}

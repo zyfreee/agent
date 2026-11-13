@@ -57,6 +57,32 @@ function tokenize(value) {
     return [...pieces];
 }
 
+/** 检索用的归一化：去标点/空白/大小写，中文关键词才不会被全角逗号打散。 */
+function norm(value) {
+    return typeof value === 'string' ? value.toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, '') : '';
+}
+
+/** Share of a key's characters present anywhere in the text. 与 setting-supply 的 charHitRatio 同款：
+ *  容忍名字里写错一个字，这正是精确子串匹配接不住的变体名。 */
+function charHitRatio(key, text) {
+    if (!key || !text) return 0;
+    const seen = new Set(text);
+    let hit = 0;
+    for (const ch of key) if (seen.has(ch)) hit++;
+    return hit / key.length;
+}
+
+const CJK_CHAR = /[\u3400-\u9fff\uf900-\ufaff]/;
+
+/** 相邻双字滑窗：中文没有空格，二字窗口是「词面沾边」的最小可靠单位。 */
+function contentBigrams(text) {
+    const out = new Set();
+    for (let i = 0; i < text.length - 1; i += 1) {
+        if (CJK_CHAR.test(text[i]) && CJK_CHAR.test(text[i + 1])) out.add(text.slice(i, i + 2));
+    }
+    return out;
+}
+
 const SUMMARY_LABEL = /^(原著范围|承接|前情|接续|上一条|下一条|涉及|备注|来源|正文|简介|概况|介绍|作用|用途|外貌|性格|背景|来历|身份|特点|规则|构成|基本信息|外形|实力|基本原理|体系构成|效果|限制|代价|等级|关系|认知与秘密|现状|图谋|能力|组织构成|宗旨与作风|对外关系|实力与根基|重要历史|重要经历|内部生活|环境与风貌|内部布局|当地生活|特色与资源|出入与危险|学习与成长|实际表现|限制与例外|新增|使用与限制|代价与限制|获取|使用方法)[：:]\s*/u;
 const SUMMARY_META_ONLY = new Set(['原著范围', '前情', '备注', '来源', '上一条', '下一条', '涉及']);
 
@@ -222,7 +248,7 @@ export function createFactsIndex({ volumeIndex = VOLUME_INDEX } = {}) {
 
     /**
      * 目录外兜底：模型给名字（或关键词），脚本只负责把可能的条目捞出来，排序与取舍都交回模型。
-     * 命中优先：标题全等 = key 全等 > 标题包含 > key 互相包含。
+     * 命中优先：标题全等 = key 全等 > 标题包含 > key 互相包含 > 字符级模糊（≥3 字且命中率 ≥0.6）。
      */
     function searchByName(terms, { limit = 12 } = {}) {
         const list = Array.isArray(terms) ? terms : [terms];
@@ -230,12 +256,23 @@ export function createFactsIndex({ volumeIndex = VOLUME_INDEX } = {}) {
         for (const raw of list) {
             const term = typeof raw === 'string' ? raw.trim() : '';
             if (term.length < 2) continue;
+            const needle = norm(term);
             for (const entry of byUid.values()) {
                 const keys = Array.isArray(entry.keys) ? entry.keys : [];
                 let rank = 0;
                 if (entry.name === term || keys.includes(term)) rank = 3;
                 else if (entry.name.includes(term)) rank = 2;
                 else if (keys.some(key => typeof key === 'string' && key.length >= 3 && (key.includes(term) || term.includes(key)))) rank = 1;
+                if (!rank && needle.length >= 3) {
+                    // 字符级模糊兜底：模型写变体名（青莲地火 ↔ 青莲地心火）时按命中率捞回候选，
+                    // 门槛收在 3 字以上防两字词误报；捞到的候选仍交模型定夺，脚本不替它选。
+                    for (const target of [entry.name, ...entry.aliases]) {
+                        const hay = norm(target);
+                        if (hay.length < 3) continue;
+                        const ratio = Math.max(charHitRatio(needle, hay), charHitRatio(hay, needle));
+                        if (ratio >= 0.6) { rank = 1; break; }
+                    }
+                }
                 if (!rank) continue;
                 const previous = hits.get(entry.uid);
                 if (!previous || rank > previous.rank) hits.set(entry.uid, { entry, rank });
@@ -314,6 +351,19 @@ export function createFactsIndex({ volumeIndex = VOLUME_INDEX } = {}) {
     /** 某卷的条目总数，用于判断目录有没有被上限截断。 */
     function volumeSize(volume) { return byVolume.get(Number(volume))?.size ?? 0; }
 
+    /** 卷内条目分两段：本卷首次出现的（first，uid 序）与更早卷就有的（prev，按首发卷、uid 序）。 */
+    function volumeSegments(volume) {
+        const ids = byVolume.get(Number(volume));
+        if (!ids) return null;
+        const entries = [...ids].sort((a, b) => a - b).map(get).filter(Boolean);
+        const isFirst = entry => entry.volumes[0] === volume;
+        const first = entries.filter(isFirst);
+        const prev = entries
+            .filter(entry => !isFirst(entry) && entry.volumes[0] < volume)
+            .sort((left, right) => (left.volumes[0] - right.volumes[0]) || (left.uid - right.uid));
+        return { first, prev };
+    }
+
     /**
      * 带预算的目录：分「本卷新增」和「前情」两段。
      * - 本卷新增（该条目最早出现在这一卷）给摘要；
@@ -323,40 +373,100 @@ export function createFactsIndex({ volumeIndex = VOLUME_INDEX } = {}) {
      */
     function catalogFor(volume, { maxRows = 160, maxPrev = 60, maxSummaryChars = 24 } = {}) {
         const current = Number(volume);
-        const ids = byVolume.get(current);
-        if (!ids) return { lines: [], firstCount: 0, prevCount: 0, truncated: false, total: 0 };
-        const sorted = [...ids].sort((a, b) => a - b);
-        const entries = sorted.map(get).filter(Boolean);
-        const isFirst = entry => entry.volumes[0] === current;
-        const first = entries.filter(isFirst);
-        // 只铺“本卷新增”和“前情”；后面才第一次出现的条目一律不上目录，
-        // 它们出现在本卷多半是增补/伏笔，列出来等于把剧透递到模型手里。
-        // 前情上限 60 条（全书单卷实测最多 50 条），按首发卷、再按 uid 排。
-        const prev = entries
-            .filter(entry => !isFirst(entry) && entry.volumes[0] < current)
-            .sort((left, right) => (left.volumes[0] - right.volumes[0]) || (left.uid - right.uid));
+        const segments = volumeSegments(current);
+        if (!segments) return { lines: [], firstCount: 0, prevCount: 0, truncated: false, total: 0 };
         const line = (entry, withSummary) => {
             const head = `${entry.uid}|${entry.category}|${entry.name}`;
             // 前情行标明首发卷，模型才知道它是旧内容、不是本卷新增，不会被当成剧透。
             if (!withSummary) return `${head}|卷${String(entry.volumes[0]).padStart(2, '0')} 前情`;
             // 故事线不给摘要（摘要是剧情复述），但保留第四列，模型按固定列数解析不会错位。
             if (entry.category === '故事线') return `${head}|—`;
-            const summary = entry.summary;
-            return `${head}|${summary}`;
+            return `${head}|${entry.summary}`;
         };
         const rows = [
-            ...first.map(entry => line(entry, true)),
-            ...prev.slice(0, maxPrev).map(entry => line(entry, false)),
+            ...segments.first.map(entry => line(entry, true)),
+            ...segments.prev.slice(0, maxPrev).map(entry => line(entry, false)),
         ];
         const lines = rows.slice(0, Math.max(1, maxRows));
         return {
             lines,
-            firstCount: first.length,
-            prevCount: Math.min(prev.length, maxPrev),
-            truncated: rows.length > lines.length || prev.length > maxPrev,
-            total: entries.length,
+            firstCount: segments.first.length,
+            prevCount: Math.min(segments.prev.length, maxPrev),
+            truncated: rows.length > lines.length || segments.prev.length > maxPrev,
+            total: segments.first.length + segments.prev.length,
         };
     }
 
-    return Object.freeze({ load, clear, stats, get, findByName, searchByName, volumesOf, categoryOf, entriesOfCategory, matchTokens, catalog, fullCatalog, volumeSize, catalogFor, guessVolume });
+    /**
+     * 带相关度的目录：用本轮输入/最近对话给每行打词面分（key 子串 > 字符命中率 > 摘要二字窗），
+     * 命中行置顶，零分行的摘要降级成 —。行集合与 catalogFor 完全一致——只排序与瘦身，不增删候选，
+     * 选条仍由模型点名。摘要本来是帮模型认出这条用的，与本轮毫无词面交集的行铺摘要只是白吃预算。
+     * 空输入（连最近对话都没有）谈不上相关度，原样回落 catalogFor 的 uid 序。
+     */
+    function rankCatalogFor(volume, { input, recentTexts = [], maxRows = 160, maxPrev = 60 } = {}) {
+        const current = Number(volume);
+        const segments = volumeSegments(current);
+        if (!segments) return { lines: [], firstCount: 0, prevCount: 0, truncated: false, total: 0, scoredFirst: 0, scoredPrev: 0, ranked: false };
+        const zones = [];
+        const primary = norm(typeof input === 'string' ? input : '');
+        if (primary) zones.push({ text: primary, weight: 1 });
+        const recent = norm((Array.isArray(recentTexts) ? recentTexts : []).filter(item => typeof item === 'string').join(' '));
+        if (recent) zones.push({ text: recent, weight: 0.4 });
+        if (!zones.length) return { ...catalogFor(current, { maxRows, maxPrev }), scoredFirst: 0, scoredPrev: 0, ranked: false };
+        const zoneScores = zones.map(zone => ({ weight: zone.weight, text: zone.text, bigrams: contentBigrams(zone.text) }));
+        const scoreOf = entry => {
+            let score = 0;
+            for (const zone of zoneScores) {
+                for (const key of entry.keys) {
+                    const needle = norm(key);
+                    if (!needle) continue;
+                    if (zone.text.includes(needle)) { score += (120 + needle.length * 10) * zone.weight; continue; }
+                    if (needle.length >= 2) {
+                        const ratio = charHitRatio(needle, zone.text);
+                        if (ratio >= 0.5) score += 30 * ratio * zone.weight;
+                    }
+                }
+                if (zone.bigrams.size) {
+                    const summary = norm(entry.summary);
+                    if (summary) {
+                        let hits = 0;
+                        for (const bg of zone.bigrams) {
+                            if (!summary.includes(bg)) continue;
+                            hits += 1;
+                            if (hits >= 8) break;
+                        }
+                        score += hits * 4 * zone.weight;
+                    }
+                }
+            }
+            return score;
+        };
+        const first = segments.first.map(entry => ({ entry, score: scoreOf(entry) }));
+        const prev = segments.prev.map(entry => ({ entry, score: scoreOf(entry) }));
+        first.sort((a, b) => b.score - a.score || a.entry.uid - b.entry.uid);
+        prev.sort((a, b) => b.score - a.score || (a.entry.volumes[0] - b.entry.volumes[0]) || (a.entry.uid - b.entry.uid));
+        const firstLine = (entry, scored) => {
+            const head = `${entry.uid}|${entry.category}|${entry.name}`;
+            // 命中行保留摘要；零分行与故事线同款只留标题，第四列保持固定列数不解析错位。
+            if (!scored || entry.category === '故事线') return `${head}|—`;
+            return `${head}|${entry.summary}`;
+        };
+        const rows = [
+            ...first.map(item => firstLine(item.entry, item.score > 0)),
+            ...prev.slice(0, maxPrev).map(item => `${item.entry.uid}|${item.entry.category}|${item.entry.name}|卷${String(item.entry.volumes[0]).padStart(2, '0')} 前情`),
+        ];
+        const lines = rows.slice(0, Math.max(1, maxRows));
+        return {
+            lines,
+            firstCount: segments.first.length,
+            prevCount: Math.min(segments.prev.length, maxPrev),
+            truncated: rows.length > lines.length || segments.prev.length > maxPrev,
+            total: segments.first.length + segments.prev.length,
+            scoredFirst: first.filter(item => item.score > 0).length,
+            scoredPrev: prev.filter(item => item.score > 0).length,
+            ranked: true,
+        };
+    }
+
+    return Object.freeze({ load, clear, stats, get, findByName, searchByName, volumesOf, categoryOf, entriesOfCategory, matchTokens, catalog, fullCatalog, volumeSize, catalogFor, rankCatalogFor, guessVolume });
 }

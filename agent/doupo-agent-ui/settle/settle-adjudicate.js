@@ -3,6 +3,8 @@
  * 此模块只预测和核对状态，不落账、不修改纳戒或 core 规则。
  */
 import { checkEffects, realmStep } from '../core/settle-categories.js';
+import { normalizeSettleConsequences } from './settle-consequences.js';
+import { SETTLE_DIFFICULTIES, SETTLE_DIFFICULTY_LABELS, normalizeSettleDifficulty, applySettleDice } from './settle-difficulty.js';
 
 const MAX_ACTIONS = 6;
 const MAX_EFFECTS = 8;
@@ -49,6 +51,8 @@ export const SETTLE_RESULT_PROMPT = [
     '最多 6 个行动、每行动最多 8 条 effects、整轮最多 24 条。超过限制不能漏掉尾部代价却宣布成功；应合并同一行动的同类效果，仍超限则该行动 status=insufficient、effects=[]，说明无法完整判定。纯聊天可 actions=[]，不要硬造行动。',
     '每个 id 唯一；evidence 必须是 input 的非空连续原文，不能来自旧对话或世界书，不许复用同一段依据重复结算。条件/愿望不是已执行行动。dependsOn 只能引用前面的 id；依赖失败、insufficient、not_executed 时跳过后续行动。partial 依赖只有确实满足后续资源条件才可继续。',
     'status 只可 success|partial|failure|insufficient|not_executed。失败可以有真实损耗但不得发放成功收益；insufficient/not_executed 不得带 effects。一个行动的效果和结果是整体：不能删去被拒代价而保留成功 outcome。',
+    '【难度与掷骰】每行动附 difficulty（controlled 受控|standard 常规|risky 冒险|desperate 绝望，按风险、对手境界差距与环境报档）与 modifiers（[{reason,value}]，每条必须写依据，单条 |value|≤3、总计 [-4,+4]）。最终成败由脚本掷 d20+修正对难度阈裁定，只降不升：你仍按执行判断如实填 status，掷骰不利会把 success 降为 partial/failure 并以脚本结论为准；失败不得有收益的规则照旧。',
+    '【结构化代价】consequences 条目可以是 {"type":"time|resource|injury|reputation|grudge|exposure|misc","grade":"minor|moderate|severe","text":"…"}（类型：耗时/资源/受伤/声望/结仇/暴露/变故）。失败与部分成功要给真实代价：partial 至少一条结构化代价（缺了脚本会补保底条目），grudge/exposure 类代价 text 要点名对象或场合。',
     '本地真实状态是 state.player.realm、state.player.gold、inventory[{id,name,category,count}]。金币用 add，必须核对连续行动后的余额，余额不能负；单行动累计增减 ≤1000；负向必须 allowNegative:true。不能用 set/remove 绕开金币规则。',
     '物品用 field=items、targetId=player；type=add（有符号数量）、remove（正数量）或 set（非负总数）；value 是整数，itemId 引用清单里的真实已有 ID，并带 name/category/reason。不能编造 ID、消费不存在的物品、超出库存或混淆同名不同 category。每次消费后再核算后续可用数量。',
     '新增获取可写无 ID 的 value:{name,category,count} 或 value:数量 + name/category，但没有安全可映射的已有唯一 name+category 时，只作文字后果，不能造 ID 或声称已经精确入账。category 必须明确，参考快照中的 itemCategories。来源拿不准只写待核实，不发放确定收益。',
@@ -79,7 +83,9 @@ export const SETTLE_RESULT_JSON_SCHEMA = Object.freeze({
                 id: { type: 'string' }, category: { type: 'string' }, label: { type: 'string' }, evidence: { type: 'string' },
                 dependsOn: { type: 'array', maxItems: MAX_ACTIONS, items: { type: 'string' } },
                 status: { type: 'string', enum: STATUSES }, outcome: { type: 'string' },
-                consequences: { type: 'array', maxItems: 6, items: { type: 'string' } },
+                difficulty: { type: 'string', enum: SETTLE_DIFFICULTIES },
+                modifiers: { type: 'array', maxItems: 6, items: { type: 'object', properties: { reason: { type: 'string' }, value: { type: 'number' } }, required: ['reason', 'value'] } },
+                consequences: { type: 'array', maxItems: 6, items: { anyOf: [{ type: 'string' }, { type: 'object', properties: { type: { type: 'string' }, grade: { type: 'string' }, text: { type: 'string' } }, required: ['text'] }] } },
                 effects: { type: 'array', maxItems: MAX_EFFECTS, items: EFFECT_SCHEMA },
             }, required: ['id', 'category', 'evidence', 'dependsOn', 'status', 'outcome', 'consequences', 'effects'],
         } }, note: { type: 'string' },
@@ -209,6 +215,25 @@ export function buildSettleResultUser({ input = '', floors = [], worldbookLines 
     return result;
 }
 
+/**
+ * 解析失败的带错重试（instructor 模式）：把诊断喂回模型再判一次。
+ * 预算装不下就返回空串，调用方放弃重试——绝不截断玩家输入。
+ */
+export function buildSettleRetryUser(user, parsed = {}) {
+    const body = typeof user === 'string' ? user : '';
+    if (!body) return '';
+    const codes = [...new Set((Array.isArray(parsed?.diagnostics) ? parsed.diagnostics : []).map(item => item?.code).filter(Boolean))].slice(0, 8).join('、') || 'invalid_json';
+    const detail = clip(text(parsed?.error), 160);
+    const blocks = [
+        body,
+        '【上一次回答作废，重新判定】',
+        `上次回答不是完整合法的结算 JSON（问题：${codes}${detail ? `；${detail}` : ''}）。`,
+        '判定规则完全不变：按玩家输入重新输出完整 v2 JSON {"version":2,"actions":[…],"note":"…"}；evidence 仍逐字取自【玩家这一轮说】。不要复述上次回答，不要解释，不要输出 Markdown。',
+    ];
+    const result = blocks.join('\n\n');
+    return result.length > USER_CHARS ? '' : result;
+}
+
 /** 顺向平衡扫描不把字符串里的括号或转义引号当作结构。 */
 function extractLastJson(source) {
     if (objectLike(source) || Array.isArray(source)) return clone(source);
@@ -295,7 +320,11 @@ export function parseSettleResult(raw) {
         if (text(action.outcome).length > 800) fail('outcome_limit');
         if (v2 && !text(action.evidence)) fail('missing_evidence');
         if (!Array.isArray(action.dependsOn) || action.dependsOn.some(id => !text(id)) || action.dependsOn.length > MAX_ACTIONS) fail('invalid_dependencies');
-        if (v2 && (!Array.isArray(action.consequences) || action.consequences.some(value => typeof value !== 'string' || value.length > 300) || action.consequences.length > 6)) fail('invalid_consequences');
+        const normalizedConsequences = normalizeSettleConsequences(action.consequences);
+        if (!Array.isArray(action.consequences) || normalizedConsequences.violations.length
+            || normalizedConsequences.consequences.length > 6
+            || action.consequences.some(value => typeof value === 'string' && value.trim().length > 300)) fail('invalid_consequences');
+        if (action.difficulty !== undefined && !SETTLE_DIFFICULTIES.includes(action.difficulty)) diagnostics.push({ code: 'invalid_difficulty', actionIndex: index });
         if (!Array.isArray(action.effects)) fail('invalid_effects');
         const rawEffects = Array.isArray(action.effects) ? action.effects : [];
         if (rawEffects.length > MAX_EFFECTS) fail('effects_limit');
@@ -309,7 +338,10 @@ export function parseSettleResult(raw) {
         return {
             id: text(action.id) || `invalid-${index + 1}`, category: text(action.category) || 'none', label: text(action.label), evidence: text(action.evidence),
             dependsOn: Array.isArray(action.dependsOn) ? action.dependsOn.map(text) : [], status: STATUSES.includes(action.status) ? action.status : 'not_executed',
-            outcome: text(action.outcome), consequences: Array.isArray(action.consequences) ? action.consequences.filter(value => typeof value === 'string').map(text) : [], effects, parseErrors,
+            // difficulty 只在模型真报了档位时落字段；未报＝旧契约，骰子裁定按行动跳过。
+            ...(action.difficulty === undefined ? {} : { difficulty: normalizeSettleDifficulty(action.difficulty) }),
+            modifiers: Array.isArray(action.modifiers) ? action.modifiers : [],
+            outcome: text(action.outcome), consequences: normalizedConsequences.consequences, penalties: normalizedConsequences.penalties, effects, parseErrors,
         };
     });
     return {
@@ -425,8 +457,11 @@ function reviewEffect(effect, action, ruleCategory, next, baseline, options) {
 /**
  * 兼容旧单结果调用。任何原始/审核结果均不共享可变数组；拒绝是行动级原子操作。
  * comparison 只记录获批的精确字段，避免把无关的生成后变化误报成结算不一致。
+ * options.dice（{rng,npcs,playerRealm,oracleChance}）开启难度+骰子裁定：在解析
+ * 归一之后、行动审核之前应用——失败/部分成功的既有审核规则自动接管降级后果。
+ * 不传 dice 保持旧的确定性路径（既有测试与离线流程不受影响）。
  */
-export function reviewSettleEffects(parsed, state = {}, { customCategories = [], input } = {}) {
+export function reviewSettleEffects(parsed, state = {}, { customCategories = [], input, dice = null } = {}) {
     const previous = Array.isArray(parsed?.actions) && Array.isArray(parsed?.diagnostics) ? parsed : null;
     const raw = parseSettleResult(previous?.version === 1 && previous.actions.length
         ? { ...previous.actions[0], note: previous.note }
@@ -437,6 +472,8 @@ export function reviewSettleEffects(parsed, state = {}, { customCategories = [],
         if (previous.status === 'invalid') raw.status = 'invalid';
         for (const [index, action] of raw.actions.entries()) action.parseErrors.push(...(previous.actions[index]?.parseErrors ?? []));
     }
+    const diceOutcome = dice ? applySettleDice(raw.actions, dice) : null;
+    const sourceActions = diceOutcome ? diceOutcome.actions : raw.actions;
     const baseline = buildSettleState(state);
     let expectedState = clone(baseline);
     const comparison = { player: [], inventory: [] };
@@ -449,7 +486,7 @@ export function reviewSettleEffects(parsed, state = {}, { customCategories = [],
     for (const action of raw.actions) idCounts.set(action.id, (idCounts.get(action.id) ?? 0) + 1);
     const fatal = raw.status === 'invalid' || raw.diagnostics.some(item => item.fatal);
     const occupied = [];
-    const ranges = raw.version === 2 ? raw.actions.map(action => {
+    const ranges = raw.version === 2 ? sourceActions.map(action => {
         if (!action.evidence) return null;
         const source = String(input ?? '');
         let start = source.indexOf(action.evidence);
@@ -466,7 +503,7 @@ export function reviewSettleEffects(parsed, state = {}, { customCategories = [],
     }) : [];
     const positions = ranges.filter(Boolean).map(range => range.start);
     const outOfOrder = positions.some((position, index) => index > 0 && position < positions[index - 1]);
-    for (const [index, action] of raw.actions.entries()) {
+    for (const [index, action] of sourceActions.entries()) {
         let reason = fatal ? '整轮解析不完整或超过结算上限，禁止宣布遗漏部分成功' : '';
         let insufficient = false;
         if (!reason && outOfOrder) reason = '行动证据顺序与本轮输入不一致，不能用后续收益支付前序支出';
@@ -551,6 +588,7 @@ export function reviewSettleEffects(parsed, state = {}, { customCategories = [],
         category: approved.length === 1 ? approved[0].category : approved.length ? 'general' : 'none',
         note: rejected.length ? `审核阻断 ${rejected.length} 个行动；被拒结果不约束正文为成功。` : raw.note,
         expectedState: projectedState, diagnostics: raw.diagnostics, dropped: raw.dropped,
+        ...(diceOutcome ? { oracle: diceOutcome.oracle, diceRolled: diceOutcome.rolled, diceOverridden: diceOutcome.overridden, diceNotes: diceOutcome.modifierNotes } : {}),
     };
 }
 
@@ -589,6 +627,7 @@ export function compareSettleState(expectedState, actualState) {
 }
 
 /** 仅接受 reviewed:true；被拒行动不显示原 outcome、label、reason 或成功后果。 */
+const SETTLE_DICE_STATUS_TEXT = Object.freeze({ success: '成功', partial: '部分成功', failure: '失败' });
 export function renderSettleInjection(reviewed = {}, { maxChars = 6000 } = {}) {
     if (reviewed?.reviewed !== true) return '';
     const actions = Array.isArray(reviewed.actions) ? reviewed.actions : [];
@@ -600,6 +639,10 @@ export function renderSettleInjection(reviewed = {}, { maxChars = 6000 } = {}) {
         const id = clip(text(action.id).replace(/[^a-zA-Z0-9_\-\u4e00-\u9fff]/g, ''), 40) || `action-${index + 1}`;
         if (!action.approved) { lines.push(`${index + 1}. [${id}] [blocked/${action.status === 'insufficient' ? 'insufficient' : 'not_executed'}] 第${index + 1}项输入中的尝试/意图未完成，不得宣称成功、收益或代价已支付。`); continue; }
         lines.push(`${index + 1}. [${id}] [${action.status}] ${action.outcome}`);
+        if (action.dice) {
+            const modifier = `${action.dice.modifier >= 0 ? '+' : ''}${action.dice.modifier}`;
+            lines.push(`   判定：掷骰 ${action.dice.die}${modifier} 对难度 ${action.dice.dc}（${SETTLE_DIFFICULTY_LABELS[action.dice.difficulty] ?? '常规'}）→ ${SETTLE_DICE_STATUS_TEXT[action.dice.status] ?? action.dice.status}`);
+        }
         if (action.effects?.length) lines.push(`变化：${action.effects.map(effect => {
             const label = effect.field === 'items' ? `物品 ${clip(effect.name, 30)}（${clip(effect.category, 12)}，ID:${clip(effect.itemId, 50)}）` : SETTLE_FIELD_LABELS[effect.field] || effect.field;
             const value = effect.type === 'set' ? `→ ${effect.value}` : effect.type === 'remove' ? `-${effect.value}` : `${Number(effect.value) >= 0 ? '+' : ''}${effect.value}`;
@@ -608,6 +651,7 @@ export function renderSettleInjection(reviewed = {}, { maxChars = 6000 } = {}) {
         if (action.consequences?.length) lines.push(`文字后果：${action.consequences.join('；')}`);
     }
     if (!relevant.length) lines.push('[blocked] 本轮结算不可用，不得据此宣布行动成功或新增精确收益。');
+    if (reviewed.oracle?.title) lines.push(`【变数】${reviewed.oracle.title}：${reviewed.oracle.detail}`);
     const result = lines.join('\n');
     if (result.length > budget) return '【行动结算·审核预算保护】结算详情超过注入预算，本轮不得宣称任何行动已获结算确认；只描述尝试，不新增精确收益，不省略未核实的代价。';
     return result;

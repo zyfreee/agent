@@ -9,6 +9,16 @@
      --dai-title-gradient + --dai-title-color（标题鎏金渐变字，@supports 内启用）/
      --dai-btn-gradient + --dai-btn-border + --dai-btn-text + --dai-btn-glow(-hover)（主按钮幽光描边）/ --dai-texture（面板织锦暗纹）
    - 展示字体：--dai-font-display（标题走衬线，玄铁/米纸同样保留衬线） */
+/* dai-root 只是挂载点（面板/悬浮球/弹层各自 position:fixed），自身必须退出文档流——
+   之前 static 时会在文档尾部占出一节流式高度，浏览器把页滚下去就露出大片空白。 */
+.dai-root { position: fixed; inset: 0 auto auto 0; width: 0; height: 0; overflow: visible; }
+.dai-root[hidden] { display: none; }
+/* 楼层美化的配套保险（文件级，不依赖脚本库版本，旧页面回写设置也覆盖不掉）：
+   ① 美化的焰装规则曾把酒馆原版 #sheld 的 absolute 覆盖成 relative，
+      导致输入框/发送键被挤出窗口——这里用更高优先级钉回原版定位；
+   ② 视口锁：美化开着时 document/body 不允许滚动（悬空根修）。 */
+body.doupo-dress-page.doupo-blaze #sheld { position: absolute; }
+html.doupo-vp-lock, html.doupo-vp-lock body { overflow: hidden !important; }
 .dai-settings-panel, .dai-root, .dai-orb {
     --dai-bg: #16120c;
     --dai-sidebar: #100d08;
@@ -240,8 +250,8 @@ svg.dai-svg { width: 1em; height: 1em; flex: none; display: inline-block; vertic
 .dai-overview-switch, .dai-feature-toggle { display: flex; align-items: center; gap: 0.9rem; min-height: 2.9rem; padding: 0.5rem 0.2rem; border: 0; border-bottom: 1px solid var(--dai-line); border-radius: 0; background: transparent; }
 .dai-overview-switch > span, .dai-feature-toggle > span:nth-child(2) { display: grid; flex: 1; gap: 0.2rem; }
 .dai-overview-switch small, .dai-feature-toggle small, .dai-card-heading small { color: var(--dai-muted); font-size: var(--dai-fs-md); }
-/* 调用版本左右切换（模型设置页）：两枚并排选项，选中侧描边高亮。 */
-.dai-api-mode-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-top: 0.4rem; }
+/* 调用版本三列切换（模型设置页）：完整版／简略版／进阶版并排选项，选中侧描边高亮。 */
+.dai-api-mode-switch { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-top: 0.4rem; }
 .dai-api-mode-option { display: grid; gap: 0.15rem; justify-items: center; padding: 0.6rem 0.5rem; border: 1px solid var(--dai-line); border-radius: 8px; background: transparent; color: inherit; cursor: pointer; }
 .dai-api-mode-option small { color: var(--dai-muted); font-size: var(--dai-fs-md); }
 .dai-api-mode-option.is-active { border-color: var(--dai-accent); background: color-mix(in srgb, var(--dai-accent) 12%, transparent); }
@@ -514,6 +524,11 @@ svg.dai-svg { width: 1em; height: 1em; flex: none; display: inline-block; vertic
 .dai-impact-item.is-clickable:hover { border-color: var(--dai-accent); background: var(--dai-tint); }
 .dai-world-journal { display: grid; gap: 0.3rem; }
 .dai-world-journal .dai-turn-result b { color: var(--dai-muted); }
+/* 按人整合时间线的日期分隔行：小号衬线日期，压在成组条目上方 */
+.dai-timeline-day { padding: 0.5rem 0.6rem 0.1rem; font-family: var(--dai-font-display); font-size: var(--dai-fs-sm); color: var(--dai-muted); letter-spacing: 0.06em; }
+/* 详情弹窗里的可点击行（相关记忆跳转）：悬停值变主题色提示可点 */
+.dai-profile-row.is-clickable { cursor: pointer; }
+.dai-profile-row.is-clickable:hover .dai-profile-value { color: var(--dai-accent); }
 .dai-facts-injection { display: grid; gap: 0.45rem; }
 .dai-facts-injection-list { display: flex; flex-wrap: wrap; gap: 0.35rem; }
 /* 检索库条目浏览：固定高度内滚动，条目再多也不撑长页面；滑到底后滚轮接着滚主界面。 */
@@ -701,6 +716,8 @@ svg.dai-svg { width: 1em; height: 1em; flex: none; display: inline-block; vertic
 .dai-orb[data-state="expanded"] .dai-orb-icon { opacity: 1; transform: none; visibility: visible; pointer-events: auto; }
 .dai-orb-icon:hover { color: var(--dai-accent-hi); background: var(--dai-tint); }
 .dai-orb-icon.is-active { color: var(--dai-accent); background: var(--dai-tint); box-shadow: inset 2px 0 0 var(--dai-accent); }
+/* 开关关掉的栏目（如开放世界）整个从长条上消失：display 写死会压过 hidden 属性，这里显式压回。 */
+.dai-orb-icon[hidden] { display: none; }
 .dai-orb-panel { position: absolute; top: 0; right: calc(100% + 0.6rem); width: min(20rem, calc(100vw - 6.2rem)); max-height: min(34rem, 72vh); overflow: auto; padding: 0.85rem 0.95rem 0.95rem; border: 1px solid var(--dai-accent-deep); border-radius: var(--dai-radius-dialog); background: linear-gradient(180deg, var(--dai-surface), var(--dai-bg) 200%); box-shadow: 0 0.6rem 1.6rem #0005, inset 0 1px 0 var(--dai-glow); font-size: var(--dai-fs-md); }
 .dai-orb[data-side="left"] .dai-orb-panel { right: auto; left: calc(100% + 0.6rem); }
 .dai-orb-panel[hidden] { display: none; }
@@ -719,6 +736,13 @@ svg.dai-svg { width: 1em; height: 1em; flex: none; display: inline-block; vertic
 .dai-orb-row-label { flex: none; color: var(--dai-muted); }
 .dai-orb-row-value { flex: 1 1 auto; text-align: right; overflow-wrap: anywhere; }
 .dai-orb-row[data-tone="warn"] .dai-orb-row-value { color: var(--dai-warn); }
+.dai-orb-row[data-tone="muted"] .dai-orb-row-value { color: var(--dai-muted); opacity: 0.8; }
+/* 可点的总控行（如「上次失败」）与失败渠道标记：点击弹详情小卡（手机没有悬停）。 */
+.dai-orb-row.is-clickable { cursor: pointer; }
+.dai-orb-row.is-clickable:hover { color: var(--dai-text); }
+.dai-orb-channel-mark.is-clickable { cursor: pointer; }
+/* 简略版总控每行只有一路芯片，槽收窄一半，把宽度还给说明文字。 */
+.dai-orb-panel[data-api-mode="lite"] .dai-orb-row-marks { min-width: 5.8rem; }
 .dai-orb-group { display: grid; gap: 0.35rem; margin-top: 0.7rem; }
 .dai-orb-group-head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; }
 .dai-orb-group-title { color: var(--dai-muted); font-size: var(--dai-fs-sm); font-weight: 600; letter-spacing: 0.12em; }
@@ -773,12 +797,30 @@ svg.dai-svg { width: 1em; height: 1em; flex: none; display: inline-block; vertic
 .dai-orb-row-marks { display: inline-flex; align-items: center; justify-content: flex-start; gap: 0.55rem; margin-left: 0.6rem; flex-shrink: 0; min-width: 6.4rem; }
 .dai-orb-channel-mark { display: inline-flex; align-items: center; gap: 0.15rem; cursor: help; }
 .dai-orb-channel-mark small { color: var(--dai-muted); font-size: 0.72rem; line-height: 1; }
+/* 模块行尾的调用标记组：短名常显（判定/决定…），每路一个渠道芯片；可重roll 的路在芯片上挂圆圈箭头。
+ * 槽宽定死（两路芯片＋箭头实测约 8.6rem，槽给 9rem 留余量），空槽也占位——总控每行的状态列/渠道列/箭头列因此一列列对齐。 */
+.dai-orb-row-marks { display: inline-flex; align-items: center; justify-content: flex-start; gap: 0.55rem; margin-left: 0.6rem; flex-shrink: 0; min-width: 9rem; }
+.dai-orb-channel-mark { display: inline-flex; align-items: center; gap: 0.15rem; cursor: help; }
+.dai-orb-channel-mark small { color: var(--dai-muted); font-size: 0.72rem; line-height: 1; }
 .dai-orb-channel-mark .dai-orb-spin { margin-right: 0; }
 .dai-orb-channel-mark .dai-orb-mark { margin-right: 0; }
+/* 总控渠道芯片上的重roll 圆圈箭头：箭头长在谁身上，重跑的就是谁那一路（生成前的选条/召回/挑选不给）。
+ * 忙碌态由标记的 running 态数据驱动（在途禁用＋箭头自转），hover 转半圈是「可重跑」的示意。 */
+.dai-orb-mark-reroll { flex: none; display: grid; width: 1.15rem; height: 1.15rem; place-items: center; margin-left: 0.05rem; padding: 0; border: 1px solid var(--dai-border); border-radius: 50%; color: var(--dai-accent); background: transparent; cursor: pointer; transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease, transform 0.2s ease; }
+.dai-orb-mark-reroll .dai-svg { width: 0.78rem; height: 0.78rem; }
+.dai-orb-mark-reroll:hover:not(:disabled) { color: var(--dai-text); border-color: var(--dai-accent); background: var(--dai-tint); transform: rotate(45deg); }
+.dai-orb-mark-reroll:disabled { opacity: 0.5; cursor: progress; }
+.dai-orb-mark-reroll.is-busy .dai-svg { animation: dai-orb-spin 0.8s linear infinite; }
+/* 进阶版的轻量视觉区分：总控窗标题旁一枚「进阶」徽章；信息窗描边换强调色并加外光环，
+ * 球体光晕略强——主题配色不动，完整版/简略版无这些样式。 */
+.dai-orb-mode-badge { display: inline-grid; place-items: center; padding: 0.02rem 0.34rem; border: 1px solid var(--dai-accent-deep); border-radius: 999px; background: var(--dai-accent-soft); color: var(--dai-accent-deep); font-size: var(--dai-fs-xs); font-weight: 700; letter-spacing: 0.14em; line-height: 1.4; }
+.dai-orb[data-api-mode="advanced"] .dai-orb-panel { border-color: var(--dai-accent); box-shadow: 0 0.6rem 1.6rem #0005, inset 0 1px 0 var(--dai-glow), 0 0 0.9rem var(--dai-orb-halo); }
+.dai-orb[data-api-mode="advanced"] .dai-orb-ball { box-shadow: inset 0 1px 0 var(--dai-glow), inset 0 0 0 1px var(--dai-accent-deep), 0 0 1.1rem var(--dai-orb-halo); }
 @media (prefers-reduced-motion: reduce) {
-    .dai-orb-capsule, .dai-orb-ball, .dai-orb-icon { transition: none !important; }
+    .dai-orb-capsule, .dai-orb-ball, .dai-orb-icon, .dai-orb-mark-reroll { transition: none !important; }
     .dai-orb-ball svg { animation: none !important; }
     .dai-orb-spin { animation: none !important; border-top-color: var(--dai-accent); }
+    .dai-orb-mark-reroll.is-busy .dai-svg { animation: none !important; }
 }
 
 /* ---- 弹窗：添加/编辑/详情统一收进居中弹层 ---- */
@@ -1163,3 +1205,48 @@ button.dai-body-slot__name:hover { text-decoration: underline; }
 .dai-sandbox-pending p { margin: 0 0 0.45rem; }
 .dai-sandbox-pending b { display: block; font-size: var(--dai-fs-md, 0.9rem); }
 .dai-sandbox-pending small { color: var(--dai-muted, #ab966f); }
+
+/* ---- 人物关系网图谱 · 力导向版：药丸节点/立场着色有向边/邻域高亮 ---- */
+.dai-rel-graph-svg { width: 100%; height: auto; display: block; border: 1px solid var(--dai-border, #4a3b20); border-radius: 12px; background: radial-gradient(ellipse at 50% 42%, rgba(217, 167, 43, 0.08), transparent 66%), repeating-linear-gradient(0deg, rgba(217, 167, 43, 0.02) 0 1px, transparent 1px 26px), repeating-linear-gradient(90deg, rgba(217, 167, 43, 0.02) 0 1px, transparent 1px 26px); touch-action: none; }
+.dai-rel-edge { fill: none; stroke: #9ca3af; stroke-width: 1.5; opacity: 0.5; transition: opacity 0.18s ease, stroke-width 0.18s ease; }
+.dai-rel-edge[data-stance="血亲"], .dai-rel-edge[data-stance="师徒"], .dai-rel-edge[data-stance="同门"] { stroke: #b39ddb; stroke-width: 2; opacity: 0.8; }
+.dai-rel-edge[data-stance="同盟"] { stroke: #34d399; stroke-width: 2.2; opacity: 0.8; }
+.dai-rel-edge[data-stance="友好"] { stroke: #86efac; stroke-width: 1.8; opacity: 0.75; }
+.dai-rel-edge[data-stance="中立"] { stroke: #9ca3af; stroke-width: 1.4; stroke-dasharray: 5 4; opacity: 0.55; }
+.dai-rel-edge[data-stance="警惕"] { stroke: #fbbf24; stroke-width: 1.8; opacity: 0.8; }
+.dai-rel-edge[data-stance="敌对"] { stroke: #f87171; stroke-width: 2.4; opacity: 0.9; }
+.dai-rel-edge.is-hi { opacity: 1 !important; stroke-width: 2.8; filter: drop-shadow(0 0 4px rgba(217, 167, 43, 0.35)); }
+.dai-rel-elabel { opacity: 0.95; transition: opacity 0.18s ease; }
+.dai-rel-elabel.is-dim { opacity: 0; }
+.dai-rel-elabel text { font-size: 10px; font-weight: 600; text-anchor: middle; dominant-baseline: middle; pointer-events: none; }
+.dai-rel-node { cursor: pointer; transition: opacity 0.18s ease; }
+.dai-rel-node > rect { fill: var(--dai-surface, #221b10); stroke: var(--dai-border, #4a3b20); stroke-width: 1.4; }
+.dai-rel-node.is-present > rect { stroke: var(--dai-accent, #d9a72b); }
+.dai-rel-node.is-important > rect { stroke: var(--dai-accent-hi, #f6dd9a); stroke-width: 1.8; }
+.dai-rel-node .dai-rel-ring { fill: none; stroke: rgba(246, 221, 154, 0.4); stroke-width: 1; stroke-dasharray: 3 3; pointer-events: none; }
+.dai-rel-node.is-player > rect { fill: url(#dai-rel-gold); stroke: #f8e9b4; stroke-width: 1.6; filter: drop-shadow(0 0 9px rgba(217, 167, 43, 0.5)); }
+.dai-rel-node.is-ghost > rect { fill: transparent; stroke: var(--dai-border, #4a3b20); stroke-dasharray: 4 3; }
+.dai-rel-node-name { font-size: 12px; font-weight: 600; fill: var(--dai-text, #f0e6cd); text-anchor: middle; dominant-baseline: middle; pointer-events: none; }
+.dai-rel-node.is-player .dai-rel-node-name { fill: #241a05; font-weight: 700; }
+.dai-rel-node-sub { font-size: 9.5px; fill: var(--dai-muted, #ab966f); text-anchor: middle; pointer-events: none; }
+.dai-rel-mood-dot { fill: #fbbf24; filter: drop-shadow(0 0 3px rgba(251, 191, 36, 0.8)); }
+.dai-rel-graph-svg.is-focus .dai-rel-edge:not(.is-hi) { opacity: 0.1; }
+.dai-rel-graph-svg.is-focus .dai-rel-elabel:not(.is-hi) { opacity: 0; }
+.dai-rel-graph-svg.is-focus .dai-rel-node:not(.is-hi) { opacity: 0.22; }
+.dai-rel-graph-svg.is-focus .dai-rel-node.is-hi > rect { filter: drop-shadow(0 0 10px rgba(217, 167, 43, 0.55)); }
+
+/* ---- 人物卡可视化：好感刻度条 + 情绪倒计时 chip ---- */
+.dai-favor-bar { position: relative; flex: none; width: 52px; height: 6px; border-radius: 3px; overflow: visible; background: linear-gradient(90deg, #7f1d1d, #6b5b3e 46%, #6b5b3e 54%, #166534); opacity: 0.95; }
+.dai-favor-bar > i { position: absolute; top: -2px; width: 2px; height: 10px; border-radius: 1px; background: var(--dai-accent-hi, #f6dd9a); box-shadow: 0 0 4px var(--dai-glow, rgba(246, 221, 154, 0.32)); transform: translateX(-1px); }
+.dai-mood-chip { flex: none; font-size: 11px; line-height: 1.4; padding: 1px 7px; border-radius: 999px; border: 1px solid rgba(251, 191, 36, 0.45); color: #fbbf24; background: rgba(251, 191, 36, 0.08); white-space: nowrap; }
+
+/* ---- Agent 能力地图：12 模块图标网格 ---- */
+.dai-cap-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 8px; }
+.dai-cap-cell { display: flex; flex-direction: column; gap: 3px; padding: 8px 10px; border: 1px solid var(--dai-border, #4a3b20); border-radius: 10px; background: linear-gradient(180deg, rgba(217, 167, 43, 0.06), transparent); opacity: 0.62; }
+.dai-cap-cell.is-on { opacity: 1; }
+.dai-cap-head { display: flex; align-items: center; gap: 6px; }
+.dai-cap-icon { font-size: 17px; line-height: 1; color: var(--dai-accent-hi, #f6dd9a); }
+.dai-cap-head b { font-size: 12px; color: var(--dai-text, #f0e6cd); }
+.dai-cap-dot { margin-left: auto; width: 7px; height: 7px; border-radius: 50%; background: #4a5568; flex: none; }
+.dai-cap-cell.is-on .dai-cap-dot { background: #34d399; box-shadow: 0 0 5px rgba(52, 211, 153, 0.6); }
+.dai-cap-cell small { font-size: 10.5px; line-height: 1.4; color: var(--dai-muted, #ab966f); }

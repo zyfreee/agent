@@ -80,12 +80,13 @@ export const SELF_JSON_SCHEMA = Object.freeze({
     required: ['ops'],
 });
 
-/** 组装发给模型的 user 内容：纳戒现状（带编号，供 update/remove 引用）+ 原著资料已注入内容 + 最近聊天（旧→新）。 */
-export function buildSelfDecideUser({ snapshot = {}, floors = [], worldbookLines = [] } = {}) {
+/** 组装发给模型的 user 内容：纳戒现状（带编号，供 update/remove 引用）+ 本轮结算裁定 + 原著资料已注入内容 + 最近聊天（旧→新）。 */
+export function buildSelfDecideUser({ snapshot = {}, floors = [], worldbookLines = [], settleLines = [] } = {}) {
     const selfBlock = buildSelfInjection(snapshot, { maxChars: 1600, withIds: true });
     const bookLines = (Array.isArray(worldbookLines) ? worldbookLines : [])
         .filter(line => typeof line === 'string' && line.trim())
         .slice(0, MAX_BOOK_LINES);
+    const settle = (Array.isArray(settleLines) ? settleLines : []).filter(line => typeof line === 'string' && line.trim());
     const chat = (Array.isArray(floors) ? floors : [])
         .slice(-MAX_FLOORS)
         .map(floor => {
@@ -98,6 +99,7 @@ export function buildSelfDecideUser({ snapshot = {}, floors = [], worldbookLines
         '【纳戒现状（主角此刻的自身状态与随身之物）】',
         selfBlock,
         '',
+        ...(settle.length ? ['【本轮行动结算（生成前已判定，记账须与此一致）】', ...settle, ''] : []),
         '【原著资料（本轮已注入的原著条目）】',
         bookLines.length ? bookLines.join('\n\n') : '- （原著资料本轮还没有注入内容）',
         '',

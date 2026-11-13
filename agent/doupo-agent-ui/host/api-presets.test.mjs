@@ -128,4 +128,20 @@ const anthropic = presetToOverrides(normalizeApiPreset({ baseUrl: 'https://x/v1'
 assert.equal(anthropic.custom.provider, 'anthropic');
 assert.deepEqual(anthropic.headers, { 'anthropic-version': '2023-07-01' });
 
+// ---------- 方案通道：tavern 方案只带通道标记，地址/密钥一概不带 ----------
+const tavernPreset = normalizeApiPreset({ id: 'p-tavern', name: '酒馆通道', tavern: true, baseUrl: 'https://ignored.example/v1', apiKey: 'sk-x', model: 'm' });
+assert.equal(tavernPreset.tavern, true, 'normalize 保留通道标记');
+assert.equal(tavernPreset.baseUrl, 'https://ignored.example/v1', '地址照常保留（切回直连时还在）');
+const tavernOverrides = presetToOverrides(tavernPreset);
+assert.deepEqual(tavernOverrides, { connection: 'tavern' }, 'tavern 方案＝单走酒馆通道，不带任何直连参数');
+// 没填地址的 tavern 方案照样可用（不会被 baseUrl 检查误杀）
+const tavernNoUrl = presetToOverrides(normalizeApiPreset({ tavern: true }));
+assert.deepEqual(tavernNoUrl, { connection: 'tavern' });
+// 老方案没有 tavern 字段：默认直连，行为不变
+const legacyDirect = presetToOverrides(normalizeApiPreset({ baseUrl: 'https://x/v1', model: 'm' }));
+assert.equal(legacyDirect.connection, 'custom');
+assert.equal(legacyDirect.custom.model, 'm');
+// 新建/清洗后的方案默认 tavern: false
+assert.equal(normalizeApiPreset({ name: '新' }).tavern, false);
+
 console.log('api-presets tests passed');

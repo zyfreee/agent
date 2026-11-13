@@ -86,7 +86,7 @@ test('user message carries only the open ledgers with the clock and chat tail', 
     assert.match(trimmed, /请把世界、影响、纳戒本账一次记完/);
 });
 
-function harness({ reply = GOOD_REPLY, continuation = true, mode = () => 'lite', floor = 3, available = () => true, gates } = {}) {
+function harness({ reply = GOOD_REPLY, continuation = true, mode = () => 'lite', floor = 3, available = () => true, gates, worldDay, worldApply, settleLines } = {}) {
     const calls = { completes: [], statuses: [], persists: [], audits: [], refreshes: [] };
     let current = continuation;
     const chat = [
@@ -94,7 +94,8 @@ function harness({ reply = GOOD_REPLY, continuation = true, mode = () => 'lite',
     ];
     const deps = {
         mode, getContext: () => ({ chat }), lastReplyIndex: list => floor, capture: () => ({ current: () => current }),
-        available, worldDay: () => 7, gates,
+        available, worldDay: worldDay ?? (() => 7), gates,
+        settleLines: settleLines ?? (() => []),
         floorsMax: () => 6, entriesMax: () => 8,
         complete: async args => { calls.completes.push(args); return reply; },
         overrides: () => ({ connection: 'tavern' }),
@@ -109,7 +110,7 @@ function harness({ reply = GOOD_REPLY, continuation = true, mode = () => 'lite',
         },
         world: {
             parse: parsers.world, snapshotText: () => '第7天·乌坦城',
-            apply: (ops, context) => { calls.worldApply = { ops, context }; return { applied: [{ summary: '时间推进' }], rejected: [] }; },
+            apply: worldApply ?? ((ops, context) => { calls.worldApply = { ops, context }; return { applied: [{ summary: '时间推进' }], rejected: [] }; }),
             note: () => {}, persist: () => calls.persists.push('world'), refresh: () => calls.refreshes.push('world'),
             status: text => calls.statuses.push(['world', text]),
         },
@@ -295,4 +296,33 @@ test('full mode never enters the merged settle', async () => {
     const h = harness({ mode: () => 'full' });
     assert.equal((await h.api.run({ source: 'auto' })).status, 'disabled');
     assert.equal(h.calls.completes.length, 0);
+});
+
+test('settle verdict lines ride along into the merged user message', async () => {
+    const h = harness({ settleLines: () => ['- 药铺购凝血草：失败（骰16-2 对难度 11）；一枚金币没能成交'] });
+    const result = await h.api.run({ source: 'auto' });
+    assert.equal(result.status, 'ok');
+    assert.match(h.calls.completes[0].user, /【本轮行动结算（生成前已判定，五本账都必须与判定一致）】/);
+    assert.match(h.calls.completes[0].user, /药铺购凝血草/);
+});
+
+test('world section applies before the npc ledger so npc/impact/self read the fresh day', async () => {
+    let clockDay = 6;
+    let worldApplied = null;
+    const h = harness({
+        worldDay: () => clockDay,
+        worldApply: (ops, context) => { clockDay += 1; worldApplied = { ops, context }; return { applied: [{ summary: '时间推进' }], rejected: [] }; },
+    });
+    const result = await h.api.run({ source: 'auto' });
+    assert.equal(result.status, 'ok');
+    assert.ok(worldApplied, '世界分节先落账');
+    assert.equal(h.calls.npcApply.context.day, 7, '人物记账读推进后的世界钟');
+    assert.equal(h.calls.impactApply.context.day, 7);
+    assert.equal(h.calls.selfApply.context.day, 7);
+});
+
+test('buildLiteSettleUser renders the settle section only when lines are given', () => {
+    const withSettle = buildLiteSettleUser({ floors: [{ role: '角色', text: '正文' }], settleLines: ['- 药铺购凝血草：失败'] });
+    assert.match(withSettle, /【本轮行动结算（生成前已判定，五本账都必须与判定一致）】/);
+    assert.doesNotMatch(buildLiteSettleUser({ floors: [{ role: '角色', text: '正文' }] }), /【本轮行动结算/);
 });

@@ -142,10 +142,11 @@ function memoryIndexLines(snapshot = {}, { maxLines = 60 } = {}) {
         .filter(line => line.length > 4);
 }
 
-/** 组装发给模型的 user 内容：只带还开着的账本现状 + 相关世界书 + 最近聊天（旧→新）。 */
+/** 组装发给模型的 user 内容：只带还开着的账本现状 + 本轮结算裁定 + 相关世界书 + 最近聊天（旧→新）。 */
 export function buildLiteSettleUser({
     floors = [], day = null, bookLines = [],
     npcLines = [], worldBlock = '', impactLines = [], selfBlock = '', memoryLines = [], consolidateLines = [],
+    settleLines = [],
     sections = {},
 } = {}) {
     const chat = (Array.isArray(floors) ? floors : [])
@@ -157,6 +158,7 @@ export function buildLiteSettleUser({
         })
         .filter(Boolean);
     const book = (Array.isArray(bookLines) ? bookLines : []).filter(line => typeof line === 'string' && line.trim()).slice(0, MAX_BOOK_LINES);
+    const settle = (Array.isArray(settleLines) ? settleLines : []).filter(line => typeof line === 'string' && line.trim());
     const wantNpc = sections.npc !== false;
     const wantWorld = sections.world !== false;
     const wantImpact = sections.impact !== false;
@@ -182,6 +184,7 @@ export function buildLiteSettleUser({
         wantMemory && consolidateLines.length ? '【待整合小记忆（memory 侧顺带：把它们整批总结成 1 条大记忆，输出 consolidate 字段）】' : null,
         wantMemory && consolidateLines.length ? consolidateLines.map(line => `- ${line}`).join('\n') : null,
         '',
+        ...(settle.length ? ['【本轮行动结算（生成前已判定，五本账都必须与判定一致）】', ...settle, ''] : []),
         `【世界书资料（与本轮聊天相关的条目，共 ${book.length} 条）】`,
         book.length ? book.map(line => `- ${line}`).join('\n') : '- （本轮没有命中的世界书条目）',
         '',
@@ -200,6 +203,8 @@ export function createLiteSettle({
     mode, getContext, lastReplyIndex, capture, available, worldDay,
     floorsMax = () => 8, entriesMax = () => 12,
     complete, overrides, factsIndex, sandboxActive, volumeOf,
+    // 本轮结算裁定行（Thunk 现读，与 gates 同口径）：结算判过的成败喂给总账房，五本账照着记。
+    settleLines = () => [],
     npc, world, impact, self, memory, runConsolidation, onNpcCreated, audit,
     // 各功能自己的启用/自动开关（与完整版各记账链同口径）：关了哪个，对应分节就不落账。
     // gates 支持三种传法：函数（接线现读设置，值可以是函数或布尔）/「名字 => 函数或布尔」映射。
@@ -294,6 +299,7 @@ export function createLiteSettle({
                     selfBlock: gate.self ? self.snapshotText(selfSnapshot) : '',
                     memoryLines: gate.memory ? memoryIndexLines(memorySnapshot) : [],
                     consolidateLines: gate.memory ? consolidateCandidates.map(entry => `${entry.id}|${String(entry.title || entry.text || '').trim().slice(0, 24)}`) : [],
+                    settleLines: (() => { try { return settleLines(); } catch { return []; } })(),
                     sections: gate,
                 }),
                 jsonSchema: LITE_SETTLE_JSON_SCHEMA,
@@ -302,13 +308,29 @@ export function createLiteSettle({
             if (!continuation.current()) return { status: 'stale' };
             const parsed = parseLiteSettleReply(raw);
             if (parsed.status === 'invalid') return { status: 'invalid', error: parsed.error };
-            const day = worldDay();
             const replay = settled?.floor === index;
             const report = {
                 npc: gate.npc ? 'absent' : 'disabled', world: gate.world ? 'absent' : 'disabled',
                 impact: gate.impact ? 'absent' : 'disabled', self: gate.self ? 'absent' : 'disabled',
                 memory: gate.memory ? 'absent' : 'disabled',
             };
+            // 世界侧先落账：世界钟先推进到本轮的天数，下面重读的 day 才是本轮的——
+            // 人物/影响/纳戒/记忆照旧天落账会把"第 N 天发生的事"记到 N-1 头上（实测踩过）。
+            if (parsed.sections.world && gate.world) {
+                const decision = world.parse(JSON.stringify(parsed.sections.world));
+                if (decision.status === 'invalid') {
+                    report.world = `invalid：${decision.error}`;
+                    world.status(`总结算的世界分节无法解析：${decision.error}`);
+                } else {
+                    const result = world.apply(decision.ops, { source: 'decide', floor: index });
+                    if (!result.applied.length) world.note(decision.note || parsed.note || '模型判断本轮世界无变化。', { source: 'decide' });
+                    world.persist();
+                    world.status(decision.note ? `总结算·世界：${decision.note}` : '总结算·世界台账已更新。');
+                    world.refresh();
+                    report.world = `applied:${result.applied.length}`;
+                }
+            }
+            const day = worldDay();
             // 人物侧：补丁清单照旧整包交给人物簿（replay 语义与完整版记录员一致）。
             if (parsed.sections.npc && gate.npc) {
                 const section = parsed.sections.npc;
@@ -335,21 +357,6 @@ export function createLiteSettle({
                         npc.status(`这一轮的人物变化没有落账：${result.reason ?? result.status}`);
                     }
                     npc.persist();
-                }
-            }
-            // 世界侧：世界台账推进。
-            if (parsed.sections.world && gate.world) {
-                const decision = world.parse(JSON.stringify(parsed.sections.world));
-                if (decision.status === 'invalid') {
-                    report.world = `invalid：${decision.error}`;
-                    world.status(`总结算的世界分节无法解析：${decision.error}`);
-                } else {
-                    const result = world.apply(decision.ops, { source: 'decide', floor: index });
-                    if (!result.applied.length) world.note(decision.note || parsed.note || '模型判断本轮世界无变化。', { source: 'decide' });
-                    world.persist();
-                    world.status(decision.note ? `总结算·世界：${decision.note}` : '总结算·世界台账已更新。');
-                    world.refresh();
-                    report.world = `applied:${result.applied.length}`;
                 }
             }
             // 影响侧：世界线偏移记账。

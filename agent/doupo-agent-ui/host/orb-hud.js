@@ -442,8 +442,8 @@ export function buildMemoryPanel({ status, snapshot, lastInjection } = {}) {
     const rank = (a, b) => (b.weight === 'major') - (a.weight === 'major') || (b.day ?? 0) - (a.day ?? 0);
     const memoryItem = item => entry(
         // 主页面只放短标题（老数据没有 title 才回退截断正文）；全文在详情弹卡里。
-        `${item.weight === 'major' ? '★ ' : ''}${item.title ? brief(item.title, 18) : brief(item.text, 24)}`,
-        [`第 ${item.day ?? '?'} 天`, TAG_LABELS[item.tag] ?? ''].filter(Boolean).join(' · '),
+        `${item.supersededBy ? '◇ ' : ''}${item.weight === 'major' ? '★ ' : ''}${item.title ? brief(item.title, 18) : brief(item.text, 24)}`,
+        [`第 ${item.day ?? '?'} 天`, TAG_LABELS[item.tag] ?? '', item.supersededBy ? `已替代→${item.supersededBy}` : ''].filter(Boolean).join(' · '),
         '',
         ref('memory', item?.id, { tier: item?.tier }),
     );
@@ -459,6 +459,7 @@ export function buildMemoryPanel({ status, snapshot, lastInjection } = {}) {
         row('记忆总数', status?.total !== undefined ? `${status.total} 条` : ''),
         row('大记忆', byTier.big?.total !== undefined ? `${byTier.big.total} 条` : ''),
         row('小记忆', byTier.small?.total !== undefined ? `${byTier.small.total} 条` : ''),
+        status?.superseded ? row('已被覆盖', `${status.superseded} 条（默认不召回，账仍在）`) : null,
         inj ? row('上次注入', `${injSource}${injSource ? ' · ' : ''}${injIds.length} 条 · ${inj.chars ?? 0} 字${injTime ? ` · ${injTime}` : ''}`) : null,
         injState ? row('注入状态', injState) : null,
     ].filter(Boolean));
@@ -524,12 +525,14 @@ const JOURNAL_EVENTS = Object.freeze({
     narrative_candidates_invalidated: '正文候选作废', history_changed_after_commit: '提交后历史变动', history_candidate_invalidated: '历史候选作废',
     turn_mvu_arbitrate: '纳戒仲裁', turn_memory_decide: '记忆总结', turn_npc_record: '人物记账', turn_world_decision: '世界推进',
     turn_impact_decide: '影响记录', turn_settle_adjudicate: '行动结算', turn_facts_inject: '原著注入', turn_lite_settle: '总结算',
+    turn_fact_check: '正文核验',
 });
 const JOURNAL_OUTCOMES = Object.freeze({
     completed: '完成', processing: '进行中', aborted: '中止', aborted_before_stage: '未开始就中止',
     achieved: '达成', not_achieved: '未达成', budget_exhausted: '预算耗尽', candidate_ready_not_committed: '候选未提交',
     awaiting_message_evidence: '等消息确认', quality_rejected: '被拦截', narrative_rejected: '被拦截',
     npc_plan_changed: '计划已变', npc_plan_changed_after_message: '计划已变', unapproved_setting_use: '未授权设定',
+    skipped: '快筛跳过', already_decided: '本楼已核验',
 });
 
 /** 运行日志：审计流水倒序看最近几条，只读。 */
@@ -550,8 +553,15 @@ export function buildJournalPanel({ records } = {}) {
     };
 }
 
-/** 开放世界：本局口径，只读。 */
-export function buildSandboxPanel({ read } = {}) {
+/** 开放世界：本局口径，只读。开关关＝功能不存在（图标已隐藏），这是兜底文案。 */
+export function buildSandboxPanel({ enabled, read } = {}) {
+    if (enabled === false) {
+        return {
+            title: '开放世界', icon: '◈',
+            summary: '开放世界已关闭：本局按主线口径运行，原著节点到点发生。',
+            rows: [], lists: [],
+        };
+    }
     if (!read || read.status !== 'ready') {
         return {
             title: '开放世界', icon: '◈',
@@ -560,9 +570,10 @@ export function buildSandboxPanel({ read } = {}) {
         };
     }
     const last = Array.isArray(read.history) ? read.history.at(-1) : null;
+    const inertiaLabel = { strong: '强 · 世界推着走', medium: '中 · 有人介入才偏离', weak: '弱 · 不再自动发生' }[read.inertia] ?? read.inertia;
     const rows = capRows([
         row('本局口径', read.mode === 'sandbox' ? '开放世界' : read.mode === 'mainline' ? '主线' : ''),
-        row('惯性', read.inertia),
+        row('惯性', inertiaLabel),
         row('原著角色自主', read.canonCharactersAutonomous === false ? '否' : '是'),
         row('口径切换', last ? `共 ${read.history.length} 次，最近 ${last.from === 'sandbox' ? '开放世界' : '主线'} → ${last.to === 'sandbox' ? '开放世界' : '主线'}` : '本局没切过'),
     ]);
@@ -577,18 +588,22 @@ export function buildSandboxPanel({ read } = {}) {
 /** 总控窗常驻的调用渠道：每轮生成前后基本都会跑的模型调用，按一轮里的发生顺序排。 */
 /** 每个仪表盘模块自己名下的调用渠道：标记直接标在模块行尾，一眼看清哪路没调/在调。 */
 /** 每个仪表盘模块自己名下的调用渠道：标记直接标在模块行尾，一眼看清哪路没调/在调。
- *  key 是调用流水里的登记标签（markOf 靠它对号）；short 是行尾多个记号并排时的短名，
- *  行尾只挂一个记号时不显示文字，悬停标题里始终是全名。 */
+ *  key 是调用流水里的登记标签（markOf 靠它对号）；short 是行尾多个记号并排时的短名（常显，列才对得齐），
+ *  悬停标题里始终是全名。
+ *  advanced: true 的渠道是进阶版专属调用（正文核验、剧情决定），完整版/简略版不挂标记。
+ *  reroll: 该渠道的重roll 圆圈箭头（id 对应 index.js 侧 ORB_OVERVIEW_REROLLS）——箭头挂在
+ *  自己的渠道标记上，一行两路请求就有两枚箭头，点了算哪路一目了然。 */
 const MODULE_CHANNELS = Object.freeze({
     // 原著设定每轮的真实调用是选条员，登记标签是「事实检索」（facts-select 调 complete 时不报标签，
     // 由 index.js 兜底命名）；「场记挑选」其实是世界影响的注入挑选员，挂在影响行。
-    facts: [{ key: '事实检索', short: '选条' }],
-    action: [{ key: '行动结算', short: '判定' }],
-    memory: [{ key: '记忆召回', short: '召回' }, { key: '记忆决定', short: '决定' }],
-    world: [{ key: '世界决定', short: '决定' }],
-    npc: [{ key: '人物记录', short: '记录' }],
-    self: [{ key: '纳戒决定', short: '决定' }],
-    impact: [{ key: '场记挑选', short: '挑选' }, { key: '影响决定', short: '决定' }],
+    facts: [{ key: '事实检索', short: '选条', reroll: { id: 'factsselect', hint: '重roll 选条' } }, { key: '正文核验', short: '核验', advanced: true, reroll: { id: 'facts', hint: '重roll 核验' } }],
+    action: [{ key: '行动结算', short: '判定', reroll: { id: 'action', hint: '重roll 判定（预览，不注入）' } }],
+    memory: [{ key: '记忆召回', short: '召回', reroll: { id: 'recall', hint: '重roll 召回' } }, { key: '记忆决定', short: '决定', reroll: { id: 'memory', hint: '重roll 决定' } }],
+    world: [{ key: '世界决定', short: '决定', reroll: { id: 'world', hint: '重roll 决定' } }],
+    plot: [{ key: '剧情决定', short: '决定', advanced: true, reroll: { id: 'plot', hint: '重roll 决定' } }],
+    npc: [{ key: '人物记录', short: '记录', reroll: { id: 'npc', hint: '重记这一楼' } }],
+    self: [{ key: '纳戒决定', short: '决定', reroll: { id: 'self', hint: '重roll 决定' } }],
+    impact: [{ key: '场记挑选', short: '挑选', reroll: { id: 'impactpick', hint: '重roll 挑选' } }, { key: '影响决定', short: '决定', reroll: { id: 'impact', hint: '重记这一楼' } }],
 });
 
 /** 简略版总控不按模块拼行：直接铺两条合并调用；行内说明随各功能开关动态增减分路。 */
@@ -597,6 +612,24 @@ const LITE_OVERVIEW_ROWS = Object.freeze([
     Object.freeze({ label: '行动结算', kind: 'action', all: '生成前 · 行动判定独立调用', emptyText: '已关闭，本轮不判定' }),
     Object.freeze({ label: '总结算', kind: 'settle', all: '人物／世界／影响／纳戒／记忆', emptyText: '生成后 · 五账全关，本轮不记' }),
 ]);
+
+/**
+ * 总控行尾「重roll 圆圈箭头」：挂在各渠道标记上（reroll 字段），箭头即它重跑的那一路。
+ * 模块行的渠道重roll 定义就写在 MODULE_CHANNELS 各渠道上；简略版三行没有渠道表，按行类对号这里。
+ */
+const LITE_REROLL_ACTIONS = Object.freeze({
+    pick: Object.freeze({ id: 'litepick', hint: '重roll 挑选' }),
+    action: Object.freeze({ id: 'action', hint: '重roll 判定（预览，不注入）' }),
+    settle: Object.freeze({ id: 'litesettle', hint: '重roll 结算' }),
+});
+// 简略版标记的短名：行标签已是全名，芯片用两字短名让各路芯片等宽、箭头列对得齐。
+const LITE_MARK_SHORTS = Object.freeze({ pick: '挑选', action: '判定', settle: '结算' });
+
+/** 渠道标记的重roll 投影：busy 直接看标记自己的 running 态（同一份在途数据），在途即箭头禁用自转。 */
+function markRerollAction(reroll, mark) {
+    if (!reroll) return undefined;
+    return { id: reroll.id, hint: reroll.hint, busy: mark.status === 'running' };
+}
 
 /**
  * 调用标记的数据面：在途转圈、最近一次 ✓ / ✗、没调过「无」。
@@ -619,40 +652,97 @@ function buildMarkOf({ calls, active }) {
         const last = list.at(-1);
         const time = typeof last?.at === 'string' ? new Date(last.at).toLocaleTimeString() : '';
         if (last?.ok === true) return { label, status: 'ok', detail: time };
-        return { label, status: 'failed', detail: `${last?.error || '失败'}（${time}）` };
+        // 失败标记带齐详情字段：点击可弹详情小卡（手机没有悬停，点击是唯一入口）。
+        return {
+            label, status: 'failed',
+            detail: `${last?.error || '失败'}（${time}）`,
+            at: typeof last?.at === 'string' ? last.at : '',
+            error: String(last?.error ?? '失败'),
+            model: typeof last?.model === 'string' ? last.model : '',
+            endpoint: typeof last?.endpoint === 'string' ? last.endpoint : '',
+            body: typeof last?.body === 'string' ? last.body : '',
+        };
     };
 }
 
-function buildModuleMarks({ modules, calls, active }) {
+function buildModuleMarks({ modules, calls, active, mode }) {
     const markOf = buildMarkOf({ calls, active });
+    const advanced = mode === 'advanced';
     const marks = new Map();
     for (const module of modules) {
-        const channels = MODULE_CHANNELS[module?.id];
-        if (Array.isArray(channels) && channels.length) {
+        // 进阶版专属渠道（advanced: true）在完整版/简略版下不占标记位：那路调用运行时已关，
+        // 留着只会永远显示「无」。
+        const channels = (Array.isArray(MODULE_CHANNELS[module?.id]) ? MODULE_CHANNELS[module.id] : [])
+            .filter(channel => !channel?.advanced || advanced);
+        if (channels.length) {
             marks.set(module.id, channels.map(channel => {
-                // 渠道兼容两种写法：旧式纯标签字符串，或 { key, short }（行尾多记号并排时用短名）。
+                // 渠道兼容两种写法：旧式纯标签字符串，或 { key, short, reroll }（短名常显、箭头挂渠道）。
                 const key = typeof channel === 'string' ? channel : channel?.key;
                 const mark = markOf(key);
                 const short = typeof channel === 'object' && channel?.short ? channel.short : undefined;
-                return short ? { ...mark, short } : mark;
+                const reroll = typeof channel === 'object' ? markRerollAction(channel.reroll, mark) : undefined;
+                return { ...mark, ...(short ? { short } : {}), ...(reroll ? { reroll } : {}) };
             }));
         }
     }
     return marks;
 }
 
-/** 总控：完整版按各模块开关铺行、行尾挂自己渠道的实时标记；简略版固定三行，行的分路清单跟着各功能开关变。 */
+/** 最近一次失败调用折成总控首行：置顶一眼看到，行内只留一句短话（哪路 · 状态码 · 时间）——
+ *  长文本全收进详情小卡（ref，点击弹卡，手机没有悬停），完整原因也在行的悬停提示上。
+ *  失败之后同一路再成功过（重roll恢复）：行降为 muted 灰并缀「· 已恢复」，不再拉着警报的脸。 */
+function lastFailureRow(calls) {
+    const log = Array.isArray(calls) ? calls : [];
+    for (let index = log.length - 1; index >= 0; index -= 1) {
+        const item = log[index];
+        if (item?.ok !== false) continue;
+        const time = typeof item.at === 'string' ? new Date(item.at).toLocaleTimeString() : '';
+        const error = String(item.error ?? '').trim() || '失败';
+        const statusPart = Number.isFinite(item.status) ? ` · HTTP ${item.status}` : '';
+        const label = item.label ?? '未标注调用';
+        // 失败之后这一路有没有成功过：有＝已被重roll（或自动重试）修复，行降调。
+        const recovered = log.slice(index + 1).some(entry => entry?.label === label && entry?.ok === true);
+        return {
+            label: '上次失败',
+            value: `${label}${statusPart}（${time}）${recovered ? ' · 已恢复' : ''}`,
+            tone: recovered ? 'muted' : 'warn',
+            // 不带 marks：不占 9rem 定宽槽位，值列占满整行（详情在弹卡与悬停里）。
+            hint: `${label}：${error}${typeof item.body === 'string' && item.body ? `　响应体：${item.body}` : ''}（${time}）${recovered ? '　已由后续调用恢复' : ''}`,
+            ref: {
+                kind: 'callfail',
+                id: `${label}@${item.at ?? index}`,
+                label,
+                time, model: typeof item.model === 'string' ? item.model : '',
+                status: Number.isFinite(item.status) ? item.status : null,
+                endpoint: typeof item.endpoint === 'string' ? item.endpoint : '',
+                error, body: typeof item.body === 'string' ? item.body : '',
+                recovered,
+            },
+        };
+    }
+    return null;
+}
+
+/** 总控：完整版按各模块开关铺行、行尾挂自己渠道的实时标记；简略版固定三行，行的分路清单跟着各功能开关变。
+ *  重roll 箭头挂在渠道标记的 reroll 字段上（模块行来自 MODULE_CHANNELS，简略版来自 LITE_REROLL_ACTIONS）。
+ *  最近一次失败调用折成「上次失败」行置顶（没有失败就不加行）。 */
 export function buildOverviewPanel({ dashboard, calls, active, mode, litePickParts, liteSettleParts } = {}) {
     const inFlight = Array.isArray(active) ? active.filter(item => typeof item === 'string' && item) : [];
     const running = inFlight.length ? ` · 正在调用：${inFlight.join('、')}` : '';
+    const failure = lastFailureRow(calls);
+    const withFailure = rows => capRows(failure ? [failure, ...rows] : rows, 24);
     if (mode === 'lite') {
         const markOf = buildMarkOf({ calls, active });
         const pickParts = Array.isArray(litePickParts) ? litePickParts : null;
         const settleParts = Array.isArray(liteSettleParts) ? liteSettleParts : null;
         const actionOn = (Array.isArray(dashboard?.modules) ? dashboard.modules : []).find(module => module?.id === 'action')?.enabled === true;
+        const liteMark = (label, kind, alive) => {
+            const mark = markOf(label);
+            return alive ? [{ ...mark, short: LITE_MARK_SHORTS[kind], reroll: markRerollAction(LITE_REROLL_ACTIONS[kind], mark) }] : [];
+        };
         const rows = LITE_OVERVIEW_ROWS.map(row => {
             if (row.kind === 'action') {
-                return { label: row.label, value: actionOn ? row.all : row.emptyText, marks: actionOn ? [markOf(row.label)] : [] };
+                return { label: row.label, value: actionOn ? row.all : row.emptyText, marks: liteMark(row.label, 'action', actionOn) };
             }
             const parts = row.kind === 'pick' ? pickParts : settleParts;
             const alive = parts === null || parts.length > 0;
@@ -660,20 +750,21 @@ export function buildOverviewPanel({ dashboard, calls, active, mode, litePickPar
             return {
                 label: row.label,
                 value: alive ? `生成${row.kind === 'pick' ? '前' : '后'} · ${shown}${row.kind === 'pick' ? '一次挑完' : '一次记完'}` : row.emptyText,
-                marks: alive ? [markOf(row.label)] : [],
+                marks: liteMark(row.label, row.kind, alive),
             };
         });
         return {
-            title: '总控', icon: '⌂',
+            title: '总控', icon: '⌂', apiMode: 'lite',
             summary: dashboard
                 ? `总控已开启 · 简略版${running} · 最近任务：${dashboard.taskLabel ?? '暂无任务'}`
                 : '总控状态还没有载入。',
-            rows: capRows(rows, 24),
+            rows: withFailure(rows),
             lists: [],
         };
     }
+    const advanced = mode === 'advanced';
     const modules = Array.isArray(dashboard?.modules) ? dashboard.modules : [];
-    const marks = buildModuleMarks({ modules, calls, active });
+    const marks = buildModuleMarks({ modules, calls, active, mode });
     const rows = modules.map(module => ({
         label: module.title,
         // 「暂无记录」这类旧管线状态不死不活，没跑过就只报开关状态。
@@ -682,11 +773,11 @@ export function buildOverviewPanel({ dashboard, calls, active, mode, litePickPar
         marks: module.enabled === false ? [] : (marks.get(module.id) ?? []),
     }));
     return {
-        title: '总控', icon: '⌂',
+        title: '总控', icon: '⌂', apiMode: advanced ? 'advanced' : 'full',
         summary: dashboard
-            ? `总控${dashboard.enabled ? '已开启' : '已暂停'}${running} · 最近任务：${dashboard.taskLabel ?? '暂无任务'}`
+            ? `总控${dashboard.enabled ? '已开启' : '已暂停'}${advanced ? ' · 进阶版' : ''}${running} · 最近任务：${dashboard.taskLabel ?? '暂无任务'}`
             : '总控状态还没有载入。',
-        rows: capRows(rows, 24),
+        rows: withFailure(rows),
         lists: [],
     };
 }

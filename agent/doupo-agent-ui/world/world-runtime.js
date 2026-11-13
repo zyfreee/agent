@@ -7,6 +7,8 @@
  * 绝不抛异常打断调用方。面板手动操作与模型指令走同一条路，规则完全一致。
  */
 
+import { titleSimilarity, SIMILAR_WINDOW_DAYS, SIMILAR_SCORE } from '../core/text-similarity.js';
+
 const SCOPES = Object.freeze(['near', 'world']);
 const WEIGHTS = Object.freeze(['minor', 'major', 'rumor']);
 const INFO_FIELDS = Object.freeze(['weather', 'location', 'era', 'reputation', 'wanted']);
@@ -39,6 +41,14 @@ const MAX_DYNAMICS_TEXT = 200;
 const MAX_ATTITUDE_TEXT = 80;
 const MAX_INFO_TEXT = 80;
 const MAX_EVENT_LOCATION = 40;
+/** addEvent 的 participants（事件点名）：最多 3 个名字，单个 ≤12 字。 */
+const MAX_EVENT_PARTICIPANTS = 3;
+const MAX_PARTICIPANT_TEXT = 12;
+const MAX_EVENT_ID_TEXT = 12;
+/** resolveEvent 的 outcome（了结结论）上限，与 basis 同宽。 */
+const MAX_OUTCOME_TEXT = 80;
+/** 一次推进超过这个天数、期间又没登记动向事件，就在结果里提醒"空窗"。 */
+const JUMP_GAP_DAYS = 7;
 const TENSIONS = Object.freeze(["calm", "rising", "storm"]);
 export const TENSION_LABELS = Object.freeze({ calm: "平静", rising: "升温", storm: "风波" });
 const MAX_LABEL_TEXT = 60;
@@ -52,6 +62,20 @@ const Opid_MEMORY = 200;
 
 function text(value) {
     return typeof value === 'string' ? value.trim() : '';
+}
+
+/** 事件点名清单：字符串数组清洗（去空、去重、限量），超长或非字符串一律丢弃——
+ *  截断出来的名字片段会污染匹配，宁缺毋滥。 */
+function cleanParticipants(value) {
+    if (!Array.isArray(value)) return [];
+    const list = [];
+    for (const item of value) {
+        const name = text(item);
+        if (!name || name.length > MAX_PARTICIPANT_TEXT) continue;
+        if (!list.includes(name)) list.push(name);
+        if (list.length >= MAX_EVENT_PARTICIPANTS) break;
+    }
+    return list;
 }
 
 function intIn(value, min, max) {
@@ -108,7 +132,7 @@ export function eventIntro(title, body) {
 
 function initialState(now) {
     return {
-        schemaVersion: 1,
+        schemaVersion: 2,
         clock: { day: 1, minute: 480, label: '' },
         info: Object.fromEntries(INFO_FIELDS.map(field => [field, ''])),
         nearEvents: [],
@@ -210,11 +234,14 @@ function normalizeState(raw, now) {
                 text: body.slice(0, MAX_EVENT_TEXT),
                 location: text(item.location).slice(0, MAX_EVENT_LOCATION),
                 basis: text(item.basis).slice(0, MAX_BASIS_TEXT),
+                participants: cleanParticipants(item.participants),
+                cause: text(item.cause).slice(0, MAX_EVENT_ID_TEXT) || null,
                 endDay: clampInt(item.endDay, 1, 99999, null),
                 weight: WEIGHTS.includes(item.weight) ? item.weight : 'minor',
                 pinned: item.pinned === true,
                 done: item.done === true,
                 resolvedDay: clampInt(item.resolvedDay, 1, 99999, null),
+                resolvedNote: text(item.resolvedNote).slice(0, MAX_OUTCOME_TEXT),
             };
         })
         .filter(Boolean);
@@ -228,7 +255,7 @@ function normalizeState(raw, now) {
         .filter(Boolean)
         .slice(-MAX_TASKS);
     return {
-        schemaVersion: 1,
+        schemaVersion: 2,
         clock: {
             day: clampInt(clockSource.day, 1, 99999, 1),
             minute: clampInt(clockSource.minute, 0, MINUTE_OF_DAY - 1, 480),
@@ -373,29 +400,82 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
                 if (span === null) return { ok: false, reason: 'bad_days' };
                 endDay = day + span - 1;
             }
-            // 同栏里已有同文进行中的事件就不重记，防止模型一轮里反复登记同一件事。
-            if (eventsOf(scope).some(event => !event.done && event.text === body)) return { ok: false, reason: 'duplicate_text' };
-            const location = text(op.location).slice(0, MAX_EVENT_LOCATION);
-            const basis = text(op.basis).slice(0, MAX_BASIS_TEXT);
             // title 必填，与世界影响同一套规矩：缺标题或超长整条拒绝，不再拿正文硬截。
             const title = text(op.title);
             if (!title) return { ok: false, reason: 'title_missing' };
             if (title.length > MAX_EVENT_TITLE) return { ok: false, reason: 'title_too_long' };
-            const event = { id: nextId(), scope, day, title, text: body, location, basis, endDay, weight: WEIGHTS.includes(op.weight) ? op.weight : 'minor', pinned: false, done: false, resolvedDay: null };
+            // 三道重复防线（都只看同栏未了结的事件）：同文最直白；同标题是换内容的重复；
+            // 换说法的近似重复靠标题相似度挡——与世界影响同参（几天内、bigram 重合度过线）。
+            const active = eventsOf(scope).filter(event => !event.done);
+            if (active.some(event => event.text === body)) return { ok: false, reason: 'duplicate_text' };
+            if (active.some(event => event.title === title)) return { ok: false, reason: 'duplicate_title' };
+            if (active.some(event => Math.abs(event.day - day) <= SIMILAR_WINDOW_DAYS && titleSimilarity(event.title, title) >= SIMILAR_SCORE)) return { ok: false, reason: 'duplicate_similar' };
+            // 因果链：cause 指到台账里已有的事件才存，写错的剥离字段、不整条拒绝。
+            const causeRef = text(op.cause).slice(0, MAX_EVENT_ID_TEXT);
+            const cause = causeRef && findEvent(causeRef) ? causeRef : null;
+            const participants = cleanParticipants(op.participants);
+            const location = text(op.location).slice(0, MAX_EVENT_LOCATION);
+            const basis = text(op.basis).slice(0, MAX_BASIS_TEXT);
+            const event = { id: nextId(), scope, day, title, text: body, location, basis, participants, cause, endDay, weight: WEIGHTS.includes(op.weight) ? op.weight : 'minor', pinned: false, done: false, resolvedDay: null, resolvedNote: '' };
             eventsOf(scope).push(event);
             prune(scope);
             const expiryNote = endDay !== null ? `，有效至第 ${endDay} 天` : '';
             const locationNote = location ? `，地点：${location}` : '';
-            return { ok: true, id: event.id, summary: `${scope === 'world' ? '世界大事' : '身边事件'} +${event.id}（第 ${day} 天）「${event.title}」：${body}${basis ? `（依据：${basis}）` : ''}${locationNote}${expiryNote}`, undo: { op: '_removeEvent', id: event.id } };
+            const causeNote = cause ? `，起因：${cause}` : '';
+            const participantsNote = participants.length ? `，涉及：${participants.join('、')}` : '';
+            const warning = causeRef && !cause ? `事件的起因编号（${causeRef}）在台账里找不到，已忽略` : null;
+            return { ok: true, id: event.id, day, summary: `${scope === 'world' ? '世界大事' : '身边事件'} +${event.id}（第 ${day} 天）「${event.title}」：${body}${basis ? `（依据：${basis}）` : ''}${locationNote}${expiryNote}${causeNote}${participantsNote}`, warning, undo: { op: '_removeEvent', id: event.id } };
         }
         if (kind === 'resolveEvent') {
             const event = findEvent(text(op.id));
             if (!event) return { ok: false, reason: 'event_not_found' };
             const beforeDone = event.done;
             const beforeResolvedDay = event.resolvedDay;
+            const beforeResolvedNote = event.resolvedNote;
+            const outcome = text(op.outcome).slice(0, MAX_OUTCOME_TEXT);
             event.done = true;
             event.resolvedDay = state.clock.day;
-            return { ok: true, id: event.id, summary: `事件了结 ${event.id}：${event.text}`, undo: { op: '_restoreEvent', id: event.id, done: beforeDone, resolvedDay: beforeResolvedDay } };
+            if (outcome) event.resolvedNote = outcome;
+            return { ok: true, id: event.id, summary: `事件了结 ${event.id}：${event.text}${outcome ? `（结论：${outcome}）` : ''}`, undo: { op: '_restoreEvent', id: event.id, done: beforeDone, resolvedDay: beforeResolvedDay, resolvedNote: beforeResolvedNote } };
+        }
+        // 事件进度：大事的酝酿→爆发、传闻的升级实锤都走它，只动已存在事件的四个字段。
+        if (kind === 'updateEvent') {
+            const event = findEvent(text(op.id));
+            if (!event) return { ok: false, reason: 'event_not_found' };
+            let title = event.title;
+            if (op.title !== undefined) {
+                const next = text(op.title);
+                if (!next) return { ok: false, reason: 'title_missing' };
+                if (next.length > MAX_EVENT_TITLE) return { ok: false, reason: 'title_too_long' };
+                title = next;
+            }
+            let body = event.text;
+            if (op.text !== undefined) {
+                const next = text(op.text);
+                if (!next) return { ok: false, reason: 'text_missing' };
+                if (next.length > MAX_EVENT_TEXT) return { ok: false, reason: 'text_too_long' };
+                body = next;
+            }
+            let weight = event.weight;
+            if (op.weight !== undefined) {
+                if (!WEIGHTS.includes(op.weight)) return { ok: false, reason: 'bad_weight' };
+                weight = op.weight;
+            }
+            let endDay = event.endDay;
+            if (op.days !== undefined && op.days !== null) {
+                const span = intIn(op.days, 1, MAX_EVENT_DAYS);
+                if (span === null) return { ok: false, reason: 'bad_days' };
+                endDay = event.day + span - 1;
+            }
+            const changed = title !== event.title || body !== event.text || weight !== event.weight || endDay !== event.endDay;
+            if (!changed) return { ok: false, reason: 'event_nothing_to_update' };
+            const before = { ...event };
+            event.title = title;
+            event.text = body;
+            event.weight = weight;
+            event.endDay = endDay;
+            const weightNote = weight !== before.weight ? `（${before.weight} → ${weight}）` : '';
+            return { ok: true, id: event.id, summary: `事件更新 ${event.id}「${title}」${weightNote}${body !== before.text ? `：${clipText(body)}` : ''}`, undo: { op: '_setEventRaw', event: before } };
         }
         if (kind === 'pinEvent') {
             const event = findEvent(text(op.id));
@@ -612,11 +692,18 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
             }
             return { ok: false, reason: 'event_not_found' };
         }
+        if (kind === '_setEventRaw') {
+            const event = findEvent(text(op.event?.id));
+            if (!event) return { ok: false, reason: 'event_not_found' };
+            Object.assign(event, op.event);
+            return { ok: true, summary: `恢复事件 ${event.id}` };
+        }
         if (kind === '_restoreEvent') {
             const event = findEvent(text(op.id));
             if (!event) return { ok: false, reason: 'event_not_found' };
             event.done = op.done === true;
             event.resolvedDay = op.resolvedDay === null || op.resolvedDay === undefined ? null : intIn(op.resolvedDay, 1, 99999);
+            if (op.resolvedNote !== undefined) event.resolvedNote = text(op.resolvedNote).slice(0, MAX_OUTCOME_TEXT);
             return { ok: true, summary: `恢复事件 ${event.id}` };
         }
         return { ok: false, reason: 'unknown_op' };
@@ -638,6 +725,9 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
         const undoSteps = [];
         const opIds = [];
         const duplicate = [];
+        const warnings = [];
+        const addedEventDays = [];
+        const dayBefore = state.clock.day;
         for (const op of list) {
             const opId = text(op?.opId);
             if (opId && opIdMemory.includes(opId)) {
@@ -648,6 +738,8 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
             if (result.ok) {
                 rememberOpId(opId);
                 if (opId) opIds.push(opId);
+                if (result.warning) warnings.push(result.warning);
+                if (Number.isInteger(result.day)) addedEventDays.push(result.day);
                 applied.push(result);
                 if (result.undo) {
                     if (Array.isArray(result.undo)) undoSteps.push(...result.undo);
@@ -657,13 +749,21 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
                 rejected.push({ op: text(op?.op), reason: result.reason });
             }
         }
+        // 跳跃空窗审计：一次推进太多天、期间又没登记动向事件，提醒一句（不拒绝、不撤销）——
+        // 出关归来时世界不该原地等你；补没补由模型/面板决定，这里只把空窗亮出来。
+        const dayAfter = state.clock.day;
+        let jumpGap = null;
+        if (dayAfter - dayBefore >= JUMP_GAP_DAYS && !addedEventDays.some(day => day > dayBefore && day <= dayAfter)) {
+            jumpGap = { from: dayBefore, to: dayAfter };
+            warnings.push(`时间从第 ${dayBefore} 天一次推进到第 ${dayAfter} 天，期间没有登记任何动向事件——世界不该原地等你`);
+        }
         if (fromModel && floorKey !== null) lastFloor = { floor: floorKey, undo: undoSteps, opIds };
         if (applied.length) {
             state.updatedAt = now();
-            state.log.push({ at: now(), source, summaries: applied.map(item => item.summary), rejected: rejected.length });
+            state.log.push({ at: now(), source, summaries: applied.map(item => item.summary).concat(warnings), rejected: rejected.length });
             state.log = state.log.slice(-maxLog);
         }
-        return { status: rejected.length && !applied.length ? 'rejected' : applied.length ? 'applied' : 'noop', applied, rejected, duplicate };
+        return { status: rejected.length && !applied.length ? 'rejected' : applied.length ? 'applied' : 'noop', applied, rejected, duplicate, warnings, jumpGap };
     }
 
     function snapshot() {

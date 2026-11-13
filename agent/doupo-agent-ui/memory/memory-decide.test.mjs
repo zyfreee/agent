@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { buildDecideUser, capRememberOps, parseDecision, MEMORY_DECIDE_PROMPT, MEMORY_JSON_SCHEMA } from './memory-decide.js';
 
 // 1. 默认提示词契约：只记小记忆（大记忆由总结生成）、召回钥匙、所有权边界、无变化输出
-for (const keyword of ['remember', 'forgetMemory', 'related', 'basis', 'quote', 'title', '小记忆', '大记忆', '人物簿', '纳戒', '"note"']) {
+for (const keyword of ['remember', 'forgetMemory', 'supersede', 'related', 'basis', 'quote', 'title', '小记忆', '大记忆', '人物簿', '纳戒', '"note"']) {
     assert.ok(MEMORY_DECIDE_PROMPT.includes(keyword), `默认提示词缺少：${keyword}`);
 }
 assert.ok(MEMORY_DECIDE_PROMPT.includes('title 必写'), '提示词要写明短标题必填（主页面只显示标题）');
@@ -11,9 +11,14 @@ assert.ok(!MEMORY_DECIDE_PROMPT.includes('promote(id)'), 'promote 已停用，�
 assert.ok(!MEMORY_DECIDE_PROMPT.includes('resolveMemory') && !MEMORY_DECIDE_PROMPT.includes('reopenMemory'), '记忆没有“了结”语义，不该再教模型了结');
 assert.ok(MEMORY_DECIDE_PROMPT.includes('永久保存'), '不有过期语义');
 assert.ok(!MEMORY_DECIDE_PROMPT.includes('淡出') && !MEMORY_DECIDE_PROMPT.includes('到期'), '不允许出现过期语义');
-assert.deepEqual(MEMORY_JSON_SCHEMA.properties.ops.items.properties.op.enum, ['remember', 'forgetMemory']);
+assert.ok(MEMORY_DECIDE_PROMPT.includes('supersede(id, by)'), '提示词要写明软覆盖操作的形状');
+assert.ok(MEMORY_DECIDE_PROMPT.includes('恢复由玩家做'), '软覆盖只由模型标记，恢复权在玩家');
+assert.deepEqual(MEMORY_JSON_SCHEMA.properties.ops.items.properties.op.enum, ['remember', 'forgetMemory', 'supersede']);
 assert.deepEqual(MEMORY_JSON_SCHEMA.properties.ops.items.properties.tag.enum, ['grudge', 'intel', 'thread', 'milestone']);
 assert.ok('title' in MEMORY_JSON_SCHEMA.properties.ops.items.properties, 'schema 要放行 title 字段');
+assert.ok('by' in MEMORY_JSON_SCHEMA.properties.ops.items.properties, 'schema 要放行 by 字段（supersede 指向新记忆）');
+assert.ok('importance' in MEMORY_JSON_SCHEMA.properties.ops.items.properties, 'schema 要放行 importance（写入时重要度评分）');
+assert.ok(MEMORY_DECIDE_PROMPT.includes('importance 可选'), '提示词要说明重要度怎么打');
 
 // 2. user 组装：现有记忆全清单（标题）、最近聊天（旧→新）、总结收尾；不再喂召回/世界书材料
 {
@@ -120,3 +125,9 @@ assert.ok('title' in MEMORY_JSON_SCHEMA.properties.ops.items.properties, 'schema
     const badShape = parseDecision(JSON.stringify({ note: '', ops: [], consolidate: { ids: [] } }));
     assert.equal(badShape.consolidate, null, '缺标题/正文的整合形状不收');
 }
+
+// —— 结算裁定喂料：书记官也要看到本轮判定的成败（BUG 1） ——
+const settleUser = buildDecideUser({ snapshot: { entries: [] }, floors: [{ role: '角色', text: '正文' }], settleLines: ['- 药铺购凝血草：失败（骰16-2 对难度 11）'] });
+assert.ok(settleUser.includes('【本轮行动结算（生成前已判定，只记与判定一致的新事）】'), '喂料带结算节');
+assert.ok(settleUser.includes('药铺购凝血草'));
+assert.ok(!buildDecideUser({ snapshot: { entries: [] }, floors: [] }).includes('【本轮行动结算'), '没有结算时不出这一节');

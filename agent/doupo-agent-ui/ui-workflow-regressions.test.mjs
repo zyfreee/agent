@@ -7,7 +7,7 @@ const source = readFileSync(new URL('./index.js', import.meta.url), 'utf8').repl
 const code = name => { const start = source.search(new RegExp(`(?:async )?function ${name}\\(`)); assert.ok(start >= 0, name); return source.slice(start, source.indexOf('\n}', start) + 2); };
 const load = (name, env = {}) => vm.runInNewContext(`${code(name)}; ${name}`, { captureAgentContinuation: () => ({ current: () => true }), agentModalCurrent: () => true, awaitPanelPersistence: async () => true, ...env });
 class Element {
-    constructor(tag = 'div', className = '', text = '') { this.tagName = tag.toUpperCase(); this.className = className; this.textContent = text; this.dataset = {}; this.children = []; this.listeners = {}; this.hidden = false; this.isConnected = true; this.classList = { add() {}, remove() {}, toggle() {} }; }
+    constructor(tag = 'div', className = '', text = '') { this.tagName = tag.toUpperCase(); this.className = className; this.textContent = text; this.dataset = {}; this.children = []; this.listeners = {}; this.hidden = false; this.disabled = false; this.isConnected = true; this.classList = { add: (...names) => { for (const name of names) if (!this.className.split(' ').includes(name)) this.className = `${this.className} ${name}`.trim(); }, remove: (...names) => { this.className = this.className.split(' ').filter(name => !names.includes(name)).join(' '); }, toggle: (name, force) => { const has = this.className.split(' ').includes(name); const want = force === undefined ? !has : force; if (want) this.classList.add(name); else this.classList.remove(name); return want; } }; }
     append(...nodes) { for (const node of nodes) { if (node.parentNode) node.parentNode.children = node.parentNode.children.filter(item => item !== node); node.parentNode = this; this.children.push(node); } }
     addEventListener(name, fn) { this.listeners[name] = fn; }
     setAttribute(name, value) { this[name] = value; }
@@ -77,12 +77,61 @@ test('OPT-097 refresh preserves an existing item ref through list redraw', () =>
     load('refreshOpenOrbPanel', env)();
     assert.equal(opened, ref);
 });
+test('OPT-112 channel reroll arrow: busy disables up front, click runs once and resyncs', async () => {
+    let ran = 0, synced = 0;
+    const build = load('buildOrbMarkReroll', {
+        makeElement, daiIcon: () => '<svg/>',
+        syncOrbHud() { synced++; },
+        ORB_OVERVIEW_REROLLS: { world: () => { ran++; } },
+    });
+    const idle = build({ id: 'world', hint: '重roll 决定', busy: false });
+    assert.equal(idle.tagName, 'BUTTON');
+    assert.equal(idle.className, 'dai-orb-mark-reroll');
+    assert.equal(idle.title.includes('重roll 决定'), true, '悬停提示带动作名');
+    assert.equal(idle.disabled, false);
+    idle.listeners.click();
+    assert.equal(ran, 1, '一键直接重跑该渠道动作');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(synced, 1, '重跑结束回调 syncOrbHud 刷新总控窗');
+    const busy = build({ id: 'world', hint: '重roll 决定', busy: true });
+    assert.equal(busy.disabled, true, '在途即禁用（busy 由标记的 running 态数据驱动）');
+    assert.equal(busy.className.includes('is-busy'), true, 'busy 类挂上，箭头自转样式走它');
+    busy.listeners.click();
+    assert.equal(ran, 1, '禁用态点击不触发');
+    assert.equal(build({ id: 'sandbox', busy: false }), null, '没有注册动作的 id 不出按钮');
+    assert.equal(build(null), null, '渠道没有动作就不占位');
+});
+test('OPT-113 callfail popup: ref rides its own data, empty rows are dropped', () => {
+    const build = load('buildOrbItemPopModel', { document: {}, popText: value => (typeof value === 'string' && value.trim() ? value.trim() : '') });
+    const model = build({
+        kind: 'callfail', label: '记忆召回', time: '10:01', model: 'm1', status: 400,
+        endpoint: 'https://api.example/v1/chat/completions',
+        error: '模型接口返回 HTTP 400：Invalid model id', body: 'Invalid model id',
+    });
+    assert.equal(model.title, '记忆召回');
+    assert.equal(model.sub, '10:01 · m1');
+    const detail = Object.fromEntries(model.groups[0].rows);
+    assert.equal(detail['状态'], 'HTTP 400');
+    assert.equal(detail['端点'], 'https://api.example/v1/chat/completions');
+    assert.equal(detail['错误'], '模型接口返回 HTTP 400：Invalid model id');
+    assert.equal(detail['响应体'], 'Invalid model id');
+    assert.ok(model.groups.some(group => group.heading === '说明'), '说明组教用户去哪里看更多信息');
+    const minimal = build({ kind: 'callfail', label: '世界决定', error: 'Bad Request', time: '10:05' });
+    // 空值行在渲染层（buildOrbItemPopup）过滤，模型层照实保留；这里按渲染口径核对：
+    // 酒馆路径没有状态码/端点/响应体，错误详情组只剩「错误」一行。
+    const rendered = minimal.groups
+        .map(group => (group.rows ?? []).filter(([, value]) => String(value).trim() !== ''))
+        .flat();
+    assert.ok(rendered.every(([, value]) => String(value).trim() !== ''), '空值行不渲染');
+    // vm 跨 realm 的数组原型与宿主不同，deepStrictEqual 连原型一起比——先 Array.from 落成宿主数组再比。
+    assert.deepEqual(Array.from(rendered, row => String(row[0])), ['错误', '自定义接口', '酒馆连接', '下一步'], '酒馆路径的错误详情组只剩「错误」一行');
+});
 test('OPT-092 navigation always selects one existing page, including llm and unknown', () => {
     const sections = ['overview', 'hub', 'world'].map(settingsSection => ({ dataset: { settingsSection } }));
     const start = source.indexOf('    const selectPage = page =>');
     const end = source.indexOf("    panel.addEventListener('click'", start);
     const panel = { querySelectorAll: selector => selector === '[data-settings-section]' ? sections : [], querySelector: () => null };
-    const env = { panel, renderCallLogList() {}, renderRuntimeMode() {}, renderApiMode() {}, probeCoverScriptStatus: () => ({}), syncSettingsForm() {} };
+    const env = { panel, renderCallLogList() {}, renderCallSummary() {}, renderRuntimeMode() {}, renderApiMode() {}, refreshMemoryVectorStats() {}, probeCoverScriptStatus: () => ({}), syncSettingsForm() {} };
     const select = vm.runInNewContext(`let activeSettingsPage; ${source.slice(start, end)}; selectPage`, env);
     for (const [page, expected] of [['llm', 'hub'], ['hub', 'hub'], ['not-a-page', 'overview']]) { select(page); assert.deepEqual(sections.filter(item => !item.hidden).map(item => item.dataset.settingsSection), [expected]); }
 });
@@ -193,11 +242,8 @@ test('OPT-093 follow-default dispatches ordinary asynchronous settings save', as
     await branch("        if (event.target.closest?.('[data-settle-follow-default]'))", '        const defaultPrompt =', { event: { target: { closest: () => true } }, panel: { querySelector: () => area }, Event: class { constructor(type, options) { this.type = type; this.bubbles = options.bubbles; } }, renderSettleResultCard() {}, updateSetting(...args) { updated = args; }, hostStorage: { saveSettings() { saves++; } } });
     assert.equal(area.value, ''); assert.equal(dispatched.type, 'input'); assert.equal(dispatched.bubbles, true); assert.equal(updated, undefined); assert.equal(saves, 0);
 });
-test('OPT-075 inactive sandbox controls remain configured but disabled and honestly labeled', () => {
-    for (const key of ['maxNewObjectsPerTurn', 'nodeWindowSlackDays']) {
-        const input = source.match(new RegExp(`<input[^>]*data-setting="sandbox\\.${key}"[^>]*>`))?.[0];
-        assert.ok(input); assert.match(input, /disabled/); assert.match(input, /暂不可用/);
-    }
+test('OPT-075 retired sandbox budget card is fully removed', () => {
+    assert.doesNotMatch(source, /sandbox\.maxNewObjectsPerTurn|sandbox\.nodeWindowSlackDays|世界推进预算/, '未实现的推进预算卡应整卡删除');
 });
 test('OPT-040 NPC profile save failure keeps the form and does not report saved', async () => {
     const status = {}; const page = { querySelectorAll: () => [{ dataset: { npcField: 'identity' }, value: 'draft' }], querySelector: () => status };

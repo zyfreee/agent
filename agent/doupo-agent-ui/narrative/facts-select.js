@@ -217,9 +217,14 @@ export function createFactsSelector({ index, complete, maxPicks = DEFAULT_MAX_PI
         // 上限现读：设置页数字（getMaxPicks）每次选条都生效，单次调用还能自带覆盖。
         const effectiveMaxPicks = resolveMaxPicks({ override: perCallPicks, getMaxPicks, fallback: maxPicks });
         const current = toVolume(volume);
+        // 目录按本轮词面相关度重排（rankCatalogFor）：命中行置顶、零分行摘要降级；
+        // 行集合与 catalogFor 完全一致，只排序与瘦身——选条仍由模型点名，脚本不做取舍。
+        // 旧索引没有 rankCatalogFor 时回退原目录，行为不变。
         const built = current === null
             ? { lines: index.fullCatalog({ limit: maxRows }), firstCount: 0, prevCount: 0, truncated: stats.total > maxRows, total: stats.total }
-            : index.catalogFor(current, { maxRows });
+            : (typeof index.rankCatalogFor === 'function'
+                ? index.rankCatalogFor(current, { input, recentTexts, maxRows })
+                : index.catalogFor(current, { maxRows }));
 
         // 只认模型结果：脚本不做名字命中、不做自动补选，模型没选就不注入。
         const prompt = buildSelectPrompt({ input, recentTexts, volume: current, catalog: built.lines, maxPicks: effectiveMaxPicks, rules: currentRules() });
@@ -252,7 +257,17 @@ export function createFactsSelector({ index, complete, maxPicks = DEFAULT_MAX_PI
             lookup,
             secondCall: lookup?.secondCall === true,
             inferredVolume: parsed.volume ?? null,
-            meta: { ...prompt.meta, total: stats.total, firstCount: built.firstCount, prevCount: built.prevCount, truncated: built.truncated === true, maxPicks: effectiveMaxPicks },
+            meta: {
+                ...prompt.meta,
+                total: stats.total,
+                firstCount: built.firstCount,
+                prevCount: built.prevCount,
+                truncated: built.truncated === true,
+                maxPicks: effectiveMaxPicks,
+                // 目录是否做过相关度重排、命中行数：运行状态可观察，空输入时 ranked=false。
+                catalogRanked: built.ranked === true,
+                scoredRows: (built.scoredFirst ?? 0) + (built.scoredPrev ?? 0),
+            },
         };
     }
 

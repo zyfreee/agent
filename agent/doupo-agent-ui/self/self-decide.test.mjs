@@ -60,4 +60,10 @@ const emptyDecision = parseSelfDecision('{"note":"本轮纳戒无变化","ops":[
 assert.equal(emptyDecision.status, 'ok');
 assert.equal(emptyDecision.ops.length, 0);
 
+// —— 结算裁定喂料：本轮已判定的行动成败必须进决定喂料，记账不能与判定相悖（BUG 1） ——
+const settleUser = buildSelfDecideUser({ snapshot, floors, settleLines: ['- 药铺购凝血草：失败（骰16-2 对难度 11）；一枚金币没能成交'] });
+assert.ok(settleUser.includes('【本轮行动结算（生成前已判定，记账须与此一致）】'), '喂料带结算节');
+assert.ok(settleUser.includes('药铺购凝血草：失败'));
+assert.ok(!buildSelfDecideUser({ snapshot, floors }).includes('【本轮行动结算'), '没有结算时不出这一节');
+
 console.log('self decide tests passed');

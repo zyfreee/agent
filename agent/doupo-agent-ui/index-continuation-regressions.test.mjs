@@ -25,7 +25,7 @@ function prepareHarness() {
         cleanFloorText: async message => (typeof message?.mes === 'string' ? message.mes : ''),
         cleanFloorEntries: async entries => (Array.isArray(entries) ? entries : []).map(({ role, text }) => ({ role, text })),
         writeWorldInjectionForPrompt() {}, writeImpactInjectionForPrompt: async () => {}, writeNpcLedgerInjectionForPrompt() {},
-        writeSelfInjectionForPrompt() {}, writeMemoryInjectionForPrompt: async () => {},
+        writeSelfInjectionForPrompt() {}, writeMemoryInjectionForPrompt: async () => {}, writeWakeUpInjectionForPrompt() {},
         injectionSettings: () => ({ enabled: true, depth: 0, maxChars: 0 }), sandboxModeActive: () => false,
         agentPromptInjection: channel, persistFactsLastInjection() {}, currentAgentScope: () => ({ sessionId: 'A', branchId: 'main' }),
         agentTurnStages: { resolveInjection: request => { inputs.push(request); return pending.promise; } }, lastLookupInfo: null,
@@ -123,16 +123,21 @@ function prepareHarness() {
 }
 {
     const code = extract('function confirmNpcColdPreview(', '\nfunction discardNpcColdPreview');
-    const applied = [], marked = [], preview = { id: 'cold-1', name: 'A', patch: {}, toDay: 3 };
+    const applied = [], marked = [], remembered = [], preview = { id: 'cold-1', name: 'A', patch: {}, toDay: 3 };
     let valid = false;
     const confirm = runInNewContext(`${code}; confirmNpcColdPreview`, {
+        namesMentionedInPatch: () => ['A'],
         agentNpcColdRuntime: { status: () => ({ previews: [{ ...preview, status: 'pending' }] }),
-            validatePreview: () => ({ status: valid ? 'ready' : 'stale' }), mark: (name, value) => marked.push(value) },
-        agentNpcLedger: { get: () => ({ version: 2 }) }, applyNpcLedgerPayload: () => { applied.push(1); return { status: 'applied' }; },
+            validatePreview: () => ({ status: valid ? 'ready' : 'stale' }), mark: (name, value) => marked.push(value),
+            rememberUndo: value => remembered.push(value) },
+        agentNpcLedger: { get: () => ({ name: 'A', version: 2 }), list: () => [{ name: 'A', aliases: [], titles: [] }] }, applyNpcLedgerPayload: () => { applied.push(1); return { status: 'applied' }; },
         getHostContext: () => ({ chat: [] }), lastReplyIndex: () => 0, persistNpcLedger() {}, persistNpcCold() {}, setNpcLedgerStatus() {}, refreshNpcLedgerPage() {},
     });
     assert.equal(confirm('cold-1').status, 'stale'); assert.equal(applied.length, 0);
     valid = true; assert.equal(confirm('cold-1').status, 'confirmed'); assert.equal(marked[0].previewId, 'cold-1');
+    assert.equal(remembered.length, 1, '确认成功后要留撤销快照');
+    assert.equal(remembered[0].previewId, 'cold-1');
+    assert.deepEqual(remembered[0].records.A.name, 'A');
 }
 {
     const code = extract('function confirmExpCondense(', '\n\n/** 取“玩家');

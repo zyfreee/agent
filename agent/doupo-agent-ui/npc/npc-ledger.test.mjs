@@ -54,6 +54,19 @@ import { createNpcLedger, favorLabel, normalizePatch, normalizeRecord, NPC_FIELD
     const legacy = make(); legacy.load({ records: exported.records });
     assert.equal(legacy.recordReply(patch('old archive'), { floor: 4 }).status, 'replay_unavailable');
     assert.equal(legacy.recordReply(patch('forward'), { floor: 5 }).status, 'applied');
+    // 好感带依据（basis）的落账不能被指纹校验拒掉：apply 写进 favorLog 的 basis 必须与
+    // normalizeRecord 重建的同形，否则凡模型写「好感+依据」整单 invalid_reply_result。
+    {
+        const book = make();
+        const applied = book.recordReply({ name: 'A', favor: 3, favorReason: '收下药材', basis: '本轮正文：A 收下三株药材并道谢' }, { floor: 6, day: 9 });
+        assert.equal(applied.status, 'applied');
+        const entry = book.get('A').favorLog.at(-1);
+        assert.equal(entry.basis, '本轮正文：A 收下三株药材并道谢');
+        // 落档→重载（normalizeRecord 重建）→再落账：整条链上指纹保持一致。
+        const reloaded = make(); reloaded.load(JSON.parse(JSON.stringify(book.exportAll())));
+        assert.equal(reloaded.get('A').favorLog.at(-1).basis, '本轮正文：A 收下三株药材并道谢');
+        assert.equal(reloaded.recordReply({ name: 'A', favor: 1, favorReason: '再谢', basis: '本轮正文：临别又道一次谢' }, { floor: 7, day: 10 }).status, 'applied');
+    }
     const emptyLegacy = make(); emptyLegacy.load({ records: [] });
     assert.equal(emptyLegacy.recordReply([], { floor: 4, replay: true }).status, 'replay_unavailable');
     const manualAfter = make(); manualAfter.load(exported); manualAfter.setFields('A', { identity: 'manual after load' });
@@ -464,6 +477,120 @@ for (const day of [null, undefined, '', '  ', 0, -1, 1.5, 100000, true, 'bad', 1
     coldLedger.apply({ 人物: [{ 姓名: '刀疤武者', 流水: ['又巡了一趟货栈'] }] }, { floor: 20, day: 1 });
     assert.equal(coldLedger.get('刀疤武者').coldTouch.floor, 19, '正文记账不覆盖冷藏盖章');
     assert.equal(coldLedger.get('刀疤武者').log.at(-1).src, undefined, '没传 logSrc 就不盖章');
+}
+
+// 情绪层（快变量）：补丁收情绪、TTL = 世界天数 + 3、到期消散、注入行带上。
+{
+    const ledger = createNpcLedger({ now: () => 'fixed' });
+    ledger.apply({ 人物: [{ 姓名: '萧战', 情绪: { 情绪: '恼怒', 理由: '被当众驳了面子' }, 在场: true, 重要: true }] }, { floor: 1, day: 5 });
+    const record = ledger.get('萧战');
+    assert.equal(record.moods.length, 1);
+    assert.equal(record.moods[0].label, '恼怒');
+    assert.equal(record.moods[0].reason, '被当众驳了面子');
+    assert.equal(record.moods[0].expiresDay, 8, '情绪三天到期：世界天数 + 3');
+    assert.ok(ledger.injection().text.includes('此刻：恼怒（被当众驳了面子）'), '注入行要带短期情绪');
+    ledger.apply({ 人物: [] }, { floor: 2, day: 8 });
+    assert.equal(ledger.get('萧战').moods.length, 1, '到期日当天还在');
+    ledger.apply({ 人物: [] }, { floor: 3, day: 9 });
+    assert.equal(ledger.get('萧战').moods.length, 0, '过期情绪落账时自动消散');
+    assert.equal(ledger.decayMoods(9).status, 'decayed');
+    assert.equal(ledger.decayMoods('不是天数').status, 'skipped', '非法天数不动账');
+    // 手动清账 API 也要能消散
+    const again = createNpcLedger({ now: () => 'fixed' });
+    again.apply({ 人物: [{ 姓名: 'B', 情绪: '感激' }] }, { floor: 1, day: 1 });
+    assert.equal(again.decayMoods(5).pruned, 1, '手动 decay 清掉过期情绪');
+    assert.equal(again.get('B').moods.length, 0);
+}
+
+// 情绪归一化：对象里的「理由」不许污染好感理由；数组/字符串都收。
+{
+    const patch = normalizePatch({ 姓名: 'C', 情绪: { 情绪: '愧疚', 理由: '误会了他' }, 心情: '警惕' });
+    assert.equal(patch.moods.length, 2);
+    assert.equal(patch.moods[0].label, '愧疚');
+    assert.equal(patch.moods[0].reason, '误会了他');
+    assert.equal(patch.favorReason, '', '情绪里的「理由」不许串进好感理由');
+}
+
+// 依据审计：好感 |Δ|≥5 或写「经历」缺依据 → result.audits；带依据进 favorLog；小变动不审。
+{
+    const ledger = createNpcLedger({ now: () => 'fixed' });
+    const first = ledger.apply({ 人物: [{ 姓名: 'A', 好感: 6 }] }, { floor: 1, day: 2 });
+    assert.equal(first.audits.length, 1);
+    assert.equal(first.audits[0].kind, 'favor');
+    assert.equal(first.audits[0].delta, 6);
+    const backed = ledger.apply({ 人物: [{ 姓名: 'A', 好感: 6, 依据: '正文里当众护住族人' }] }, { floor: 2, day: 3 });
+    assert.equal(backed.audits.length, 0, '带依据的大变动不记审计');
+    assert.equal(ledger.get('A').favorLog.at(-1).basis, '正文里当众护住族人');
+    const exp = ledger.apply({ 人物: [{ 姓名: 'A', 经历: '立场易帜，投靠云岚宗' }] }, { floor: 3, day: 4 });
+    assert.equal(exp.audits.length, 1, '经历缺依据也要记审计');
+    assert.equal(exp.audits[0].kind, 'exp');
+    const backedExp = ledger.apply({ 人物: [{ 姓名: 'A', 经历: '再转回萧家', 依据: '正文末段反水' }] }, { floor: 4, day: 5 });
+    assert.equal(backedExp.audits.length, 0);
+    const small = ledger.apply({ 人物: [{ 姓名: 'A', 好感: 2 }] }, { floor: 5, day: 6 });
+    assert.equal(small.audits.length, 0, '小变动不需要依据');
+}
+
+// 关系快照：改「对他人」就交 relations 快照；互写：补丁流水提到已建档的人，对方流水也记一笔。
+{
+    const ledger = createNpcLedger({ now: () => 'fixed' });
+    ledger.apply({ 人物: [{ 姓名: '药老', identity: '炼药师' }] }, { floor: 1, day: 1 });
+    const result = ledger.apply({ 人物: [{ 姓名: '萧炎', others: [{ who: '药老', relation: '师徒', attitude: '敬重' }] }] }, { floor: 2, day: 2 });
+    assert.equal(result.relations.length, 1);
+    assert.equal(result.relations[0].from, '萧炎');
+    assert.equal(result.relations[0].triples[0].who, '药老');
+    assert.equal(result.relations[0].day, 2);
+    const cold = ledger.apply({ 人物: [{ 姓名: '药老', 流水: ['在山洞里为萧炎护法'] }] }, { floor: 3, day: 3, logSrc: '冷藏', crossWrite: true });
+    assert.equal(cold.crossWritten.length, 1, 'crossWrite 开启时提到别人要互写');
+    assert.equal(cold.crossWritten[0].from, '药老');
+    assert.equal(cold.crossWritten[0].to, '萧炎');
+    const xiaoYan = ledger.get('萧炎');
+    assert.equal(xiaoYan.log.at(-1).text, '药老：在山洞里为萧炎护法');
+    assert.equal(xiaoYan.log.at(-1).src, '冷藏');
+    // 普通正文记账不开互写：记录员本来会给人各写各的补丁，防止重复记。
+    const plain = ledger.apply({ 人物: [{ 姓名: '药老', 流水: ['又和萧炎论了一次药'] }] }, { floor: 4, day: 4 });
+    assert.equal(plain.crossWritten.length, 0, 'crossWrite 不开启就不互写');
+}
+
+// 情绪与互写的存档 round-trip：读旧档不丢。
+{
+    const ledger = createNpcLedger({ now: () => 'fixed' });
+    ledger.apply({ 人物: [{ 姓名: 'B', 情绪: [{ 情绪: '警惕', 理由: '传闻' }] }] }, { floor: 1, day: 2 });
+    const saved = JSON.parse(JSON.stringify(ledger.exportAll()));
+    const reloaded = createNpcLedger({ now: () => 'fixed' });
+    reloaded.load(saved);
+    const moods = reloaded.get('B').moods;
+    assert.equal(moods.length, 1);
+    assert.equal(moods[0].label, '警惕');
+    assert.equal(moods[0].expiresDay, 5, '读旧档时到期日不丢');
+}
+
+// 分值排序：同档内不再按插入序——刚出过事、好感波动大的人排前。
+{
+    const ledger = createNpcLedger({ now: () => 'fixed' });
+    ledger.apply({ 人物: [{ 姓名: '路人甲', favor: 1, presence: '在场', importance: '重要' }] }, { floor: 10, day: 1 });
+    ledger.apply({ 人物: [{ 姓名: '恩人乙', favor: 10, presence: '在场', importance: '重要' }] }, { floor: 9, day: 1 });
+    ledger.apply({ 人物: [{ 姓名: '恩人乙', favor: 10 }] }, { floor: 9, day: 2 });
+    const injected = ledger.injection({ maxFull: 2 }).text;
+    const a = injected.indexOf('【路人甲】');
+    const b = injected.indexOf('【恩人乙】');
+    assert.ok(a >= 0 && b >= 0, '两个人都要注入');
+    assert.ok(b < a, '恩人乙（近期好感波动 20）压过路人甲（只近出场）');
+}
+
+// —— B6 撤销快照：restoreSnapshots 把整档原样写回，改名/清空过的人原地跳过 ——
+{
+    const ledger = createNpcLedger({ now: () => 'fixed' });
+    ledger.apply({ 人物: [{ 姓名: '萧战', favor: 2, location: '乌坦城' }] }, { floor: 1, day: 1 });
+    const before = ledger.get('萧战');
+    ledger.apply({ 人物: [{ 姓名: '萧战', favor: 8, location: '帝都' }] }, { floor: 2, day: 3 });
+    const restored = ledger.restoreSnapshots({ 萧战: before });
+    assert.deepEqual(restored.restored, ['萧战']);
+    const back = ledger.get('萧战');
+    assert.equal(back.favor, 2, '好感退回快照值');
+    assert.equal(back.location, '乌坦城');
+    assert.equal(back.version, before.version, '快照原样写回，版本号不自增');
+    const skip = ledger.restoreSnapshots({ 不存在的人: before, 萧战: 'not-an-object' });
+    assert.equal(skip.status, 'noop', '命不中或坏快照一律跳过');
 }
 
 console.log('npc-ledger 测试通过');

@@ -9,6 +9,8 @@
  * 这里只记账，不写正文、不改数值——正文怎么写由叙事层决定，数值由回合状态决定。
  */
 
+import { titleSimilarity, SIMILAR_WINDOW_DAYS, SIMILAR_SCORE } from '../core/text-similarity.js';
+
 const KINDS = Object.freeze(['direct', 'ripple', 'butterfly']);
 const WEIGHTS = Object.freeze(['minor', 'major', 'world']);
 const CERTAINTIES = Object.freeze(['certain', 'rumor']);
@@ -26,8 +28,7 @@ const MAX_CANON_TEXT = 60;
 const MAX_EVENT_TEXT = 40;
 const MAX_RIPEN_DAYS = 365;
 // 判“疑似同一件事”的时间窗：同一个对象、同一种改写、这几天里换了说法又记一遍。
-const SIMILAR_WINDOW_DAYS = 2;
-const SIMILAR_SCORE = 0.65;
+// 参数与相似度算法在世界事件账（world-runtime）共用同一份（core/text-similarity.js）。
 
 // 0 = 不限：账本本身不因为“条数多”而丢东西（注入只挑几条，用不着为了正文缩库）。
 const DEFAULT_MAX_RECORDS = 0;
@@ -54,24 +55,6 @@ function clampInt(value, min, max, fallback) {
     const num = Number(value);
     if (!Number.isInteger(num) || num < min || num > max) return fallback;
     return num;
-}
-
-/** 标题比对只看“字”：去掉标点空白，按双字片段算重合度，挡住“换了说法就再记一条”。 */
-function bigrams(value) {
-    const chars = [...value];
-    const set = new Set();
-    for (let index = 0; index + 1 < chars.length; index += 1) set.add(chars[index] + chars[index + 1]);
-    if (!set.size && chars.length) set.add(chars[0]);
-    return set;
-}
-
-function titleSimilarity(left, right) {
-    const a = bigrams(String(left).replace(/[\s\p{P}\p{S}]/gu, ''));
-    const b = bigrams(String(right).replace(/[\s\p{P}\p{S}]/gu, ''));
-    if (!a.size || !b.size) return 0;
-    let shared = 0;
-    for (const piece of a) if (b.has(piece)) shared += 1;
-    return (2 * shared) / (a.size + b.size);
 }
 
 /** 同一个对象、同一种改写、几天内标题高度相似：当成同一件事的重复登记。 */
