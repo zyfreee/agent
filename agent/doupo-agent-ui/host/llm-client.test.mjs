@@ -305,8 +305,9 @@ assert.equal(leftoverCalls.length, 0, '劫持路径一次都不该发起');
     assert.equal(entry.error.includes('***'), true, '错误文本里密钥同样打码');
 }
 {
+    // 连接校验要求模型名齐了才放行（baseUrl 独缺会被「模型连接未配置」先拦），这里补上才测得到 400 的响应体路径。
     const plain = createLlmClient({
-        getSettings: () => ({ llm: { mode: 'custom', baseUrl: 'https://api.example/v1' } }),
+        getSettings: () => ({ llm: { mode: 'custom', baseUrl: 'https://api.example/v1', model: 'plain-model' } }),
         fetchImpl: async () => ({ ok: false, status: 400, text: async () => 'bad gateway plain text' }),
     });
     await assert.rejects(

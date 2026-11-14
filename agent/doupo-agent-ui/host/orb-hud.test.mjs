@@ -475,7 +475,8 @@ const fullPlotView = buildOverviewPanel({
 });
 assert.deepEqual(fullPlotView.rows[0].marks, [], '完整版下剧情决定渠道不挂标记（模块行本身也会被隐藏）');
 
-// —— 简略版总控：固定三行，行上的分路清单跟着各功能开关变，只显示状态不带开关 ——
+// —— 简略版总控：固定三行，行上的分路清单跟着各功能开关变，只显示状态不带开关；
+// 最近一次失败调用会折成「上次失败」行置顶（没有失败就不加行）——
 const liteNow = new Date().toISOString();
 const liteView = buildOverviewPanel({
     mode: 'lite',
@@ -485,12 +486,14 @@ const liteView = buildOverviewPanel({
     litePickParts: ['原著', '影响'],
     liteSettleParts: ['人物', '世界', '影响', '纳戒', '记忆'],
 });
-assert.deepEqual(liteView.rows.map(row => row.label), ['素材总挑选', '行动结算', '总结算'], '简略版总控固定三行');
-assert.equal(liteView.rows[0].value, '生成前 · 原著／影响一次挑完', '关掉记忆召回，行上就少那一路');
-assert.equal(liteView.rows[1].value, '生成前 · 行动判定独立调用');
-assert.equal(liteView.rows[2].value, '生成后 · 人物／世界／影响／纳戒／记忆一次记完');
-assert.equal(liteView.rows[0].marks[0].status, 'ok');
-assert.equal(liteView.rows[2].marks[0].status, 'failed');
+assert.deepEqual(liteView.rows.map(row => row.label), ['上次失败', '素材总挑选', '行动结算', '总结算'], '失败行置顶＋简略版总控固定三行');
+assert.equal(liteView.rows[0].tone, 'warn', '没被后续调用恢复的失败行用警示色');
+assert.ok(liteView.rows[0].value.startsWith('总结算（'), '失败行写明是哪一路失败');
+assert.equal(liteView.rows[1].value, '生成前 · 原著／影响一次挑完', '关掉记忆召回，行上就少那一路');
+assert.equal(liteView.rows[2].value, '生成前 · 行动判定独立调用');
+assert.equal(liteView.rows[3].value, '生成后 · 人物／世界／影响／纳戒／记忆一次记完');
+assert.equal(liteView.rows[1].marks[0].status, 'ok');
+assert.equal(liteView.rows[3].marks[0].status, 'failed');
 assert.equal(liteView.rows.every(row => row.toggle === undefined), true, '总控只看情况，不带勾选');
 assert.equal(liteView.rows.some(row => row.label === '原著设定'), false, '完整版的模块行不再混进简略版总控');
 assert.match(liteView.summary, /总控已开启 · 简略版/);
