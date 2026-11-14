@@ -55,9 +55,13 @@ const hugeLabels = { entries: [
 const bounded = buildRecallCatalog(hugeLabels, { maxChars: 200, sceneText: '不相关' });
 assert.ok(bounded.length <= 200 && bounded.includes('- large-label|') && bounded.includes('- small-label|'), 'truncate labels, not complete ID prefixes');
 assert.ok(bounded.includes('…'));
-for (const maxChars of [NaN, Infinity, -1, 0, 'bad', 200.5]) {
+for (const maxChars of [NaN, -1, 0, 'bad', 200.5]) {
     assert.ok(buildRecallCatalog(flooded, { maxChars }).length <= 4000, 'invalid budget defaults to finite cap');
 }
+// Infinity＝不限制（设置层把「0＝不限制」换算成 Infinity 传进来）：全部条目进目录，不再按 4000 截。
+const unlimitedCatalog = buildRecallCatalog(flooded, { maxChars: Infinity });
+assert.ok(unlimitedCatalog.split('\n').length >= flooded.entries.length, 'unlimited budget keeps every entry line');
+assert.ok(buildRecallUser({ snapshot: flooded, floors: [], catalogChars: Infinity }).includes('- old-big|大记忆|'), 'user builder forwards unlimited budget');
 assert.equal(buildRecallCatalog({ entries: [{ id: 'x'.repeat(500), tier: 'big', title: 'a', related: [] }] }, { maxChars: 200 }), '', 'do not emit partial IDs when prefix cannot fit');
 // 空库
 assert.equal(buildRecallCatalog({}), '（记忆库还是空的）');

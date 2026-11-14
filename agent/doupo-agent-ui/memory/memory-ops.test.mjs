@@ -135,7 +135,12 @@ assert.deepEqual(recallKeys({ related: ['药老', '药尘'], aliases: ['药尘',
         assert.equal(detail.text, '');
         assert.deepEqual(detail.usedIds, []);
     }
-    for (const maxChars of [NaN, Infinity, -1, 1.5, '200']) assert.equal(renderMemoryEntriesDetail([a], { maxChars }).text, aLine, 'invalid budget defaults safely');
+    // Infinity＝不限制（设置层把「0＝不限制」换算成 Infinity 传进来）：再长的条目也整条放行。
+    assert.deepEqual(renderMemoryEntriesDetail([a, b], { maxChars: Infinity }).usedIds, [a.id, b.id], 'unlimited budget keeps every entry');
+    const giant = { ...a, id: 'giant', text: '长'.repeat(5000) };
+    assert.equal(renderMemoryEntries([giant], { maxChars: 4000 }), '', 'finite cap still skips oversized entry');
+    assert.ok(renderMemoryEntries([giant], { maxChars: Infinity }).includes('长'.repeat(5000)), 'unlimited budget admits oversized entries');
+    for (const maxChars of [NaN, -1, 1.5, '200']) assert.equal(renderMemoryEntriesDetail([a], { maxChars }).text, aLine, 'invalid budget defaults safely');
     assert.deepEqual(renderMemoryEntriesDetail([], { prefix, suffix }), { text: '', entries: [], usedIds: [] });
     assert.equal(renderMemoryEntries([a, b], { maxChars: pairCap }), renderMemoryEntriesDetail([a, b], { maxChars: pairCap }).text, 'legacy string wrapper');
 }

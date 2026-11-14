@@ -56,7 +56,8 @@ export function buildRecallCatalog(snapshot = {}, { maxChars = DEFAULT_CATALOG_C
     const entries = (Array.isArray(snapshot?.entries) ? snapshot.entries : []).filter(entry => entry && !entry.supersededBy);
     if (!entries.length) return '（记忆库还是空的）';
     const value = Number(maxChars);
-    const cap = Number.isSafeInteger(value) && value > 0 ? Math.max(200, value) : DEFAULT_CATALOG_CHARS;
+    // Infinity＝不限制（设置层把「0＝不限制」换算成 Infinity 传进来）；其余非法值回落默认预算。
+    const cap = value === Infinity ? Infinity : (Number.isSafeInteger(value) && value > 0 ? Math.max(200, value) : DEFAULT_CATALOG_CHARS);
     const big = entries.filter(entry => entry.tier === 'big').sort((a, b) => b.day - a.day);
     const small = entries.filter(entry => entry.tier !== 'big').sort((a, b) => b.day - a.day);
     const lineCap = big.length && small.length ? Math.floor((cap - 1) / 2) : cap;
@@ -133,7 +134,8 @@ export function buildRecallUser({ snapshot = {}, floors = [], worldbookLines = [
         .filter(Boolean);
     return [
         '【记忆目录（编号|层|标题（钥匙））】',
-        buildRecallCatalog(snapshot, { sceneText: chat.join('\n'), currentDay, vectorSim, advanced, ...(Number.isInteger(catalogChars) && catalogChars > 0 ? { maxChars: catalogChars } : {}) }),
+        // catalogChars：正数＝按预算截断；Infinity＝不限制（设置层「0＝不限制」换算来的）；没传＝维持旧默认预算。
+        buildRecallCatalog(snapshot, { sceneText: chat.join('\n'), currentDay, vectorSim, advanced, ...(catalogChars === Infinity ? { maxChars: Infinity } : (Number.isInteger(catalogChars) && catalogChars > 0 ? { maxChars: catalogChars } : {})) }),
         '',
         '【原著资料（本轮已注入的原著条目）】',
         bookLines.length ? bookLines.join('\n\n') : '- （原著资料本轮还没有注入内容）',

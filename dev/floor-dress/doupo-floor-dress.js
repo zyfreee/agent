@@ -11,7 +11,7 @@
  *   ⑦ 楼头与周边：名牌鎏金渐字、头像斗气圈、主题滚动条 / 选区、输入框聚焦的玉牒光；
  *   ⑧ 炼字浮牌：生成期间角落一枚小火苗「炼字中」，落笔完自动退场；
  *   ⑨ 整体窗景：聊天窗整窗换装——案台深底、卷轴纸面、楼块隐入纸面、顶栏与输入区随色；
- *   ⑩ 斗破焰装：案台余烬上浮、纸面烛光晕染 + 卷轴内框、章首焰字下沉、
+ *   ⑩ 斗破焰装：案台暖光、纸面烛光晕染 + 卷轴内框、章首焰字下沉、
  *      卷尾落款（斗气大陆 · 第 X 天 · 所在，读真实世界账）。
  *
  * 怎么工作的：
@@ -39,7 +39,7 @@
         chrome: true,           // ⑦ 周边（名牌/头像圈/滚动条/选区/输入框聚焦光）
         crafting: true,         // ⑧ 生成中的「炼字」浮牌
         window: true,           // ⑨ 整体窗景：聊天窗整窗换装（案台+卷轴面+顶栏+输入区随色）
-        flavor: true,           // ⑩ 斗破焰装：余烬/纸面晕染/章首焰字/卷尾落款
+        flavor: true,           // ⑩ 斗破焰装：案台暖光/纸面晕染/章首焰字/卷尾落款
         followAgentTheme: true, // 跟随 agent 面板的主题（暗金/玄铁/米纸）
         fallbackTheme: 'gilt',
         pollMs: 5000,           // 兜底轮询：防止“手动预览结算”这类不触发楼层重绘的更新被漏掉
@@ -447,7 +447,7 @@
 /* —— 页面级主题 token：正文排版 / 周边 / 思考条挂 body 上，#chat 外的部件也能用 —— */
 /* 视口锁：美化开着时 document 一寸都不能滚——表情面板等在文档尾部多出的占位高度
    一旦被（焦点/锚点这类浏览器原生行为）滚进视野，整个界面就会被顶上去半截，
-   窗口下面露出案台和余烬动画，看起来就是「整个聊天悬在半空」。 */
+   窗口下面露出案台底色，看起来就是「整个聊天悬在半空」。 */
 html.doupo-vp-lock, html.doupo-vp-lock body { overflow: hidden !important; }
 body.doupo-dress-page[data-dress-theme="gilt"] { --dpd-accent: #d9a72b; --dpd-hi: #f6dd9a; --dpd-line: rgba(217, 167, 43, 0.38); --dpd-soft: rgba(217, 167, 43, 0.12); --dpd-surface: #221b10; --dpd-ink: #f0e6cd; --dpd-muted: #ab966f; --dpd-good: #9cc78c; --dpd-dialogue: #f6dd9a; }
 body.doupo-dress-page[data-dress-theme="graphite"] { --dpd-accent: #3ecfa5; --dpd-hi: #b7f0dd; --dpd-line: rgba(62, 207, 165, 0.34); --dpd-soft: rgba(62, 207, 165, 0.1); --dpd-surface: #121b17; --dpd-ink: #ddebe3; --dpd-muted: #83a695; --dpd-good: #43b06d; --dpd-dialogue: #b7f0dd; }
@@ -482,7 +482,9 @@ body.doupo-dress-page.doupo-window[data-dress-theme="gilt"] { --dpd-desk: #15100
 body.doupo-dress-page.doupo-window[data-dress-theme="graphite"] { --dpd-desk: #0d1412; --dpd-desk2: #121b17; --dpd-paper: #14201b; --dpd-paper2: #101815; --dpd-scroll-line: rgba(62, 207, 165, 0.4); --dpd-prose: #ddebe3; --dpd-prose-dialogue: #b7f0dd; --dpd-prose-glow: 0 0 16px rgba(62, 207, 165, 0.1); --dpd-user-tint: rgba(62, 207, 165, 0.045); --dpd-card-surface: #17231e; }
 body.doupo-dress-page.doupo-window[data-dress-theme="parchment"] { --dpd-desk: #261c12; --dpd-desk2: #33261a; --dpd-paper: #f6efdd; --dpd-paper2: #eee3c8; --dpd-scroll-line: rgba(180, 69, 47, 0.4); --dpd-prose: #3c3122; --dpd-prose-dialogue: #a8522f; --dpd-prose-glow: none; --dpd-user-tint: rgba(180, 69, 47, 0.045); --dpd-card-surface: #fffdf4; }
 body.doupo-dress-page.doupo-window { background: radial-gradient(130% 100% at 50% 0%, var(--dpd-desk2), var(--dpd-desk) 72%) !important; }
-body.doupo-dress-page.doupo-window #top-bar, body.doupo-dress-page.doupo-window #form_sheld { background: transparent !important; }
+/* 顶栏与输入区给一层实底案台色（原先是透明——别人导入后输入框、发送键和左下角功能键
+   全都悬空飘在背景上；实底随主题变色，既留换装观感又落回桌面） */
+body.doupo-dress-page.doupo-window #top-bar, body.doupo-dress-page.doupo-window #form_sheld { background: var(--dpd-desk) !important; }
 body.doupo-dress-page.doupo-window #sheld { background: linear-gradient(180deg, var(--dpd-paper), var(--dpd-paper2)) !important; box-shadow: inset 2px 0 0 var(--dpd-scroll-line), inset -2px 0 0 var(--dpd-scroll-line), 0 0 44px rgba(0, 0, 0, 0.45); }
 body.doupo-dress-page.doupo-window #chat { background: transparent !important; }
 body.doupo-dress-page.doupo-window #chat > .mes { background: transparent !important; }
@@ -492,7 +494,8 @@ body.doupo-dress-page.doupo-window #chat .mes_text .dpd-dialogue { color: var(--
 body.doupo-dress-page.doupo-window #chat .mes .ch_name { color: var(--dpd-prose); }
 body.doupo-dress-page.doupo-window #chat .dpd-world-card, body.doupo-dress-page.doupo-window #chat .dpd-pre-card { --dpd-surface: var(--dpd-card-surface); }
 body.doupo-dress-page.doupo-window #send_textarea { color: var(--dpd-prose) !important; }
-/* ⑩ 斗破焰装：案台余烬上浮 + 纸面烛光晕染 + 章首焰字 + 卷尾落款 */
+/* ⑩ 斗破焰装：案台暖光 + 纸面烛光晕染 + 章首焰字 + 卷尾落款
+   （余烬粒子已删：飘动的光点在别的机器上像悬浮杂物，案台只留一层静态暖光） */
 body.doupo-dress-page.doupo-window.doupo-blaze { background: radial-gradient(60% 34% at 50% 104%, rgba(255, 122, 40, 0.15), transparent 70%), radial-gradient(130% 100% at 50% 0%, var(--dpd-desk2), var(--dpd-desk) 72%) !important; }
 /* #sheld 原版是 absolute（顶栏下、贴合窗口底），绝不能改 position——
    改成 relative 会掉进文档流、再吃一层原版 top 偏移，把输入区挤出窗口；
@@ -500,11 +503,6 @@ body.doupo-dress-page.doupo-window.doupo-blaze { background: radial-gradient(60%
 body.doupo-blaze #sheld { z-index: 1; }
 /* 卡内旧拷贝还在刷 position:relative——双类选择器压过它，把原版的 absolute 钉回去 */
 body.doupo-dress-page.doupo-blaze #sheld { position: absolute; }
-body.doupo-blaze::before, body.doupo-blaze::after { content: ''; position: fixed; left: 0; right: 0; top: 0; pointer-events: none; z-index: 0; background-repeat: repeat; }
-body.doupo-blaze::before { height: calc(100% + 380px); background-image: radial-gradient(2px 2px at 18% 22%, rgba(255, 176, 88, 0.75), transparent 65%), radial-gradient(2px 2px at 64% 58%, rgba(255, 140, 60, 0.6), transparent 65%), radial-gradient(1.5px 1.5px at 38% 74%, rgba(255, 214, 130, 0.55), transparent 65%), radial-gradient(2px 2px at 82% 34%, rgba(255, 176, 88, 0.5), transparent 65%); background-size: 420px 380px; opacity: 0.5; animation: dpd-embers-a 15s linear infinite; }
-body.doupo-blaze::after { height: calc(100% + 270px); background-image: radial-gradient(2.5px 2.5px at 10% 30%, rgba(255, 196, 100, 0.85), transparent 65%), radial-gradient(2px 2px at 30% 66%, rgba(255, 150, 70, 0.7), transparent 65%), radial-gradient(1.5px 1.5px at 52% 18%, rgba(255, 224, 150, 0.7), transparent 65%), radial-gradient(2.5px 2.5px at 74% 48%, rgba(255, 160, 70, 0.65), transparent 65%), radial-gradient(2px 2px at 90% 78%, rgba(255, 196, 100, 0.6), transparent 65%); background-size: 270px 270px; opacity: 0.6; animation: dpd-embers-b 8s linear infinite; }
-@keyframes dpd-embers-a { from { transform: translateY(0); } to { transform: translateY(-380px); } }
-@keyframes dpd-embers-b { from { transform: translateY(0); } to { transform: translateY(-270px); } }
 /* 纸面氛围：不用任何字——顶上一束烛光、底部一道沉影、边缘轻轻收晕；卷轴面加一道内框细线 */
 body.doupo-blaze #sheld::before { content: ''; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(52% 32% at 50% 0%, rgba(255, 190, 120, 0.12), transparent 72%), radial-gradient(85% 40% at 50% 104%, rgba(118, 66, 26, 0.12), transparent 74%), radial-gradient(125% 92% at 50% 46%, transparent 62%, rgba(88, 48, 18, 0.08) 100%); }
 body.doupo-blaze #sheld::after { content: ''; position: absolute; inset: 6px; border: 1px solid var(--dpd-line); border-radius: 0.55rem; opacity: 0.4; pointer-events: none; }
@@ -512,7 +510,6 @@ body.doupo-blaze .dpd-dropcap { float: left; font: 700 2.6em/0.86 "Noto Serif SC
 .dpd-tail-seal { display: flex; align-items: center; justify-content: center; gap: 0.7rem; margin: 0.95rem 0 0.1rem; padding-top: 0.55rem; border-top: 1px dashed var(--dpd-line); color: var(--dpd-muted); font: 500 0.72rem/1 "Noto Serif SC", "STZhongsong", serif; letter-spacing: 0.32em; }
 .dpd-tail-seal i { width: 0.34rem; height: 0.34rem; flex: none; transform: rotate(45deg); background: var(--dpd-accent); box-shadow: 0 0 7px var(--dpd-soft); }
 body.doupo-blaze #chat::-webkit-scrollbar-thumb { background: linear-gradient(180deg, var(--dpd-accent), var(--dpd-hi)); }
-@media (prefers-reduced-motion: reduce) { body.doupo-blaze::before, body.doupo-blaze::after { animation: none; } }
 `;
 
     function ensureStyle() {
@@ -1030,7 +1027,7 @@ body.doupo-blaze #chat::-webkit-scrollbar-thumb { background: linear-gradient(18
             state.stripSig = '';
         }
 
-        // ①乙 斗破焰装：卷尾落款压在正文收笔处（余烬/纸面晕染走 body 类，不逐楼动手）
+        // ①乙 斗破焰装：卷尾落款压在正文收笔处（案台暖光/纸面晕染走 body 类，不逐楼动手）
         if (active && CONFIG.flavor && lastFloor) {
             const tailText = buildTailText(readChatKey('doupo_agent_world'));
             const tailSig = `${lastIndex}|${tailText}`;
@@ -1047,7 +1044,7 @@ body.doupo-blaze #chat::-webkit-scrollbar-thumb { background: linear-gradient(18
             state.tailSig = '';
         }
 
-        // ② 生成前准备面板：卷宗 / 记忆 / 结算 三节，挂在玩家输入楼下
+        // ② 生成前准备面板：卷宗 / 记忆 / 结算 三节，挂在最新输入楼下
         let settleSig = '';
         if (active && CONFIG.settle) {
             const agentState = readAgentState();
@@ -1055,21 +1052,22 @@ body.doupo-blaze #chat::-webkit-scrollbar-thumb { background: linear-gradient(18
             const usable = record && record.scope === scopeKey()
                 && Array.isArray(record.actions) && record.actions.length
                 && Number.isInteger(record.userFloor) ? record : null;
+            // 锚永远钉最新输入楼，判定记录只在「它判的就是最新输入」时才供过秤的料。
+            // 旧版先信记录里的 userFloor：本轮判定没跑（无行动/判定失败，记录不更新）
+            // 或删楼后索引漂移，卡就会留在上一楼——看起来「备料卡跑到最新输入的上面」。
             let anchorIndex = -1;
-            if (usable) anchorIndex = usable.userFloor;
-            else {
-                for (let index = chat.length - 1; index >= 0; index--) {
-                    if (chat[index]?.is_user === true) { anchorIndex = index; break; }
-                }
+            for (let index = chat.length - 1; index >= 0; index--) {
+                if (chat[index]?.is_user === true) { anchorIndex = index; break; }
             }
+            const freshRecord = usable && usable.userFloor === anchorIndex ? usable : null;
             const anchorFloor = anchorIndex >= 0 ? floorElement(anchorIndex) : null;
-            const settleSummary = anchorFloor && usable ? buildSettleSummary(usable) : null;
+            const settleSummary = anchorFloor && freshRecord ? buildSettleSummary(freshRecord) : null;
             const titles = await lookupEntryTitles(agentState?.factsLastInjection?.usedIds ?? []);
             const sections = [
                 buildFactsSection(agentState?.factsLastInjection ?? null, titles),
                 buildMemorySection(agentState?.memoryLastInjection ?? null),
             ];
-            const statusLabel = usable?.status === 'injected' ? ' · 已注入' : usable?.status === 'preview' ? ' · 仅预览' : '';
+            const statusLabel = freshRecord?.status === 'injected' ? ' · 已注入' : freshRecord?.status === 'preview' ? ' · 仅预览' : '';
             sections.push({
                 key: 'settle',
                 label: '过秤',

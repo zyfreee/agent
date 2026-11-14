@@ -178,11 +178,12 @@ assert.match(entry, /function npcProfileReadText/, '只读视图缺少文本渲�
 assert.match(entry, /NPC_INFO_BUNDLES/, '信息页要按组拆成多页（基本/心性/资产）');
 assert.match(styleCss, /is-empty/, '空字段要有占位样式');
 assert.match(styleCss, /\.dai-agent-modal \{ position: fixed/, '弹窗必须 fixed 定位，否则在长设置页里会超出屏幕');
-// 拉到的模型必须真的可点选：方案卡拉取要给模型输入框接上 datalist（模板没铺就现建），
-// 否则候选拉回来只能塞进空气，状态栏“点模型名那一格就能选”成了一句空话。
-assert.match(entry, /modelInput\.list/, '拉取模型要检查输入框已接的 datalist');
-assert.match(entry, /createElement\('datalist'\)/, '拉取模型要能现建 datalist');
-assert.match(entry, /setAttribute\('list'/, '拉取模型要把 list 属性接到输入框上');
+// 拉到的模型必须真的可点选：拉取成功要缓存候选并直接弹出滚动选择面板（datalist 在各浏览器
+// 里点不出来，玩家只能手填），点模型名输入框还要能重开面板。
+assert.match(entry, /function openModelPicker/, '缺少模型选择面板函数');
+assert.match(entry, /card\.__modelOptions = list/, '拉取模型要缓存候选，点模型名格才能重开面板');
+assert.match(entry, /openModelPicker\(card, result\.models\)/, '拉取成功要直接弹出模型选择面板');
+assert.match(entry, /closest\?\.\('\[data-api-preset-field="model"\]'\)/, '模型名输入框要点一下就能重开面板');
 // 原著设定页的“模型”状态行要读选条绑定的方案（setting.apiPreset），没绑就照实说跟随酒馆；
 // 曾经只读全局连接，功能卡配好了状态栏还喊“未填地址·未填模型”，误导排查。
 assert.match(entry, /fieldValue\(settings, 'setting\.apiPreset'\)/, '原著状态行必须读选条绑定的方案');

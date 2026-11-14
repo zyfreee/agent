@@ -341,6 +341,17 @@ svg.dai-svg { width: 1em; height: 1em; flex: none; display: inline-block; vertic
 .dai-param-grid { grid-template-columns: repeat(auto-fit, minmax(8.2rem, 1fr)); }
 .dai-param-grid .dai-setting-row { padding: 0.25rem 0.45rem; border: 1px solid var(--dai-border); border-radius: var(--dai-radius-field); background: var(--dai-field-hover); }
 .dai-param-grid .dai-setting-row small { font-size: var(--dai-fs-xs); }
+/* 拉取模型后的选择面板：直接弹在模型名那一行下面，滚动点选，带筛选。 */
+.dai-model-picker { display: grid; gap: 0.3rem; margin: 0.25rem 0 0.6rem; padding: 0.35rem; border: 1px solid var(--dai-accent-deep); border-radius: var(--dai-radius-card); background: var(--dai-field); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35); }
+.dai-model-picker-head { display: flex; align-items: center; gap: 0.45rem; }
+.dai-model-picker-filter { flex: 1; min-width: 0; min-height: 1.9rem; padding: 0.2rem 0.45rem; border: 1px solid var(--dai-border); border-radius: var(--dai-radius-field); color: var(--dai-text); background: var(--dai-field-hover); font-size: var(--dai-fs-md); }
+.dai-model-picker-count { flex: none; color: var(--dai-muted); font-size: var(--dai-fs-xs); white-space: nowrap; }
+.dai-model-picker-list { display: grid; max-height: 15rem; overflow-y: auto; border: 1px solid var(--dai-line); border-radius: var(--dai-radius-field); scrollbar-width: thin; }
+.dai-model-picker-item { padding: 0.32rem 0.55rem; border: 0; border-bottom: 1px solid var(--dai-line); color: var(--dai-text); background: transparent; font: inherit; font-size: var(--dai-fs-md); text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+.dai-model-picker-item:last-child { border-bottom: 0; }
+.dai-model-picker-item:hover { background: var(--dai-field-hover); }
+.dai-model-picker-item.is-active { color: var(--dai-accent-hi); background: var(--dai-accent-soft); }
+.dai-model-picker-empty { padding: 0.45rem 0.55rem; color: var(--dai-muted); font-size: var(--dai-fs-md); }
 .dai-impact-list { display: grid; gap: 0.55rem; margin: 0.4rem 0 0; padding: 0 0.25rem 0 0; list-style: none; max-height: 26rem; overflow-y: auto; }
 .dai-impact-item { display: grid; gap: 0.25rem; padding: 0.7rem 0.8rem; border: 1px solid var(--dai-border); border-radius: var(--dai-radius-card); background: var(--dai-field); }
 .dai-impact-item.is-fresh { border-color: var(--dai-accent); box-shadow: 0 0 0 2px var(--dai-tint); transition: box-shadow 0.4s ease, border-color 0.4s ease; }

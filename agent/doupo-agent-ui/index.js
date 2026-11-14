@@ -929,12 +929,13 @@ function memorySettings() {
     return {
         enabled: settings.enableMemoryLedger !== false,
         inject: memory.inject !== false,
-        injectBudget: Number.isInteger(memory.injectBudget) && memory.injectBudget > 0 ? memory.injectBudget : 800,
+        // 注入/目录预算：0 或没填＝不限制（设置层存 0，用的时候换算成 Infinity）。这是用户拍板的默认口径。
+        injectBudget: Number.isInteger(memory.injectBudget) && memory.injectBudget > 0 ? memory.injectBudget : 0,
         decideEnabled: memory.decideEnabled !== false,
         decideAuto: memory.decideAuto !== false,
         consolidateAfter: Number.isInteger(memory.consolidateAfter) && memory.consolidateAfter >= 0 ? Math.min(30, memory.consolidateAfter) : 6,
-        // 记忆目录字数预算：召回决定喂给模型的目录上限（混合检索分数序，超预算从尾部丢）。
-        catalogBudget: Number.isInteger(memory.catalogBudget) && memory.catalogBudget >= 1000 ? Math.min(20000, memory.catalogBudget) : 4000,
+        // 记忆目录字数预算：召回决定喂给模型的目录上限（混合检索分数序，超预算从尾部丢）；0＝不限制。
+        catalogBudget: Number.isInteger(memory.catalogBudget) && memory.catalogBudget > 0 ? memory.catalogBudget : 0,
         // 开局摘要：切聊天后第一条回复前的一次性交底；关掉后完全不注。
         wakeUp: memory.wakeUp !== false,
         wakeUpBudget: Number.isInteger(memory.wakeUpBudget) && memory.wakeUpBudget >= 200 ? Math.min(2000, memory.wakeUpBudget) : 500,
@@ -1144,7 +1145,7 @@ async function runMemoryRecall({ source = 'manual', chat = null, note = '' } = {
         const snapshot = agentMemoryRuntime.snapshot();
         // 语义检索（可选）：查询向量取相似度表喂给目录排序；没开/失败静默退回纯本地混合检索。
         const vectorSim = await memoryVectorSim(snapshot, floors.map(floor => floor.text ?? '').join('\n'));
-        const user = withPlayerNote(buildRecallUser({ snapshot, floors, worldbookLines: bookLines, currentDay: worldDay(), vectorSim, catalogChars: settings.catalogBudget, advanced: advancedMode() }), note);
+        const user = withPlayerNote(buildRecallUser({ snapshot, floors, worldbookLines: bookLines, currentDay: worldDay(), vectorSim, catalogChars: settings.catalogBudget > 0 ? settings.catalogBudget : Infinity, advanced: advancedMode() }), note);
         const raw = await agentLlmClient.complete({
             label: '记忆召回',
             system: settings.recallPrompt,
@@ -1265,7 +1266,8 @@ async function writeMemoryInjectionForPrompt({ chat = null } = {}) {
         ? currentSettings().memory.guide.trim()
         : MEMORY_GUIDE;
     const header = recallNote ? `${MEMORY_HEADER}（召回员：${recallNote}）` : MEMORY_HEADER;
-    const budget = settings.injectBudget + (withGuide ? 1200 : 0);
+    // 预算 0＝不限制：换算成 Infinity 交给渲染与写入器（写入器本就认非有限值不截断）。
+    const budget = settings.injectBudget > 0 ? settings.injectBudget + (withGuide ? 1200 : 0) : Infinity;
     const detail = renderMemoryEntriesDetail(picked, { maxChars: budget, prefix: `${header}\n`, suffix: withGuide ? `\n\n${guide}` : '' });
     if (!detail.text) {
         const cleared = agentMemoryPromptInjection.clear();
@@ -5102,7 +5104,7 @@ function apiPresetHtml(preset) {
     const text = value => escapeHtml(String(value ?? ''));
     const providerOption = (value, label) => `<option value="${value}"${preset.provider === value ? ' selected' : ''}>${label}</option>`;
     const numberRow = (name, label, small, max, step) => `<label class="dai-setting-row"><span><b>${label}</b><small>${small}</small></span><input type="number" min="0" max="${max}" step="${step}" data-api-preset-field="${name}" value="${text(preset[name] ?? 0)}"></label>`;
-    return `<details class="dai-settle-category dai-api-preset" data-api-preset-id="${id}"><summary><span class="dai-feature-icon" aria-hidden="true">${daiIcon("letter")}</span><span><b>${text(preset.name || '未命名方案')}</b><small>${preset.tavern === true ? '走酒馆通道' : text(preset.baseUrl || '还没填接口地址')}</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row dai-setting-toggle"><span><b>走酒馆通道</b><small>开：绑定这个方案的功能经由酒馆当前的 API 连接发出，下面的地址、密钥、模型都用不上；关：按下面填的接口直连。</small></span><input type="checkbox" data-api-preset-field="tavern" ${preset.tavern === true ? 'checked' : ''}></label><label class="dai-setting-row"><span><b>方案名称</b><small>「模型设置」页各功能选方案时显示的名字。</small></span><input type="text" data-api-preset-field="name" value="${text(preset.name)}" maxlength="24" placeholder="例如：深修直连"></label><label class="dai-setting-row"><span><b>接口协议</b><small>留空按接口地址自动判断。</small></span><select data-api-preset-field="provider">${providerOption('', '自动判断')}${providerOption('openai', 'OpenAI 兼容')}${providerOption('anthropic', 'Anthropic')}</select></label><label class="dai-setting-row"><span><b>接口地址</b><small>OpenAI 兼容的 Base URL，填到 /v1 为止（同酒馆自定义接口）。</small></span><input type="text" data-api-preset-field="baseUrl" value="${text(preset.baseUrl)}" placeholder="https://api.example.com/v1"></label><label class="dai-setting-row"><span><b>API Key</b><small>只保存到扩展设置，不写入聊天消息。</small></span><input type="password" data-api-preset-field="apiKey" value="${text(preset.apiKey)}" autocomplete="off" placeholder="留空表示不使用密钥"></label><label class="dai-setting-row"><span><b>模型名称</b><small>填好地址后点“拉取模型”挑一个，也可以手填。</small></span><input type="text" data-api-preset-field="model" value="${text(preset.model)}" placeholder="例如 deepseek-chat"></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-api-preset-models="${id}">拉取模型</button><small role="status" data-api-preset-models-status="${id}"></small></div><div class="dai-setting-grid dai-param-grid">${numberRow('temperature', 'Temperature', '0 更稳，2 更发散；0 ＝不指定。', 2, 0.05)}${numberRow('maxTokens', '最大输出 Token', 'tokens；0 ＝不指定。', 32768, 64)}${numberRow('topP', 'top_p', '0–1；0 ＝不指定。', 1, 0.05)}${numberRow('presencePenalty', '存在惩罚', '0–2；0 ＝不指定。', 2, 0.1)}${numberRow('frequencyPenalty', '频率惩罚', '0–2；0 ＝不指定。', 2, 0.1)}</div><label class="dai-setting-row"><span><b>包括主体参数</b><small>YAML 对象，最后并进聊天补全请求体（酒馆附加参数同语义）；例：top_k: 20</small></span><textarea data-api-preset-field="includeBody" rows="3" spellcheck="false" placeholder="top_k: 20">${text(preset.includeBody)}</textarea></label><label class="dai-setting-row"><span><b>排除主体参数</b><small>YAML 数组，最后从请求体删掉这些顶层字段；例：- frequency_penalty</small></span><textarea data-api-preset-field="excludeBody" rows="3" spellcheck="false" placeholder="- frequency_penalty">${text(preset.excludeBody)}</textarea></label><label class="dai-setting-row"><span><b>包含请求标头</b><small>YAML 对象，合并覆盖请求头（可覆盖鉴权头）；例：CustomHeader: custom-value</small></span><textarea data-api-preset-field="headers" rows="3" spellcheck="false" placeholder="CustomHeader: custom-value">${text(preset.headers)}</textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-api-preset-copy="${id}">复制方案</button><button type="button" class="dai-button dai-button-ghost" data-api-preset-remove="${id}">删除方案</button><small>改动即时保存；删除后用到它的功能自动回到跟随酒馆主连接。</small></div></div></details>`;
+    return `<details class="dai-settle-category dai-api-preset" data-api-preset-id="${id}"><summary><span class="dai-feature-icon" aria-hidden="true">${daiIcon("letter")}</span><span><b>${text(preset.name || '未命名方案')}</b><small>${preset.tavern === true ? '走酒馆通道' : text(preset.baseUrl || '还没填接口地址')}</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row dai-setting-toggle"><span><b>走酒馆通道</b><small>开：绑定这个方案的功能经由酒馆当前的 API 连接发出，下面的地址、密钥、模型都用不上；关：按下面填的接口直连。</small></span><input type="checkbox" data-api-preset-field="tavern" ${preset.tavern === true ? 'checked' : ''}></label><label class="dai-setting-row"><span><b>方案名称</b><small>「模型设置」页各功能选方案时显示的名字。</small></span><input type="text" data-api-preset-field="name" value="${text(preset.name)}" maxlength="24" placeholder="例如：深修直连"></label><label class="dai-setting-row"><span><b>接口协议</b><small>留空按接口地址自动判断。</small></span><select data-api-preset-field="provider">${providerOption('', '自动判断')}${providerOption('openai', 'OpenAI 兼容')}${providerOption('anthropic', 'Anthropic')}</select></label><label class="dai-setting-row"><span><b>接口地址</b><small>OpenAI 兼容的 Base URL，填到 /v1 为止（同酒馆自定义接口）。</small></span><input type="text" data-api-preset-field="baseUrl" value="${text(preset.baseUrl)}" placeholder="https://api.example.com/v1"></label><label class="dai-setting-row"><span><b>API Key</b><small>只保存到扩展设置，不写入聊天消息。</small></span><input type="password" data-api-preset-field="apiKey" value="${text(preset.apiKey)}" autocomplete="off" placeholder="留空表示不使用密钥"></label><label class="dai-setting-row"><span><b>模型名称</b><small>填好地址后点“拉取模型”，弹出列表里下滑点一个就填上；也可以手填。</small></span><input type="text" data-api-preset-field="model" value="${text(preset.model)}" placeholder="例如 deepseek-chat"></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-api-preset-models="${id}">拉取模型</button><small role="status" data-api-preset-models-status="${id}"></small></div><div class="dai-setting-grid dai-param-grid">${numberRow('temperature', 'Temperature', '0 更稳，2 更发散；0 ＝不指定。', 2, 0.05)}${numberRow('maxTokens', '最大输出 Token', 'tokens；0 ＝不指定。', 32768, 64)}${numberRow('topP', 'top_p', '0–1；0 ＝不指定。', 1, 0.05)}${numberRow('presencePenalty', '存在惩罚', '0–2；0 ＝不指定。', 2, 0.1)}${numberRow('frequencyPenalty', '频率惩罚', '0–2；0 ＝不指定。', 2, 0.1)}</div><label class="dai-setting-row"><span><b>包括主体参数</b><small>YAML 对象，最后并进聊天补全请求体（酒馆附加参数同语义）；例：top_k: 20</small></span><textarea data-api-preset-field="includeBody" rows="3" spellcheck="false" placeholder="top_k: 20">${text(preset.includeBody)}</textarea></label><label class="dai-setting-row"><span><b>排除主体参数</b><small>YAML 数组，最后从请求体删掉这些顶层字段；例：- frequency_penalty</small></span><textarea data-api-preset-field="excludeBody" rows="3" spellcheck="false" placeholder="- frequency_penalty">${text(preset.excludeBody)}</textarea></label><label class="dai-setting-row"><span><b>包含请求标头</b><small>YAML 对象，合并覆盖请求头（可覆盖鉴权头）；例：CustomHeader: custom-value</small></span><textarea data-api-preset-field="headers" rows="3" spellcheck="false" placeholder="CustomHeader: custom-value">${text(preset.headers)}</textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-api-preset-copy="${id}">复制方案</button><button type="button" class="dai-button dai-button-ghost" data-api-preset-remove="${id}">删除方案</button><small>改动即时保存；删除后用到它的功能自动回到跟随酒馆主连接。</small></div></div></details>`;
 }
 
 function renderApiPresets(panel, openId = null) {
@@ -5239,7 +5241,94 @@ function updateApiPresetField(id, field, value) {
     return saveApiPresets(presets.map(item => (item?.id === id ? { ...item, [field]: value } : item)));
 }
 
-/** 方案卡上的“拉取模型”：读这张卡自己填的地址/密钥/协议/请求标头（方案标头一并带上），候选填进模型输入框。 */
+/** 模型选择面板：拉到的模型直接弹成滚动列表，点一条就填进模型名；点模型名输入框可重开。 */
+function openModelPicker(card, options) {
+    const modelInput = card?.querySelector?.('[data-api-preset-field="model"]');
+    if (!modelInput) return;
+    const status = card.querySelector('[data-api-preset-models-status]');
+    const list = Array.isArray(options) && options.length
+        ? options.map(String)
+        : (Array.isArray(card.__modelOptions) ? card.__modelOptions.map(String) : []);
+    // 没拉过列表就别弹空面板：照实说一句，玩家知道下一步是先点拉取。
+    if (!list.length) {
+        if (status && !options) status.textContent = '还没有模型列表：先点“拉取模型”拉一次，再点模型名就能选了。';
+        return;
+    }
+    card.__modelOptions = list;
+    // 点输入框＝「开⇄收」切换：已开着就摘掉收工；没开就往下弹缓存列表。
+    // 重新拉取（带 options）永远换新面板，旧的先摘掉。
+    const existing = card.querySelector('[data-model-picker]');
+    if (existing && !options) { existing.remove(); return; }
+    existing?.remove?.();
+    const row = modelInput.closest('.dai-setting-row');
+    const picker = document.createElement('div');
+    picker.className = 'dai-model-picker';
+    picker.dataset.modelPicker = '';
+    const head = document.createElement('div');
+    head.className = 'dai-model-picker-head';
+    const filter = document.createElement('input');
+    filter.type = 'text';
+    filter.className = 'dai-model-picker-filter';
+    filter.placeholder = '筛选模型名，比如 deepseek';
+    filter.spellcheck = false;
+    const count = document.createElement('small');
+    count.className = 'dai-model-picker-count';
+    head.append(filter, count);
+    const listBox = document.createElement('div');
+    listBox.className = 'dai-model-picker-list';
+    listBox.setAttribute('role', 'listbox');
+    const renderItems = () => {
+        const keyword = filter.value.trim().toLowerCase();
+        const shown = keyword ? list.filter(model => model.toLowerCase().includes(keyword)) : list;
+        listBox.textContent = '';
+        for (const model of shown) {
+            const item = document.createElement('button');
+            item.type = 'button';
+            item.className = 'dai-model-picker-item';
+            item.dataset.modelValue = model;
+            item.textContent = model;
+            if (model === modelInput.value.trim()) item.classList.add('is-active');
+            listBox.appendChild(item);
+        }
+        if (!shown.length) {
+            const empty = document.createElement('small');
+            empty.className = 'dai-model-picker-empty';
+            empty.textContent = '没有匹配的模型名：换个词筛，或直接在模型名格里手填。';
+            listBox.appendChild(empty);
+        }
+        count.textContent = `${shown.length} / ${list.length}`;
+    };
+    renderItems();
+    picker.append(head, listBox); // 筛选头与滚动列表挂进面板，缺了这步面板就是空壳。
+    filter.addEventListener('input', renderItems);
+    listBox.addEventListener('click', event => {
+        const item = event.target.closest?.('[data-model-value]');
+        if (!item) return;
+        modelInput.value = item.dataset.modelValue;
+        modelInput.dispatchEvent(new Event('input', { bubbles: true }));
+        picker.remove();
+        if (status) status.textContent = `已选模型：${item.dataset.modelValue}。`;
+    });
+    const cleanup = () => {
+        picker.remove();
+        document.removeEventListener('pointerdown', outside, true);
+        document.removeEventListener('keydown', keyClose, true);
+    };
+    // 点面板外面自动收起（Esc 也行）；模型输入框本身不算外面——点它走切换。
+    const outside = event => {
+        if (!picker.isConnected) return cleanup();
+        if (picker.contains(event.target) || event.target === modelInput) return;
+        cleanup();
+    };
+    const keyClose = event => { if (event.key === 'Escape') cleanup(); };
+    document.addEventListener('pointerdown', outside, true);
+    document.addEventListener('keydown', keyClose, true);
+    if (row) row.after(picker); else modelInput.after(picker);
+    listBox.querySelector('.dai-model-picker-item.is-active')?.scrollIntoView?.({ block: 'nearest' });
+    picker.scrollIntoView({ block: 'nearest' });
+}
+
+/** 方案卡上的“拉取模型”：读这张卡自己填的地址/密钥/协议/请求标头（方案标头一并带上），拉到就弹出选择面板。 */
 async function fetchApiPresetModels(panel, id) {
     const card = panel?.querySelector(`[data-api-preset-id="${CSS.escape(id)}"]`);
     if (!card) return;
@@ -5251,6 +5340,7 @@ async function fetchApiPresetModels(panel, id) {
         if (status) status.textContent = '先填接口地址，再点拉取。';
         return;
     }
+    card.querySelector('[data-model-picker]')?.remove?.(); // 重新拉取：旧面板先收起，拉完弹新的。
     card.__modelRequest?.abort();
     const controller = new AbortController();
     card.__modelRequest = controller;
@@ -5272,23 +5362,12 @@ async function fetchApiPresetModels(panel, id) {
             if (status) status.textContent = result.error || '接口没给出模型列表，可以直接手填模型名。';
             return;
         }
-        const modelInput = card.querySelector('[data-api-preset-field="model"]');
-        if (modelInput) {
-            let datalist = modelInput.list;
-            if (!datalist || !datalist.isConnected) {
-                datalist = document.createElement('datalist');
-                datalist.id = `dai-preset-model-options-${id}`;
-                modelInput.after(datalist);
-                modelInput.setAttribute('list', datalist.id);
-            }
-            datalist.textContent = '';
-            for (const model of result.models) {
-                const option = document.createElement('option');
-                option.value = model;
-                datalist.appendChild(option);
-            }
+        if (!result.models.length) {
+            if (status) status.textContent = '接口通了但没报模型名，可以直接手填模型名。';
+            return;
         }
-        if (status) status.textContent = `拉到 ${result.models.length} 个模型，点模型名那一格就能选。`;
+        openModelPicker(card, result.models);
+        if (status) status.textContent = `拉到 ${result.models.length} 个模型，选一个就填上了。`;
     } catch (error) {
         if (current() && status) status.textContent = `拉取失败：${error?.message ?? error}`;
     } finally {
@@ -8390,7 +8469,7 @@ function createSettingsPanel() {
                     </section>
                     <section class="dai-settings-page" data-settings-section="memory" role="tabpanel" hidden>
                         <div class="dai-page-heading"><h3>记忆存储</h3><p>记忆分小记忆（轻量近事）与大记忆（总结出来的长期大事），都永久保存、按需召回——"关联"里的人名/地名出现在最近剧情里才会注入提示词。书记官只记小记忆；小记忆攒够阈值就自动总结成一条大记忆，原条目随之退役。删除只由书记官或你手动做，脚本从不过期任何记忆。</p></div>
-                        <div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon" aria-hidden="true">${daiIcon("brush")}</span><span><b>启用记忆存储</b><small>关闭后不记账、不召回；已记下的内容仍留在聊天存档里。</small></span><input type="checkbox" data-setting="enableMemoryLedger"></div><label class="dai-setting-row dai-setting-toggle"><span><b>按需召回进正文提示词</b><small>生成前注入记忆；主路由「召回决定」按目录挑选，没跑成退回关键词匹配。</small></span><input type="checkbox" data-setting="memory.inject"></label><label class="dai-setting-row"><span><b>召回字数上限</b><small>本轮注入的记忆总字数上限；超了从尾部丢；0 为默认 900。</small></span><input type="number" min="0" step="100" data-setting="memory.injectBudget"></label><label class="dai-setting-row dai-setting-toggle"><span><b>自动决定（书记官）</b><small>每轮生成后由模型决定新记忆；关掉后只认正文里的 memory 指令块。</small></span><input type="checkbox" data-setting="memory.decideAuto"></label><label class="dai-setting-row dai-setting-toggle"><span><b>启用记忆决定调用</b><small>关闭后不再发起书记官调用，只走降级指令。</small></span><input type="checkbox" data-setting="memory.decideEnabled"></label><label class="dai-setting-row dai-setting-toggle"><span><b>启用召回决定调用</b><small>关闭后注入退回关键词匹配，不发起召回模型调用。</small></span><input type="checkbox" data-setting="memory.recallEnabled"></label><label class="dai-setting-row dai-setting-toggle"><span><b>生成前自动召回</b><small>用户输入之后、生成之前，召回员按记忆目录+上下文挑要注入的旧记忆；关掉后注入退回关键词匹配。</small></span><input type="checkbox" data-setting="memory.recallAuto"></label><label class="dai-setting-row"><span><b>小记忆攒几条自动总结成大记忆</b><small>书记官只记小记忆；攒够这个数，就自动调一次模型把这批小记忆提炼成一条大记忆，原条目退役。0 = 关闭自动总结；「现在就总结一次」不受阈值限制。</small></span><input type="number" min="0" max="30" step="1" data-setting="memory.consolidateAfter"></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-memory-consolidate>现在就总结一次</button><small role="status" data-memory-consolidate-status></small></div><details class="dai-settle-category"><summary><span class="dai-feature-icon" aria-hidden="true">${daiIcon("brush")}</span><span><b>指令指南（降级模式）</b><small>关闭自动决定时随召回结果注入的规则正文；保持"只输出 JSON"与操作字段名不变，清空恢复内置默认。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>指南正文</b></span><textarea data-setting="memory.guide" rows="9" spellcheck="false"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-memory-guide-default>填入默认指南</button></div></div></details></div><div class="dai-settings-card"><div class="dai-card-heading"><b>记忆总览</b><small>按层统计；注入哪些记忆由「召回决定」按记忆目录+上下文挑选，召回没跑成退回关键词匹配。旧记忆永不作废。排序与按人过滤在「记忆总库」里。</small></div><p class="dai-state-strip" data-memory-overview>还没有载入记忆。</p><p class="dai-turn-result" data-memory-conflicts hidden></p><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-modal-open="memory-browser" data-modal-title="记忆总库">打开记忆总库</button><button type="button" class="dai-secondary-button" data-api-mode-section="advanced" data-modal-open="memory-person" data-modal-title="按人整合">按人整合</button><button type="button" class="dai-secondary-button" data-modal-open="memory-add" data-modal-title="手动登记一条记忆">＋ 手动登记</button></div></div>
+                        <div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon" aria-hidden="true">${daiIcon("brush")}</span><span><b>启用记忆存储</b><small>关闭后不记账、不召回；已记下的内容仍留在聊天存档里。</small></span><input type="checkbox" data-setting="enableMemoryLedger"></div><label class="dai-setting-row dai-setting-toggle"><span><b>按需召回进正文提示词</b><small>生成前注入记忆；主路由「召回决定」按目录挑选，没跑成退回关键词匹配。</small></span><input type="checkbox" data-setting="memory.inject"></label><label class="dai-setting-row"><span><b>召回字数上限</b><small>本轮注入的记忆总字数上限；预算内放不下的整条跳过，不会拦腰截断；0 ＝ 不限制（默认）。设了小预算会只装下两三条。</small></span><input type="number" min="0" step="100" data-setting="memory.injectBudget"></label><label class="dai-setting-row dai-setting-toggle"><span><b>自动决定（书记官）</b><small>每轮生成后由模型决定新记忆；关掉后只认正文里的 memory 指令块。</small></span><input type="checkbox" data-setting="memory.decideAuto"></label><label class="dai-setting-row dai-setting-toggle"><span><b>启用记忆决定调用</b><small>关闭后不再发起书记官调用，只走降级指令。</small></span><input type="checkbox" data-setting="memory.decideEnabled"></label><label class="dai-setting-row dai-setting-toggle"><span><b>启用召回决定调用</b><small>关闭后注入退回关键词匹配，不发起召回模型调用。</small></span><input type="checkbox" data-setting="memory.recallEnabled"></label><label class="dai-setting-row dai-setting-toggle"><span><b>生成前自动召回</b><small>用户输入之后、生成之前，召回员按记忆目录+上下文挑要注入的旧记忆；关掉后注入退回关键词匹配。</small></span><input type="checkbox" data-setting="memory.recallAuto"></label><label class="dai-setting-row"><span><b>小记忆攒几条自动总结成大记忆</b><small>书记官只记小记忆；攒够这个数，就自动调一次模型把这批小记忆提炼成一条大记忆，原条目退役。0 = 关闭自动总结；「现在就总结一次」不受阈值限制。</small></span><input type="number" min="0" max="30" step="1" data-setting="memory.consolidateAfter"></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-memory-consolidate>现在就总结一次</button><small role="status" data-memory-consolidate-status></small></div><details class="dai-settle-category"><summary><span class="dai-feature-icon" aria-hidden="true">${daiIcon("brush")}</span><span><b>指令指南（降级模式）</b><small>关闭自动决定时随召回结果注入的规则正文；保持"只输出 JSON"与操作字段名不变，清空恢复内置默认。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>指南正文</b></span><textarea data-setting="memory.guide" rows="9" spellcheck="false"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-memory-guide-default>填入默认指南</button></div></div></details></div><div class="dai-settings-card"><div class="dai-card-heading"><b>记忆总览</b><small>按层统计；注入哪些记忆由「召回决定」按记忆目录+上下文挑选，召回没跑成退回关键词匹配。旧记忆永不作废。排序与按人过滤在「记忆总库」里。</small></div><p class="dai-state-strip" data-memory-overview>还没有载入记忆。</p><p class="dai-turn-result" data-memory-conflicts hidden></p><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-modal-open="memory-browser" data-modal-title="记忆总库">打开记忆总库</button><button type="button" class="dai-secondary-button" data-api-mode-section="advanced" data-modal-open="memory-person" data-modal-title="按人整合">按人整合</button><button type="button" class="dai-secondary-button" data-modal-open="memory-add" data-modal-title="手动登记一条记忆">＋ 手动登记</button></div></div>
                         <div class="dai-settings-card" data-api-mode-section="advanced"><div class="dai-card-heading"><b>记忆体检</b><small>纯本地统计，不发模型调用：疑似重复/矛盾对、认领不到任何台账实体的孤立钥匙（多半是笔误）、当前目录预算下召回员实际可见几条、已被覆盖几条。整卡只在进阶版显示；向量覆盖在「模型设置」页看。</small></div><p class="dai-state-strip" data-memory-audit-stats>打开记忆页时自动体检。</p><div class="dai-world-events" data-memory-audit-list></div></div>
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>记忆注入</b><small>最近一轮实际进入正文提示词的记忆：来源（召回决定/关键词兜底）、条数与内容；点条目看完整记录。生成结束会标「已清理」。</small></div><p class="dai-state-strip" data-memory-injection-status>还没有注入记录：下一轮生成时由召回决定（或关键词兜底）挑选。</p><div class="dai-world-events" data-memory-injection-list></div><div data-api-mode-section="advanced" hidden><label class="dai-setting-row dai-setting-toggle"><span><b>开局摘要</b><small>切换/载入聊天后的第一条回复前，注入一次跨账本交底（时间·在场人物·待办任务·未了线头·旧账恩怨）；只注一次，生成结束即清。进阶版功能。</small></span><input type="checkbox" data-setting="memory.wakeUp"></label><label class="dai-setting-row"><span><b>开局摘要字数上限</b><small>一次性交底的总字数上限，200-2000；摘要为空（空库空账）时本轮不注。</small></span><input type="number" min="200" max="2000" step="50" data-setting="memory.wakeUpBudget"></label></div></div>
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>大记忆</b><small>值得一直记住的事；★=关键；召回优先于小记忆。主界面只铺最新 6 条，全部与翻页在「记忆总库」。</small></div><div class="dai-world-events" data-memory-recent-big></div></div>
@@ -8399,7 +8478,7 @@ function createSettingsPanel() {
                         <div class="dai-modal-dock" data-modal-dock="memory-person" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>按人整合</b><small>选一个人，把他散在三本账里的叙事并成一条时间线：记忆（按关联钥匙命中）、好感流水、人物簿经历与流水、世界事件与任务——按世界天新→旧排列，行首角标标注来源。</small></div><label class="dai-setting-row"><span><b>人物</b><small>人物簿里的人优先；没建人物簿时退回记忆关联里的钥匙。</small></span><select data-memory-person-view><option value="">选一个人</option></select></label><p class="dai-state-strip" data-memory-person-summary hidden></p><div class="dai-world-events" data-memory-person-timeline></div></div><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-agent-modal-close>关闭</button></div></div>
                         
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>模型决定（LLM 决定脚本执行）</b><small>生成结束后，书记官读最近聊天 + 相关世界书条目 + 本场召回的记忆做一次独立决定，输出严格 JSON，脚本逐条校验执行。</small></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button" data-memory-decide-run>手动决定一次</button><span data-memory-decide-status></span></div><div data-memory-decide-result></div><details class="dai-settle-category"><summary><span class="dai-feature-icon" aria-hidden="true">${daiIcon("flame")}</span><span><b>决定提示词</b><small>书记官的 system 指令；保持"只输出 JSON"与操作字段名不变，清空恢复内置默认。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>提示词正文</b></span><textarea data-setting="memory.decidePrompt" rows="9" spellcheck="false"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-memory-decide-default>填入默认提示词</button></div></div></details></div>
-                        <div class="dai-settings-card"><div class="dai-card-heading"><b>召回决定（LLM 挑选注入哪些记忆）</b><small>用户输入之后、生成之前，召回员读记忆目录（标题+钥匙）+ 最近聊天 + 世界书命中，挑出本轮要注入的旧记忆编号，脚本执行注入；目录按混合检索分数序排（钥匙/引文/词面/时间邻近/语义），场景勾得越深的排得越靠前；失败或关闭时退回同款混合分数的兜底匹配，不阻塞生成。</small></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button" data-memory-recall-run>手动召回一次</button><span data-memory-recall-status></span></div><div data-memory-recall-result></div><label class="dai-setting-row"><span><b>目录字数上限</b><small>发给召回员的记忆目录总字数；账本变大后可以调高，让召回员看到更多旧账。超预算从尾部丢。</small></span><input type="number" min="1000" max="20000" step="500" data-setting="memory.catalogBudget"></label><details class="dai-settle-category"><summary><span class="dai-feature-icon" aria-hidden="true">${daiIcon("flame")}</span><span><b>召回提示词</b><small>召回员的 system 指令；保持"只输出 JSON"与 ids 字段名不变，清空恢复内置默认。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>提示词正文</b></span><textarea data-setting="memory.recallPrompt" rows="9" spellcheck="false"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-memory-recall-default>填入默认提示词</button></div></div></details></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>召回决定（LLM 挑选注入哪些记忆）</b><small>用户输入之后、生成之前，召回员读记忆目录（标题+钥匙）+ 最近聊天 + 世界书命中，挑出本轮要注入的旧记忆编号，脚本执行注入；目录按混合检索分数序排（钥匙/引文/词面/时间邻近/语义），场景勾得越深的排得越靠前；失败或关闭时退回同款混合分数的兜底匹配，不阻塞生成。</small></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button" data-memory-recall-run>手动召回一次</button><span data-memory-recall-status></span></div><div data-memory-recall-result></div><label class="dai-setting-row"><span><b>目录字数上限</b><small>发给召回员的记忆目录总字数；0 ＝ 不限制（默认），账本再大召回员也看得到全部。设了上限时超预算的条目按打分从尾部丢。</small></span><input type="number" min="0" step="500" data-setting="memory.catalogBudget"></label><details class="dai-settle-category"><summary><span class="dai-feature-icon" aria-hidden="true">${daiIcon("flame")}</span><span><b>召回提示词</b><small>召回员的 system 指令；保持"只输出 JSON"与 ids 字段名不变，清空恢复内置默认。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>提示词正文</b></span><textarea data-setting="memory.recallPrompt" rows="9" spellcheck="false"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-memory-recall-default>填入默认提示词</button></div></div></details></div>
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>记忆指令流水</b><small>最近几批指令的执行结果；重 roll 一楼会先撤销它上一版指令。</small></div><div class="dai-world-journal" data-memory-journal></div></div>
                     <div class="dai-modal-dock" data-modal-dock="memory-add" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>手动登记</b><small>书记官漏记时在这里补一笔，校验与模型指令完全一致。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>层级</b></span><select data-memory-new-tier><option value="small">小记忆</option><option value="big">大记忆</option></select></label><label class="dai-setting-row"><span><b>标签（大记忆可选）</b></span><select data-memory-new-tag><option value="">不标</option><option value="grudge">恩怨</option><option value="intel">情报</option><option value="thread">伏笔</option><option value="milestone">大事记</option></select></label><label class="dai-setting-row"><span><b>分量</b></span><select data-memory-new-weight><option value="minor">一般</option><option value="major">关键</option></select></label></div><label class="dai-setting-row"><span><b>短标题</b><small>必填；列表主页只显示这一行。</small></span><input type="text" data-memory-new-title maxlength="14" required></label><label class="dai-setting-row"><span><b>内容</b><small>一句话说清记住了什么、为什么值得记。</small></span><input type="text" data-memory-new-text maxlength="300"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>依据</b><small>从哪来：哪楼/谁/什么事。</small></span><input type="text" data-memory-new-basis maxlength="80"></label><label class="dai-setting-row"><span><b>关联（必填）</b><small>人名/地名/物名，顿号分隔最多 4 个——这是日后按需召回的钥匙。</small></span><input type="text" data-memory-new-related maxlength="140"></label></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>别名（可选）</b><small>同一记忆的其余叫法（药老/药尘），也算召回钥匙。</small></span><input type="text" data-memory-new-aliases maxlength="140"></label><label class="dai-setting-row"><span><b>引文（可选）</b><small>当时的一句原话，召回时以「」带回正文。</small></span><input type="text" data-memory-new-quote maxlength="60"></label></div><label class="dai-setting-row"><span><b>备注（可选）</b><small>细节、背景、后续影响——列表行内只显示内容一句，这些都在详情弹窗里。</small></span><input type="text" data-memory-new-note maxlength="200"></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button" data-memory-add>登记这条记忆</button></div></div><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-agent-modal-close>取消</button></div></div></section>
                     <section class="dai-settings-page" data-settings-section="impact" role="tabpanel" hidden>
@@ -8681,6 +8760,12 @@ function createSettingsPanel() {
         const presetModels = event.target.closest?.('[data-api-preset-models]');
         if (presetModels) {
             void fetchApiPresetModels(panel, presetModels.dataset.apiPresetModels);
+            return;
+        }
+        // 模型名输入框：点一下重新弹出已拉到的模型列表，不用再点拉取。
+        const modelField = event.target.closest?.('[data-api-preset-field="model"]');
+        if (modelField) {
+            openModelPicker(modelField.closest('.dai-api-preset'));
             return;
         }
         // —— 纳戒：子页签与手动操作。所有手动改动走 applySelfOps，与模型决定同一套校验。——
@@ -10103,7 +10188,7 @@ function refreshMemoryAuditCard(section, { pairs } = {}) {
     const audit = auditMemory({
         snapshot,
         pairs: Array.isArray(pairs) ? pairs : null,
-        catalogText: buildRecallCatalog(snapshot, { maxChars: settings.catalogBudget }),
+        catalogText: buildRecallCatalog(snapshot, { maxChars: settings.catalogBudget > 0 ? settings.catalogBudget : Infinity }),
         catalogBudget: settings.catalogBudget,
         knownNames: ledgerKnownNames(),
     });
@@ -10130,7 +10215,9 @@ function refreshMemoryAuditCard(section, { pairs } = {}) {
     }
     if (audit.coverage.total > audit.coverage.cataloged) {
         const item = makeElement('div', 'dai-world-event');
-        item.append(makeElement('b', '', `□ ${audit.coverage.total - audit.coverage.cataloged} 条在召回目录里看不见`), document.createTextNode(`目录预算 ${audit.coverage.budgetChars} 字装不下全部在用记忆，召回员只能看到打分靠前的 ${audit.coverage.cataloged} 条；要更多就把「召回决定」页的目录字数上限调高。`));
+        item.append(makeElement('b', '', `□ ${audit.coverage.total - audit.coverage.cataloged} 条在召回目录里看不见`), document.createTextNode(audit.coverage.budgetChars > 0
+            ? `目录预算 ${audit.coverage.budgetChars} 字装不下全部在用记忆，召回员只能看到打分靠前的 ${audit.coverage.cataloged} 条；要更多就把「召回决定」页的目录字数上限调高。`
+            : `目录没设字数预算仍然装不下——多半是这几条的编号或层级标记太长被单行保护跳过，把标题改短一点即可。`));
         rows.push(item);
     }
     if (!rows.length) rows.push(makeElement('p', 'dai-turn-result', '账本干净：没有疑似矛盾，也没有孤立钥匙，目录装得下全部在用记忆。'));

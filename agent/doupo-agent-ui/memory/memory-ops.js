@@ -73,7 +73,8 @@ function entryLine(entry) {
  * 单条超预算则跳过，继续尝试后面的较短条目；没有完整条目时不输出空抬头。
  */
 export function renderMemoryEntriesDetail(entries = [], { maxChars = DEFAULT_MAX_CHARS, prefix = '', suffix = '' } = {}) {
-    const cap = Number.isSafeInteger(maxChars) && maxChars >= 0 ? maxChars : DEFAULT_MAX_CHARS;
+    // Infinity＝不限制（设置层把「0＝不限制」换算成 Infinity 传进来）；其余非法值回落默认预算。
+    const cap = maxChars === Infinity ? Infinity : (Number.isSafeInteger(maxChars) && maxChars >= 0 ? maxChars : DEFAULT_MAX_CHARS);
     prefix = typeof prefix === 'string' ? prefix : '';
     suffix = typeof suffix === 'string' ? suffix : '';
     const picked = [];
