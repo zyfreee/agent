@@ -16,7 +16,7 @@ for (const legacy of [undefined, true, false]) assert.equal(moduleOf(build({ set
 assert.equal(moduleOf(build({ settings: { setting: { enabled: true }, enableFactsLibrary: true } }), 'facts').configuration, '已开启');
 const empty = build();
 // 剧情账本（剧情决定）是进阶版专属：默认口径（完整版）总控不显示该模块行。
-assert.equal(empty.modules.length, 9);
+assert.equal(empty.modules.length, 9, 'NPC 决策行回归总控（与其他功能一样挂行）');
 assert.equal(moduleOf(empty, 'plot'), undefined);
 const advancedDashboard = build({ settings: { apiMode: 'advanced' } });
 assert.equal(advancedDashboard.modules.length, 10);
@@ -24,6 +24,14 @@ assert.equal(moduleOf(advancedDashboard, 'plot').title, '剧情账本');
 assert.equal(moduleOf(build({ settings: { apiMode: 'advanced', plot: { enabled: false } } }), 'plot').configuration, '已关闭');
 assert.equal(moduleOf(advancedDashboard, 'plot').state, 'idle');
 assert.equal(moduleOf(build({ settings: { apiMode: 'lite' } }), 'plot'), undefined, '简略版总控同样不显示剧情账本行');
+// NPC 决策与其他功能一样进总控：开关读 enableNpcAutonomy，计划重估等事件亮在这一行；简略版不挂。
+assert.equal(moduleOf(empty, 'npc').title, 'NPC 决策', '完整版能力地图有 NPC 决策行');
+assert.equal(moduleOf(empty, 'npc').id, 'npc');
+assert.equal(moduleOf(empty, 'npc').enabled, true);
+assert.equal(moduleOf(empty, 'npc').configuration, '已开启');
+assert.equal(moduleOf(build({ settings: { apiMode: 'lite' } }), 'npc'), undefined, '简略版能力地图没有 NPC 决策行');
+assert.equal(moduleOf(advancedDashboard, 'npc').title, 'NPC 决策', '进阶版同样有');
+assert.equal(moduleOf(build({ settings: { enableNpcAutonomy: false } }), 'npc').configuration, '已关闭');
 assert.equal(moduleOf(empty, 'sandbox').title, '开放世界');
 assert.equal(moduleOf(empty, 'sandbox').id, 'sandbox');
 assert.equal(moduleOf(empty, 'self').title, '纳戒');
@@ -49,10 +57,11 @@ assert.equal(moduleOf(build(), 'action').summary, '等待超时。');
 record('stage_start', { stage: 'world-advance' });
 record('task_cancelled', { stage: 'world-advance' });
 assert.equal(moduleOf(build(), 'world').label, '已停止');
+// NPC 决策行在总控：计划重估事件直接亮在这一行。
 record('npc_plan_reassessment_requested');
-assert.equal(moduleOf(build(), 'npc').state, 'waiting');
+assert.equal(moduleOf(build(), 'npc').label, '等待重新决策', 'NPC 计划重估事件挂 NPC 决策行');
 record('npc_plan_reassessment_cleared');
-assert.match(moduleOf(build(), 'npc').summary, /等待下一轮重新评估/);
+assert.equal(moduleOf(build(), 'npc').label, '障碍已解除', '障碍解除状态跟随最新事件');
 assert.equal(moduleOf(build(), 'impact').label, '暂无记录');
 assert.match(moduleOf(build(), 'llm').summary, /还没有发出模型请求/);
 

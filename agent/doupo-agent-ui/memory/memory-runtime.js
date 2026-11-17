@@ -29,7 +29,6 @@ const WEIGHTS = Object.freeze(['major', 'minor']);
 // 详略由提示词引导，注入侧各有字数预算兜底；只保留 day 的合理性边界。
 const MAX_DAY = 99999;
 const DEFAULT_MAX_LOG = 40;
-const DEFAULT_MAX_OPS = 8;
 const Opid_MEMORY = 200;
 
 function text(value) {
@@ -172,7 +171,7 @@ function normalizeState(raw, now) {
         schemaVersion: 2,
         manualVersion: intIn(source.manualVersion, 0, 9999999) ?? 0,
         entries,
-        log: (Array.isArray(source.log) ? source.log : []).slice(-DEFAULT_MAX_LOG),
+        log: (Array.isArray(source.log) ? source.log : []),
         retiredIds: retired.slice(-MAX_RETIRED_IDS),
         ...metadata,
         legacy_gap: source.legacy_gap === true || !Array.isArray(source.retiredSeqRanges) || !Array.isArray(source.externalRetiredIds),
@@ -180,9 +179,9 @@ function normalizeState(raw, now) {
     };
 }
 
-export function createMemoryRuntime({ maxLog = DEFAULT_MAX_LOG, maxOps = DEFAULT_MAX_OPS, now = () => new Date().toISOString(), advancedMode = () => true } = {}) {
-    maxLog = clampInt(maxLog, 5, 200, DEFAULT_MAX_LOG);
-    maxOps = clampInt(maxOps, 1, 32, DEFAULT_MAX_OPS);
+export function createMemoryRuntime({ maxOps, now = () => new Date().toISOString(), advancedMode = () => true } = {}) {
+    // 日志不设条数上限（用户口径 2026-11-17）：账目流水全量保留。
+    maxOps = maxOps === undefined ? Infinity : clampInt(maxOps, 1, 128, Infinity);
     let state = initialState(now);
     let seq = 0n;
     let opIdMemory = [];
@@ -439,7 +438,6 @@ export function createMemoryRuntime({ maxLog = DEFAULT_MAX_LOG, maxOps = DEFAULT
             }
             opIdMemory = opIdMemory.filter(id => !lastFloor.opIds.includes(id));
             state.log.push({ at: now(), source: 'revert', summaries: [`第 ${floorKey + 1} 楼重新生成：已撤销上一版记忆指令`], rejected: 0 });
-            state.log = state.log.slice(-maxLog);
         }
         const list = Array.isArray(operations) ? operations.slice(0, maxOps) : [];
         const applied = [];
@@ -486,7 +484,6 @@ export function createMemoryRuntime({ maxLog = DEFAULT_MAX_LOG, maxOps = DEFAULT
             if (source === 'manual') state.manualVersion += 1;
             state.updatedAt = now();
             state.log.push({ at: now(), source, summaries: applied.map(item => item.summary), rejected: rejected.length });
-            state.log = state.log.slice(-maxLog);
         }
         return { status: rejected.length && !applied.length ? 'rejected' : applied.length ? 'applied' : 'noop', applied, rejected, duplicate };
     }
@@ -561,7 +558,6 @@ export function createMemoryRuntime({ maxLog = DEFAULT_MAX_LOG, maxOps = DEFAULT
         state.updatedAt = now();
         const summary = `小记忆 ×${idList.length}（${idList.join('、')}）总结成大记忆 ${entry.id}：${body}`;
         state.log.push({ at: now(), source: 'consolidate', summaries: [summary], rejected: 0 });
-        state.log = state.log.slice(-maxLog);
         return { ok: true, id: entry.id, summary, consumed: idList, entry };
     }
 
@@ -599,8 +595,7 @@ export function createMemoryRuntime({ maxLog = DEFAULT_MAX_LOG, maxOps = DEFAULT
 
     /** 不改记忆、只往流水里记一笔（模型判断无变化、解析失败这类"决定结果"）。流水是状态行，非记忆内容，留个防炸长度。 */
     function note(message, { source = 'decide' } = {}) {
-        state.log.push({ at: now(), source, summaries: [String(message).slice(0, 500)], rejected: 0 });
-        state.log = state.log.slice(-maxLog);
+        state.log.push({ at: now(), source, summaries: [String(message)], rejected: 0 });
         return { status: 'noted' };
     }
 
@@ -623,10 +618,9 @@ export function createMemoryRuntime({ maxLog = DEFAULT_MAX_LOG, maxOps = DEFAULT
             else if (lastFloor.floor > index) lastFloor = { ...lastFloor, floor: lastFloor.floor - 1 };
         }
         state.log.push({ at: now(), source: 'floor_delete', summaries: [`第 ${index + 1} 楼已删：删除对应记忆 ${removedEntries.length} 条，${shiftedEntries.length} 条依据楼层前移`], rejected: 0 });
-        state.log = state.log.slice(-maxLog);
         state.updatedAt = now();
         return { status: 'applied', removed: removedEntries.length, shifted: shiftedEntries.length };
     }
 
-    return Object.freeze({ apply, consolidate, dropFloor, snapshot, status, manualVersion: () => state.manualVersion, restore, reset, note, isRetired, tiers: TIERS, tierLabels: TIER_LABELS, tagLabels: TAG_LABELS, config: Object.freeze({ maxLog, maxOps }) });
+    return Object.freeze({ apply, consolidate, dropFloor, snapshot, status, manualVersion: () => state.manualVersion, restore, reset, note, isRetired, tiers: TIERS, tierLabels: TIER_LABELS, tagLabels: TAG_LABELS, config: Object.freeze({ maxLog: null, maxOps }) });
 }

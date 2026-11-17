@@ -7,7 +7,7 @@
  * 模型必须先过【谁能建档】筛选，再谈写什么字段。
  */
 
-import { NPC_FIELDS, FAVOR_REASON_MAX, favorLabel } from './npc-ledger.js';
+import { NPC_FIELDS, favorLabel } from './npc-ledger.js';
 
 const MAX_FLOOR_CHARS = 1400;
 
@@ -38,7 +38,7 @@ ${fieldMenu()}
 【特殊键】
 姓名：必填，写正文里出现的那个称呼；别名/称号另起键写。
 好感：只写“本次增减”，整数，正数=变好，负数=变坏；单次最多 ±10，超过会被脚本压回 ±10。不要写累计值，累计由脚本算。
-好感理由：不超过 ${FAVOR_REASON_MAX} 个字，写清“因为什么”，例：护住族人、当众打脸、救命之恩。
+好感理由：不超过 15 个字，写清“因为什么”，例：护住族人、当众打脸、救命之恩。
 依据：好感单次超过 ±5、或写了「经历」时必写一句（不超过 80 字）：正文里哪句话支撑了这个变化。普通小改动不用写。
 情绪：这个人这一楼冒出来的短期情绪（感激、恼怒、警惕、愧疚、畏惧、心疼……一个词），可选；三天后自动消散。长期态度走「态度」，别写进情绪。
 流水：一句话记“他做了什么/发生了什么”，会原样追加到流水里，不要覆盖旧记录。
@@ -234,6 +234,44 @@ export function buildRecordRetryUser({ user = '', raw = '', reason = '', maxChar
 }
 
 /** 解析记录员回答：认不出就直说认不出，不猜、不修补成半截数据。 */
+
+// —— 模型输出的字段字数上限（用户口径 2026-11-17：API 输出要有限制，手动面板不设限）。
+const NPC_PATCH_TEXT_CAP = 300;
+const NPC_PATCH_NAME_CAP = 40;
+const NPC_PATCH_REASON_CAP = 15;
+const NPC_PATCH_EXP_CAP = 200;
+
+function capNpcPatchValue(key, value) {
+    if (typeof value === 'string') {
+        const lower = String(key).trim().toLowerCase();
+        if (lower === '姓名' || lower === 'name') return value.trim().slice(0, NPC_PATCH_NAME_CAP);
+        if (['理由', '好感理由', 'reason', 'favorreason'].includes(lower)) return value.trim().slice(0, NPC_PATCH_REASON_CAP);
+        return value.trim().slice(0, NPC_PATCH_TEXT_CAP);
+    }
+    if (Array.isArray(value)) return value.map(item => capNpcPatchValue(key, item));
+    if (value && typeof value === 'object') {
+        const out = {};
+        for (const [k, v] of Object.entries(value)) out[k] = capNpcPatchValue(k, v);
+        return out;
+    }
+    return value;
+}
+
+/** 模型输出的人物补丁：逐字段按上限截断（超长裁短而不是整条作废），经历条目单独用 200。 */
+function capNpcPatch(patch) {
+    if (!patch || typeof patch !== 'object') return patch;
+    const out = {};
+    for (const [k, v] of Object.entries(patch)) out[k] = capNpcPatchValue(k, v);
+    if (Array.isArray(out.经历)) {
+        out.经历 = out.经历.map(item => {
+            if (item && typeof item === 'object' && typeof item.text === 'string') return { ...item, text: item.text.trim().slice(0, NPC_PATCH_EXP_CAP) };
+            if (typeof item === 'string') return item.slice(0, NPC_PATCH_EXP_CAP);
+            return item;
+        });
+    }
+    return out;
+}
+
 export function parseNpcRecordReply(raw) {
     const cleaned = stripFence(raw);
     if (!cleaned) return { status: 'empty', reason: '模型没有返回内容' };
@@ -251,7 +289,7 @@ export function parseNpcRecordReply(raw) {
                 : payload && typeof payload === 'object' && (payload.姓名 || payload.name) ? [payload]
                     : null;
     if (!patches) return { status: 'invalid', reason: 'JSON 里没有“人物”数组', raw: json.slice(0, 400) };
-    return { status: 'ok', patches, raw: json };
+    return { status: 'ok', patches: patches.map(capNpcPatch), raw: json };
 }
 
 /** 经历精简：合并同一个人雷同的转变条目，保留关键节点，输出仍是经历清单。 */

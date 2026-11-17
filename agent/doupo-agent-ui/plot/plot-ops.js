@@ -38,8 +38,9 @@ function threadLine(thread, today) {
  * 计划两行永远排最前（超预算也不丢）；线索按悬置越久越靠前，超期置顶，
  * 已回收/作废的不出现。账完全空时返回空串，调用方按空注入清通道。
  */
-export function buildPlotInjection(snapshot = {}, { maxChars = DEFAULT_MAX_CHARS } = {}) {
-    const cap = Number.isFinite(Number(maxChars)) && Number(maxChars) > 0 ? Math.floor(Number(maxChars)) : DEFAULT_MAX_CHARS;
+export function buildPlotInjection(snapshot = {}, { maxChars = Infinity } = {}) {
+    // 注入字数默认不限制（用户拍板的口径）：有限正数才截断，不填＝不限制。
+    const cap = Number.isFinite(Number(maxChars)) && Number(maxChars) > 0 ? Math.floor(Number(maxChars)) : Infinity;
     const plan = snapshot?.plan ?? {};
     const today = Number.isInteger(snapshot?.day) ? snapshot.day : null;
     const open = (Array.isArray(snapshot?.threads) ? snapshot.threads : [])

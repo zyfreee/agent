@@ -63,4 +63,13 @@ assert.equal(buildPlotInjection({ plan: { goal: '', next: '' }, threads: [{ stat
     const minimal = buildPlotInjection(fat, { maxChars: 120 });
     assert.ok(minimal.includes('本幕目标占住头两行'));
     assert.ok(!minimal.includes('未回收线索'), '线索栏头随最后一行一起退场');
+    // 注入字数默认不限制：不传 maxChars 时线索全量进提示词，填了正数才截。
+    // 用单独一份更肥的台账验字数，别挤掉上面 300 字预算的降级断言。
+    const fatUnlimited = {
+        ...fat,
+        threads: fat.threads.map(thread => ({ ...thread, detail: thread.detail.repeat(12) })),
+    };
+    const unlimited = buildPlotInjection(fatUnlimited);
+    assert.ok(unlimited.length > 4000, `旧天花板已摘除：实际 ${unlimited.length} 字`);
+    assert.ok(fatUnlimited.threads.every(thread => unlimited.includes(thread.title)), '不传 maxChars 时线索全量注入');
 }

@@ -4,9 +4,10 @@
  * 每轮召回后，数据库会把用户楼层原文改写成三段（存档里就是这么存的）：
  *   ① 「以下是用户的本轮输入：」+ <本轮用户输入>正文</本轮用户输入>
  *   ② 召回导语「以下输入的代码为既定事实记忆的对应索引编码……」+ [时间约束词] 对照表 + 命中的记忆编码
- * 数据库一行不动（agent 适配数据库），美化全走显示层：这里注册五条「仅格式显示」的正则脚本
+ * 数据库一行不动（agent 适配数据库），美化全走显示层：这里注册六条正则脚本——五条「仅格式显示」
  * （placement=用户输入、markdownOnly=true、promptOnly=false、runOnEdit=false），只改渲染——
- * 存档原文不动、提示词不受影响，编辑楼层时看到的仍是原文。
+ * 存档原文不动、提示词不受影响，编辑楼层时看到的仍是原文；另有一条提示词侧的「远楼层不进提示词」
+ * （promptOnly=true、替换为空、minDepth=帷幕窗口），把窗口外的旧楼从主提示词里整楼清掉。
  *   - 空行守护：输入段内的空行先压成单换行。markdown 的 HTML 块遇到空行会截断，卡片会散架。
  *   - 输入卡片：①整段包成 .dpz-round 卡片（简约玄幻：细金线 + 四角符箓，样式在 host/style.css）。
  *   - 导语收纳：②从导语起整段收走——那是提示词的家什，玩家没必要在楼层里看；
@@ -75,6 +76,12 @@ const RECALL_TAIL = Object.freeze({
     maxDepth: null,
 });
 
+/** 帷幕楼层在屏幕上实际保留的楼数：与 host/style.css「旧楼层隐去」规则里的 -n+4 同源，
+ *  要改保留楼数就两处一起改。屏幕帷幕与提示词侧「远楼层不进提示词」共用这个窗口；
+ *  已装进卡的脚本以卡上的 minDepth 为准——改常量后到正则面板删掉「远楼层不进提示词」
+ *  那条再重进聊天，就会按新值重装。 */
+export const VEIL_VISIBLE_FLOORS = 4;
+
 /** 旧楼层帷幕：内容原样保留，只在楼首钉一个空标记当“算位置”的抓手。
  *  标记用 HTML 块起头、空行隔开正文，之后的 markdown 照常渲染，一个字不受影响。
  *  placement 带上 AI 楼（2），用户楼（1）、AI 楼都算“附近三楼”窗口内的一楼。 */
@@ -113,8 +120,30 @@ const UPDATE_TAIL = Object.freeze({
     maxDepth: null,
 });
 
-/** 显示层脚本按序生效：守护 → 卡片 → 收纳 → 申报收纳 → 帷幕。补装时也按这个顺序追加。 */
-export const DISPLAY_REGEX_SCRIPTS = Object.freeze([ROUND_GUARD, ROUND_CARD, RECALL_TAIL, UPDATE_TAIL, FLOOR_VEIL]);
+/** 远楼层不进提示词：提示词侧的整楼清空，窗口与屏幕帷幕一致（最近 VEIL_VISIBLE_FLOORS 楼）。
+ *  显示侧帷幕只管屏幕——酒馆出新楼不会重渲染旧楼，显示侧按深度清空会越漂越远；
+ *  提示词则每次生成都按当轮深度从头组装，按深度清空永不漂移。主提示词从此只带
+ *  窗口内的楼层，提示词查看器的 token 随之大幅回落；功能喂料经 floor-text 同口径自动跟随。
+ *  与帷幕配套成对：正则面板里只关帷幕＝放开屏幕显示，提示词窗口由这一条单独管。 */
+const FLOOR_PROMPT_HIDE = Object.freeze({
+    id: 'doupo-agent-floor-prompt-hide',
+    scriptName: '斗破Agent · 远楼层不进提示词',
+    findRegex: '/([\\s\\S]+)/g',
+    replaceString: '',
+    trimStrings: Object.freeze([]),
+    placement: Object.freeze([1, 2]),
+    disabled: false,
+    markdownOnly: false,
+    promptOnly: true,
+    runOnEdit: false,
+    substituteRegex: 0,
+    minDepth: VEIL_VISIBLE_FLOORS,
+    maxDepth: null,
+});
+
+/** 脚本按序生效：守护 → 卡片 → 收纳 → 申报收纳 → 帷幕（显示层五条）＋ 提示词侧远楼层清空。
+ *  补装时也按这个顺序追加；渲染预览 transformUserFloor 只套显示层，提示词脚本由酒馆引擎执行。 */
+export const DISPLAY_REGEX_SCRIPTS = Object.freeze([ROUND_GUARD, ROUND_CARD, RECALL_TAIL, UPDATE_TAIL, FLOOR_VEIL, FLOOR_PROMPT_HIDE]);
 
 /** 全局列表里本扩展老版本的脚本 id 前缀：升级时只回收自己装的，用户自己的全局正则不碰。 */
 const GLOBAL_ID_PREFIX = 'doupo-agent-';
@@ -135,11 +164,14 @@ export function isDoupoCard(character) {
 const FLAGGED_REGEX = /^\/([\s\S]+)\/([a-z]*)$/;
 
 /** 把酒馆正则格式的 "/pattern/flags" 字符串还原成 RegExp（确保全局标志，替换要扫整楼）。 */
-function toRegExp(findRegex) {
+export function toRegExp(findRegex) {
     const match = FLAGGED_REGEX.exec(findRegex);
     if (!match) return new RegExp(findRegex, 'g');
     return new RegExp(match[1], match[2].includes('g') ? match[2] : `${match[2]}g`);
 }
+
+export const VEIL_SCRIPT_NAME = FLOOR_VEIL.scriptName;
+export const VEIL_SCRIPT_ID = FLOOR_VEIL.id;
 
 /**
  * 按注册顺序把显示层脚本套在一段楼层原文上，返回渲染用的 HTML。

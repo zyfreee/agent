@@ -8,6 +8,7 @@
 
 import { buildWorldInjection } from './world-ops.js';
 import { extractJson } from '../host/llm-client.js';
+import { capWorldOp } from './world-runtime.js';
 
 const MAX_FLOORS = 12;
 const FLOOR_CHARS = 800;
@@ -150,7 +151,7 @@ export function parseDecision(raw) {
     }
     const note = typeof object.note === 'string' ? object.note.trim().slice(0, MAX_NOTE_CHARS) : '';
     const list = Array.isArray(object.ops) ? object.ops.slice(0, MAX_OPS) : [];
-    const ops = list.filter(item => item && typeof item === 'object' && !Array.isArray(item) && typeof item.op === 'string' && item.op.trim());
+    const ops = list.filter(item => item && typeof item === 'object' && !Array.isArray(item) && typeof item.op === 'string' && item.op.trim()).map(capWorldOp);
     const dropped = list.length - ops.length;
     return { status: ops.length || note ? 'ok' : 'empty', ops, note, dropped };
 }

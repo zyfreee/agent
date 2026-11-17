@@ -1025,10 +1025,10 @@ svg.dai-svg { width: 1em; height: 1em; flex: none; display: inline-block; vertic
    host/display-regex.js 的「旧楼层隐去」给每一楼开头钉一个空的 .dpz-floor-veil 标记，
    内容原样保留；收不收在这里按位置动态决定：带标记、又不在最近三块里的整楼 display:none。
    不按渲染时刻算深度——酒馆出新楼不重渲染旧楼，按位置算新楼追加/删楼都自动重算，永不漂移。
-   要改保留楼数：改下面两处 -n+3 的 3（仓库与部署两份 style.css 记得同步）。
+   要改保留楼数：改下面两处 -n+4 的 4，并同步 host/display-regex.js 的 VEIL_VISIBLE_FLOORS（提示词窗口与功能喂料跟随都按这个窗口推断）。
    要看全史：正则面板关掉「斗破Agent · 旧楼层隐去」再重进聊天即可，存档一字不动。 */
-#chat > .mes:has(.dpz-floor-veil):not(:nth-last-child(-n+3)),
-#chat > .mes:has(.custom-dpz-floor-veil):not(:nth-last-child(-n+3)) {
+#chat > .mes:has(.dpz-floor-veil):not(:nth-last-child(-n+4)),
+#chat > .mes:has(.custom-dpz-floor-veil):not(:nth-last-child(-n+4)) {
     display: none;
 }
 
@@ -1261,3 +1261,42 @@ button.dai-body-slot__name:hover { text-decoration: underline; }
 .dai-cap-dot { margin-left: auto; width: 7px; height: 7px; border-radius: 50%; background: #4a5568; flex: none; }
 .dai-cap-cell.is-on .dai-cap-dot { background: #34d399; box-shadow: 0 0 5px rgba(52, 211, 153, 0.6); }
 .dai-cap-cell small { font-size: 10.5px; line-height: 1.4; color: var(--dai-muted, #ab966f); }
+
+/* ---- NPC 对话小卡：与人物档案小卡同款 dai-orb-pop 格式 ---- */
+.dai-npc-chat-pop { width: min(23rem, calc(100vw - 2rem)); height: min(30rem, calc(100dvh - 3rem)); max-height: min(30rem, calc(100dvh - 3rem)); overflow: hidden; padding: 0.65rem 0.75rem 0.7rem; }
+.dai-npc-chat-pop .dai-orb-pop-head { margin-bottom: 0.4rem; }
+.dai-npc-chat-title { font-size: var(--dai-fs-base); color: var(--dai-accent-hi); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dai-npc-chat-meta { font-size: var(--dai-fs-xs); color: var(--dai-muted); white-space: nowrap; }
+.dai-orb-pop-head .dai-npc-chat-recap { flex: none; margin-left: auto; margin-right: 0.4rem; padding: 0.18rem 0.5rem; font-size: 11px; }
+.dai-npc-chat-pop .dai-npc-chat-log { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 0.45rem; padding: 0.1rem 0.05rem 0.5rem; }
+.dai-npc-chat-msg { max-width: 88%; padding: 0.45rem 0.6rem; border: 1px solid var(--dai-line); border-radius: 0.55rem; background: #00000022; }
+.dai-npc-chat-msg b { display: block; margin-bottom: 0.15rem; font-size: 10.5px; color: var(--dai-accent-hi); }
+.dai-npc-chat-msg p { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--dai-text); overflow-wrap: anywhere; white-space: pre-wrap; }
+.dai-npc-chat-msg.is-player { margin-left: auto; border-color: var(--dai-accent-deep); background: var(--dai-tint); }
+.dai-npc-chat-msg.is-player b { color: var(--dai-muted); }
+.dai-npc-chat-msg.is-system { max-width: 100%; border-style: dashed; background: transparent; }
+.dai-npc-chat-msg.is-system b { display: none; }
+.dai-npc-chat-msg.is-system p { font-size: 11px; color: var(--dai-muted); }
+.dai-npc-chat-pop .dai-npc-chat-form { display: flex; gap: 0.45rem; padding: 0.5rem 0 0; border-top: 1px solid var(--dai-line); }
+.dai-npc-chat-input { flex: 1 1 auto; resize: none; padding: 0.4rem 0.5rem; border: 1px solid var(--dai-line); border-radius: 0.45rem; background: #00000030; color: var(--dai-text); font: inherit; font-size: 12.5px; }
+.dai-npc-chat-input:focus-visible { outline: 1px solid var(--dai-accent); }
+.dai-npc-chat-send { flex: none; align-self: flex-end; }
+.dai-npc-chat-send:disabled { opacity: 0.55; cursor: wait; }
+
+/* ---- 悬浮球徽标（已退役）：「想找你」红点太扎眼，球保持原来的干净样子；
+主动联系队列在「NPC 决策」页与人物簿信息窗的「待他来找你」栏看。 ---- */
+.dai-orb-ball { position: relative; }
+
+/* ---- 悬浮球消息弹窗：球边横向小胶囊，纳戒/人物簿每笔改动一条 ---- */
+.dai-orb-toasts { position: fixed; z-index: 9997; display: flex; flex-direction: column; gap: 0.5rem; align-items: flex-start; pointer-events: none; }
+.dai-orb-toasts:empty { display: none; }
+.dai-orb-toast { pointer-events: auto; display: flex; align-items: center; gap: 0.45rem; width: max-content; max-width: min(21rem, calc(100vw - 2.5rem)); padding: 0.4rem 0.75rem; border: 1px solid var(--dai-accent-deep); border-radius: 0.9rem; background: linear-gradient(180deg, var(--dai-surface), var(--dai-bg) 200%); box-shadow: 0 0.35rem 0.9rem #0006, inset 0 1px 0 var(--dai-glow); cursor: pointer; animation: dai-toast-in 0.22s ease; }
+.dai-orb-toast-icon { flex: none; display: grid; place-items: center; width: 1.15rem; height: 1.15rem; color: var(--dai-accent-hi); }
+.dai-orb-toast-icon svg { width: 1rem; height: 1rem; }
+.dai-orb-toast-name { flex: none; font-size: 12px; font-weight: 600; color: var(--dai-accent-hi); white-space: nowrap; }
+.dai-orb-toast-text { font-size: 12px; line-height: 1.5; color: var(--dai-text); white-space: normal; word-break: break-word; }
+.dai-orb-toast.is-good { border-color: var(--dai-good); }
+.dai-orb-toast.is-good .dai-orb-toast-icon, .dai-orb-toast.is-good .dai-orb-toast-name { color: var(--dai-good); }
+.dai-orb-toast.is-bad { border-color: var(--dai-error); }
+.dai-orb-toast.is-bad .dai-orb-toast-icon, .dai-orb-toast.is-bad .dai-orb-toast-name { color: var(--dai-error); }
+@keyframes dai-toast-in { from { opacity: 0; transform: translateX(0.6rem); } to { opacity: 1; transform: none; } }

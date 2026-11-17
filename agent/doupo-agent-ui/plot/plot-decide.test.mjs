@@ -64,7 +64,7 @@ assert.ok(!longUser.includes('长'.repeat(801)), '单楼正文按 800 字截断'
     assert.equal(mixed.status, 'ok');
     assert.equal(mixed.ops.length, 1);
     assert.equal(mixed.dropped, 3);
-    // ops 超 8 条截断
+    // 模型单次最多 8 条（手动面板不受限）
     const many = parsePlotDecision(JSON.stringify({ note: '', ops: Array.from({ length: 12 }, () => ({ op: 'dropThread', id: 'f1' })) }));
     assert.equal(many.ops.length, 8);
     // 彻底坏输出

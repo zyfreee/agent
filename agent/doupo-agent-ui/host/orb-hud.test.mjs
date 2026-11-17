@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { ORB_ITEMS, createOrbState, buildOrbPanels, buildWorldPanel, buildSelfPanel, buildNpcPanel, buildColdPanel, buildImpactPanel, buildFactsPanel, buildSandboxPanel, buildOverviewPanel, buildMemoryPanel, buildMirrorPanel, buildJournalPanel, buildSettlePanel } from './orb-hud.js';
+import { ORB_ITEMS, createOrbState, buildOrbPanels, buildWorldPanel, buildSelfPanel, buildNpcPanel, buildNpcDecisionPanel, buildColdPanel, buildImpactPanel, buildFactsPanel, buildSandboxPanel, buildOverviewPanel, buildMemoryPanel, buildMirrorPanel, buildJournalPanel, buildSettlePanel } from './orb-hud.js';
 
 // OPT-098: truthful totals and bounded pages expose every record beyond 200.
 for (const count of [201, 1000]) {
@@ -20,8 +20,8 @@ for (const count of [201, 1000]) {
 }
 
 // —— 图标清单：顺序固定、id 唯一、不依赖外部输入 ——
-assert.equal(ORB_ITEMS.length, 12);
-assert.deepEqual(ORB_ITEMS.map(item => item.id), ['overview', 'world', 'self', 'memory', 'npcledger', 'cold', 'impact', 'facts', 'settle', 'mirror', 'journal', 'sandbox']);
+assert.equal(ORB_ITEMS.length, 13);
+assert.deepEqual(ORB_ITEMS.map(item => item.id), ['overview', 'world', 'self', 'memory', 'npcledger', 'npc', 'cold', 'impact', 'facts', 'settle', 'mirror', 'journal', 'sandbox']);
 assert.ok(ORB_ITEMS.every(item => item.icon && item.title && item.hint));
 for (const probe of [ORB_ITEMS, ORB_ITEMS[0]]) assert.equal(Object.isFrozen(probe), true);
 
@@ -178,6 +178,18 @@ assert.match(self.lists[7].items[0].head, /炼药·回气丹×2/);
 assert.match(self.lists[7].items[0].meta, /已超期/, 'endDay 已过就是超期');
 assert.match(self.lists[8].items[0].head, /★ 三年之约/, '主线目标排最前');
 assert.match(self.lists[8].items[2].head, /\[已达成\]/);
+// 条目带 ref（kind self + 所属清单 + 条目 id）：悬浮球里点条目能弹详情小卡，与其他栏同款；
+// 称号是纯文本没有编号，用称号文本本身当引用键。
+const selfList = heading => self.lists.find(l => l.heading === heading);
+assert.deepEqual(selfList('功法').items[0].ref, { kind: 'self', id: 't1', list: 'techniques' });
+assert.deepEqual(selfList('斗技').items[0].ref, { kind: 'self', id: 's1', list: 'skills' });
+assert.deepEqual(selfList('装备').items[0].ref, { kind: 'self', id: 'e1', list: 'equipment' });
+assert.deepEqual(selfList('天材地宝').items[0].ref, { kind: 'self', id: 'z1', list: 'treasures' });
+assert.deepEqual(selfList('行囊').items[0].ref, { kind: 'self', id: 'b1', list: 'items' });
+assert.deepEqual(selfList('炼丹').items[0].ref, { kind: 'self', id: 'r1', list: 'recipes' });
+assert.deepEqual(selfList('炼制中').items[0].ref, { kind: 'self', id: 'c1', list: 'crafts' });
+assert.deepEqual(selfList('目标').items[0].ref, { kind: 'self', id: 'g1', list: 'goals' });
+assert.deepEqual(selfList('称号').items[0].ref, { kind: 'self', id: '萧家废物', list: 'titles' });
 
 // —— 人物簿：好感刻度与四象限标签 ——
 const npc = buildNpcPanel({
@@ -192,6 +204,32 @@ assert.match(npc.summary, /记了 3 人，在场 2 人/);
 assert.match(npc.lists[0].items[0].meta, /友善（45）/);
 assert.match(npc.lists[0].items[1].meta, /冷淡（0）/);
 assert.match(npc.lists[0].items[2].meta, /信任（88）/);
+
+// —— NPC 决策窗：待处理联系带应约引用，可对话的人只列联系得上的 ——
+const npcDecision = buildNpcDecisionPanel({
+    reachout: [{ id: 'reachout-1', npcId: '云韵', motive: 'favor', reason: '惦记', opening: '近来可好？' }],
+    reachoutStatus: { pending: 1, quota: 6, quotaLeft: 4, quiet: { from: 23, to: 7, active: true } },
+    chatEnabled: true,
+    reachoutEnabled: true,
+    records: [
+        { name: '萧炎', favor: 20, presence: '在场', identity: '黑袍少年' },
+        { name: '药老', favor: 88, presence: '不在场', reachable: '玉简可通', identity: '灵魂体' },
+        { name: '隐士', favor: 0, presence: '不在场', reachable: '不可', identity: '联系不上的人' },
+    ],
+});
+assert.match(npcDecision.summary, /1 个人想来找你/);
+assert.match(npcDecision.rows.find(row => row.label === '待他来找你').value, /^1 人$/);
+assert.match(npcDecision.rows.find(row => row.label === '可对话的人').value, /^2 人$/, '联系不上的不进对话清单');
+assert.match(npcDecision.rows.find(row => row.label === '主动联系').value, /开·勿扰中/, '勿扰状态并进读数');
+assert.equal(npcDecision.lists[0].heading, '待他来找你');
+assert.deepEqual(npcDecision.lists[0].items[0].ref, { kind: 'reachout', id: 'reachout-1' }, '应约条目带 reachout 引用');
+const npcDecisionChatList = npcDecision.lists[1];
+assert.equal(npcDecisionChatList.heading, '可对话的人');
+assert.deepEqual(npcDecisionChatList.items.map(item => item.head), ['萧炎', '药老'], '隐士被过滤');
+assert.deepEqual(npcDecisionChatList.items[0].ref, { kind: 'npc-chat', id: '萧炎' }, '对话条目带 npc-chat 引用');
+const npcDecisionIdle = buildNpcDecisionPanel({ reachout: [], chatEnabled: false, records: [] });
+assert.match(npcDecisionIdle.summary, /NPC 对话已关闭/);
+assert.equal(npcDecisionIdle.lists[0].items.length, 0);
 
 // —— 冷藏推进：勾选与待确认草稿 ——
 const cold = buildColdPanel({

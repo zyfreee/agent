@@ -89,4 +89,33 @@ assert.equal(cleaned, '剧情。');
 assert.equal(stripOpsBlock('剧情。\n{"op":"addGold","amount":1}'), '剧情。', '裸行指令也剥掉');
 assert.equal(stripOpsBlock('普通正文。'), '普通正文。', '没有指令原样返回');
 
+// —— 注入字数默认不限制：超过旧 4000 天花板的纳戒账也全量进提示词，填了正数才截 ——
+{
+    const fat = {
+        profile: { name: '萧炎', gender: '男' },
+        day: 30,
+        goals: Array.from({ length: 40 }, (_, index) => ({ title: `目标${index}`, text: '事'.repeat(150), priority: '支线' })),
+    };
+    const unlimited = buildSelfInjection(fat);
+    assert.ok(unlimited.length > 4000, `旧天花板已摘除：实际 ${unlimited.length} 字`);
+    assert.ok(fat.goals.every(goal => unlimited.includes(goal.title)), '不传 maxChars 时 40 条目标全量注入');
+    const capped = buildSelfInjection(fat, { maxChars: 800 });
+    assert.ok(capped.length <= 800, '填了正数才从目标往上丢');
+}
+
+
+// —— 详情缺口显性化：决定喂料（withIds）给缺详情的条目挂「详情待补」，正文注入不带 ——
+{
+    const thin = {
+        skills: [{ id: 's9', name: '光杆斗技', grade: '黄阶' }],
+        techniques: [{ id: 't9', name: '厚功法', grade: '玄阶', note: '卷轴古朴', effect: '火属性' }],
+    };
+    const withIds = buildSelfInjection(thin, { withIds: true });
+    assert.ok(withIds.includes('s9·光杆斗技（黄阶）（详情待补）'), '缺详情的条目带待补标记');
+    assert.ok(!withIds.includes('厚功法（详情待补）'), '有详情的条目不带标记');
+    const plain = buildSelfInjection(thin);
+    assert.ok(plain.includes('功法：厚功法（玄阶）'), '正文注入保持干净');
+    assert.ok(!plain.includes('详情待补'), '正文注入不出现待补标记');
+}
+
 console.log('self ops tests passed');

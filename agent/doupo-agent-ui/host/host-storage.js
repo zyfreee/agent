@@ -9,6 +9,8 @@ const IMPACT_KEY = 'doupo_agent_impact';
 const NPC_KEY = 'doupo_agent_npc';
 const NPC_COLD_KEY = 'doupo_agent_npc_cold';
 const NPC_RELATIONS_KEY = 'doupo_agent_npc_relations';
+const NPC_CHAT_KEY = 'doupo_agent_npc_chat';
+const NPC_REACHOUT_KEY = 'doupo_agent_npc_reachout';
 const SELF_KEY = 'doupo_agent_self';
 const MEMORY_KEY = 'doupo_agent_memory';
 const VERIFY_KEY = 'doupo_agent_verify';
@@ -164,7 +166,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     plot: Object.freeze({
         enabled: true, // 总开关：关了不注入、不决定
         inject: true, // 生成前把剧情前瞻写进提示词
-        injectBudget: 500, // 注入字数预算，0 = 内置默认
+        injectBudget: 0, // 注入字数预算，0/留空 = 不限制（默认口径）；填正数才先丢线索保计划
         decideEnabled: true, // 生成后一次小调用滚动维护计划与线索
         decideAuto: true, // 每轮生成后自动决定；关闭仍可手动「让模型决定一次」
         decideApiPreset: '', // API设置方案绑定：非空时剧情决定整套走方案；空＝跟随酒馆主连接
@@ -178,7 +180,7 @@ const DEFAULT_SETTINGS = Object.freeze({
         // 世界事件系统：模型回复里带 world 指令块，脚本核验后记账。
         eventEnabled: true,
         eventInject: true,
-        eventBudget: 0, // 0 = 用内置默认（900 字）
+        eventBudget: 0, // 0/留空 = 不限制（默认口径）；填正数才超预算丢事件保时钟
         eventGuide: '', // 指令指南正文，留空用内置默认
         // LLM 决定：独立决定调用，读聊天记录+世界书+台账，输出严格 JSON 由脚本执行。
         decideEnabled: true,
@@ -205,9 +207,10 @@ const DEFAULT_SETTINGS = Object.freeze({
         ledgerAuto: true, // 每轮生成后自动记账
         ledgerEvery: 1, // 1 = 每轮；3 = 每三轮（省调用，代价是中间两轮要等下次记账）
         ledgerInject: true, // 注入正文提示词
-        ledgerBudget: 900, // 注入字数预算，0 = 内置默认
+        ledgerBudget: 0, // 注入字数预算，0/留空 = 不限制（默认口径）；填正数才按预算降级
         ledgerFloors: 0, // 记录员看最近几楼（0 = 跟随全局读楼默认，即角色正则）
-        ledgerMaxFull: 6, // 全字段最多写几个人
+        ledgerMaxFull: 0, // 全字段最多写几个人，0/留空 = 不限制（默认口径）
+        ledgerMaxBrief: 0, // 一行简档最多几个人，0/留空 = 不限制（默认口径）
         ledgerMode: 'tavern', // 'tavern' = 跟随酒馆当前设置；'custom' = 用下面这套自定义连接
         ledgerBaseUrl: '', // 自定义接口地址（选 custom 才用得上；留空沿用“模型与连接”页）
         ledgerApiKey: '', // 自定义接口密钥（留空沿用“模型与连接”页）
@@ -241,11 +244,31 @@ const DEFAULT_SETTINGS = Object.freeze({
         coldApiPreset: '', // API设置方案绑定：非空时冷藏推进员整套走方案
         // 经历精简提示词覆盖，留空用内置默认。
         expCondensePrompt: '',
+        // NPC 自由对话：和人物簿里的人当面/传讯聊天，上下文读人物簿，聊完可回写档案。
+        chatEnabled: true,
+        chatMaxTurns: 20, // 一次对话最多回合数；超过就提示收尾，防止一聊停不下来
+        chatWriteback: true, // 收尾时把对话的长期影响（经历/流水/好感）回写人物簿
+        chatPrompt: '', // 对话提示词覆盖，留空用内置默认
+        chatApiPreset: '', // API设置方案绑定：非空时对话整套走方案
+        // 主动联系：NPC 按动机与紧急度主动来找玩家，先排队待确认，不打断正文。默认关：
+        // 这条路会自己发起模型调用，让用户开了再用。
+        reachoutEnabled: false,
+        reachoutInterval: 5, // 检查间隔（分钟），1-60
+        reachoutQuota: 6, // 每轮检查最多发起几次主动判断（失败也算数），0 = 不判断
+        reachoutCooldown: 30, // 同一个人两次主动联系的最小间隔（分钟）
+        reachoutQuietFrom: 0, // 勿扰起始小时（0-23）；起止相等＝不设勿扰
+        reachoutQuietTo: 0, // 勿扰结束小时
+        reachoutMotivesFavor: true, // 情谊节点（好感 ≥50 的人惦记你）
+        reachoutMotivesLoop: true, // 旧约到期（对话里许下的承诺到期来问）
+        reachoutMotivesGossip: true, // 风闻想分享（八卦模块产出的传闻）
+        reachoutMotivesRandom: true, // 兴起（纯随机的小概率搭话）
+        reachoutPrompt: '', // 主动联系提示词覆盖，留空用内置默认
+        reachoutApiPreset: '', // API设置方案绑定：非空时主动联系整套走方案
     }),
     self: Object.freeze({
         // 纳戒注入：生成前把主角自身状态写进提示词。
         inject: true,
-        injectBudget: 900, // 注入字数预算，0 = 内置默认
+        injectBudget: 0, // 注入字数预算，0/留空 = 不限制（默认口径）；填正数才从目标、炼制、行囊往上丢
         // 申报通道：inline=模型在正文末尾顺手输出变量申报（MVU 解析、仲裁器裁决，零额外请求）；
         // independent=生成结束后扩展另发一次决定请求，正文保持干净。切换时同步启停世界书申报条目。
         mvuChannel: 'inline',
@@ -261,7 +284,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     memory: Object.freeze({
         // 记忆注入：生成前把召回决定的挑选结果（或关键词兜底）写进提示词。
         inject: true,
-        injectBudget: 800, // 注入字数预算，0 = 内置默认
+        injectBudget: 0, // 注入字数预算，0/留空 = 不限制（默认口径）；预算内放不下的整条跳过
         // LLM 决定：独立决定调用，读聊天记录+世界书+记忆总账，输出严格 JSON 由脚本执行。
         decideEnabled: true,
         decideAuto: true, // 每轮生成后自动决定；关闭则只认正文里的 memory 指令块
@@ -270,10 +293,10 @@ const DEFAULT_SETTINGS = Object.freeze({
         recallAuto: true, // 生成拦截器里自动召回；关闭则注入退回关键词匹配
         recallPrompt: '', // 召回提示词，留空用内置默认
         consolidateAfter: 6, // 小记忆攒够这个数就自动总结成一条大记忆；0 = 关闭
-        catalogBudget: 4000, // 发给召回员的记忆目录总字数；目录按混合检索分数序排，超预算从尾部丢
+        catalogBudget: 0, // 发给召回员的记忆目录总字数；0/留空 = 不限制（默认口径），超预算才从尾部丢
         // 开局摘要：切换/载入聊天后的第一条回复前，注入一次跨账本交底（时间/在场人物/任务/线头/恩怨），只注一次。
         wakeUp: true,
-        wakeUpBudget: 500, // 摘要字数上限
+        wakeUpBudget: 0, // 摘要字数上限，0/留空 = 不限制（默认口径）
         // 语义检索（可选）：OpenAI 兼容 /v1/embeddings 端点，默认关；没配置时全部走纯本地混合检索。
         embedding: Object.freeze({
             enabled: false,
@@ -307,9 +330,9 @@ const DEFAULT_SETTINGS = Object.freeze({
         recentCount: 5,
         // 世界影响库：记录玩家把世界线改成了什么样，并在正文提示词里提醒叙事模型。
         inject: true, // 是否把已发生的影响注入正文提示词
-        injectBudget: 800, // 注入字数预算
+        injectBudget: 0, // 注入字数预算，0/留空 = 不限制（默认口径）；填正数才把放不下的留在库里
         injectSmart: true, // 注入前先让模型挑“这一幕用得上”的影响；关掉则脚本按分量/日期直接挑
-        injectMaxLines: 8, // 模型最多挑几条
+        injectMaxLines: 0, // 注入条数上限，0/留空 = 不限制（默认口径）
         injectFloors: 0, // 场记判断“这一幕用得上什么”时看最近几楼（含玩家这句话；0 = 跟随全局读楼默认，即角色正则）
         injectModel: '', // 挑选员模型名；mode 选 custom 才用得上
         injectMode: 'tavern', // 'tavern' = 跟随酒馆当前设置；'custom' = 用下面这套自定义连接
@@ -358,7 +381,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     api: Object.freeze({
         presets: Object.freeze([]),
     }),
-    schemaVersion: 14,
+    schemaVersion: 15,
 });
 
 function clone(value) {
@@ -504,6 +527,37 @@ function mergeSettings(current = {}) {
     // 这些增强默认全开着，直接落进进阶版才不会升级后行为缩水；全新安装按默认留在完整版。
     if (Number(source.schemaVersion ?? 0) >= 11 && Number(source.schemaVersion ?? 0) < 14 && merged.apiMode !== 'lite') {
         merged.apiMode = 'advanced';
+    }
+    // schemaVersion 15：注入字数/人数上限的默认口径统一成「0 或留空＝不限制」（用户拍板，与记忆召回同一口径）。
+    // 老存档里躺着旧默认数值（人物簿 900/6、剧情 500、纳戒 900、记忆 800/4000/500、影响 800/8），
+    // 只清与旧默认完全相等的值，玩家手调过的原样保留。
+    if (Number(source.schemaVersion ?? 0) < 15) {
+        const legacyBudgetDefaults = [
+            ['npc', 'ledgerBudget', 900],
+            ['npc', 'ledgerMaxFull', 6],
+            ['plot', 'injectBudget', 500],
+            ['self', 'injectBudget', 900],
+            ['memory', 'injectBudget', 800],
+            ['memory', 'catalogBudget', 4000],
+            ['memory', 'wakeUpBudget', 500],
+            ['impact', 'injectBudget', 800],
+            ['impact', 'injectMaxLines', 8],
+        ];
+        for (const [group, key, legacy] of legacyBudgetDefaults) {
+            const holder = merged[group];
+            if (holder && Number(holder[key]) === legacy) holder[key] = 0;
+        }
+    }
+    // 曾短暂把 NPC 决策并成 npc.apiPreset 的存档：拆回原样——收编值回到记录员绑定（空着才写），
+    // 统一键删掉。幂等：拆完没有 apiPreset 键，重跑无事可做。
+    if (merged.npc && typeof merged.npc.apiPreset === 'string' && merged.npc.apiPreset) {
+        if (!merged.npc.ledgerApiPreset) merged.npc.ledgerApiPreset = merged.npc.apiPreset;
+        delete merged.npc.apiPreset;
+    }
+    // 迁移方案的默认名带着「人物簿记录员」字样：API设置页不该有 NPC 决策的痕迹，
+    // 改成中性名（只改名，id 与绑定不动）。
+    for (const preset of merged.api.presets ?? []) {
+        if (preset?.name === '人物簿记录员（迁移）') preset.name = '备用线路（迁移）';
     }
     merged.schemaVersion = DEFAULT_SETTINGS.schemaVersion;
     return merged;
@@ -685,6 +739,42 @@ export function createHostStorage({ getContext } = {}) {
         return { status: 'saved' };
     }
 
+    /** NPC 对话：每段对话的往来与收尾摘要跟着聊天走；换聊天读那一份。 */
+    function npcChatState() {
+        const context = contextOf(getContext);
+        const metadata = context?.chatMetadata;
+        if (!metadata || typeof metadata !== 'object') return { status: 'unavailable', value: undefined };
+        return { status: 'ready', value: metadata[NPC_CHAT_KEY] && typeof metadata[NPC_CHAT_KEY] === 'object' ? clone(metadata[NPC_CHAT_KEY]) : undefined };
+    }
+
+    async function saveNpcChatState(value) {
+        const context = contextOf(getContext);
+        if (!context?.chatMetadata || typeof context.chatMetadata !== 'object') return { status: 'unavailable' };
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return { status: 'rejected' };
+        context.chatMetadata[NPC_CHAT_KEY] = clone(value);
+        if (typeof context.saveMetadata !== 'function') return { status: 'changed_not_saved' };
+        await context.saveMetadata();
+        return { status: 'saved' };
+    }
+
+    /** 主动联系：排队与扰民计数跟着聊天走；换聊天重新开局。 */
+    function npcReachoutState() {
+        const context = contextOf(getContext);
+        const metadata = context?.chatMetadata;
+        if (!metadata || typeof metadata !== 'object') return { status: 'unavailable', value: undefined };
+        return { status: 'ready', value: metadata[NPC_REACHOUT_KEY] && typeof metadata[NPC_REACHOUT_KEY] === 'object' ? clone(metadata[NPC_REACHOUT_KEY]) : undefined };
+    }
+
+    async function saveNpcReachoutState(value) {
+        const context = contextOf(getContext);
+        if (!context?.chatMetadata || typeof context.chatMetadata !== 'object') return { status: 'unavailable' };
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return { status: 'rejected' };
+        context.chatMetadata[NPC_REACHOUT_KEY] = clone(value);
+        if (typeof context.saveMetadata !== 'function') return { status: 'changed_not_saved' };
+        await context.saveMetadata();
+        return { status: 'saved' };
+    }
+
     /** 冷藏推进台：记录选中的人物和每人的上次同步位置，不和人物档案混在一起。 */
     function npcColdState() {
         const context = contextOf(getContext);
@@ -748,6 +838,8 @@ export function createHostStorage({ getContext } = {}) {
             delete context.chatMetadata[IMPACT_KEY];
             delete context.chatMetadata[NPC_KEY];
             delete context.chatMetadata[NPC_COLD_KEY];
+            delete context.chatMetadata[NPC_CHAT_KEY];
+            delete context.chatMetadata[NPC_REACHOUT_KEY];
             delete context.chatMetadata[SELF_KEY];
             delete context.chatMetadata[MEMORY_KEY];
         }
@@ -756,7 +848,7 @@ export function createHostStorage({ getContext } = {}) {
         return { status: 'cleaned' };
     }
 
-    return Object.freeze({ settings, updateSettings, saveSettings, chatState, saveChatState, worldState, saveWorldState, impactState, saveImpactState, verifyState, saveVerifyState, plotState, savePlotState, npcLedgerState, saveNpcLedgerState, npcColdState, saveNpcColdState, npcRelationsState, saveNpcRelationsState, selfState, saveSelfState, memoryState, saveMemoryState, clean, keys: Object.freeze({ SETTINGS_KEY, CHAT_KEY, WORLD_KEY, IMPACT_KEY, NPC_KEY, NPC_COLD_KEY, NPC_RELATIONS_KEY, SELF_KEY, MEMORY_KEY, VERIFY_KEY, PLOT_KEY }) });
+    return Object.freeze({ settings, updateSettings, saveSettings, chatState, saveChatState, worldState, saveWorldState, impactState, saveImpactState, verifyState, saveVerifyState, plotState, savePlotState, npcLedgerState, saveNpcLedgerState, npcColdState, saveNpcColdState, npcRelationsState, saveNpcRelationsState, npcChatState, saveNpcChatState, npcReachoutState, saveNpcReachoutState, selfState, saveSelfState, memoryState, saveMemoryState, clean, keys: Object.freeze({ SETTINGS_KEY, CHAT_KEY, WORLD_KEY, IMPACT_KEY, NPC_KEY, NPC_COLD_KEY, NPC_RELATIONS_KEY, NPC_CHAT_KEY, NPC_REACHOUT_KEY, SELF_KEY, MEMORY_KEY, VERIFY_KEY, PLOT_KEY }) });
 }
 
 export { DEFAULT_SETTINGS };

@@ -56,8 +56,8 @@ assert.match(buildInterpretPrompt({ input: '我要修炼', allowedFields: [] }),
 let seenPrompt = '';
 let seenSchema = null;
 const fakeContext = {
-    async generateQuietPrompt(options) {
-        // 文档签名是对象形式；字符串形式只为兼容旧桩，两者都要认。
+    // 对象签名（1.14+）按形参个数判型：形参带默认值（fn.length === 0）就收对象。
+    async generateQuietPrompt(options = {}) {
         seenPrompt = typeof options === 'string' ? options : options?.quietPrompt ?? '';
         seenSchema = typeof options === 'object' && options !== null ? options.jsonSchema ?? null : null;
         return '```json\n{"type":"explicit_action","task":"explicit_action","explicitAction":true,"playerAction":{"targetId":"player","method":"修炼"},"effects":[{"targetId":"player","field":"hp","type":"add","value":5}]}\n```';
@@ -98,7 +98,7 @@ const isolated = createLlmClient({
     getSettings: () => ({ llm: { mode: 'tavern', timeoutMs: 5000 } }),
     getContext: () => ({
         generateQuietPrompt() { throw new Error('裁判不应走角色预设'); },
-        generateRaw(options) { rawOptions = options; assert.equal(isolated.isQuietBusy(), true); return '{"version":2,"actions":[]}'; },
+        generateRaw(options = {}) { rawOptions = options; assert.equal(isolated.isQuietBusy(), true); return '{"version":2,"actions":[]}'; },
     }),
 });
 assert.equal(await isolated.complete({ rawPrompt: true, system: '裁判规则', user: '本轮行动' }), '{"version":2,"actions":[]}');
@@ -107,6 +107,33 @@ assert.equal(rawOptions.quietToLoud, false);
 assert.equal(rawOptions.trimNames, false);
 assert.equal(isolated.isQuietBusy(), false);
 await assert.rejects(() => viaTavern.complete({ rawPrompt: true, system: 's', user: 'u' }), /generateRaw/);
+
+// —— 版本兼容：1.13 的静默/独立生成是位置参数签名（形参无默认值，fn.length > 0），按个数判型走位置传参 ——
+const positionalCalls = [];
+function positionalQuiet(quietPrompt, quietToLoud, skipWIAN, quietImage, quietName, responseLength) {
+    positionalCalls.push({ quietPrompt, quietToLoud, skipWIAN, responseLength });
+    return 'positional-ok';
+}
+const positionalClient = createLlmClient({
+    getSettings: () => ({ llm: { mode: 'tavern', timeoutMs: 5000 } }),
+    getContext: () => ({ generateQuietPrompt: positionalQuiet }),
+});
+assert.equal(await positionalClient.complete({ system: '规则', user: '行动', overrides: { connection: 'tavern', maxTokens: 512 } }), 'positional-ok');
+assert.deepEqual(positionalCalls, [{ quietPrompt: '规则\n\n行动', quietToLoud: false, skipWIAN: false, responseLength: 512 }], '位置签名收到 (prompt, false, false, …, responseLength)');
+
+let rawPositional = null;
+const rawPositionalClient = createLlmClient({
+    getSettings: () => ({ llm: { mode: 'tavern', timeoutMs: 5000 } }),
+    getContext: () => ({
+        generateQuietPrompt() { throw new Error('裁判不应走静默'); },
+        generateRaw(prompt, api, instructOverride, quietToLoud, systemPrompt, responseLength, trimNames) {
+            rawPositional = { prompt, api, instructOverride, quietToLoud, systemPrompt, responseLength, trimNames };
+            return '{"version":2,"actions":[]}';
+        },
+    }),
+});
+assert.equal(await rawPositionalClient.complete({ rawPrompt: true, system: '裁判规则', user: '本轮行动' }), '{"version":2,"actions":[]}');
+assert.deepEqual(rawPositional, { prompt: '本轮行动', api: null, instructOverride: false, quietToLoud: false, systemPrompt: '裁判规则', responseLength: null, trimNames: false }, '独立裁判按 1.13 位置签名把 system/user 拆开传');
 
 const calls = [];
 const fakeFetch = async (url, options) => {
@@ -315,6 +342,46 @@ assert.equal(leftoverCalls.length, 0, '劫持路径一次都不该发起');
         /HTTP 400（POST https:\/\/api\.example\/v1\/chat\/completions）：bad gateway plain text/,
         '非 JSON 响应体用原文片段当原因',
     );
+}
+{
+    // 直连请求带扩展身份标头：上游检测到的客户端是扩展，不是酒馆（酒馆通道由酒馆本体发请求，天然是酒馆身份）。
+    const identityCalls = [];
+    const identified = createLlmClient({
+        getSettings: () => ({ llm: { mode: 'custom', baseUrl: 'https://api.example/v1', apiKey: 'sk-id', model: 'm1' } }),
+        fetchImpl: async (url, options) => {
+            identityCalls.push(options.headers);
+            return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'ok' } }] }) };
+        },
+    });
+    await identified.complete({ system: 's', user: 'u' });
+    assert.equal(identityCalls[0]['x-client'], 'doupo-agent-ui');
+    assert.equal(identityCalls[0]['x-title'], 'Doupo Companion Agent');
+    assert.equal(identityCalls[0].authorization, 'Bearer sk-id');
+    // 方案标头/单次覆盖最后套用：要接网关等场合可以覆盖身份标头。
+    const overrideCalls = [];
+    const overridden = createLlmClient({
+        getSettings: () => ({ llm: { mode: 'custom', baseUrl: 'https://api.example/v1', apiKey: 'sk-id', model: 'm1' } }),
+        fetchImpl: async (url, options) => {
+            overrideCalls.push(options.headers);
+            return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'ok' } }] }) };
+        },
+    });
+    await overridden.complete({ system: 's', user: 'u', overrides: { headers: { 'x-client': 'my-gateway' } } });
+    assert.equal(overrideCalls[0]['x-client'], 'my-gateway', '单次覆盖能改写身份标头');
+    assert.equal(overrideCalls[0]['x-title'], 'Doupo Companion Agent', '没覆盖的标头保持默认');
+    // 标头值里混了中文＝fetch 当场拒发（真机事故）：身份标头一律 ASCII，方案自带标头兜底百分号编码。
+    const sanitizedCalls = [];
+    const sanitized = createLlmClient({
+        getSettings: () => ({ llm: { mode: 'custom', baseUrl: 'https://api.example/v1', apiKey: 'sk-id', model: 'm1' } }),
+        fetchImpl: async (url, options) => {
+            sanitizedCalls.push(options.headers);
+            return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'ok' } }] }) };
+        },
+    });
+    await sanitized.complete({ system: 's', user: 'u', overrides: { headers: { 'x-gateway-note': '斗破网关', 'x-ascii': 'fine' } } });
+    assert.equal(sanitizedCalls[0]['x-gateway-note'], encodeURIComponent('斗破网关'), '非拉丁标头值百分号编码，fetch 不再拒发');
+    assert.equal(sanitizedCalls[0]['x-ascii'], 'fine', 'ASCII 标头原样保留');
+    assert.equal(sanitizedCalls[0]['x-title'], 'Doupo Companion Agent');
 }
 {
     // 酒馆路径：ST 只抛裸错误，扩展拿不到状态码与响应体；条目至少标出走的哪条连接
@@ -533,7 +600,7 @@ let seenResponseLength = null;
 const samplingContext = {
     mainApi: 'openai',
     chatCompletionSettings: tavernSettings,
-    async generateQuietPrompt(options) {
+    async generateQuietPrompt(options = {}) {
         seenSampling = {
             temperature: tavernSettings.temp_openai,
             topP: tavernSettings.top_p_openai,

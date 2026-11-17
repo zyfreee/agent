@@ -178,4 +178,30 @@ assert.deepEqual(injectionLimits(undefined), { near: 6, world: 4 }, '缺氛围�
     assert.ok(withCause.includes('（起因：e1）'), withCause);
 }
 
+// —— 注入字数默认不限制：超过旧 4000 天花板的台账也全量进提示词，填了正数才截 ——
+// （风波氛围放开事件条数节奏到 8/8，配合势力 8 + 相关人物 10 的清单上限把字数顶过旧天花板。）
+{
+    const fat = {
+        clock: { day: 9, minute: 600, label: '' },
+        info: {},
+        tension: 'storm',
+        worldEvents: Array.from({ length: 8 }, (_, index) => ({
+            id: `e${index}`, day: 8, title: '大事', text: '详'.repeat(200), done: false, weight: 'major',
+        })),
+        factions: Array.from({ length: 8 }, (_, index) => ({
+            name: `宗门${index}`, stance: 'neutral', dynamics: '动'.repeat(200),
+        })),
+        people: Array.from({ length: 10 }, (_, index) => ({
+            name: `人物${index}`, attitude: '态'.repeat(200),
+        })),
+    };
+    const unlimited = buildWorldInjection(fat);
+    assert.ok(unlimited.length > 4000, `旧天花板已摘除：实际 ${unlimited.length} 字`);
+    assert.ok(fat.worldEvents.every(event => unlimited.includes(event.id)), '不传 maxChars 时事件全量注入');
+    assert.ok(fat.factions.every(faction => unlimited.includes(faction.name)), '势力全量注入');
+    assert.ok(fat.people.every(person => unlimited.includes(person.name)), '相关人物全量注入');
+    const capped = buildWorldInjection(fat, { maxChars: 1000 });
+    assert.ok(capped.length <= 1000, '填了正数才按预算从尾部丢');
+}
+
 console.log('world ops tests passed');

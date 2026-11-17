@@ -344,6 +344,19 @@ function mergeHeaders(target, extra) {
     return target;
 }
 
+/** 浏览器 fetch 的请求头只收 ISO-8859-1：标头值里混了非拉丁字符（扩展身份标头、方案自带标头都可能）
+ *  会让整次 fetch 当场拒发——「String contains non ISO-8859-1 code point」。发出前兜底清洗：
+ *  名字不合法（非拉丁）的整条丢弃，值里有非拉丁字符的百分号编码保住字节（服务端可解码还原）。 */
+function sanitizeHeaders(headers) {
+    const clean = {};
+    for (const [name, value] of Object.entries(headers ?? {})) {
+        if (typeof name !== 'string' || !name.trim() || [...name].some(ch => ch.codePointAt(0) > 0xff)) continue;
+        const text = typeof value === 'string' ? value : String(value);
+        clean[name] = [...text].some(ch => ch.codePointAt(0) > 0xff) ? encodeURIComponent(text) : text;
+    }
+    return clean;
+}
+
 function applyRequestExtras(body, headers, extras) {
     if (extras.extraBody) Object.assign(body, extras.extraBody);
     if (extras.excludeBody) for (const key of extras.excludeBody) delete body[key];
@@ -385,7 +398,7 @@ export async function listModels({ baseUrl = '', apiKey = '', provider = '', hea
     const deadline = Number.isFinite(Number(timeoutMs)) ? Math.max(1, Math.min(600000, Number(timeoutMs))) : 15000;
     try {
         const payload = await withTimeout((async () => {
-            const response = await fetchFn(url, { method: 'GET', headers: requestHeaders, signal: controller.signal });
+            const response = await fetchFn(url, { method: 'GET', headers: sanitizeHeaders(requestHeaders), signal: controller.signal });
             if (!response?.ok) throw new Error(`接口返回 HTTP ${response?.status ?? '未知'}`);
             return response.json();
         })(), deadline, signal, abort);
@@ -575,11 +588,15 @@ export function createLlmClient({ getSettings, getContext, fetchImpl, capture = 
         const effectiveFrequency = Number.isFinite(frequencyPenalty) ? frequencyPenalty : fallbackNumber(llm.frequencyPenalty, { min: -2, max: 2, exclusiveZero: false });
 
         if (connection.kind === 'sillytavern') {
-            // 酒馆文档里的签名是对象形式 generateQuietPrompt({ quietPrompt, jsonSchema })。
-            // 早先这里传的是位置参数 (prompt, false, true)，第三个参数 quietToLoud=true
-            // 会让静默生成的 JSON 直接落进聊天记录，必须用对象形式。
-            // ST 1.19 generateRaw({prompt:messages}) 不拼角色/主聊天预设；仅裁判显式选择。
+            // 两个签名时代：1.14+ 的静默/独立生成收对象（形参全带默认值，fn.length === 0）并保留
+            // 位置传参兼容；更旧的位置签名（1.13）已低于适配下限，位置分支只当防御性兜底留着。
+            // 按形参个数判型，两头都发对——对象签名带全 jsonSchema/responseLength；位置签名没有
+            // jsonSchema 形参，结构化约束静默降级（解析端本就不依赖它），responseLength 按位置传
+            // （两条路都是第 6 参）。位置传法的教训：quietToLoud/skipWIAN 两位必须给 false，
+            // 给 true 会让静默生成的 JSON 直接落进聊天记录。
+            // 对象形式 generateRaw({prompt:messages}) 不拼角色/主聊天预设；仅裁判显式选择。
             if (rawPrompt && typeof connection.context.generateRaw !== 'function') throw new Error('当前酒馆不支持独立提示词生成（generateRaw），本轮裁判未调用');
+            const objectSignature = (rawPrompt ? connection.context.generateRaw : connection.context.generateQuietPrompt).length === 0;
             const options = rawPrompt
                 ? { prompt: [{ role: 'system', content: system }, { role: 'user', content: user }], quietToLoud: false, trimNames: false }
                 : { quietPrompt: `${system}\n\n${user}` };
@@ -598,7 +615,13 @@ export function createLlmClient({ getSettings, getContext, fetchImpl, capture = 
                 });
                 quietGenerationDepth += 1;
                 try {
-                    const reply = await (rawPrompt ? connection.context.generateRaw(options) : connection.context.generateQuietPrompt(options));
+                    // 1.13 的位置签名：静默是 (prompt, quietToLoud, skipWIAN, …, responseLength)，
+                    // 独立生成是 (prompt, api, instructOverride, quietToLoud, systemPrompt, responseLength, trimNames)。
+                    // 一律走方法调用（this = 宿主 context），只按判型换实参形状。
+                    const positionalResponseLength = maxTokensSet ? maxTokens : null;
+                    const reply = await (rawPrompt
+                        ? (objectSignature ? connection.context.generateRaw(options) : connection.context.generateRaw(user, null, false, false, system, positionalResponseLength, false))
+                        : (objectSignature ? connection.context.generateQuietPrompt(options) : connection.context.generateQuietPrompt(options.quietPrompt, false, false, null, null, positionalResponseLength)));
                     check();
                     return typeof reply === 'string' ? reply : String(reply?.text ?? '');
                 } finally {
@@ -633,6 +656,12 @@ export function createLlmClient({ getSettings, getContext, fetchImpl, capture = 
             ? (base.endsWith('/v1') ? `${base}/messages` : `${base}/v1/messages`)
             : `${base}/chat/completions`;
         const headers = { 'content-type': 'application/json' };
+        // 直连请求亮明扩展身份：上游检测到的客户端是扩展自己，不是酒馆。
+        // （勾了酒馆通道的请求由酒馆本体发出，上游看到的就是酒馆——两条路的身份天生不同。）
+        // 浏览器禁止 JS 改 User-Agent，身份走自定义标头；方案标头最后套用，可覆盖。
+        headers['x-client'] = 'doupo-agent-ui';
+        // 身份标头必须 ASCII：fetch 不收非 ISO-8859-1 的标头值，中文值会让自定义路径整路请求拒发。
+        headers['x-title'] = 'Doupo Companion Agent';
         const apiKey = typeof llm.apiKey === 'string' ? llm.apiKey.trim() : '';
         if (apiKey) {
             if (isAnthropic) {
@@ -667,7 +696,7 @@ export function createLlmClient({ getSettings, getContext, fetchImpl, capture = 
             payload = await withTimeout((async () => {
                 const response = await fetchFn(url, {
                     method: 'POST',
-                    headers,
+                    headers: sanitizeHeaders(headers),
                     signal: controller.signal,
                     body: JSON.stringify(body),
                 });

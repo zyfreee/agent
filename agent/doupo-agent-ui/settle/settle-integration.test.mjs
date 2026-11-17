@@ -57,13 +57,13 @@ function fixture({ user = input, history = '掌柜报出了价钱。' } = {}) {
             this.extensionPrompts[key] = { value: text };
         },
         async saveMetadata() { this.saves++; },
-        generateRaw(options) {
+        generateRaw(options = {}) {
             assert.equal(options.quietToLoud, false);
             assert.equal(options.trimNames, false);
             assert.deepEqual(options.prompt.map(message => message.role), ['system', 'user']);
             return this.generateQuietPrompt({ quietPrompt: options.prompt.map(message => message.content).join('\n\n') });
         },
-        generateQuietPrompt(options) {
+        generateQuietPrompt(options = {}) {
             assert.equal(typeof options, 'object');
             assert.equal(typeof options.quietPrompt, 'string');
             this.calls.push(options);

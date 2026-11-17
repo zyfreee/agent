@@ -3,12 +3,7 @@
  * 时间永远取世界台账的当前日；确认后由入口把补丁交回人物簿。
  */
 
-const MAX_SELECTED = 20;
-const MAX_EVENT_IDS = 120;
-const MAX_PREVIEWS = 20;
 /** 单人单次推进喂给模型的新事件上限：按重要度挑，不再靠整包尾部硬截。 */
-const MAX_CANDIDATE_EVENTS = 12;
-const MAX_NOTE_CHARS = 120;
 
 function text(value, limit = 240) {
     return typeof value === 'string' ? value.trim().slice(0, limit) : '';
@@ -120,7 +115,7 @@ function noteFromPatch(patch) {
     const log = Array.isArray(entry.流水) ? entry.流水 : [];
     const last = typeof log[log.length - 1] === 'string' ? log[log.length - 1].trim() : '';
     if (last) parts.push(last.slice(0, 60));
-    return parts.join('；').slice(0, MAX_NOTE_CHARS);
+    return parts.join('；');
 }
 
 function initialState() {
@@ -129,7 +124,7 @@ function initialState() {
 
 function normalizeState(raw) {
     const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
-    const selected = [...new Set((Array.isArray(source.selected) ? source.selected : []).map(cleanName).filter(Boolean))].slice(0, MAX_SELECTED);
+    const selected = [...new Set((Array.isArray(source.selected) ? source.selected : []).map(cleanName).filter(Boolean))];
     const sync = {};
     if (source.sync && typeof source.sync === 'object') {
         for (const [key, item] of Object.entries(source.sync)) {
@@ -137,18 +132,18 @@ function normalizeState(raw) {
             if (!name || !item || typeof item !== 'object') continue;
             sync[name] = {
                 lastDay: Number.isInteger(Number(item.lastDay)) && Number(item.lastDay) >= 1 ? Number(item.lastDay) : 0,
-                eventIds: [...new Set((Array.isArray(item.eventIds) ? item.eventIds : []).map(value => text(value, 60)).filter(Boolean))].slice(-MAX_EVENT_IDS),
+                eventIds: [...new Set((Array.isArray(item.eventIds) ? item.eventIds : []).map(value => text(value, 60)).filter(Boolean))],
                 lastFloor: Number.isInteger(Number(item.lastFloor)) && Number(item.lastFloor) >= 0 ? Number(item.lastFloor) : -1,
-                lastNote: text(item.lastNote, MAX_NOTE_CHARS),
+                lastNote: text(item.lastNote),
             };
         }
     }
-    const previews = (Array.isArray(source.previews) ? source.previews : []).filter(item => item && typeof item === 'object').slice(-MAX_PREVIEWS).map(item => ({
+    const previews = (Array.isArray(source.previews) ? source.previews : []).filter(item => item && typeof item === 'object').map(item => ({
         id: text(item.id, 80), name: cleanName(item.name), fromDay: dayOf(item.fromDay), toDay: dayOf(item.toDay), status: text(item.status, 20),
         previousDay: dayOf(item.previousDay, dayOf(item.fromDay)),
         ...(Number.isInteger(item.baseVersion) ? { baseVersion: item.baseVersion } : {}),
         patch: item.patch && typeof item.patch === 'object' ? structuredClone(item.patch) : { 人物: [] },
-        eventIds: [...new Set((Array.isArray(item.eventIds) ? item.eventIds : []).map(value => text(value, 60)).filter(Boolean))].slice(0, MAX_EVENT_IDS),
+        eventIds: [...new Set((Array.isArray(item.eventIds) ? item.eventIds : []).map(value => text(value, 60)).filter(Boolean))],
     })).filter(item => item.id && item.name);
     const undo = source.lastUndo && typeof source.lastUndo === 'object' && !Array.isArray(source.lastUndo)
         && text(source.lastUndo.previewId, 80) && cleanName(source.lastUndo.name)
@@ -171,7 +166,7 @@ export function createNpcColdRuntime({ now = () => new Date().toISOString() } = 
     function select(names) {
         const incoming = Array.isArray(names) ? names : [names];
         for (const value of incoming.map(cleanName).filter(Boolean)) {
-            if (!state.selected.includes(value) && state.selected.length < MAX_SELECTED) state.selected.push(value);
+            if (!state.selected.includes(value) && true) state.selected.push(value);
         }
         state.updatedAt = now();
         return { status: 'selected', selected: [...state.selected] };
@@ -215,11 +210,11 @@ export function createNpcColdRuntime({ now = () => new Date().toISOString() } = 
             const newEvents = relevant
                 .filter(event => !known.has(event.id) && (previous.lastDay === 0 || event.day > previous.lastDay || event.day === toDay))
                 .sort((a, b) => (WEIGHT_RANK[a.weight] ?? 2) - (WEIGHT_RANK[b.weight] ?? 2) || b.day - a.day)
-                .slice(0, MAX_CANDIDATE_EVENTS);
+                ;
             const dayMoved = previous.lastDay > 0 && toDay > previous.lastDay;
             // 第一次勾选只建立“从今天开始”的基线，不把过去的旧事件补演成今天的经历。
             if (!previous.lastDay) {
-                state.sync[name] = { lastDay: toDay, eventIds: relevant.map(event => event.id).slice(-MAX_EVENT_IDS), lastFloor: -1, lastNote: '' };
+                state.sync[name] = { lastDay: toDay, eventIds: relevant.map(event => event.id), lastFloor: -1, lastNote: '' };
                 state.updatedAt = now();
                 continue;
             }
@@ -254,8 +249,8 @@ export function createNpcColdRuntime({ now = () => new Date().toISOString() } = 
             previousDay: dayOf(preview.previousDay, dayOf(preview.fromDay)),
             ...(Number.isInteger(preview.baseVersion ?? preview.record?.version) ? { baseVersion: preview.baseVersion ?? preview.record.version } : {}),
             patch: preview.patch && typeof preview.patch === 'object' ? structuredClone(preview.patch) : { 人物: [] },
-            eventIds: [...new Set((Array.isArray(preview.eventIds) ? preview.eventIds : []).map(value => text(value, 60)).filter(Boolean))].slice(0, MAX_EVENT_IDS),
-        }].slice(-MAX_PREVIEWS);
+            eventIds: [...new Set((Array.isArray(preview.eventIds) ? preview.eventIds : []).map(value => text(value, 60)).filter(Boolean))],
+        }];
         state.updatedAt = now();
     }
 
@@ -280,7 +275,7 @@ export function createNpcColdRuntime({ now = () => new Date().toISOString() } = 
         const previous = state.sync[clean];
         state.sync[clean] = {
             lastDay: preview.toDay,
-            eventIds: [...new Set([...previous.eventIds, ...preview.eventIds])].slice(-MAX_EVENT_IDS),
+            eventIds: [...new Set([...previous.eventIds, ...preview.eventIds])],
             lastFloor: Number.isInteger(Number(floor)) && Number(floor) >= 0 ? Number(floor) : previous.lastFloor,
             // 留痕：确认了什么记一句，下次扫描喂回去衔接（RecurrentGPT 式的“上一步显式带出”）。
             lastNote: noteFromPatch(preview.patch) || previous.lastNote || '',
@@ -298,7 +293,7 @@ export function createNpcColdRuntime({ now = () => new Date().toISOString() } = 
         if (preview && state.sync[preview.name]) {
             const note = noteFromPatch(preview.patch);
             state.sync[preview.name].lastNote = note ? `${note}（上次草稿被放弃）` : '上次草稿被放弃（没有可衔接的内容）';
-            state.sync[preview.name].lastNote = state.sync[preview.name].lastNote.slice(0, MAX_NOTE_CHARS);
+            state.sync[preview.name].lastNote = state.sync[preview.name].lastNote;
         }
         state.updatedAt = now();
         return { status: 'discarded', id: key };

@@ -7,6 +7,7 @@
  */
 
 import { formatClock, STANCE_LABELS, TENSION_LABELS } from './world-runtime.js';
+import { capWorldOp } from './world-runtime.js';
 
 /**
  * 氛围决定注入的事件条数：平静少投、升温照常、风波多投。
@@ -83,9 +84,10 @@ function eventLine(event, today) {
     return `${mark}(${event.id} 第${event.day}天) ${title}${event.text}${where}${scheduled}${due}${rumor}${cause}${basis}${pinned}`;
 }
 
-/** 世界快照 → 注入文本；超预算时优先保住时钟，事件从末尾往上丢。 */
-export function buildWorldInjection(snapshot = {}, { maxChars = DEFAULT_MAX_CHARS } = {}) {
-    const cap = clampInt(maxChars, 200, 4000, DEFAULT_MAX_CHARS);
+/** 世界快照 → 注入文本；填了字数上限才从末尾往上丢（优先保住时钟），不填＝不限制。 */
+export function buildWorldInjection(snapshot = {}, { maxChars = Infinity } = {}) {
+    // 注入字数默认不限制（用户拍板的口径）：有限正数才截断，不再有 200 下限与 4000 天花板。
+    const cap = Number.isFinite(Number(maxChars)) && Number(maxChars) > 0 ? Math.floor(Number(maxChars)) : Infinity;
     const clock = snapshot.clock ?? {};
     const info = snapshot.info ?? {};
     const lines = [];
@@ -211,7 +213,7 @@ export function parseOps(raw, { maxOps = DEFAULT_MAX_OPS } = {}) {
         try {
             const parsed = JSON.parse(body);
             if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && typeof parsed.op === 'string' && parsed.op.trim()) {
-                if (ops.length < cap) ops.push(parsed);
+                if (ops.length < cap) ops.push(capWorldOp(parsed));
             } else {
                 parseErrors.push({ line: index + 1, reason: 'not_an_op' });
             }

@@ -79,11 +79,24 @@ assert.ok(apisStart >= 0 && apisEnd > apisStart, '找不到「API设置」页');
 const apisMarkup = entry.slice(apisStart, apisEnd);
 assert.match(apisMarkup, /data-api-preset-list/, 'API设置页缺少方案列表容器');
 assert.match(apisMarkup, /data-api-add-preset/, 'API设置页缺少新建方案按钮');
-for (const binding of ['llm.apiPreset', 'setting.apiPreset', 'verify.apiPreset', 'world.decideApiPreset', 'plot.decideApiPreset', 'npc.ledgerApiPreset', 'npc.extractApiPreset', 'npc.expApiPreset', 'npc.coldApiPreset', 'self.decideApiPreset', 'memory.decideApiPreset', 'memory.recallApiPreset', 'memory.consolidateApiPreset', 'impact.decideApiPreset', 'impact.injectApiPreset']) {
+for (const binding of ['llm.apiPreset', 'setting.apiPreset', 'verify.apiPreset', 'world.decideApiPreset', 'plot.decideApiPreset', 'self.decideApiPreset', 'memory.decideApiPreset', 'memory.recallApiPreset', 'memory.consolidateApiPreset', 'impact.decideApiPreset', 'impact.injectApiPreset']) {
     assert.equal(boundPaths.filter(path => path === binding).length, 1, `方案绑定下拉应只在模型设置页出现一次：${binding}`);
 }
+// NPC 功能的六条绑定下拉全部挂在「模型设置」页（人物簿四条 + 对话 + 主动联系）；NPC 决策页只留功能开关，不出现方案绑定。
+const npcStart = entry.indexOf('data-settings-section="npc"');
+const npcEnd = entry.indexOf('data-settings-section="npcledger"');
+assert.ok(npcStart >= 0 && npcEnd > npcStart, '找不到「NPC 决策」页');
+const npcMarkup = entry.slice(npcStart, npcEnd);
+for (const binding of ['npc.ledgerApiPreset', 'npc.extractApiPreset', 'npc.expApiPreset', 'npc.coldApiPreset', 'npc.chatApiPreset', 'npc.reachoutApiPreset']) {
+    assert.equal(boundPaths.filter(path => path === binding).length, 1, `NPC 绑定下拉应恰好一个（模型设置页）：${binding}`);
+    assert.match(hubMarkup, new RegExp(`data-setting="${binding.replace('.', '\\.')}"`), `模型设置页应有 NPC 功能绑定：${binding}`);
+    assert.doesNotMatch(npcMarkup, new RegExp(`data-setting="${binding.replace('.', '\\.')}"`), `NPC 决策页不应有方案绑定下拉：${binding}`);
+}
 assert.match(hubMarkup, /data-api-preset-select/g ? /data-api-preset-select/ : /never/, '模型设置页缺少方案绑定下拉');
-assert.equal([...hubMarkup.matchAll(/data-api-preset-select/g)].length, 19, '方案绑定下拉应恰好 19 个（完整版 16 张功能卡 + 简略版素材总挑选/总结算两张合并卡 + 简略版行动结算判定卡；进阶版卡片不新增绑定）');
+assert.equal([...hubMarkup.matchAll(/data-api-preset-select/g)].length, 21, '方案绑定下拉应恰好 21 个（完整版 12 张功能卡 + NPC 六张绑定卡 + 简略版素材总挑选/总结算/行动结算判定；进阶版卡片不新增绑定）');
+// 页面区块（pane）不许挂版本显隐标记：selectPage 独占 pane 显隐，renderApiMode 若再管 section
+// 会把它在每一页底部重新展开（NPC 决策曾因此叠在总控/API设置/模型设置下方）。版本门只管区块内的卡。
+assert.doesNotMatch(entry, /data-settings-section="[a-z]+" data-api-mode-section/, '页面区块不能带 data-api-mode-section：renderApiMode 会把它在每页底部重新展开');
 // 进阶版（apiMode 'advanced'）：三档切换按钮 + 进阶区块；完整版区块对进阶版同样可见（共用逐路连接卡）。
 assert.match(hubMarkup, /data-api-mode="advanced"/, '调用版本卡缺少进阶版按钮');
 assert.match(hubMarkup, /data-api-mode-section="full advanced"/, '完整版连接卡区块应对进阶版共用（标记 "full advanced"）');

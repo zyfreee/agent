@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { buildImpactInjectUser, buildImpactInjectionFromPicks, parseImpactSelect, IMPACT_INJECT_PROMPT, IMPACT_SELECT_LIMITS } from './impact-select.js';
+import { buildImpactInjectUser, buildImpactInjectionFromPicks, parseImpactSelect, IMPACT_INJECT_PROMPT } from './impact-select.js';
 
 /** 一条正常的影响记录；只覆盖测试关心的字段。 */
 function record(overrides) {
@@ -92,19 +92,19 @@ assert.equal(parsed.dropped, 3);
 assert.match(parsed.note, /药材/);
 assert.match(parsed.picks[0].text, /药材一夜涨了三成/);
 
-// 一条都不剩就是 empty；坏 JSON 是 invalid；超长文本被裁到上限。
+// 一条都不剩就是 empty；坏 JSON 是 invalid；超长文本裁到上限（模型输出限定字数）。
 assert.equal(parseImpactSelect('{"note":"用不上","picks":[]}', { records }).status, 'empty');
 assert.equal(parseImpactSelect('{\n  "picks": [\n    {"ref": "i1", "text": "断在这里"', { records }).status, 'invalid');
 assert.equal(parseImpactSelect('顺便说一句，这轮不用旧账。', { records }).status, 'invalid');
 const longText = '药材'.repeat(200);
 const trimmed = parseImpactSelect(JSON.stringify({ picks: [{ ref: 'i1', text: longText }] }), { records });
-assert.equal(trimmed.picks[0].text.length, IMPACT_SELECT_LIMITS.maxLineChars);
-assert.equal(parseImpactSelect(JSON.stringify({ note: 'n'.repeat(300), picks: [{ ref: 'i1', text: '短句' }] }), { records }).note.length, IMPACT_SELECT_LIMITS.maxNoteChars);
+assert.equal(trimmed.picks[0].text.length, 120, '超长旁白裁到 120');
+assert.equal(parseImpactSelect(JSON.stringify({ note: 'n'.repeat(300), picks: [{ ref: 'i1', text: '短句' }] }), { records }).note.length, 160, 'note 裁到 160');
 
-// 挑选数量有上限：给十条只收八条。
+// 挑选条数是注入窗口（结构性，非内容截断）：每轮最多挑 8 条进正文。
 const many = Array.from({ length: 10 }, (_, index) => record({ id: `m${index}`, title: `第 ${index} 件`, target: `对象${index}` }));
 const capped = parseImpactSelect(JSON.stringify({ picks: many.map(item => ({ ref: item.id, text: `第 ${item.id} 件的事` })) }), { records: many });
-assert.equal(capped.picks.length, IMPACT_SELECT_LIMITS.maxPicks);
+assert.equal(capped.picks.length, 8);
 
 // 拼正文注入：抬头 + 每条一行；世界级带 ★、传闻带 ？；未到期写“还没发作”。
 const injection = buildImpactInjectionFromPicks(records, [
@@ -154,6 +154,17 @@ for (const count of [0, 1, 1000, 10000]) {
     if (count) assert.match(pendingBlock, /#relevant/);
     if (count > 8) assert.match(pendingBlock, /另省略 \d+ 条/);
     assert.equal(JSON.stringify(rows), before, 'budgeting must never prune persisted inventory');
+}
+
+// —— 挑选结果的字数/条数默认不限制：不传上限时全量进提示词，填了正数才截 ——
+{
+    const many = Array.from({ length: 12 }, (_, index) => record({ id: `u${index}`, title: `影响${index}`, target: '乌坦城', ripenDay: null }));
+    const picks = many.map(item => ({ ref: item.id, text: `${item.title}：${'评'.repeat(200)}` }));
+    const unlimited = buildImpactInjectionFromPicks(many, picks);
+    assert.ok(many.every(item => unlimited.includes(item.title)), '不传 maxChars/maxLines 时 12 条全量注入');
+    const capped = buildImpactInjectionFromPicks(many, picks, { maxChars: 800 });
+    assert.ok(capped.length <= 820, `填了正数才按字数截：${capped.length}`);
+    assert.ok(!capped.includes('影响11'), '放不下的条目整条不进');
 }
 
 console.log('impact select tests passed');

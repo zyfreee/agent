@@ -19,7 +19,6 @@ export { recallKeys, textSimilarity };
 
 const DEFAULT_MAX_CHARS = 900;
 const RECALL_LIMIT = 12;
-const DEFAULT_MAX_OPS = 8;
 const CONFLICT_SIMILARITY = 0.6;
 const FENCE_RE = /```memory[^\S\n]*\n([\s\S]*?)```/g;
 const OP_LINE_RE = /^[ \t]*\{[ \t]*"op"[ \t]*:/;
@@ -33,7 +32,7 @@ export const MEMORY_GUIDE = [
     '```',
     '只记小记忆（remember）：轻量记录的近事杂事，weight 用 minor，不必重要才记，保持主角”记得这几天发生过什么”；title 必写——1~14 字短标题（名词短语），列表主页只显示标题，缺标题或超过 14 字的条目会被脚本整条丢弃；related 是日后召回的钥匙，必写 1-4 个人名/地名/物名。大记忆不用你登记——小记忆攒够后脚本会自动总结成大记忆。',
     'quote 可选：剧情里最有味道的一句原话（≤60字），召回时会以「」原样带回正文；没有合适的就空着，不要编造没出现过的对白。',
-    '可用操作：remember(title必写≤14字短标题,text≤60字一句简明记忆,note≤200字细节补充,basis≤80字出处,related必写≤4个,quote≤60字)；forgetMemory(id)（记错删除）；supersede(id,by)（旧记忆被本轮新事明确覆盖时标记，不删除，恢复由玩家做）。id 用上面召回列表里的编号。text 只写一眼能看懂的一句话，细节、背景、后续影响写进 note；记忆不是任务：没有“了结”状态，旧事也永远保留召回权。',
+    '可用操作：remember(title必写≤14字短标题,text≤60字一句简明记忆,note≤200字细节补充,basis≤80字出处,related必写,quote≤60字)；forgetMemory(id)（记错删除）；supersede(id,by)（旧记忆被本轮新事明确覆盖时标记，不删除，恢复由玩家做）。id 用上面召回列表里的编号。text 只写一眼能看懂的一句话，细节、背景、后续影响写进 note；记忆不是任务：没有“了结”状态，旧事也永远保留召回权。',
     '只记玩家看得到的事（主角亲历/得知，或正文实际演到的情节），用中性记事口吻写清"谁/在哪/发生了什么"，不要写成"我"的第一人称日记；text 保持一句话的简短，长细节交给 note；必须有剧情依据（basis 写清从哪楼/谁/什么事来）；不记原著设定、不替人物簿记 NPC 档案与好感、不记该归纳戒目标或世界任务的事；没有新记忆就完全不要输出这个区块。',
 ].join('\n');
 
@@ -153,8 +152,26 @@ export function extractOpsBlock(reply) {
 }
 
 /** 逐行解析指令块：好行进 ops，坏行进 parseErrors，不因一行坏账整块作废。 */
-export function parseOps(raw, { maxOps = DEFAULT_MAX_OPS } = {}) {
-    const cap = clampInt(maxOps, 1, 32, DEFAULT_MAX_OPS);
+
+// —— 模型输出的字段字数上限（用户口径 2026-11-17：API 输出要有限制，手动输入不设限）。
+// 只在解析层（parseOps / parseDecision / parseConsolidation）生效；运行时不截断。
+export const MEMORY_TEXT_CAPS = Object.freeze({ title: 14, text: 60, note: 200, basis: 80, quote: 60 });
+export const MEMORY_MODEL_OPS_MAX = 12;
+
+/** 模型输出的单条记忆操作：逐字段按上限截断（超长裁短而不是整条作废）。 */
+export function capMemoryOp(op) {
+    if (!op || typeof op !== 'object' || Array.isArray(op)) return op;
+    const capped = { ...op };
+    for (const [field, cap] of Object.entries(MEMORY_TEXT_CAPS)) {
+        if (typeof capped[field] === 'string') capped[field] = capped[field].trim().slice(0, cap);
+    }
+    if (Array.isArray(capped.related)) capped.related = capped.related.map(item => String(item ?? '').trim().slice(0, 60)).filter(Boolean);
+    if (Array.isArray(capped.aliases)) capped.aliases = capped.aliases.map(item => String(item ?? '').trim().slice(0, 60)).filter(Boolean);
+    return capped;
+}
+
+export function parseOps(raw, { maxOps = MEMORY_MODEL_OPS_MAX } = {}) {
+    const cap = maxOps === undefined ? MEMORY_MODEL_OPS_MAX : clampInt(maxOps, 1, 128, MEMORY_MODEL_OPS_MAX);
     const lines = typeof raw === 'string' ? raw.split('\n') : [];
     const ops = [];
     const parseErrors = [];
@@ -164,7 +181,7 @@ export function parseOps(raw, { maxOps = DEFAULT_MAX_OPS } = {}) {
         try {
             const parsed = JSON.parse(body);
             if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && typeof parsed.op === 'string' && parsed.op.trim()) {
-                if (ops.length < cap) ops.push(parsed);
+                if (ops.length < cap) ops.push(capMemoryOp(parsed));
             } else {
                 parseErrors.push({ line: index + 1, reason: 'not_an_op' });
             }

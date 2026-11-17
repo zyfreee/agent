@@ -89,7 +89,7 @@ function titlesLine(state) {
 function recipesLine(state, craft) {
     return chainOf(
         (Array.isArray(state.recipes) ? state.recipes : []).filter(item => text(item?.craft) === craft),
-        item => [text(item.name), text(item.grade)],
+        item => [text(item.name), text(item.grade), text(item.effect)],
     );
 }
 
@@ -113,10 +113,12 @@ export function buildSelfMvuPayload(self) {
         外貌: text(profile.appearance),
         境界: text(realm.realm),
         段位: text(realm.stage),
-        功法: chainOf(state.techniques, item => [text(item.name), text(item.grade), text(item.progress)]),
-        斗技: chainOf(state.skills, item => [text(item.name), text(item.grade), text(item.type)]),
-        装备: chainOf(state.equipment, item => [text(item.name), text(item.grade), text(item.type)]),
-        天材地宝: chainOf(state.treasures, item => [text(item.name), text(item.grade), text(item.type)]),
+        // 链式清单带上效果段（名称·品级·[类型/进度]·效果）：镜像给状态栏/EJS/MVU 生态的
+        // 就是详情卡的完整口径；效果空着时该段自动省略（chainOf 过滤空段）。
+        功法: chainOf(state.techniques, item => [text(item.name), text(item.grade), text(item.progress), text(item.effect)]),
+        斗技: chainOf(state.skills, item => [text(item.name), text(item.grade), text(item.type), text(item.effect)]),
+        装备: chainOf(state.equipment, item => [text(item.name), text(item.grade), text(item.type), text(item.effect)]),
+        天材地宝: chainOf(state.treasures, item => [text(item.name), text(item.grade), text(item.type), text(item.effect)]),
         行囊: bagLine(state),
         称号: titlesLine(state),
         丹方: recipesLine(state, '炼药'),

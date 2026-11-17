@@ -230,8 +230,10 @@ assert.equal(runtime.snapshot().nearEvents.find(event => event.text === '城东�
 result = runtime.apply([{ op: 'addEvent', scope: 'near', text: '加列家中街设卡盘查，过往行商都要交验货单' }]);
 assert.equal(result.rejected.length, 1);
 assert.equal(result.rejected[0].reason, 'title_missing', '没给 title 的 addEvent 整条拒绝');
+// 运行时不再拒长标题（上限移到模型解析层）：18 字标题照收且原样保留
 result = runtime.apply([{ op: 'addEvent', scope: 'near', title: '标题'.repeat(9), text: '超长标题的事件' }]);
-assert.equal(result.rejected[0].reason, 'title_too_long', '超过 16 字的标题整条拒绝');
+assert.equal(result.applied.length, 1, '运行时内容不设上限');
+assert.equal(runtime.snapshot().nearEvents.find(event => event.text === '超长标题的事件').title.length, 18, '长标题原样保留');
 result = runtime.apply([{ op: 'addEvent', scope: 'near', title: '加列家中街设卡', text: '加列家中街设卡盘查，过往行商都要交验货单' }]);
 assert.equal(result.applied.length, 1);
 const titled = runtime.snapshot().nearEvents.find(event => event.text.startsWith('加列家中街'));
@@ -340,7 +342,7 @@ assert.equal(restored.clock.minute, 480 % 1440);
 assert.equal(runtime.snapshot().info.weather, '', '非字符串信息应被清空');
 assert.equal(runtime.snapshot().nearEvents.length, 1);
 assert.equal(runtime.snapshot().nearEvents[0].text, '存档事件');
-assert.equal(runtime.snapshot().nearEvents[0].basis.length, 80, '超长依据截到 80 字');
+assert.ok(runtime.snapshot().nearEvents[0].basis.length > 80, '存档恢复不再截断（运行时无上限口径）');
 assert.equal(runtime.snapshot().nearEvents[0].title, '存档事件', '老存档没有 title 时按正文补短标题');
 
 // —— 存档 roundtrip：名声/通缉度与时间戳不许在恢复时丢失 ——

@@ -12,28 +12,15 @@
  * 绝不抛异常打断调用方。面板手动操作与模型指令走同一条路，规则完全一致。
  */
 
-import { GOAL_TITLE_MAX, normalizeGoal } from './goal-data.js';
+import { normalizeGoal } from './goal-data.js';
 
 const PROFILE_FIELDS = Object.freeze(['name', 'gender', 'age', 'race', 'origin', 'affiliation', 'attribute', 'talent', 'appearance']);
 const PRIORITIES = Object.freeze(['主线', '支线']);
 const CRAFT_RESULTS = Object.freeze(['success', 'fail']);
 const PROFILE_LABELS = Object.freeze({ name: '姓名', gender: '性别', age: '年龄', race: '种族', origin: '出身', affiliation: '所属', attribute: '斗气属性', talent: '天赋', appearance: '外貌' });
 
-const MAX_PROFILE_TEXT = 60;
-const MAX_APPEARANCE_TEXT = 160;
-const MAX_ATTRIBUTE_TEXT = 12;
-const MAX_REALM_TEXT = 12;
-const MAX_STAGE_TEXT = 12;
-const MAX_NAME_TEXT = 30;
-const MAX_GRADE_TEXT = 16;
-const MAX_TYPE_TEXT = 12;
-const MAX_PROGRESS_TEXT = 16;
-const MAX_SOURCE_TEXT = 60;
-const MAX_NOTE_TEXT = 120;
-const MAX_MATERIALS_TEXT = 160;
-const MAX_TITLE_TEXT = 16;
-const MAX_GOAL_TEXT = 80;
-const MAX_DUE_TEXT = 20;
+// 内容字段不设字数上限（用户口径 2026-11-17：正文讲多细就存多长，扩展不砍；
+// 上限只有模型输出本身）。保留的只有数值防呆与清单条数剪枝。
 const MAX_COUNT = 999999;
 const MAX_GOLD = 999999999;
 const MAX_CRAFT_DAYS = 365;
@@ -89,7 +76,7 @@ function initialState(now) {
     };
 }
 
-/** 逐条清洗条目；name 缺失整条丢弃，坏字段截断而不是作废。 */
+/** 逐条清洗条目；name 缺失整条丢弃，内容字段不截断（上限只有模型输出本身）。 */
 function cleanEntry(raw, idPrefix, seq) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
     const name = text(raw.name);
@@ -97,24 +84,27 @@ function cleanEntry(raw, idPrefix, seq) {
     const count = intIn(raw.count, 1, MAX_COUNT);
     return {
         id: text(raw.id) || `${idPrefix}${seq}`,
-        name: name.slice(0, MAX_NAME_TEXT),
-        grade: text(raw.grade).slice(0, MAX_GRADE_TEXT),
-        type: text(raw.type).slice(0, MAX_TYPE_TEXT),
-        craft: text(raw.craft).slice(0, MAX_TYPE_TEXT),
-        progress: text(raw.progress).slice(0, MAX_PROGRESS_TEXT),
-        source: text(raw.source).slice(0, MAX_SOURCE_TEXT),
-        note: text(raw.note).slice(0, MAX_NOTE_TEXT),
-        materials: text(raw.materials).slice(0, MAX_MATERIALS_TEXT),
-        category: text(raw.category).slice(0, MAX_TYPE_TEXT),
+        name,
+        grade: text(raw.grade),
+        type: text(raw.type),
+        craft: text(raw.craft),
+        progress: text(raw.progress),
+        source: text(raw.source),
+        note: text(raw.note),
+        effect: text(raw.effect),
+        materials: text(raw.materials),
+        category: text(raw.category),
         count: count === null ? 1 : count,
         equipped: raw.equipped === true,
+        // 获得日：登记当时的账本天数由 runtime 补盖；存档/数据库行里带了就原样保留。
+        day: clampInt(raw.day, 1, 99999, null),
         startDay: clampInt(raw.startDay, 1, 99999, null),
         endDay: clampInt(raw.endDay, 1, 99999, null),
         status: raw.status === 'success' || raw.status === 'fail' ? raw.status : 'open',
         done: raw.done === true,
         priority: PRIORITIES.includes(raw.priority) ? raw.priority : '支线',
-        due: text(raw.due).slice(0, MAX_DUE_TEXT),
-        text: text(raw.text).slice(0, MAX_GOAL_TEXT),
+        due: text(raw.due),
+        text: text(raw.text),
     };
 }
 
@@ -129,13 +119,13 @@ function normalizeState(raw, now) {
     return {
         schemaVersion: 1,
         day: clampInt(source.day, 1, 99999, 1),
-        profile: Object.fromEntries(PROFILE_FIELDS.map(field => [field, text(profileSource[field]).slice(0, field === 'appearance' ? MAX_APPEARANCE_TEXT : field === 'attribute' ? MAX_ATTRIBUTE_TEXT : MAX_PROFILE_TEXT)])),
+        profile: Object.fromEntries(PROFILE_FIELDS.map(field => [field, text(profileSource[field])])),
         realm: {
-            realm: text(realmSource.realm).slice(0, MAX_REALM_TEXT),
-            stage: text(realmSource.stage).slice(0, MAX_STAGE_TEXT),
+            realm: text(realmSource.realm),
+            stage: text(realmSource.stage),
         },
         gold: clampInt(source.gold, 0, MAX_GOLD, 0),
-        titles: (Array.isArray(source.titles) ? source.titles : []).map(item => text(item).slice(0, MAX_TITLE_TEXT)).filter(Boolean).slice(0, DEFAULT_MAX_TITLES),
+        titles: (Array.isArray(source.titles) ? source.titles : []).map(item => text(item)).filter(Boolean).slice(0, DEFAULT_MAX_TITLES),
         techniques: cleanList(source.techniques, 't'),
         skills: cleanList(source.skills, 's'),
         // 装备栏＝穿戴中的装备；旧档行囊里 equipped=true 的条目载入时自动迁进来（保留原编号），
@@ -218,11 +208,10 @@ export function createSelfRuntime({
         return state[key]?.find(item => item.id === id) ?? null;
     }
 
+    // 条目清单不设上限（用户口径 2026-11-17）：账里有多少留多少，绝不挤掉旧条目。
+    // max* 参数仍接受但不再生效（设置页填的数字成了摆设，口径以「无上限」为准）。
     function prune(key) {
-        const cap = { techniques: maxTechniques, skills: maxSkills, equipment: maxEquipment, treasures: maxTreasures, items: maxItems, recipes: maxRecipes, crafts: maxCrafts, goals: maxGoals }[key];
-        if (!cap || !state[key] || state[key].length <= cap) return;
-        // 从最旧开始丢：纳戒以"手里的"为准，账满时最早登记者先退场。
-        state[key] = state[key].slice(state[key].length - cap);
+        void key;
     }
 
     function rememberOpId(opId) {
@@ -255,8 +244,7 @@ export function createSelfRuntime({
         if (kind === 'setProfile') {
             const field = text(op.field);
             if (!PROFILE_FIELDS.includes(field)) return { ok: false, reason: 'bad_field' };
-            const cap = field === 'appearance' ? MAX_APPEARANCE_TEXT : field === 'attribute' ? MAX_ATTRIBUTE_TEXT : MAX_PROFILE_TEXT;
-            const body = text(op.text).slice(0, cap);
+            const body = text(op.text);
             const before = state.profile[field];
             state.profile[field] = body;
             return { ok: true, summary: `${PROFILE_LABELS[field]}：${before || '（空）'} → ${body || '（空）'}`, undo: { op: 'setProfile', field, text: before } };
@@ -264,9 +252,7 @@ export function createSelfRuntime({
         if (kind === 'setRealm') {
             const rawRealm = text(op.realm);
             if (!rawRealm) return { ok: false, reason: 'realm_missing' };
-            if (rawRealm.length > MAX_REALM_TEXT) return { ok: false, reason: 'realm_too_long' };
             const stage = text(op.stage ?? '');
-            if (stage.length > MAX_STAGE_TEXT) return { ok: false, reason: 'stage_too_long' };
             const before = { ...state.realm };
             state.realm = { realm: rawRealm, stage };
             return { ok: true, summary: `境界：${before.realm || '（空）'}${before.stage || ''} → ${rawRealm}${stage}`, undo: { op: '_restoreRealm', realm: before.realm, stage: before.stage } };
@@ -288,9 +274,7 @@ export function createSelfRuntime({
         if (kind === 'addTitle') {
             const body = text(op.text);
             if (!body) return { ok: false, reason: 'text_missing' };
-            if (body.length > MAX_TITLE_TEXT) return { ok: false, reason: 'text_too_long' };
             if (state.titles.includes(body)) return { ok: false, reason: 'duplicate' };
-            if (state.titles.length >= maxTitles) return { ok: false, reason: 'titles_full' };
             state.titles.push(body);
             return { ok: true, summary: `称号 +${body}`, undo: { op: 'removeTitle', text: body } };
         }
@@ -304,17 +288,17 @@ export function createSelfRuntime({
         // —— 清单新增：功法/斗技/装备/天材地宝/行囊/配方/目标 ——
         if (kind === 'addTechnique' || kind === 'addSkill' || kind === 'addEquipment' || kind === 'addTreasure' || kind === 'addItem' || kind === 'addRecipe' || kind === 'addGoal') {
             if (kind === 'addGoal') {
-                // 目标的短标题与完整内容分开：标题必填 ≤20 字（缺/超长整条拒绝），内容另存 ≤80 字。
+                // 目标的短标题与完整内容分开：标题必填（缺了整条拒绝，不许拿正文顶替），
+                // 内容另存一栏；两者都不设字数上限。
                 const title = text(op.title);
                 if (!title) return { ok: false, reason: 'title_missing' };
-                if (title.length > GOAL_TITLE_MAX) return { ok: false, reason: 'title_too_long' };
                 const body = text(op.text);
                 if (!body) return { ok: false, reason: 'text_missing' };
-                if (body.length > MAX_GOAL_TEXT) return { ok: false, reason: 'text_too_long' };
                 const entry = normalizeGoal({ ...op, title, name: title }, seq.g + 1);
                 // 撤销恢复时带原编号；新登记才发新号。恢复原编号时序号计数器同步前进，避免重复发号。
                 if (!text(op.id)) entry.id = nextId(kind);
                 else seq.g = Math.max(seq.g, Number(String(entry.id).replace(/\D/g, '')) || 0);
+                if (entry.day === null) entry.day = dayNow(); // 获得日：登记当天的账本天数。
                 state.goals.push(entry);
                 prune('goals');
                 const dueNote = entry.due ? `（期限：${entry.due}）` : '';
@@ -322,7 +306,6 @@ export function createSelfRuntime({
             }
             const name = text(op.name);
             if (!name) return { ok: false, reason: 'name_missing' };
-            if (name.length > MAX_NAME_TEXT) return { ok: false, reason: 'name_too_long' };
             const key = listKeyOf(kind);
             const list = state[key];
             // 行囊同名同类别合并数量；功法/斗技同名进行中不重录。
@@ -338,9 +321,16 @@ export function createSelfRuntime({
                 }
                 return { ok: false, reason: 'duplicate' };
             }
+            // 详情纪律（与目标缺标题整条拒绝同款）：光杆名字不入账——但 grade/source/progress
+            // 这些有据可查的字段也算细节，有就收。2026-11-16 实跑教训：一刀切到 note/effect，
+            // 正文里讲得很细的聚火草（一品·温养经脉·火脉碎石坡采得）被整条拒掉，30 金币扣了
+            // 货没入账，成了烂账；收下的薄条目由决定喂料的「详情待补」标记逼模型后续 update 补全。
+            if (!text(op.note) && !text(op.effect) && !text(op.grade) && !text(op.source)
+                && !text(op.progress) && !text(op.materials)) return { ok: false, reason: 'details_missing' };
             const entry = cleanEntry({ ...op, name }, ID_PREFIX_OF_KIND[kind], seq[ID_PREFIX_OF_KIND[kind]] + 1);
             if (!text(op.id)) entry.id = nextId(kind);
             else seq[ID_PREFIX_OF_KIND[kind]] = Math.max(seq[ID_PREFIX_OF_KIND[kind]], Number(String(entry.id).replace(/\D/g, '')) || 0);
+            if (entry.day === null) entry.day = dayNow(); // 获得日：登记当天的账本天数。
             list.push(entry);
             prune(key);
             const pieces = [entry.name];
@@ -356,18 +346,16 @@ export function createSelfRuntime({
             if (!entry) return { ok: false, reason: 'id_not_found' };
             const before = {};
             const name = op.name === undefined ? undefined : text(op.name);
-            if (name && name.length > MAX_NAME_TEXT) return { ok: false, reason: 'name_too_long' };
             const count = op.count === undefined ? undefined : intIn(op.count, 0, MAX_COUNT);
             if (count === null) return { ok: false, reason: 'bad_count' };
             if (name !== undefined && name) {
                 before.name = entry.name;
                 entry.name = name;
             }
-            for (const field of ['grade', 'type', 'craft', 'progress', 'source', 'note', 'materials', 'category']) {
+            for (const field of ['grade', 'type', 'craft', 'progress', 'source', 'note', 'effect', 'materials', 'category']) {
                 if (op[field] === undefined) continue;
-                const cap = field === 'note' ? MAX_NOTE_TEXT : field === 'materials' ? MAX_MATERIALS_TEXT : field === 'source' ? MAX_SOURCE_TEXT : field === 'grade' ? MAX_GRADE_TEXT : field === 'progress' ? MAX_PROGRESS_TEXT : MAX_TYPE_TEXT;
                 before[field] = entry[field];
-                entry[field] = text(op[field]).slice(0, cap);
+                entry[field] = text(op[field]);
             }
             if (op.equipped !== undefined) {
                 before.equipped = entry.equipped;
@@ -419,7 +407,6 @@ export function createSelfRuntime({
         if (kind === 'startCraft') {
             const name = text(op.name);
             if (!name) return { ok: false, reason: 'name_missing' };
-            if (name.length > MAX_NAME_TEXT) return { ok: false, reason: 'name_too_long' };
             const craft = text(op.craft ?? '') || '炼药';
             if (state.crafts.some(job => job.status === 'open' && job.name === name && job.craft === craft)) return { ok: false, reason: 'duplicate' };
             const count = intIn(op.count, 1, MAX_COUNT) ?? 1;
@@ -431,11 +418,11 @@ export function createSelfRuntime({
             }
             const job = {
                 id: nextId('startCraft'),
-                name: name.slice(0, MAX_NAME_TEXT),
-                craft: craft.slice(0, MAX_TYPE_TEXT),
+                name,
+                craft,
                 type: '', grade: '', progress: '', source: '', materials: '',
                 category: '', count, equipped: false,
-                note: text(op.note).slice(0, MAX_NOTE_TEXT),
+                note: text(op.note),
                 status: 'open',
                 startDay: dayNow(),
                 endDay,
@@ -474,7 +461,7 @@ export function createSelfRuntime({
             const job = state.crafts.find(item => item.id === text(op.id));
             if (!job) return { ok: false, reason: 'id_not_found' };
             if (op.status !== undefined && (op.status === 'open' || CRAFT_RESULTS.includes(op.status))) job.status = op.status;
-            if (op.note !== undefined) job.note = text(op.note).slice(0, MAX_NOTE_TEXT);
+            if (op.note !== undefined) job.note = text(op.note);
             return { ok: true, summary: `恢复炼制 ${job.id}` };
         }
         if (kind === 'updateGoal') {
@@ -486,7 +473,7 @@ export function createSelfRuntime({
         if (kind === '_restoreTitle') {
             const body = text(op.text);
             const index = intIn(op.index, 0, state.titles.length);
-            if (!body || body.length > MAX_TITLE_TEXT || index === null || state.titles.includes(body) || state.titles.length >= maxTitles) return { ok: false, reason: 'restore_conflict' };
+            if (!body || index === null || state.titles.includes(body)) return { ok: false, reason: 'restore_conflict' };
             state.titles.splice(index, 0, body);
             return { ok: true, summary: `恢复称号 ${body}` };
         }
@@ -668,7 +655,7 @@ export function createSelfRuntime({
             return cleaned && Object.keys(value).length === Object.keys(cleaned).length && Object.keys(cleaned).every(field => value[field] === cleaned[field]);
         };
         const integer = (value, min, max) => Number.isSafeInteger(value) && value >= min && value <= max;
-        const string = (value, max, required = false) => typeof value === 'string' && value.length <= max && (!required || Boolean(text(value)));
+        const string = (value, required = false) => typeof value === 'string' && (!required || Boolean(text(value)));
         const shape = (value, required, optional = []) => object(value) && required.every(key => Object.hasOwn(value, key)) && Object.keys(value).every(key => [...required, ...optional].includes(key));
         const undo = value => {
             if (!object(value)) return false;
@@ -677,24 +664,23 @@ export function createSelfRuntime({
             }
             if (value.op === '_restoreItem') return shape(value, ['op', 'entry', 'index']) && entry(value.entry, 'items') && integer(value.index, 0, 1000);
             if (value.op === '_restoreGoal') return shape(value, ['op', 'entry']) && entry(value.entry, 'goals');
-            if (value.op === '_restoreTitle') return shape(value, ['op', 'text', 'index']) && string(value.text, MAX_TITLE_TEXT, true) && integer(value.index, 0, 20);
+            if (value.op === '_restoreTitle') return shape(value, ['op', 'text', 'index']) && string(value.text, true) && integer(value.index, 0, 20);
             if (value.op === 'setProfile') {
-                const cap = value.field === 'appearance' ? MAX_APPEARANCE_TEXT : value.field === 'attribute' ? MAX_ATTRIBUTE_TEXT : MAX_PROFILE_TEXT;
-                return shape(value, ['op', 'field', 'text']) && PROFILE_FIELDS.includes(value.field) && string(value.text, cap);
+                return shape(value, ['op', 'field', 'text']) && PROFILE_FIELDS.includes(value.field) && string(value.text);
             }
-            if (value.op === '_restoreRealm') return shape(value, ['op', 'realm', 'stage']) && string(value.realm, MAX_REALM_TEXT) && string(value.stage, MAX_STAGE_TEXT);
+            if (value.op === '_restoreRealm') return shape(value, ['op', 'realm', 'stage']) && string(value.realm) && string(value.stage);
             if (value.op === 'setGold') return shape(value, ['op', 'amount']) && integer(value.amount, 0, MAX_GOLD);
-            if (value.op === 'addTitle' || value.op === 'removeTitle') return shape(value, ['op', 'text']) && string(value.text, MAX_TITLE_TEXT, true);
-            if (value.op === 'updateGoal') return shape(value, ['op', 'id', 'done']) && string(value.id, 1024, true) && typeof value.done === 'boolean';
-            if (value.op === 'updateCraft') return shape(value, ['op', 'id', 'status', 'note']) && string(value.id, 1024, true) && ['open', ...CRAFT_RESULTS].includes(value.status) && string(value.note, MAX_NOTE_TEXT);
+            if (value.op === 'addTitle' || value.op === 'removeTitle') return shape(value, ['op', 'text']) && string(value.text, true);
+            if (value.op === 'updateGoal') return shape(value, ['op', 'id', 'done']) && string(value.id, true) && typeof value.done === 'boolean';
+            if (value.op === 'updateCraft') return shape(value, ['op', 'id', 'status', 'note']) && string(value.id, true) && ['open', ...CRAFT_RESULTS].includes(value.status) && string(value.note);
             if (!['updateTechnique', 'updateSkill', 'updateEquipment', 'updateTreasure', 'updateItem'].includes(value.op)) return false;
-            const caps = { name: MAX_NAME_TEXT, grade: MAX_GRADE_TEXT, type: MAX_TYPE_TEXT, craft: MAX_TYPE_TEXT, progress: MAX_PROGRESS_TEXT, source: MAX_SOURCE_TEXT, note: MAX_NOTE_TEXT, materials: MAX_MATERIALS_TEXT, category: MAX_TYPE_TEXT };
-            if (!shape(value, ['op', 'id'], [...Object.keys(caps), 'count', 'equipped']) || !string(value.id, 1024, true) || Object.keys(value).length <= 2) return false;
+            const detailFields = ['name', 'grade', 'type', 'craft', 'progress', 'source', 'note', 'materials', 'category'];
+            if (!shape(value, ['op', 'id'], [...detailFields, 'count', 'equipped']) || !string(value.id, true) || Object.keys(value).length <= 2) return false;
             return Object.entries(value).every(([field, item]) => {
                 if (field === 'op' || field === 'id') return true;
                 if (field === 'count') return integer(item, 1, MAX_COUNT);
                 if (field === 'equipped') return typeof item === 'boolean';
-                return string(item, caps[field], field === 'name');
+                return string(item, field === 'name');
             });
         };
         try {
@@ -755,7 +741,7 @@ export function createSelfRuntime({
 
     /** 不改状态、只往流水里记一笔（模型判断无变化、解析失败这类"决定结果"）。 */
     function note(message, { source = 'decide' } = {}) {
-        state.log.push({ at: now(), source, summaries: [String(message).slice(0, MAX_NOTE_TEXT)], rejected: 0 });
+        state.log.push({ at: now(), source, summaries: [String(message)], rejected: 0 });
         state.log = state.log.slice(-maxLog);
         return { status: 'noted' };
     }

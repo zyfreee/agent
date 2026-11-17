@@ -7,11 +7,10 @@
  */
 
 import { extractJson } from '../host/llm-client.js';
+import { capMemoryOp, MEMORY_MODEL_OPS_MAX } from './memory-ops.js';
 
 const MAX_FLOORS = 12;
 const FLOOR_CHARS = 800;
-const MAX_NOTE_CHARS = 300;
-const MAX_OPS = 12;
 
 /** 默认决定提示词（system）。改写时保持"只输出 JSON"与操作字段名不变，否则脚本解析不到。 */
 export const MEMORY_DECIDE_PROMPT = [
@@ -154,9 +153,10 @@ export function parseDecision(raw) {
     if (!object || typeof object !== 'object' || Array.isArray(object)) {
         return { status: 'invalid', ops: [], note: '', consolidate: null, error: '决定不是 JSON 对象' };
     }
+    const MAX_NOTE_CHARS = 300;
     const note = typeof object.note === 'string' ? object.note.trim().slice(0, MAX_NOTE_CHARS) : '';
-    const list = Array.isArray(object.ops) ? object.ops.slice(0, MAX_OPS) : [];
-    const ops = list.filter(item => item && typeof item === 'object' && !Array.isArray(item) && typeof item.op === 'string' && item.op.trim());
+    const list = Array.isArray(object.ops) ? object.ops.slice(0, MEMORY_MODEL_OPS_MAX) : [];
+    const ops = list.filter(item => item && typeof item === 'object' && !Array.isArray(item) && typeof item.op === 'string' && item.op.trim()).map(capMemoryOp);
     const dropped = list.length - ops.length;
     // 待整合大记忆（形状由 schema 约束；脚本侧还会再校验 ids 与条目存在性）。
     const rawConsolidate = object.consolidate && typeof object.consolidate === 'object' && !Array.isArray(object.consolidate) ? object.consolidate : null;

@@ -11,17 +11,17 @@ import { createPlotRuntime } from './plot-runtime.js';
     assert.equal(status.plan.goal, '三年之约前在乌坦城站稳');
     assert.equal(status.plan.next, '去市场打听炼药师大会的风声');
     assert.equal(status.day, 3, 'apply 喂进来的世界天数要落进账本');
-    // 超长钳制：goal 截到 60、next 截到 120
+    // 内容不设字数上限（用户口径 2026-11-17）：80/200 字原样保留
     runtime.apply([{ op: 'setPlan', goal: '长'.repeat(80), next: '长'.repeat(200) }], { today: 4 });
-    assert.equal(runtime.status().plan.goal.length, 60);
-    assert.equal(runtime.status().plan.next.length, 120);
+    assert.equal(runtime.status().plan.goal.length, 80);
+    assert.equal(runtime.status().plan.next.length, 200);
     // 两个字段都没给：拒绝
     const nothing = runtime.apply([{ op: 'setPlan' }]);
     assert.equal(nothing.status, 'rejected');
     assert.equal(nothing.rejected[0].reason, 'plan_nothing_to_update');
     // 只更新一个字段：另一个保持旧值
     runtime.apply([{ op: 'setPlan', next: '闭关冲击斗者' }], { today: 5 });
-    assert.equal(runtime.status().plan.goal.length, 60, '没写的字段保持旧值');
+    assert.equal(runtime.status().plan.goal.length, 80, '没写的字段保持旧值');
     assert.equal(runtime.status().plan.next, '闭关冲击斗者');
 }
 
@@ -131,17 +131,15 @@ import { createPlotRuntime } from './plot-runtime.js';
     const after = restored.snapshot();
     assert.equal(after.threads.length, before.threads.length);
     assert.equal(after.log.length, before.log.length + 1);
-    // 开放线索上限：第 13 条开放线被拒（threads_full），回收一条后又能再立
+    // 线索不设上限（用户口径 2026-11-17）：第 13 条开放线照收
     const capped = createPlotRuntime();
     for (let index = 1; index <= 12; index += 1) {
         const result = capped.apply([{ op: 'addThread', title: `线索乙${index}号`, basis: '测试依据' }], { today: index });
         assert.equal(result.status, 'applied', `第 ${index} 条应立得住`);
     }
     const full = capped.apply([{ op: 'addThread', title: '线索乙13号', basis: '测试依据' }], { today: 13 });
-    assert.equal(full.rejected[0].reason, 'threads_full', '开放线索最多 12 条，超了要拒');
-    capped.apply([{ op: 'resolveThread', id: 'f1', outcome: '交代清楚' }], { today: 13 });
-    const afterResolve = capped.apply([{ op: 'addThread', title: '线索乙13号', basis: '测试依据' }], { today: 13 });
-    assert.equal(afterResolve.status, 'applied', '回收一条后空位让出来');
+    assert.equal(full.status, 'applied', '第 13 条开放线照收');
+    assert.equal(capped.status().threads.open, 13);
     // reset 清账
     assert.equal(capped.reset().status, 'reset');
     assert.equal(capped.status().threads.total, 0);

@@ -58,6 +58,13 @@ await test('OPT-053 budget truncates from the tail and never goes below a floor'
     assert.equal(buildWakeUpSummary({ memorySnapshot: { entries }, maxChars: 1 }).length, 80, 'minimum cap keeps the digest readable');
 });
 
+await test('schemaVersion 15口径: no budget means unlimited (old 500 default removed)', () => {
+    const fat = Array.from({ length: 3 }, (_, index) => entry(`m${index}`, 'thread', '极长的线头标题'.concat('述'.repeat(400)), index));
+    const summary = buildWakeUpSummary({ memorySnapshot: { entries: fat } });
+    assert.ok(summary.length > 500, `旧默认 500 已摘除：实际 ${summary.length} 字`);
+    assert.ok(fat.every(item => summary.includes(item.title)), '不传 maxChars 时三条线头全文保留');
+});
+
 await test('OPT-053 empty ledgers return an empty string so nothing gets injected', () => {
     assert.equal(buildWakeUpSummary({}), '');
     assert.equal(buildWakeUpSummary({ worldSnapshot: { clock: { day: 5 } } }).includes('时间：第 5 天'), true, 'clock alone still says the day');

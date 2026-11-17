@@ -70,6 +70,7 @@ assert.ok(MEMORY_DECIDE_PROMPT.includes('importance 可选'), '提示词要说�
     const empty = parseDecision('{"note":"本轮无新记忆","ops":[]}');
     assert.equal(empty.status, 'ok', '有 note 无 ops 也是有效决定');
     assert.equal(empty.ops.length, 0);
+    // 模型单次最多 12 条（手动面板不受限）
     const flooded = parseDecision(JSON.stringify({ note: '', ops: Array.from({ length: 30 }, (_, i) => ({ op: 'remember', text: `t${i}`, related: ['x'] })) }));
     assert.equal(flooded.ops.length, 12, '决定最多 12 条');
 }

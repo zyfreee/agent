@@ -16,8 +16,6 @@ const KINDS = Object.freeze(['foreshadow', 'suspense', 'conflict']);
 export const KIND_LABELS = Object.freeze({ foreshadow: '伏笔', suspense: '悬念', conflict: '恩怨' });
 const THREAD_STATUSES = Object.freeze(['open', 'resolved', 'dropped']);
 
-const MAX_PLAN_GOAL = 60;
-const MAX_PLAN_NEXT = 120;
 const MAX_THREAD_TITLE = 16;
 const MAX_THREAD_DETAIL = 200;
 const MAX_BASIS_TEXT = 80;
@@ -89,8 +87,8 @@ function normalizeState(raw, now) {
         schemaVersion: 1,
         day: clampInt(source.day, 1, 99999, null),
         plan: {
-            goal: text(planSource.goal).slice(0, MAX_PLAN_GOAL),
-            next: text(planSource.next).slice(0, MAX_PLAN_NEXT),
+            goal: text(planSource.goal),
+            next: text(planSource.next),
             updatedAt: text(planSource.updatedAt),
         },
         threads: (Array.isArray(source.threads) ? source.threads : []).map(normalizeOneThread).filter(Boolean).slice(-DEFAULT_MAX_THREADS),
@@ -120,13 +118,9 @@ export function createPlotRuntime({ maxThreads = DEFAULT_MAX_THREADS, maxLog = D
         return `f${seq}`;
     }
 
-    /** 开放线索超上限时先清已了结的（正常不会在账上），再清最老的开放线；避免线索被无声挤掉前无限增长。 */
+    /** 线索不设上限（用户口径 2026-11-17）：不再挤掉任何线索。 */
     function prune() {
-        if (state.threads.length <= maxThreads) return;
-        const rank = thread => (thread.status === 'open' ? 0 : 1) * 1e6 - (thread.day ?? 0);
-        const ranked = [...state.threads].sort((a, b) => rank(a) - rank(b));
-        const doomed = new Set(ranked.slice(0, state.threads.length - maxThreads).map(thread => thread.id));
-        state.threads = state.threads.filter(thread => !doomed.has(thread.id));
+        void maxThreads;
     }
 
     /** 单条操作校验 + 执行；返回结果对象，绝不抛出。undo 是它的反向操作（可为数组），供同楼重 roll 时撤销。 */
@@ -134,8 +128,8 @@ export function createPlotRuntime({ maxThreads = DEFAULT_MAX_THREADS, maxLog = D
         if (!op || typeof op !== 'object' || Array.isArray(op)) return { ok: false, reason: 'bad_op_shape' };
         const kind = text(op.op);
         if (kind === 'setPlan') {
-            const goal = op.goal === undefined ? undefined : text(op.goal).slice(0, MAX_PLAN_GOAL);
-            const next = op.next === undefined ? undefined : text(op.next).slice(0, MAX_PLAN_NEXT);
+            const goal = op.goal === undefined ? undefined : text(op.goal);
+            const next = op.next === undefined ? undefined : text(op.next);
             if (goal === undefined && next === undefined) return { ok: false, reason: 'plan_nothing_to_update' };
             const before = { ...state.plan };
             if (goal !== undefined) state.plan.goal = goal;
@@ -157,7 +151,6 @@ export function createPlotRuntime({ maxThreads = DEFAULT_MAX_THREADS, maxLog = D
             if (basis.length > MAX_BASIS_TEXT) return { ok: false, reason: 'basis_too_long' };
             const kindValue = KINDS.includes(op.kind) ? op.kind : 'foreshadow';
             const detail = text(op.detail).slice(0, MAX_THREAD_DETAIL);
-            if (openThreads().length >= MAX_OPEN_THREADS) return { ok: false, reason: 'threads_full' };
             if (openThreads().some(thread => thread.title === title)) return { ok: false, reason: 'duplicate_title' };
             const today = state.day ?? 1;
             if (openThreads().some(thread => Math.abs((thread.day ?? today) - today) <= SIMILAR_WINDOW_DAYS
@@ -238,8 +231,8 @@ export function createPlotRuntime({ maxThreads = DEFAULT_MAX_THREADS, maxLog = D
             const plan = op.plan && typeof op.plan === 'object' ? op.plan : null;
             if (!plan) return { ok: false, reason: 'plan_not_found' };
             state.plan = {
-                goal: text(plan.goal).slice(0, MAX_PLAN_GOAL),
-                next: text(plan.next).slice(0, MAX_PLAN_NEXT),
+                goal: text(plan.goal),
+                next: text(plan.next),
                 updatedAt: text(plan.updatedAt),
             };
             return { ok: true, summary: '恢复剧情计划' };
@@ -314,7 +307,7 @@ export function createPlotRuntime({ maxThreads = DEFAULT_MAX_THREADS, maxLog = D
 
     /** 不改账、只往流水里记一笔（模型判断无变化、解析失败这类"决定结果"）。 */
     function note(message, { source = 'decide' } = {}) {
-        state.log.push({ at: now(), source, summaries: [String(message).slice(0, MAX_LOG_TEXT)], rejected: 0 });
+        state.log.push({ at: now(), source, summaries: [String(message)], rejected: 0 });
         state.log = state.log.slice(-maxLog);
         return { status: 'noted' };
     }

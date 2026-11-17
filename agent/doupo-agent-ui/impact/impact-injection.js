@@ -62,7 +62,8 @@ export function createImpactInjection({
         }
         if (!continuation.current() || signature !== signatureOf()) return { status: 'stale' };
         if (!text) {
-            const detail = buildFallback(snapshot.records, { maxChars: settings.injectBudget, maxLines: 10, day });
+            // 兜底挑选跟主路同一份上限口径：不设固定 10 行，设置不限制就全量注入。
+            const detail = buildFallback(snapshot.records, { maxChars: settings.injectBudget, maxLines: settings.injectMaxLines, day });
             text = detail.text;
             usedIds = detail.usedIds;
         }

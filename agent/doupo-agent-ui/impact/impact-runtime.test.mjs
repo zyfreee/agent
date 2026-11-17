@@ -23,7 +23,9 @@ assert.equal(missing.status, 'rejected');
 assert.deepEqual(missing.rejected.map(item => item.reason), ['title_missing']);
 assert.equal(runtime.apply([{ op: 'record', title: '只有标题' }], { day: 12 }).rejected[0].reason, 'detail_missing');
 assert.equal(runtime.apply([{ op: 'record', title: 't', detail: 'd' }], { day: 12 }).rejected[0].reason, 'target_missing');
-assert.equal(runtime.apply([{ op: 'record', title: 't', detail: 'd', target: 'x'.repeat(41) }], { day: 12 }).rejected[0].reason, 'target_too_long');
+// 内容不设上限（用户口径 2026-11-17）：41 字 target 照收
+assert.equal(runtime.apply([{ op: 'record', title: 't', detail: 'd', target: 'x'.repeat(41) }], { day: 12 }).applied.length, 1);
+assert.equal(runtime.snapshot().records.at(-1).target.length, 41, '超长 target 原样保留');
 assert.equal(runtime.apply([{ op: 'record', title: 't', detail: 'd', target: 't', ripen: 0 }], { day: 12 }).rejected[0].reason, 'bad_ripen');
 assert.equal(runtime.apply([{ op: 'record', title: 't', detail: 'd', target: 't', ripen: 366 }], { day: 12 }).rejected[0].reason, 'bad_ripen');
 assert.equal(runtime.apply([{ op: 'spawn' }], { day: 12 }).rejected[0].reason, 'unknown_op');
@@ -245,8 +247,8 @@ linked.apply([{ op: 'record', title: '加列家药材库起火', detail: 'd', ta
 assert.equal(linked.list()[0].eventId, 'e2');
 assert.equal(linked.apply([{ op: 'record', title: '加列家药材库烧了', detail: '换种说法再记一遍', target: '加列家族', canon: '药材生意', shift: 'accelerate' }], { source: 'manual', day: 2 }).rejected[0].reason, 'duplicate_similar');
 assert.equal(linked.apply([{ op: 'record', title: '加列家药材库起火', detail: '隔了几天又出事', target: '加列家族', canon: '药材生意', shift: 'accelerate' }], { source: 'manual', day: 5 }).status, 'applied');
-assert.equal(linked.apply([{ op: 'record', title: 'x'.repeat(61), detail: 'd', target: 't', eventId: 'e2' }], { source: 'manual', day: 9 }).rejected[0].reason, 'title_too_long');
-assert.equal(linked.apply([{ op: 'record', title: 'y', detail: 'd', target: 't', eventId: 'e'.repeat(41) }], { source: 'manual', day: 9 }).rejected[0].reason, 'event_too_long');
+assert.equal(linked.apply([{ op: 'record', title: 'x'.repeat(61), detail: 'd', target: 't', eventId: 'e2' }], { source: 'manual', day: 9 }).applied.length, 1, '长标题照收');
+assert.equal(linked.apply([{ op: 'record', title: 'y', detail: 'd', target: 't', eventId: 'e'.repeat(41) }], { source: 'manual', day: 9 }).applied.length, 1, '长事件编号照收');
 
 // 删楼：被删楼上的账进档案，后面的楼层号整体前移，档案里的楼层也一起前移。
 const floors = createImpactRuntime({ now });

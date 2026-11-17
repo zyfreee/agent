@@ -147,9 +147,9 @@ test('OPT-051 same-floor rerun replaces the recorded contribution through record
         agentLlmClient: { availableFor: () => true, complete: () => pending.promise },
         buildNpcRecordUser: () => 'u', NPC_RECORD_JSON_SCHEMA: {}, npcLedgerBookLines: () => [], npcPlayerContext: () => '', npcLedgerOverrides: () => ({}),
         parseNpcRecordReply: () => ({ status: 'ok', patches: [{ 姓名: 'A', 好感: 1 }] }),
-        agentNpcLedger: { list: () => [], get: () => ({ exp: [] }), recordReply: (payload, context) => { replies.push({ payload, context }); return { status: 'applied', applied: [{ name: 'A' }], created: [], changed: 1, skipped: [], ignored: [], floor: context.floor, replaced: true }; } },
+        agentNpcLedger: { list: () => [], get: () => ({ exp: [] }), dropStaleFloors: () => ({ dropped: false, floor: null, cleared: 0 }), recordReply: (payload, context) => { replies.push({ payload, context }); return { status: 'applied', applied: [{ name: 'A' }], created: [], changed: 1, skipped: [], ignored: [], floor: context.floor, replaced: true }; } },
         persistNpcLedger: () => saves.push(1), refreshNpcLedgerPage() {}, setNpcLedgerStatus: value => statuses.push(value), worldDay: () => 1,
-        runNpcLedgerExtract() {}, runAutoExpCondense: async () => {}, runNpcConsistencyCheck: async () => {}, adoptNpcRelationsFromResult: () => null, setTimeout,
+        runNpcLedgerExtract() {}, runAutoExpCondense: async () => {}, runNpcConsistencyCheck: async () => {}, adoptNpcRelationsFromResult: () => null, emitOrbToasts() {}, npcLedgerResultToToasts: () => [], setTimeout,
     });
     const task = run({ source: 'auto' });
     pending.resolve('{}');

@@ -39,6 +39,41 @@ const MAX_FACTION_RELATIONS = 160;
 const MAX_PERSON_NAME = 20;
 const MAX_DYNAMICS_TEXT = 200;
 const MAX_ATTITUDE_TEXT = 80;
+
+// —— 模型输出的字段字数上限（用户口径 2026-11-17：API 输出要有限制，手动面板不设限）。
+// 这些常量原本直接在 apply/normalize 里截断，现在只给解析层（world-decide / world-ops 的
+// capWorldOp）用；运行时与手动路径一律原样保存。
+export const WORLD_MODEL_OPS_MAX = 12;
+let WORLD_TEXT_CAPS = null;
+const worldTextCaps = () => {
+    if (!WORLD_TEXT_CAPS) WORLD_TEXT_CAPS = Object.freeze({
+        title: MAX_EVENT_TITLE, text: MAX_EVENT_TEXT, detail: MAX_TASK_DETAIL,
+        basis: MAX_BASIS_TEXT, location: MAX_EVENT_LOCATION, cause: MAX_EVENT_ID_TEXT,
+        name: MAX_FACTION_NAME, type: MAX_FACTION_TYPE, level: MAX_FACTION_LEVEL,
+        leader: MAX_FACTION_LEADER, elders: MAX_FACTION_ELDERS, members: MAX_FACTION_MEMBERS,
+        assets: MAX_FACTION_ASSETS, relations: MAX_FACTION_RELATIONS, dynamics: MAX_DYNAMICS_TEXT,
+        attitude: MAX_ATTITUDE_TEXT,
+    });
+    return WORLD_TEXT_CAPS;
+};
+const WORLD_TASK_TITLE_CAP = MAX_TASK_TITLE;
+const WORLD_PROFILE_TEXT_CAP = () => MAX_INFO_TEXT;
+
+/** 模型输出的单条世界操作：逐字段按上限截断（超长裁短而不是整条作废）。 */
+export function capWorldOp(op) {
+    if (!op || typeof op !== 'object' || Array.isArray(op)) return op;
+    const capped = { ...op };
+    // 任务短标题用任务自己的上限（20），事件标题是 16
+    const isTask = capped.kind === 'addTask' || capped.op === 'addTask';
+    const caps = { ...worldTextCaps(), title: isTask ? WORLD_TASK_TITLE_CAP : worldTextCaps().title };
+    for (const [field, cap] of Object.entries(caps)) {
+        if (typeof capped[field] === 'string') capped[field] = capped[field].trim().slice(0, cap);
+    }
+    for (const field of INFO_FIELDS) {
+        if (typeof capped[field] === 'string') capped[field] = capped[field].slice(0, WORLD_PROFILE_TEXT_CAP());
+    }
+    return capped;
+}
 const MAX_INFO_TEXT = 80;
 const MAX_EVENT_LOCATION = 40;
 /** addEvent 的 participants（事件点名）：最多 3 个名字，单个 ≤12 字。 */
@@ -174,14 +209,14 @@ function normalizeOneFaction(raw) {
     const name = text(raw.name);
     if (!name) return null;
     const faction = {
-        name: name.slice(0, MAX_FACTION_NAME),
+        name,
         stance: STANCES.includes(raw.stance) ? raw.stance : 'neutral',
-        dynamics: text(raw.dynamics).slice(0, MAX_DYNAMICS_TEXT),
-        basis: text(raw.basis).slice(0, MAX_BASIS_TEXT),
+        dynamics: text(raw.dynamics),
+        basis: text(raw.basis),
         day: clampInt(raw.day, 1, 99999, 1),
         updatedDay: clampInt(raw.updatedDay, 1, 99999, null),
     };
-    for (const [key, , cap] of FACTION_PROFILE_FIELDS) faction[key] = text(raw[key]).slice(0, cap);
+    for (const [key] of FACTION_PROFILE_FIELDS) faction[key] = text(raw[key]);
     return faction;
 }
 
@@ -190,9 +225,9 @@ function normalizeOnePerson(raw) {
     const name = text(raw.name);
     if (!name) return null;
     return {
-        name: name.slice(0, MAX_PERSON_NAME),
-        attitude: text(raw.attitude).slice(0, MAX_ATTITUDE_TEXT),
-        basis: text(raw.basis).slice(0, MAX_BASIS_TEXT),
+        name,
+        attitude: text(raw.attitude),
+        basis: text(raw.basis),
         day: clampInt(raw.day, 1, 99999, 1),
         updatedDay: clampInt(raw.updatedDay, 1, 99999, null),
     };
@@ -205,9 +240,9 @@ function normalizeOneTask(raw, index) {
     if (!title) return null;
     return {
         id: text(raw.id) || `t${index}`,
-        title: title.slice(0, RESTORE_TASK_TITLE),
-        detail: text(raw.detail).slice(0, MAX_TASK_DETAIL),
-        basis: text(raw.basis).slice(0, MAX_BASIS_TEXT),
+        title,
+        detail: text(raw.detail),
+        basis: text(raw.basis),
         day: clampInt(raw.day, 1, 99999, 1),
         endDay: clampInt(raw.endDay, 1, 99999, null),
         status: raw.status === 'done' ? 'done' : 'active',
@@ -230,18 +265,18 @@ function normalizeState(raw, now) {
                 id: text(item.id) || `e${seq}`,
                 scope,
                 day: clampInt(item.day, 1, 99999, 1),
-                title: text(item.title).slice(0, MAX_EVENT_TITLE) || deriveEventTitle(body),
-                text: body.slice(0, MAX_EVENT_TEXT),
-                location: text(item.location).slice(0, MAX_EVENT_LOCATION),
-                basis: text(item.basis).slice(0, MAX_BASIS_TEXT),
+                title: text(item.title) || deriveEventTitle(body),
+                text: body,
+                location: text(item.location),
+                basis: text(item.basis),
                 participants: cleanParticipants(item.participants),
-                cause: text(item.cause).slice(0, MAX_EVENT_ID_TEXT) || null,
+                cause: text(item.cause) || null,
                 endDay: clampInt(item.endDay, 1, 99999, null),
                 weight: WEIGHTS.includes(item.weight) ? item.weight : 'minor',
                 pinned: item.pinned === true,
                 done: item.done === true,
                 resolvedDay: clampInt(item.resolvedDay, 1, 99999, null),
-                resolvedNote: text(item.resolvedNote).slice(0, MAX_OUTCOME_TEXT),
+                resolvedNote: text(item.resolvedNote),
             };
         })
         .filter(Boolean);
@@ -253,20 +288,20 @@ function normalizeState(raw, now) {
             return clean;
         })
         .filter(Boolean)
-        .slice(-MAX_TASKS);
+;
     return {
         schemaVersion: 2,
         clock: {
             day: clampInt(clockSource.day, 1, 99999, 1),
             minute: clampInt(clockSource.minute, 0, MINUTE_OF_DAY - 1, 480),
-            label: text(clockSource.label).slice(0, MAX_LABEL_TEXT),
+            label: text(clockSource.label),
         },
-        info: Object.fromEntries(INFO_FIELDS.map(field => [field, text(infoSource[field]).slice(0, MAX_INFO_TEXT)])),
+        info: Object.fromEntries(INFO_FIELDS.map(field => [field, text(infoSource[field])])),
         nearEvents: cleanEvents(source.nearEvents, 'near'),
         worldEvents: cleanEvents(source.worldEvents, 'world'),
         tasks,
-        factions: (Array.isArray(source.factions) ? source.factions : []).map(normalizeOneFaction).filter(Boolean).slice(-MAX_FACTIONS),
-        people: (Array.isArray(source.people) ? source.people : []).map(normalizeOnePerson).filter(Boolean).slice(-MAX_PEOPLE),
+        factions: (Array.isArray(source.factions) ? source.factions : []).map(normalizeOneFaction).filter(Boolean),
+        people: (Array.isArray(source.people) ? source.people : []).map(normalizeOnePerson).filter(Boolean),
         tension: TENSIONS.includes(source.tension) ? source.tension : "calm",
         log: (Array.isArray(source.log) ? source.log : []).slice(-DEFAULT_MAX_LOG),
         updatedAt: text(source.updatedAt) || now(),
@@ -314,12 +349,9 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
         return `t${taskSeq}`;
     }
 
-    /** 任务超上限时先清已完成的，再清最老的进行中；避免玩家任务被无声挤掉。 */
+    /** 任务不设上限（用户口径 2026-11-17）：不再挤掉任何任务。 */
     function pruneTasks() {
-        if (state.tasks.length <= MAX_TASKS) return;
-        const ranked = [...state.tasks].sort((a, b) => (b.status === 'done') - (a.status === 'done') || a.day - b.day);
-        const doomed = new Set(ranked.slice(0, state.tasks.length - MAX_TASKS).map(task => task.id));
-        state.tasks = state.tasks.filter(task => !doomed.has(task.id));
+        void MAX_TASKS;
     }
 
     function prune(scope) {
@@ -379,7 +411,7 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
             if (day === null) return { ok: false, reason: 'bad_day' };
             const minute = op.minute === undefined ? state.clock.minute : intIn(op.minute, 0, MINUTE_OF_DAY - 1);
             if (minute === null) return { ok: false, reason: 'bad_minute' };
-            const label = op.label === undefined ? state.clock.label : text(op.label).slice(0, MAX_LABEL_TEXT);
+            const label = op.label === undefined ? state.clock.label : text(op.label);
             const before = { ...state.clock };
             state.clock = { day, minute, label };
             const swept = sweepExpired();
@@ -391,7 +423,6 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
             if (!SCOPES.includes(scope)) return { ok: false, reason: 'bad_scope' };
             const body = text(op.text);
             if (!body) return { ok: false, reason: 'text_missing' };
-            if (body.length > MAX_EVENT_TEXT) return { ok: false, reason: 'text_too_long' };
             const day = op.day === undefined ? state.clock.day : intIn(op.day, 1, 99999);
             if (day === null) return { ok: false, reason: 'bad_day' };
             let endDay = null;
@@ -403,7 +434,6 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
             // title 必填，与世界影响同一套规矩：缺标题或超长整条拒绝，不再拿正文硬截。
             const title = text(op.title);
             if (!title) return { ok: false, reason: 'title_missing' };
-            if (title.length > MAX_EVENT_TITLE) return { ok: false, reason: 'title_too_long' };
             // 三道重复防线（都只看同栏未了结的事件）：同文最直白；同标题是换内容的重复；
             // 换说法的近似重复靠标题相似度挡——与世界影响同参（几天内、bigram 重合度过线）。
             const active = eventsOf(scope).filter(event => !event.done);
@@ -411,11 +441,11 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
             if (active.some(event => event.title === title)) return { ok: false, reason: 'duplicate_title' };
             if (active.some(event => Math.abs(event.day - day) <= SIMILAR_WINDOW_DAYS && titleSimilarity(event.title, title) >= SIMILAR_SCORE)) return { ok: false, reason: 'duplicate_similar' };
             // 因果链：cause 指到台账里已有的事件才存，写错的剥离字段、不整条拒绝。
-            const causeRef = text(op.cause).slice(0, MAX_EVENT_ID_TEXT);
+            const causeRef = text(op.cause);
             const cause = causeRef && findEvent(causeRef) ? causeRef : null;
             const participants = cleanParticipants(op.participants);
-            const location = text(op.location).slice(0, MAX_EVENT_LOCATION);
-            const basis = text(op.basis).slice(0, MAX_BASIS_TEXT);
+            const location = text(op.location);
+            const basis = text(op.basis);
             const event = { id: nextId(), scope, day, title, text: body, location, basis, participants, cause, endDay, weight: WEIGHTS.includes(op.weight) ? op.weight : 'minor', pinned: false, done: false, resolvedDay: null, resolvedNote: '' };
             eventsOf(scope).push(event);
             prune(scope);
@@ -432,7 +462,7 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
             const beforeDone = event.done;
             const beforeResolvedDay = event.resolvedDay;
             const beforeResolvedNote = event.resolvedNote;
-            const outcome = text(op.outcome).slice(0, MAX_OUTCOME_TEXT);
+            const outcome = text(op.outcome);
             event.done = true;
             event.resolvedDay = state.clock.day;
             if (outcome) event.resolvedNote = outcome;
@@ -446,14 +476,12 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
             if (op.title !== undefined) {
                 const next = text(op.title);
                 if (!next) return { ok: false, reason: 'title_missing' };
-                if (next.length > MAX_EVENT_TITLE) return { ok: false, reason: 'title_too_long' };
                 title = next;
             }
             let body = event.text;
             if (op.text !== undefined) {
                 const next = text(op.text);
                 if (!next) return { ok: false, reason: 'text_missing' };
-                if (next.length > MAX_EVENT_TEXT) return { ok: false, reason: 'text_too_long' };
                 body = next;
             }
             let weight = event.weight;
@@ -488,7 +516,6 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
             const field = text(op.field);
             if (!INFO_FIELDS.includes(field)) return { ok: false, reason: 'bad_field' };
             const body = text(op.text);
-            if (body.length > MAX_INFO_TEXT) return { ok: false, reason: 'info_too_long' };
             const beforeValue = state.info[field];
             state.info[field] = body;
             return { ok: true, summary: `世界信息更新：${field}=${body || '（清空）'}`, undo: { op: 'setInfo', field, text: beforeValue } };
@@ -497,7 +524,6 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
         if (kind === 'addTask') {
             const title = text(op.title);
             if (!title) return { ok: false, reason: 'title_missing' };
-            if (title.length > MAX_TASK_TITLE) return { ok: false, reason: 'title_too_long' };
             const detail = text(op.detail).slice(0, MAX_TASK_DETAIL);
             const basis = text(op.basis).slice(0, MAX_BASIS_TEXT);
             if (state.tasks.some(task => task.status === 'active' && task.title === title)) return { ok: false, reason: 'duplicate_task' };
@@ -548,7 +574,6 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
         if (kind === 'setFaction') {
             const name = text(op.name);
             if (!name) return { ok: false, reason: 'name_missing' };
-            if (name.length > MAX_FACTION_NAME) return { ok: false, reason: 'name_too_long' };
             const stance = STANCES.includes(op.stance) ? op.stance : 'neutral';
             const dynamics = text(op.dynamics).slice(0, MAX_DYNAMICS_TEXT);
             const basis = text(op.basis).slice(0, MAX_BASIS_TEXT);
@@ -580,7 +605,6 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
                 const summary = profileNote ? `势力更新 ${name}：${head}｜${profileNote}` : `势力更新 ${name}：${head}`;
                 return { ok: true, summary, undo: { op: '_setFactionRaw', faction: before } };
             }
-            if (state.factions.length >= MAX_FACTIONS) return { ok: false, reason: 'factions_full' };
             const faction = normalizeOneFaction({ name, stance, dynamics, basis, day: state.clock.day, updatedDay: state.clock.day, ...profile });
             state.factions.push(faction);
             const tag = profile.type ? `（${profile.type}）` : '';
@@ -611,7 +635,6 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
                 existing.updatedDay = state.clock.day;
                 return { ok: true, summary: `人物更新 ${name}：${attitude}`, undo: { op: '_setPersonRaw', person: before } };
             }
-            if (state.people.length >= MAX_PEOPLE) return { ok: false, reason: 'people_full' };
             const person = normalizeOnePerson({ name, attitude, basis, day: state.clock.day, updatedDay: state.clock.day });
             state.people.push(person);
             return { ok: true, summary: `人物登记 ${name}：${attitude}`, undo: { op: '_removePerson', name } };
@@ -703,7 +726,7 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
             if (!event) return { ok: false, reason: 'event_not_found' };
             event.done = op.done === true;
             event.resolvedDay = op.resolvedDay === null || op.resolvedDay === undefined ? null : intIn(op.resolvedDay, 1, 99999);
-            if (op.resolvedNote !== undefined) event.resolvedNote = text(op.resolvedNote).slice(0, MAX_OUTCOME_TEXT);
+            if (op.resolvedNote !== undefined) event.resolvedNote = text(op.resolvedNote);
             return { ok: true, summary: `恢复事件 ${event.id}` };
         }
         return { ok: false, reason: 'unknown_op' };

@@ -49,15 +49,16 @@ function injectionLine(record) {
  * （后果已经在世界里应验，正文更该知道）；约好日期但还没到的影响单独一行提醒"要等"，避免正文提前写穿。
  * 库是空的就返回空字符串，调用方据此跳过注入，不留空标题占预算。
  */
-export function buildImpactInjection(records, { maxChars = 800, maxLines = 10, day = 1 } = {}) {
+export function buildImpactInjection(records, { maxChars = Infinity, maxLines = Infinity, day = 1 } = {}) {
     return buildImpactInjectionDetail(records, { maxChars, maxLines, day }).text;
 }
 
 /**
  * 注入文本 + 回执：usedIds 是这一轮真的写进正文的那几条，设置页据此标“本轮已注入”。
  * 正文里不出现编号，但调用方需要知道用了谁，所以内容与 id 一起返回。
+ * 字数/行数默认不限制（用户拍板的口径）：有限正数才截断，不填＝全量注入。
  */
-export function buildImpactInjectionDetail(records, { maxChars = 800, maxLines = 10, day = 1 } = {}) {
+export function buildImpactInjectionDetail(records, { maxChars = Infinity, maxLines = Infinity, day = 1 } = {}) {
     const list = Array.isArray(records) ? records : [];
     const today = Number.isInteger(day) && day > 0 ? day : 1;
     const shown = list

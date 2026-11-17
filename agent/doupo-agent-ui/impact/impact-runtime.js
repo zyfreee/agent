@@ -18,14 +18,6 @@ const SHIFTS = Object.freeze(['none', 'accelerate', 'delay', 'avoid', 'alter']);
 const STATES = Object.freeze(['active', 'ripened', 'closed', 'reverted']);
 const SOURCES = Object.freeze(['decide', 'reply', 'manual']);
 
-/** 新记影响的短标题上限；老存档可能存着更长的标题，恢复走 RESTORE_TITLE_TEXT 不硬截。 */
-const MAX_TITLE_TEXT = 20;
-const RESTORE_TITLE_TEXT = 60;
-const MAX_DETAIL_TEXT = 240;
-const MAX_TARGET_TEXT = 40;
-const MAX_EVIDENCE_TEXT = 120;
-const MAX_CANON_TEXT = 60;
-const MAX_EVENT_TEXT = 40;
 const MAX_RIPEN_DAYS = 365;
 // 判“疑似同一件事”的时间窗：同一个对象、同一种改写、这几天里换了说法又记一遍。
 // 参数与相似度算法在世界事件账（world-runtime）共用同一份（core/text-similarity.js）。
@@ -85,27 +77,27 @@ function initialState(now) {
 /** 只保留认识的字段并逐条清洗；坏记录丢弃，不让整份存档作废。 */
 function cleanRecord(raw, index) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
-    const title = text(raw.title).slice(0, RESTORE_TITLE_TEXT);
+    const title = text(raw.title);
     if (!title) return null;
     return {
         id: text(raw.id) || `i${index + 1}`,
         day: clampInt(raw.day, 1, 99999, 1),
         floor: clampInt(raw.floor, 0, 9999999, null),
         title,
-        detail: text(raw.detail).slice(0, MAX_DETAIL_TEXT),
-        target: text(raw.target).slice(0, MAX_TARGET_TEXT),
+        detail: text(raw.detail),
+        target: text(raw.target),
         kind: KINDS.includes(raw.kind) ? raw.kind : 'direct',
         weight: WEIGHTS.includes(raw.weight) ? raw.weight : 'minor',
         certainty: CERTAINTIES.includes(raw.certainty) ? raw.certainty : 'certain',
-        evidence: text(raw.evidence).slice(0, MAX_EVIDENCE_TEXT),
-        canon: text(raw.canon).slice(0, MAX_CANON_TEXT),
+        evidence: text(raw.evidence),
+        canon: text(raw.canon),
         // 与世界台账里的事件对上号时记事件编号（如 e2），面板/账本里能互相点过去。
-        eventId: text(raw.eventId).slice(0, MAX_EVENT_TEXT),
+        eventId: text(raw.eventId),
         shift: SHIFTS.includes(raw.shift) ? raw.shift : 'none',
         state: STATES.includes(raw.state) ? raw.state : 'active',
         ripenDay: clampInt(raw.ripenDay, 1, 99999, null),
         ripenedDay: clampInt(raw.ripenedDay, 1, 99999, null),
-        resolution: text(raw.resolution).slice(0, MAX_EVIDENCE_TEXT),
+        resolution: text(raw.resolution),
         resolvedDay: clampInt(raw.resolvedDay, 1, 99999, null),
         parent: text(raw.parent),
         depth: clampInt(raw.depth, 0, 32, 0),
@@ -113,7 +105,7 @@ function cleanRecord(raw, index) {
         // 手动改过（改内容或调整时间）：账本里标黄，方便一眼看出哪些不是原账。
         edited: raw.edited === true,
         editedDay: clampInt(raw.editedDay, 1, 99999, null),
-        archivedReason: text(raw.archivedReason).slice(0, 20),
+        archivedReason: text(raw.archivedReason),
         createdAt: text(raw.createdAt),
     };
 }
@@ -218,19 +210,13 @@ export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchi
         if (kind === 'record') {
             const title = text(op.title);
             if (!title) return { ok: false, reason: 'title_missing' };
-            if (title.length > MAX_TITLE_TEXT) return { ok: false, reason: 'title_too_long' };
             const detail = text(op.detail);
             if (!detail) return { ok: false, reason: 'detail_missing' };
-            if (detail.length > MAX_DETAIL_TEXT) return { ok: false, reason: 'detail_too_long' };
             const target = text(op.target);
             if (!target) return { ok: false, reason: 'target_missing' };
-            if (target.length > MAX_TARGET_TEXT) return { ok: false, reason: 'target_too_long' };
             const evidence = text(op.evidence);
-            if (evidence.length > MAX_EVIDENCE_TEXT) return { ok: false, reason: 'evidence_too_long' };
             const canon = text(op.canon);
-            if (canon.length > MAX_CANON_TEXT) return { ok: false, reason: 'canon_too_long' };
             const eventId = text(op.eventId);
-            if (eventId.length > MAX_EVENT_TEXT) return { ok: false, reason: 'event_too_long' };
             const parent = text(op.parent);
             let depth = 0;
             if (parent) {
@@ -300,7 +286,7 @@ export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchi
                 resolution: record.resolution,
                 resolvedDay: record.resolvedDay,
             };
-            const note = text(op.detail).slice(0, MAX_EVIDENCE_TEXT) || record.resolution;
+            const note = text(op.detail) || record.resolution;
             if (kind === 'ripen') {
                 record.state = 'ripened';
                 record.ripenedDay = gameDay;
@@ -322,34 +308,28 @@ export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchi
             if (op.title !== undefined) {
                 const title = text(op.title);
                 if (!title) return { ok: false, reason: 'title_missing' };
-                if (title.length > MAX_TITLE_TEXT) return { ok: false, reason: 'title_too_long' };
                 next.title = title;
             }
             if (op.detail !== undefined) {
                 const detail = text(op.detail);
                 if (!detail) return { ok: false, reason: 'detail_missing' };
-                if (detail.length > MAX_DETAIL_TEXT) return { ok: false, reason: 'detail_too_long' };
                 next.detail = detail;
             }
             if (op.target !== undefined) {
                 const target = text(op.target);
                 if (!target) return { ok: false, reason: 'target_missing' };
-                if (target.length > MAX_TARGET_TEXT) return { ok: false, reason: 'target_too_long' };
                 next.target = target;
             }
             if (op.evidence !== undefined) {
                 const evidence = text(op.evidence);
-                if (evidence.length > MAX_EVIDENCE_TEXT) return { ok: false, reason: 'evidence_too_long' };
                 next.evidence = evidence;
             }
             if (op.canon !== undefined) {
                 const canon = text(op.canon);
-                if (canon.length > MAX_CANON_TEXT) return { ok: false, reason: 'canon_too_long' };
                 next.canon = canon;
             }
             if (op.eventId !== undefined) {
                 const eventId = text(op.eventId);
-                if (eventId.length > MAX_EVENT_TEXT) return { ok: false, reason: 'event_too_long' };
                 next.eventId = eventId;
             }
             if (op.kind !== undefined) {
@@ -425,7 +405,7 @@ export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchi
                     record.ripenDay = gameDay;
                     record.state = 'ripened';
                     record.ripenedDay = gameDay;
-                    record.resolution = text(op.detail).slice(0, MAX_EVIDENCE_TEXT) || '玩家把这件事提前了';
+                    record.resolution = text(op.detail) || '玩家把这件事提前了';
                     note = '已经当场应验';
                 } else {
                     record.ripenDay = Math.min(nextDay, gameDay + MAX_RIPEN_DAYS);
@@ -477,7 +457,7 @@ export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchi
             if (!record) return { ok: false, reason: 'record_not_found' };
             record.state = STATES.includes(op.state) ? op.state : 'active';
             record.ripenedDay = clampInt(op.ripenedDay, 1, 99999, null);
-            record.resolution = text(op.resolution).slice(0, MAX_EVIDENCE_TEXT);
+            record.resolution = text(op.resolution);
             record.resolvedDay = clampInt(op.resolvedDay, 1, 99999, null);
             // 调整时间也可能改 state/发酵日/改动标记，撤销时要一并还回去。
             if (op.ripenDay !== undefined) record.ripenDay = clampInt(op.ripenDay, 1, 99999, null);
@@ -697,7 +677,7 @@ export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchi
 
     /** 不改库、只往流水里记一笔（模型判断无变化、解析失败这类"决定结果"）。 */
     function note(message, { source = 'decide' } = {}) {
-        logEntry(source, [String(message).slice(0, MAX_DETAIL_TEXT)]);
+        logEntry(source, [String(message)]);
         return { status: 'noted' };
     }
 

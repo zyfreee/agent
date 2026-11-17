@@ -94,7 +94,7 @@ const context = {
     extension_prompt_types: { IN_CHAT: 1 },
     extension_prompt_roles: { SYSTEM: 0 },
     async saveMetadata() { /* 内存存档即可 */ },
-    async generateQuietPrompt(options) {
+    async generateQuietPrompt(options = {}) {
         const prompt = typeof options === 'string' ? options : options?.quietPrompt ?? '';
         if (prompt.includes('【最近聊天记录')) {
             decideRound += 1;

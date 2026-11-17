@@ -12,7 +12,6 @@ import { recallKeys, scoreEntries } from './memory-retrieve.js';
 import { TIER_LABELS } from './memory-runtime.js';
 
 const MAX_IDS = 25;
-const MAX_NOTE_CHARS = 300;
 const MAX_FLOORS = 12;
 const FLOOR_CHARS = 800;
 const MAX_BOOK_LINES = 40;
@@ -175,6 +174,7 @@ export function parseRecallDecision(raw, { maxIds = MAX_IDS, snapshot } = {}) {
     if (!object || typeof object !== 'object' || Array.isArray(object)) {
         return { status: 'invalid', ids: [], note: '', dropped: 0, error: '召回结果不是 JSON 对象' };
     }
+    const MAX_NOTE_CHARS = 300;
     const note = typeof object.note === 'string' ? object.note.trim().slice(0, MAX_NOTE_CHARS) : '';
     if (!Array.isArray(object.ids)) return { status: 'invalid', ids: [], note, dropped: 0, error: '召回结果缺少 ids 数组' };
     const cap = Number.isInteger(maxIds) && maxIds >= 1 && maxIds <= MAX_IDS ? maxIds : MAX_IDS;

@@ -14,8 +14,6 @@ import { extractJson } from '../host/llm-client.js';
 const MAX_FLOORS = 10;
 const FLOOR_CHARS = 700;
 const MAX_BOOK_LINES = 30;
-const MAX_NOTE_CHARS = 300;
-const MAX_OPS = 6;
 
 export const IMPACT_DECIDE_PROMPT = [
     '你是《斗破苍穹》同人长篇的"世界记录员"。你只管账，不管戏：每轮对话结束，你读一遍刚才发生了什么，把"这个世界因此变成了什么样"记进世界线账本。',
@@ -69,7 +67,7 @@ export const IMPACT_DECIDE_PROMPT = [
     '不记：玩家和萧炎在街上闲聊、玩家放话要灭加列家、玩家自己斗气涨了一星 → 都不记。',
     '不记：同一场火已经记过，这一轮只是路人议论 → 不新记；若议论传开，用 note 说明，等有实际后果再 ripen。',
     '',
-    'note 写给设置页看，≤80 字，说清你记了什么、为什么这样定分量；正文不会看到它。',
+    'note 写给设置页看（≤80 字），说清你记了什么、为什么这样定分量；正文不会看到它。',
 ].join('\n');
 
 /** 给酒馆 generateQuietPrompt 的结构化输出约束；解析端不依赖它，只用来提高严格度。 */
@@ -158,6 +156,21 @@ export function buildImpactDecideUser({ snapshot = {}, floors = [], worldbookLin
 }
 
 /** 解析模型决定：抽 JSON、限长、只收认得出来的操作；坏 note 不影响 ops。 */
+// —— 模型输出的字段字数上限（用户口径 2026-11-17：API 输出要有限制，手动面板不设限）。
+const IMPACT_TEXT_CAPS = Object.freeze({ title: 20, detail: 240, target: 40, evidence: 120, canon: 60, eventId: 40 });
+const MAX_IMPACT_NOTE_CHARS = 300;
+const MAX_IMPACT_OPS = 6;
+
+/** 模型输出的单条影响操作：逐字段按上限截断（超长裁短而不是整条作废）。 */
+function capImpactOp(op) {
+    if (!op || typeof op !== 'object' || Array.isArray(op)) return op;
+    const capped = { ...op };
+    for (const [field, cap] of Object.entries(IMPACT_TEXT_CAPS)) {
+        if (typeof capped[field] === 'string') capped[field] = capped[field].trim().slice(0, cap);
+    }
+    return capped;
+}
+
 export function parseImpactDecision(raw) {
     let object;
     try {
@@ -168,11 +181,11 @@ export function parseImpactDecision(raw) {
     if (!object || typeof object !== 'object' || Array.isArray(object)) {
         return { status: 'invalid', ops: [], note: '', error: '决定不是 JSON 对象' };
     }
-    const note = typeof object.note === 'string' ? object.note.trim().slice(0, MAX_NOTE_CHARS) : '';
-    const list = Array.isArray(object.ops) ? object.ops.slice(0, MAX_OPS) : [];
+    const note = typeof object.note === 'string' ? object.note.trim().slice(0, MAX_IMPACT_NOTE_CHARS) : '';
+    const list = Array.isArray(object.ops) ? object.ops.slice(0, MAX_IMPACT_OPS) : [];
     const known = new Set(['record', 'adjust', 'ripen', 'close', 'revert']);
     const ops = list.filter(item => item && typeof item === 'object' && !Array.isArray(item)
-        && typeof item.op === 'string' && known.has(item.op.trim()));
+        && typeof item.op === 'string' && known.has(item.op.trim())).map(capImpactOp);
     const dropped = list.length - ops.length;
     return { status: ops.length || note ? 'ok' : 'empty', ops, note, dropped };
 }

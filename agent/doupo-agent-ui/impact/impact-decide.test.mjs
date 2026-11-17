@@ -50,9 +50,11 @@ assert.equal(invalid.ops.length, 0);
 const emptyDecision = parseImpactDecision('{"ops":[]}');
 assert.equal(emptyDecision.status, 'empty');
 
+// 模型输出 note 限 300（用户口径 2026-11-17：API 输出要限定字数）
 const longNote = parseImpactDecision(`{"note":"${'字'.repeat(400)}","ops":[]}`);
 assert.equal(longNote.note.length, 300);
 
+// 模型单次最多 6 条（手动面板不受限）
 const manyOps = parseImpactDecision(JSON.stringify({ ops: Array.from({ length: 9 }, (_, index) => ({ op: 'record', title: `t${index}` })) }));
 assert.equal(manyOps.ops.length, 6);
 assert.equal(manyOps.dropped, 0);

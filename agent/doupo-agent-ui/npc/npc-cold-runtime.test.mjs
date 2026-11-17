@@ -158,10 +158,11 @@ for (const chosenDay of [2, 3]) {
     }
     const snap = { clock: { day: 2 }, nearEvents: events, worldEvents: [] };
     const [candidate] = cold.candidates({ day: 2, records: [person], worldSnapshot: snap });
-    assert.equal(candidate.events.length, 12, '单次最多喂 12 条新事件');
+    // 候选事件不设上限（用户口径 2026-11-17）：16 条全收，排序规则不变
+    assert.equal(candidate.events.length, 16, '单次全量喂新事件');
     assert.deepEqual(candidate.events.slice(0, 3).map(event => event.weight), ['major', 'major', 'major']);
     assert.deepEqual(candidate.events.slice(3, 6).map(event => event.weight), ['rumor', 'rumor', 'rumor']);
-    assert.deepEqual(candidate.events.slice(6).map(event => event.id), ['e7', 'e8', 'e9', 'e10', 'e11', 'e12'], '普通事件按新旧取前 6 条');
+    assert.deepEqual(candidate.events.slice(6).map(event => event.id), ['e7', 'e8', 'e9', 'e10', 'e11', 'e12', 'e13', 'e14', 'e15', 'e16'], '普通事件按新旧排在其后');
 }
 
 // —— B3 留痕：确认记一句摘要；放弃的草稿留痕并标明 ——

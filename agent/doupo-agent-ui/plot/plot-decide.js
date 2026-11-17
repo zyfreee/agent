@@ -14,8 +14,6 @@ import { buildPlotInjection } from './plot-ops.js';
 
 const MAX_FLOORS = 12;
 const FLOOR_CHARS = 800;
-const MAX_NOTE_CHARS = 200;
-const MAX_OPS = 8;
 
 /** 默认决定提示词（system）。改写时保持"只输出 JSON"与操作字段名不变，否则脚本解析不到。 */
 export const PLOT_DECIDE_PROMPT = [
@@ -94,6 +92,21 @@ export function buildPlotDecideUser({ snapshot = {}, clockText = '', floors = []
 }
 
 /** 解析模型决定：抽 JSON、限长、过滤坏条目；坏 note 不影响 ops。 */
+const MAX_NOTE_CHARS = 200;
+const MAX_OPS = 8;
+// 模型输出的计划字段上限（用户口径 2026-11-17：API 输出要有限制，手动面板不设限）
+const PLAN_GOAL_CAP = 60;
+const PLAN_NEXT_CAP = 120;
+
+/** 模型输出的单条剧情操作：字段按上限截断。 */
+function capPlotOp(op) {
+    if (!op || typeof op !== 'object' || Array.isArray(op)) return op;
+    const capped = { ...op };
+    if (typeof capped.goal === 'string') capped.goal = capped.goal.trim().slice(0, PLAN_GOAL_CAP);
+    if (typeof capped.next === 'string') capped.next = capped.next.trim().slice(0, PLAN_NEXT_CAP);
+    return capped;
+}
+
 export function parsePlotDecision(raw) {
     let object;
     try {
@@ -106,7 +119,7 @@ export function parsePlotDecision(raw) {
     }
     const note = typeof object.note === 'string' ? object.note.trim().slice(0, MAX_NOTE_CHARS) : '';
     const list = Array.isArray(object.ops) ? object.ops.slice(0, MAX_OPS) : [];
-    const ops = list.filter(item => item && typeof item === 'object' && !Array.isArray(item) && typeof item.op === 'string' && item.op.trim());
+    const ops = list.filter(item => item && typeof item === 'object' && !Array.isArray(item) && typeof item.op === 'string' && item.op.trim()).map(capPlotOp);
     const dropped = list.length - ops.length;
     return { status: ops.length || note ? 'ok' : 'empty', ops, note, dropped };
 }

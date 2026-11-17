@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { cleanFloorText, cleanFloorEntries, regexHiddenFloorBound, stripThinkingBlocks } from './floor-text.js';
+import { cleanFloorText, cleanFloorEntries, regexHiddenFloorBound, stripThinkingBlocks, setCharacterRegexScriptsSource } from './floor-text.js';
+import { VEIL_VISIBLE_FLOORS, VEIL_SCRIPT_ID, VEIL_SCRIPT_NAME, DISPLAY_REGEX_SCRIPTS } from './display-regex.js';
 
 // 工作区没有酒馆本体的正则引擎（../../../../../regex/engine.js 不存在），
 // 懒加载失败必须安静退回原文——部署到酒馆后才走 getRegexedString。
@@ -44,15 +45,17 @@ test('批量清洗先剥 thinking 再进喂料预算', async () => {
     assert.ok(!floors[0].text.includes('<thinking>'), '标签本身不残留');
 });
 
-// 默认楼数跟随正则：只认"启用的、提示词侧、整楼替换成空、带 minDepth"的脚本，取最早的深度。
-test('regexHiddenFloorBound 只统计启用且整楼隐藏的提示词正则，取最小 minDepth', () => {
+// 默认楼数跟随正则：提示词侧清空、显示侧清空、自家帷幕三种"整楼隐藏"形态都认，取最早深度。
+test('regexHiddenFloorBound 统计启用且整楼隐藏的正则，取最小有效深度', () => {
     const hide = { scriptName: '远楼层隐藏', disabled: false, placement: [1, 2], minDepth: 5, promptOnly: true, replaceString: '' };
     assert.equal(regexHiddenFloorBound([hide]), 5);
     // 停用的不算
     assert.equal(regexHiddenFloorBound([{ ...hide, disabled: true }]), null);
-    // 只管显示的（markdownOnly 且非 promptOnly）不算
-    assert.equal(regexHiddenFloorBound([{ ...hide, markdownOnly: true, promptOnly: false }]), null);
-    // 替换不为空（改写而非隐藏）不算
+    // 显示侧清空（markdownOnly 且替换为空）也算隐藏——屏幕看不见的楼功能调用同样不喂
+    assert.equal(regexHiddenFloorBound([{ ...hide, markdownOnly: true, promptOnly: false }]), 5);
+    // 显示侧美化（替换非空）不是隐藏，不算
+    assert.equal(regexHiddenFloorBound([{ ...hide, markdownOnly: true, promptOnly: false, replaceString: '（略）' }]), null);
+    // 提示词侧改写（替换非空）不算
     assert.equal(regexHiddenFloorBound([{ ...hide, replaceString: '（略）' }]), null);
     // 不落用户/AI 楼层的不算
     assert.equal(regexHiddenFloorBound([{ ...hide, placement: [0] }]), null);
@@ -64,4 +67,58 @@ test('regexHiddenFloorBound 只统计启用且整楼隐藏的提示词正则，�
     assert.equal(regexHiddenFloorBound({ scripts: [hide] }), 5);
     assert.equal(regexHiddenFloorBound([]), null);
     assert.equal(regexHiddenFloorBound(null), null);
+});
+
+// 自家「旧楼层隐去」帷幕：每楼钉标记不删内容，屏幕上 CSS 收走最近窗口外的整楼——
+// 有效可见窗口＝保留楼数（VEIL_VISIBLE_FLOORS，与 style.css 的 -n+3 同源）。
+test('帷幕脚本按屏幕保留楼数推断可见窗口，停用即失效', () => {
+    const veil = { id: VEIL_SCRIPT_ID, scriptName: VEIL_SCRIPT_NAME, disabled: false, placement: [1, 2], minDepth: 0, markdownOnly: true, promptOnly: false, replaceString: '<div class="dpz-floor-veil"></div>\n\n$1' };
+    assert.equal(VEIL_VISIBLE_FLOORS, 4, '与 style.css 的 -n+4 保持一致');
+    assert.equal(regexHiddenFloorBound([veil]), 4);
+    // 帷幕停用＝想看全史，不再跟随
+    assert.equal(regexHiddenFloorBound([{ ...veil, disabled: true }]), null);
+    // 手改过起跑深度：起跑之前的楼永远可见，窗口取 max(保留楼数, 起跑深度)
+    assert.equal(regexHiddenFloorBound([{ ...veil, minDepth: 6 }]), 6);
+    // 帷幕与提示词侧清空并存：取更小的窗口
+    const promptHide = { scriptName: '远楼层隐藏', disabled: false, placement: [1, 2], minDepth: 10, promptOnly: true, replaceString: '' };
+    assert.equal(regexHiddenFloorBound([promptHide, veil]), 4);
+    // 替换为空的怪异帷幕（不该出现）退回普通清空逻辑，minDepth 0 不产生窗口
+    assert.equal(regexHiddenFloorBound([{ ...veil, replaceString: '' }]), null);
+    // 全套自装脚本（帷幕 + 远楼层不进提示词）落在卡上时，推断窗口就是帷幕保留楼数
+    assert.equal(regexHiddenFloorBound(DISPLAY_REGEX_SCRIPTS), 4);
+});
+
+// 显示侧清空类正则补进功能喂料：变量申报、召回导语这类"屏幕上被收走的家什"不再漏给功能模型。
+test('喂料清洗套用显示侧清空脚本，美化类绝不进喂料', async () => {
+    const cardScripts = [
+        { scriptName: '斗破Agent · 变量申报收纳', disabled: false, placement: [1, 2], minDepth: null, markdownOnly: true, promptOnly: false, findRegex: '/<UpdateVariable>[\\s\\S]*?<\\/UpdateVariable>/g', replaceString: '' },
+        { scriptName: '斗破Agent · 本轮输入卡片', disabled: false, placement: [1], minDepth: null, markdownOnly: true, promptOnly: false, findRegex: '/以下是用户的本轮输入：/g', replaceString: '<div class="dpz-round">$1</div>' },
+        { scriptName: '旧楼层清空（显示侧）', disabled: false, placement: [1, 2], minDepth: 4, markdownOnly: true, promptOnly: false, findRegex: '/<hidden>[\\s\\S]*?<\\/hidden>/g', replaceString: '' },
+    ];
+    setCharacterRegexScriptsSource(() => cardScripts);
+    try {
+        // AI 楼的变量申报块被显示侧清空脚本剥掉（提示词侧引擎只覆盖用户楼）
+        const ai = await cleanFloorText({ mes: '正文。<UpdateVariable>{"x":1}</UpdateVariable>结尾。', is_user: false }, 2);
+        assert.equal(ai, '正文。结尾。');
+        // 美化类（替换成 HTML）绝不进喂料
+        const user = await cleanFloorText({ mes: '以下是用户的本轮输入：出招', is_user: true }, 2);
+        assert.equal(user, '以下是用户的本轮输入：出招');
+        // 深度门槛：minDepth 4 的清空脚本对 depth 2 不生效，对 depth 5 生效
+        const near = await cleanFloorText({ mes: '甲<hidden>密</hidden>乙', is_user: false }, 2);
+        assert.equal(near, '甲<hidden>密</hidden>乙');
+        const far = await cleanFloorText({ mes: '甲<hidden>密</hidden>乙', is_user: false }, 5);
+        assert.equal(far, '甲乙');
+        // maxDepth/minDepth 为 null＝不设界：Number(null)=0 不能当成 0 楼界限（引擎同款判空）
+        const noBounds = { scriptName: '全程清空', disabled: false, placement: [1, 2], minDepth: null, maxDepth: null, markdownOnly: true, promptOnly: false, findRegex: '/<UpdateVariable>[\\s\\S]*?<\\/UpdateVariable>/g', replaceString: '' };
+        setCharacterRegexScriptsSource(() => [noBounds]);
+        assert.equal(await cleanFloorText({ mes: '甲<UpdateVariable>x</UpdateVariable>乙', is_user: false }, 1), '甲乙', 'maxDepth null 不该把 depth 1 挡掉');
+        assert.equal(await cleanFloorText({ mes: '甲<UpdateVariable>x</UpdateVariable>乙', is_user: false }, 0), '甲乙', 'depth 0 照常生效');
+        // 楼位不命中的不生效（用户楼脚本不套 AI 楼）
+        const userOnly = { scriptName: '仅用户楼清空', disabled: false, placement: [1], minDepth: null, markdownOnly: true, promptOnly: false, findRegex: '/甲/g', replaceString: '' };
+        setCharacterRegexScriptsSource(() => [userOnly]);
+        assert.equal(await cleanFloorText({ mes: '甲乙', is_user: false }, 1), '甲乙');
+        assert.equal(await cleanFloorText({ mes: '甲乙', is_user: true }, 1), '乙');
+    } finally {
+        setCharacterRegexScriptsSource(null);
+    }
 });

@@ -21,8 +21,8 @@ function entryHead(entry) {
     return text(entry?.title) || text(entry?.text);
 }
 
-/** 摘要正文：各段空则整段省略；全空返回 ''（调用方不注入）。整体按 maxChars 从尾部截断。 */
-export function buildWakeUpSummary({ worldSnapshot = {}, memorySnapshot = {}, npcRecords = [], maxChars = 500 } = {}) {
+/** 摘要正文：各段空则整段省略；全空返回 ''（调用方不注入）。maxChars 有限正数才从尾部截断，不填＝不限制。 */
+export function buildWakeUpSummary({ worldSnapshot = {}, memorySnapshot = {}, npcRecords = [], maxChars = Infinity } = {}) {
     const lines = [];
     // 时间：世界台账的时钟 + 季节（纯推导）+ 所在地/天气。
     const day = intOr(worldSnapshot?.clock?.day, 0);
@@ -56,6 +56,6 @@ export function buildWakeUpSummary({ worldSnapshot = {}, memorySnapshot = {}, np
     if (grudges.length) lines.push(`旧账恩怨：${grudges.join('、')}`);
     if (!lines.length) return '';
     const body = [WAKEUP_HEADER, ...lines].join('\n');
-    const cap = Math.max(80, intOr(maxChars, 500));
+    const cap = Number.isFinite(Number(maxChars)) && Number(maxChars) > 0 ? Math.max(80, Math.floor(Number(maxChars))) : Infinity;
     return body.length <= cap ? body : `${body.slice(0, cap - 1)}…`;
 }

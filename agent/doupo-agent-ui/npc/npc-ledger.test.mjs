@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createNpcLedger, favorLabel, normalizePatch, normalizeRecord, NPC_FIELDS, FAVOR_MIN, FAVOR_MAX, FAVOR_REASON_MAX, FAVOR_STEP_MAX } from './npc-ledger.js';
+import { createNpcLedger, favorLabel, normalizePatch, normalizeRecord, NPC_FIELDS, FAVOR_MIN, FAVOR_MAX, FAVOR_STEP_MAX } from './npc-ledger.js';
 
 // OPT-051: replace only the owned latest floor, never restore over manual work.
 {
@@ -159,13 +159,13 @@ for (const day of [null, undefined, '', '  ', 0, -1, 1.5, 100000, true, 'bad', 1
     assert.equal(ledger.get('萧炎').attitude, '多了几分欣赏');
 }
 
-// 2) 好感只记增减、单次最多 ±10：模型写 +95 也只记 +10，理由压到 15 字以内。
+// 2) 好感只记增减、单次最多 ±10：模型写 +95 也只记 +10；理由不截断（用户口径 2026-11-17）。
 {
     const ledger = createNpcLedger();
     ledger.apply({ 人物: [{ 姓名: '萧炎', 好感: '+95', 理由: '救下萧家满门上下老小' }] }, { floor: 5, day: 2 });
     assert.equal(ledger.get('萧炎').favor, FAVOR_STEP_MAX, '单次超过 ±10 要压回 ±10');
     assert.equal(ledger.get('萧炎').favorLog[0].delta, FAVOR_STEP_MAX);
-    assert.ok(ledger.get('萧炎').favorLog[0].reason.length <= FAVOR_REASON_MAX, '理由必须压到 15 字以内');
+    assert.equal(ledger.get('萧炎').favorLog[0].reason, '救下萧家满门上下老小', '长理由原样保留');
 
     for (let round = 0; round < 12; round += 1) {
         ledger.apply({ 人物: [{ 姓名: '萧炎', 好感: 10, 理由: '又帮一次' }] }, { floor: 6 + round, day: 2 });
@@ -304,6 +304,29 @@ for (const day of [null, undefined, '', '  ', 0, -1, 1.5, 100000, true, 'bad', 1
     assert.deepEqual(ranked.used, ['C', 'A'], 'most recent important profile keeps priority');
     assert.deepEqual(ranked.omitted, ['B']);
     assert.ok(ranked.chars <= 55);
+}
+
+// 注入三参数默认不限制（schemaVersion 15 口径）：不传 budget/maxFull/maxBrief 时该注入的人全量进提示词，
+// 不再有 900/6/14 的隐式截流；显式传 Infinity 同效，0/留空在设置层已换算成 Infinity，填正数才截流。
+{
+    const ledger = createNpcLedger();
+    const people = [];
+    for (let index = 0; index < 9; index += 1) {
+        people.push({ 姓名: `弟子${index}`, 身份: '门中弟子', 在场: '在场', 重要: '重要', 正在做什么: '在大殿里候着，等宗主发话' });
+    }
+    ledger.apply({ 人物: people }, { floor: 3 });
+    const unlimited = ledger.injection();
+    assert.equal(unlimited.counts.full, 9, '默认不传上限：在场×重要全给全字段');
+    assert.equal(unlimited.degraded.length, 0);
+    assert.equal(unlimited.omitted.length, 0);
+    assert.equal(unlimited.truncated, false);
+    assert.equal(unlimited.chars, unlimited.text.length);
+    const explicitInfinity = ledger.injection({ budget: Infinity, maxFull: Infinity, maxBrief: Infinity });
+    assert.equal(explicitInfinity.chars, unlimited.chars, '显式 Infinity 与默认同效');
+    assert.deepEqual(explicitInfinity.used, unlimited.used);
+    const capped = ledger.injection({ budget: 400 });
+    assert.ok(capped.degraded.length > 0 || capped.omitted.length > 0, '填了正数才按数截流');
+    assert.ok(capped.chars < unlimited.chars);
 }
 
 // OPT-104: content, not entry count, controls experience change metadata.
@@ -591,6 +614,68 @@ for (const day of [null, undefined, '', '  ', 0, -1, 1.5, 100000, true, 'bad', 1
     assert.equal(back.version, before.version, '快照原样写回，版本号不自增');
     const skip = ledger.restoreSnapshots({ 不存在的人: before, 萧战: 'not-an-object' });
     assert.equal(skip.status, 'noop', '命不中或坏快照一律跳过');
+}
+
+// —— 删楼自愈：基线与楼层戳指向已不存在的楼时全部作废，档案内容原样保留 ——
+{
+    const ledger = createNpcLedger({ now: () => 'fixed' });
+    ledger.apply({ 人物: [{ 姓名: '掌柜', favor: 1, 流水: ['收摊'] }, { 姓名: '工头', favor: 1 }] }, { floor: 62, day: 9 });
+    ledger.apply({ 人物: [{ 姓名: '药老', favor: 1 }] }, { floor: 39, day: 9 });
+    // 旧聊天（65+ 楼）在 63 楼成功记过一次账，留下回写基线；然后聊天被删到只剩 43 楼
+    const recorded = ledger.recordReply({ 人物: [{ 姓名: '掌柜', favor: 2 }] }, { floor: 63, day: 12 });
+    assert.equal(recorded.status, 'applied');
+    // 没删楼时（63 ≤ 63）不动任何东西
+    const intact = ledger.dropStaleFloors(63);
+    assert.deepEqual(intact, { dropped: false, floor: null, cleared: 0 });
+    // 删到 42 楼封顶：基线（63）作废，掌柜与工头的过期楼层戳（62）清掉，药老（39 ≤ 42）保留
+    const healed = ledger.dropStaleFloors(42);
+    assert.equal(healed.dropped, true, '回写基线作废');
+    assert.equal(healed.floor, 63);
+    assert.equal(healed.cleared, 2, '掌柜与工头的过期楼层标记清掉');
+    assert.equal(ledger.get('工头').lastFloor, null);
+    assert.equal(ledger.get('工头').firstFloor, null, '建档楼层同样过期，一并清掉（否则 normalize 会复活）');
+    assert.equal(ledger.get('药老').lastFloor, 39, '没过期的楼层戳不动');
+    assert.equal(ledger.get('掌柜').favor, 3, '档案内容原样保留（1 + 63 楼记的 +2）');
+    // 基线没了之后，新楼可以直接落账（不再被 reply_baseline_missing 拦）
+    const freshRecord = ledger.recordReply({ 人物: [{ 姓名: '掌柜', favor: 1 }] }, { floor: 42, day: 15 });
+    assert.equal(freshRecord.status, 'applied', '过期基线作废后新账可落');
+    // 幂等：再清一遍没有变化
+    assert.deepEqual(ledger.dropStaleFloors(42), { dropped: false, floor: null, cleared: 0 });
+    // 非法入参原样返回
+    assert.deepEqual(ledger.dropStaleFloors(-1), { dropped: false, floor: null, cleared: 0 });
+}
+
+// —— 序列化残渣防线：模型把整组人物对象误写进「别名」（名册误写）时，对象条目整条拒收；
+//    text() 会把对象摊成「name：…；age：…」的长串，进了别名既污染档案，还会被 findKey
+//    拿去做人物匹配（把别人认成本人）。已入库的残渣串在读档/再保存时一并洗掉（自愈）。——
+{
+    const ledger = createNpcLedger({ now: () => 'fixed' });
+    const dump1 = 'name：灵灵；age：12岁；identity：雪魔的妹妹；clothes：0：name：浅蓝色连帽卫衣；part：上';
+    const dump2 = 'name：萧炎；gender：男；origin：萧家；identity：萧家族长；realm：五星大斗师；favor：16；attitud';
+    ledger.apply({ name: '雅妃', 别名: [{ 姓名: '灵灵', age: '12岁' }, dump1, dump2, '云韵', '雅姐'] }, { source: '手填', floor: 5 });
+    assert.deepEqual(ledger.get('雅妃').aliases, ['云韵', '雅姐'], '对象条目与序列化残渣串都不进别名，正常别名保留');
+    // 手填再保存同款残渣串（编辑表单回填后原样存回）也被洗掉
+    ledger.setFields('雅妃', { aliases: [dump1, dump2, '云韵'] }, { source: '手填' });
+    assert.deepEqual(ledger.get('雅妃').aliases, ['云韵'], 'setFields 同样拒收序列化残渣');
+}
+{
+    // 读档自愈：朋友存档里已入库的残渣串，换聊天 load 时洗掉，好感等其余字段原样保留。
+    const ledger = createNpcLedger({ now: () => 'fixed' });
+    const dump = 'name：灵灵；age：12岁；identity：雪魔的妹妹；clothes：0：name：浅蓝色连帽卫衣；part：上';
+    ledger.load({ records: [{ 姓名: '雅妃', aliases: [dump, '云韵'], favor: 16, identity: '米特尔拍卖场首席拍卖师' }] });
+    assert.deepEqual(ledger.get('雅妃').aliases, ['云韵'], 'load 时把已入库的序列化残渣洗掉');
+    assert.equal(ledger.get('雅妃').favor, 16);
+    assert.equal(ledger.get('雅妃').identity, '米特尔拍卖场首席拍卖师');
+    // 单个英文键写法不误伤（阈值 ≥2）
+    const ledger2 = createNpcLedger({ now: () => 'fixed' });
+    ledger2.load({ records: [{ 姓名: '药老', aliases: ['药尘', '炎帝：萧炎的老师'] }] });
+    assert.deepEqual(ledger2.get('药老').aliases, ['药尘', '炎帝：萧炎的老师'], '单个英文键写法不误伤');
+}
+{
+    // 名册对象整体塞进「别名」（对象而非数组）也被拒收，不再产出 [object Object]
+    const ledger = createNpcLedger({ now: () => 'fixed' });
+    ledger.apply({ name: '雅妃', 别名: { 灵灵: { age: '12岁' }, 萧薰儿: { age: '十五岁' } } }, { source: '手填' });
+    assert.deepEqual(ledger.get('雅妃').aliases, [], '对象整体不序列化进别名');
 }
 
 console.log('npc-ledger 测试通过');

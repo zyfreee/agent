@@ -60,8 +60,10 @@ export function buildControlDashboard({ settings = {}, records = [], tasks = [],
         return true;
     };
     // 剧情账本（剧情决定）是进阶版专属：完整版/简略版下运行时已关、设置卡也隐藏，模块行一并隐藏。
+    // NPC 决策与其他功能一样挂行：计划重估等事件直接亮在这一行；简略版不开放该功能，行随版本隐藏。
     const advanced = settings.apiMode === 'advanced';
-    const modules = MODULES.filter(module => module.id !== 'plot' || advanced).map(module => {
+    const lite = settings.apiMode === 'lite';
+    const modules = MODULES.filter(module => (module.id !== 'plot' || advanced) && (module.id !== 'npc' || !lite)).map(module => {
         const enabled = readEnabled(module);
         const record = scopedRecords.filter(item => (module.stage && item.stage === module.stage && STAGES[item.event])
             || (module.id === 'npc' && NPC_EVENTS[item.event])).at(-1);

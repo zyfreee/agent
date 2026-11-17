@@ -61,11 +61,11 @@ assert.ok('title' in MEMORY_CONSOLIDATE_JSON_SCHEMA.properties, 'schema 要放�
 
     assert.equal(parseConsolidation('不是 JSON').status, 'invalid');
     assert.equal(parseConsolidation('{"basis":"没有 text"}').error, '总结缺少 text');
-    // 正文/标题不再限长：超长照样通过，原样入库
+    // 模型输出限长：text ≤300、title ≤14（用户口径 2026-11-17）
     const long = parseConsolidation(`{"title":"${'标'.repeat(30)}","text":"${'长'.repeat(301)}"}`);
-    assert.equal(long.status, 'ok', '超长正文放行');
-    assert.equal(long.big.text.length, 301);
-    assert.equal(long.big.title.length, 30);
+    assert.equal(long.status, 'ok', '超长放行但裁到上限');
+    assert.equal(long.big.text.length, 300);
+    assert.equal(long.big.title.length, 14);
     // 数组里混入非字符串：过滤而不是作废；数量不限
     const messy = parseConsolidation('{"title":"标题","text":"某事","related":["甲", 3, "乙", "丙", "丁", "戊"]}');
     assert.deepEqual(messy.big.related, ['甲', '乙', '丙', '丁', '戊']);

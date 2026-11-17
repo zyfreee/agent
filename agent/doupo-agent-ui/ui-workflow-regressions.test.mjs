@@ -126,12 +126,64 @@ test('OPT-113 callfail popup: ref rides its own data, empty rows are dropped', (
     // vm 跨 realm 的数组原型与宿主不同，deepStrictEqual 连原型一起比——先 Array.from 落成宿主数组再比。
     assert.deepEqual(Array.from(rendered, row => String(row[0])), ['错误', '自定义接口', '酒馆连接', '下一步'], '酒馆路径的错误详情组只剩「错误」一行');
 });
+test('OPT-113 self popup: ring entries resolve live ledger data by list + id', () => {
+    const build = load('buildOrbItemPopModel', {
+        document: {},
+        popText: value => (typeof value === 'string' && value.trim() ? value.trim() : ''),
+        agentSelfRuntime: { snapshot: () => ({
+            day: 7,
+            titles: ['萧家废物'],
+            equipment: [{ id: 'e1', name: '复元甲', grade: '玄阶中品', type: '防具', note: '护心甲' }, { id: 'e2', name: '寒铁护腕', grade: '黄阶中级', type: '防具', effect: '护体寒光' }],
+            items: [{ id: 'b1', name: '回气丹', count: 3, category: '丹药', equipped: true, note: '护脉' }],
+            crafts: [{ id: 'c1', craft: '炼药', name: '复元丹', count: 2, startDay: 5, endDay: 9, status: 'open', materials: '药材三味' }],
+            goals: [{ id: 'g1', title: '三年之约', text: '云岚宗退婚', priority: '主线', due: '三年内', done: false, source: '第2楼' }],
+        }) },
+    });
+    const gear = build({ kind: 'self', id: 'e1', list: 'equipment' });
+    assert.equal(gear.title, '复元甲');
+    assert.equal(gear.sub, '装备');
+    const gearRows = Object.fromEntries(gear.groups[0].rows);
+    assert.equal(gearRows['品级'], '玄阶中品');
+    assert.equal(gearRows['类型'], '防具');
+    assert.equal(gearRows['效果'], '—', '账里没记效果的属性行显「—」占行，描述结构恒满');
+    assert.equal(gearRows['备注'], '护心甲');
+    assert.equal(gearRows['来源'], '—');
+    assert.equal(gearRows['编号'], 'e1');
+    const gearWithEffect = build({ kind: 'self', id: 'e2', list: 'equipment' });
+    assert.equal(Object.fromEntries(gearWithEffect.groups[0].rows)['效果'], '护体寒光', '账里记了效果就原样展示');
+    const pill = build({ kind: 'self', id: 'b1', list: 'items' });
+    assert.equal(pill.sub, '行囊');
+    const pillRows = Object.fromEntries(pill.groups[0].rows);
+    assert.equal(pillRows['类别'], '丹药');
+    assert.equal(pillRows['数量'], '3');
+    assert.equal(pillRows['装备状态'], '装备中');
+    const craft = build({ kind: 'self', id: 'c1', list: 'crafts' });
+    assert.equal(craft.sub, '炼器');
+    const craftRows = Object.fromEntries(craft.groups[0].rows);
+    assert.equal(craftRows['开工'], '第 5 天');
+    assert.equal(craftRows['预计完工'], '第 9 天');
+    assert.equal(craftRows['状态'], '炼制中');
+    assert.equal(craftRows['材料'], '药材三味');
+    const goal = build({ kind: 'self', id: 'g1', list: 'goals' });
+    assert.equal(goal.sub, '目标');
+    const goalRows = Object.fromEntries(goal.groups[0].rows);
+    assert.equal(goalRows['短标题'], '三年之约');
+    assert.equal(goalRows['完整内容'], '云岚宗退婚');
+    assert.equal(goalRows['优先级'], '主线 ★');
+    assert.equal(goalRows['期限'], '三年内');
+    assert.equal(goalRows['状态'], '进行中');
+    const title = build({ kind: 'self', id: '萧家废物', list: 'titles' });
+    assert.equal(title.title, '萧家废物');
+    assert.equal(build({ kind: 'self', id: 'missing', list: 'equipment' }), null, '账里已经没有的条目不弹');
+    assert.equal(build({ kind: 'self', id: '别的称号', list: 'titles' }), null, '称号对不上不弹');
+    assert.equal(build({ kind: 'self', id: 'e1' }), null, '缺所属清单就无从回查');
+});
 test('OPT-092 navigation always selects one existing page, including llm and unknown', () => {
     const sections = ['overview', 'hub', 'world'].map(settingsSection => ({ dataset: { settingsSection } }));
     const start = source.indexOf('    const selectPage = page =>');
     const end = source.indexOf("    panel.addEventListener('click'", start);
     const panel = { querySelectorAll: selector => selector === '[data-settings-section]' ? sections : [], querySelector: () => null };
-    const env = { panel, renderCallLogList() {}, renderCallSummary() {}, renderRuntimeMode() {}, renderApiMode() {}, refreshMemoryVectorStats() {}, probeCoverScriptStatus: () => ({}), syncSettingsForm() {} };
+    const env = { panel, renderCallLogList() {}, renderCallSummary() {}, renderRuntimeMode() {}, renderApiMode() {}, refreshMemoryVectorStats() {}, probeCoverScriptStatus: () => ({}), syncSettingsForm() {}, refreshNpcDecisionPage() {} };
     const select = vm.runInNewContext(`let activeSettingsPage; ${source.slice(start, end)}; selectPage`, env);
     for (const [page, expected] of [['llm', 'hub'], ['hub', 'hub'], ['not-a-page', 'overview']]) { select(page); assert.deepEqual(sections.filter(item => !item.hidden).map(item => item.dataset.settingsSection), [expected]); }
 });

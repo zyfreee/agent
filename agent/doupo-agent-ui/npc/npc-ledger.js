@@ -17,26 +17,16 @@
 export const NPC_LEDGER_VERSION = 1;
 export const FAVOR_MIN = -100;
 export const FAVOR_MAX = 100;
-export const FAVOR_REASON_MAX = 15;
 /** 单次好感幅度上限：一次最多 ±10，防止模型一句话把关系写飞。 */
 export const FAVOR_STEP_MAX = 10;
 /** 大变动依据门槛：好感单次 |Δ|≥5 或写「经历」时要求一句话依据；缺失只记审计流水，不拦截落账。 */
 export const FAVOR_AUDIT_THRESHOLD = 5;
-export const BASIS_MAX = 80;
 /** 短期情绪：快变量，默认三天到期自动消散；好感是慢变量，两层分开记。 */
 export const MOOD_TTL_DAYS = 3;
-export const MAX_MOODS = 4;
 
-const MAX_TEXT = 300;
-const MAX_LIST = 12;
 const MAX_OTHERS = 12;
 const MAX_THINGS = 16;
-const MAX_LOG = 80;
-const MAX_FAVOR_LOG = 60;
-const MAX_NAME = 40;
 /** 经历只收“重大转变”，一条人物一生级别的转折不会太多；满了丢最旧的。 */
-const MAX_EXP = 120;
-const MAX_EXP_PER_PATCH = 4;
 
 export const PRESENCE_OPTIONS = Object.freeze(['在场', '不在场']);
 export const IMPORTANCE_OPTIONS = Object.freeze(['重要', '不重要']);
@@ -185,30 +175,49 @@ export function isEmptyValue(value) {
     return false;
 }
 
-function text(value, limit = MAX_TEXT) {
+function text(value) {
     if (value === null || value === undefined) return '';
     if (typeof value === 'object') {
         // 对象型字段被塞进纯文本格子时，拼成一行可读文本，不丢信息。
         const parts = [];
         for (const [key, item] of Object.entries(value)) {
-            const chunk = typeof item === 'object' && item !== null ? text(item, limit) : String(item ?? '').trim();
+            const chunk = typeof item === 'object' && item !== null ? text(item) : String(item ?? '').trim();
             if (chunk) parts.push(`${key}：${chunk}`);
         }
-        return parts.join('；').slice(0, limit);
+        return parts.join('；');
     }
     const raw = String(value).replace(/\s+/g, ' ').trim();
     if (SKIP_VALUES.has(raw.toLowerCase())) return '';
-    return raw.slice(0, limit);
+    return raw;
 }
 
-function list(value) {
+/** 序列化残渣指纹：text() 的对象兜底会把整份人物档案摊成「name：…；age：…」。
+ *  列表格子（别名/称号/性格标签）只收名字类短词，一条里出现两段以上「ASCII 字段名+全角冒号」
+ *  就当残渣丢弃——读旧档洗掉已入库的脏串（自愈），写新档拒收同款串（断根）。
+ *  阈值 ≥2：真实的别名/称号不会带这种键值对，模型顺手写的单个英文键（如「炎帝：萧炎」）不受影响。 */
+const SERIALIZED_DUMP = /[a-zA-Z_]{2,}：/g;
+function isSerializedDump(value) {
+    const matches = String(value).match(SERIALIZED_DUMP);
+    return Array.isArray(matches) && matches.length >= 2;
+}
+
+/** 列表字段（别名/称号/性格标签）解析。注意名字必须与账本对外的 list(filter) 方法区分开：
+ *  createNpcLedger 内部有一个同名方法（按条件列出人物档案、返回档案克隆数组）——曾经因为
+ *  同名遮蔽，setFields 把整本人物簿的档案克隆写进了别名字段（改一次档案就爆档卡死）。 */
+function textList(value) {
     if (value === null || value === undefined) return [];
-    const source = Array.isArray(value) ? value : String(value).split(/[、,，;；/|]/);
+    // 模型把整组人物对象塞进「别名」这类列表格子（名册误写）时，对象条目整条拒收：
+    // text() 对对象会摊成 name：…；age：… 的序列化长串，进了别名既污染档案，
+    // 还会被 findKey 拿去做人物匹配——把别人认成本人，后续补丁全会记错账。
+    const source = Array.isArray(value) ? value
+        : (value !== null && typeof value === 'object') ? [value]
+        : String(value).split(/[、,，;；/|]/);
     const result = [];
     for (const item of source) {
-        const part = text(item, 60);
-        if (part && !result.includes(part)) result.push(part);
-        if (result.length >= MAX_LIST) break;
+        if (item !== null && typeof item === 'object') continue;
+        const part = text(item);
+        if (!part || part === '[object Object]' || isSerializedDump(part) || result.includes(part)) continue;
+        result.push(part);
     }
     return result;
 }
@@ -270,11 +279,11 @@ function triples(value, limit = MAX_OTHERS) {
 
 function secretValue(value) {
     if (value === null || value === undefined) return { hideFrom: '', what: '' };
-    if (typeof value === 'string') return { hideFrom: '', what: text(value, MAX_TEXT) };
-    if (typeof value !== 'object') return { hideFrom: '', what: text(value, MAX_TEXT) };
+    if (typeof value === 'string') return { hideFrom: '', what: text(value) };
+    if (typeof value !== 'object') return { hideFrom: '', what: text(value) };
     return {
         hideFrom: text(value.瞒着谁 ?? value.hideFrom ?? value.谁, 60),
-        what: text(value.瞒什么事 ?? value.瞒什么 ?? value.隐瞒什么 ?? value.what ?? value.内容 ?? value.是什么, MAX_TEXT),
+        what: text(value.瞒什么事 ?? value.瞒什么 ?? value.隐瞒什么 ?? value.what ?? value.内容 ?? value.是什么),
     };
 }
 
@@ -293,27 +302,27 @@ function normalizeDay(value) {
 /** 一条经历：一句“他从此不一样了”的转变 + 世界天数/楼层。 */
 function normalizeExpEntry(item, fallbackDay = null) {
     if (item && typeof item === 'object' && !Array.isArray(item)) {
-        const body = text(item.转变 ?? item.text ?? item.内容 ?? item.事情, 200);
+        const body = text(item.转变 ?? item.text ?? item.内容 ?? item.事情);
         const day = normalizeDay(item.day !== undefined ? item.day : item.天数 !== undefined ? item.天数 : fallbackDay);
         const floor = Number.isInteger(item.floor) ? item.floor : (Number.isInteger(item.楼层) ? item.楼层 : null);
         return { text: body, day, floor };
     }
-    return { text: text(item, 200), day: normalizeDay(fallbackDay), floor: null };
+    return { text: text(item), day: normalizeDay(fallbackDay), floor: null };
 }
 
 function normalizeName(value) {
-    return text(value, MAX_NAME).replace(/^[\s【\[「『(（]+|[\s】\]」』)）]+$/g, '');
+    return text(value).replace(/^[\s【\[「『(（]+|[\s】\]」』)）]+$/g, '');
 }
 
 /** 一条短期情绪：一个词 + 为什么；长期态度和好感不走这里。 */
 function normalizeMoodEntry(item) {
     if (item && typeof item === 'object' && !Array.isArray(item)) {
         return {
-            label: text(item.情绪 ?? item.心情 ?? item.label ?? item.name, 12),
-            reason: text(item.理由 ?? item.reason ?? item.因为 ?? item.为什么, 40),
+            label: text(item.情绪 ?? item.心情 ?? item.label ?? item.name),
+            reason: text(item.理由 ?? item.reason ?? item.因为 ?? item.为什么),
         };
     }
-    return { label: text(item, 12), reason: '' };
+    return { label: text(item), reason: '' };
 }
 
 export function createEmptyRecord(name, options = {}) {
@@ -357,7 +366,7 @@ export function normalizeRecord(raw) {
         const value = input[field.key];
         if (value === undefined) continue;
         if (field.type === 'text') record[field.key] = text(value);
-        else if (field.type === 'list') record[field.key] = list(value);
+        else if (field.type === 'list') record[field.key] = textList(value);
         else if (field.type === 'things') record[field.key] = things(value, field.key === 'clothes' ? 8 : MAX_THINGS);
         else if (field.type === 'triples') record[field.key] = triples(value);
         else if (field.type === 'secret') record[field.key] = secretValue(value);
@@ -378,24 +387,24 @@ export function normalizeRecord(raw) {
         record.log = input.log.map(item => ({
             floor: Number.isInteger(item?.floor) ? item.floor : null,
             day: normalizeDay(item?.day),
-            text: text(item?.text ?? item, 200),
+            text: text(item?.text ?? item),
             // src 标来源：'冷藏' ＝ 冷藏推进补写的自行活动，读旧档时不能丢。
-            ...(item && typeof item === 'object' && typeof item.src === 'string' && item.src.trim() ? { src: text(item.src, 12) } : {}),
-        })).filter(item => item.text).slice(-MAX_LOG);
+            ...(item && typeof item === 'object' && typeof item.src === 'string' && item.src.trim() ? { src: text(item.src) } : {}),
+        })).filter(item => item.text);
     }
     if (Array.isArray(input.favorLog)) {
         record.favorLog = input.favorLog.map(item => ({
             floor: Number.isInteger(item?.floor) ? item.floor : null,
             day: normalizeDay(item?.day),
             delta: clampFavor(item?.delta) ?? 0,
-            reason: text(item?.reason, FAVOR_REASON_MAX),
+            reason: text(item?.reason),
             // basis 与 apply() 的落账同形（好感依据是审计线索）：指纹校验前后必须一模一样，
             // 少了这一个字段，凡带依据的好感变动整单被拒（invalid_reply_result）。
-            ...(item && typeof item === 'object' && typeof item.basis === 'string' && item.basis.trim() ? { basis: text(item.basis, BASIS_MAX) } : {}),
-        })).slice(-MAX_FAVOR_LOG);
+            ...(item && typeof item === 'object' && typeof item.basis === 'string' && item.basis.trim() ? { basis: text(item.basis) } : {}),
+        }));
     }
     if (Array.isArray(input.exp)) {
-        record.exp = input.exp.map(item => normalizeExpEntry(item)).filter(item => item.text).slice(-MAX_EXP);
+        record.exp = input.exp.map(item => normalizeExpEntry(item)).filter(item => item.text);
     }
     if (Array.isArray(input.moods)) {
         record.moods = input.moods.map(item => {
@@ -405,7 +414,7 @@ export function normalizeRecord(raw) {
             const expiresDay = normalizeDay(item && typeof item === 'object' ? item.expiresDay : null)
                 ?? (day !== null ? day + MOOD_TTL_DAYS : null);
             return { ...clean, day, expiresDay };
-        }).filter(Boolean).slice(0, MAX_MOODS);
+        }).filter(Boolean);
     }
     if (Number.isInteger(input.lastFloor)) record.lastFloor = input.lastFloor;
     record.version = Math.max(1, clampNumber(input.version, 1, 1e9, 1));
@@ -457,23 +466,21 @@ export function normalizePatch(raw, context = {}) {
             if (delta !== null && delta !== 0) result.favor = delta;
             return;
         }
-        if (target === 'favorReason') { result.favorReason = text(value, FAVOR_REASON_MAX); return; }
-        if (target === 'basis') { result.basis = text(value, BASIS_MAX); return; }
+        if (target === 'favorReason') { result.favorReason = text(value); return; }
+        if (target === 'basis') { result.basis = text(value); return; }
         if (target === 'mood') {
             const entries = Array.isArray(value) ? value : [value];
             for (const entry of entries) {
                 const clean = normalizeMoodEntry(entry);
                 if (clean.label && !result.moods.some(item => item.label === clean.label)) result.moods.push(clean);
-                if (result.moods.length >= MAX_MOODS) break;
             }
             return;
         }
         if (target === 'log') {
             const entries = Array.isArray(value) ? value : [value];
             for (const entry of entries) {
-                const chunk = text(entry, 200);
+                const chunk = text(entry);
                 if (chunk) result.log.push(chunk);
-                if (result.log.length >= 6) break;
             }
             return;
         }
@@ -482,7 +489,6 @@ export function normalizePatch(raw, context = {}) {
             for (const entry of entries) {
                 const clean = normalizeExpEntry(entry, context.day);
                 if (clean.text) result.exp.push(clean);
-                if (result.exp.length >= MAX_EXP_PER_PATCH) break;
             }
             return;
         }
@@ -510,7 +516,7 @@ export function normalizePatch(raw, context = {}) {
             const chunk = text(value);
             if (chunk) result.fields[field.key] = chunk;
         } else if (field.type === 'list') {
-            const items = list(value);
+            const items = textList(value);
             if (items.length) result.fields[field.key] = items;
         } else if (field.type === 'things') {
             const items = things(value, field.key === 'clothes' ? 8 : MAX_THINGS);
@@ -676,7 +682,6 @@ export function createNpcLedger({ maxRecords = 200, now = () => new Date() } = {
                     target.favor = next;
                     // 依据随流水留档：大变动的 basis 是审计线索，小变动有也照收。
                     target.favorLog.push({ floor, day, delta: favorDelta, reason: patch.favorReason, ...(patch.basis ? { basis: patch.basis } : {}) });
-                    if (target.favorLog.length > MAX_FAVOR_LOG) target.favorLog.splice(0, target.favorLog.length - MAX_FAVOR_LOG);
                     touched.push(`好感${favorDelta > 0 ? '+' : ''}${favorDelta}`);
                     // 大变动没带依据只记审计不拦截：和「模型怎么写就怎么记」的取舍一致，给复查留抓手。
                     if (Math.abs(favorDelta) >= FAVOR_AUDIT_THRESHOLD && !patch.basis) {
@@ -690,12 +695,10 @@ export function createNpcLedger({ maxRecords = 200, now = () => new Date() } = {
                 touched.push('情绪');
             }
             // logSrc：这次补丁的流水来源标签（'冷藏' ＝ 冷藏推进的自行活动），逐条带在流水上。
-            const logSrc = typeof context.logSrc === 'string' && context.logSrc.trim() ? text(context.logSrc, 12) : null;
+            const logSrc = typeof context.logSrc === 'string' && context.logSrc.trim() ? text(context.logSrc) : null;
             if (!fillOnly) for (const line of patch.log) target.log.push(logSrc ? { floor, day, text: line, src: logSrc } : { floor, day, text: line });
-            if (target.log.length > MAX_LOG) target.log.splice(0, target.log.length - MAX_LOG);
             if (!fillOnly && patch.log.length) touched.push('流水');
             if (!fillOnly) for (const entry of patch.exp) target.exp.push({ ...entry, floor: entry.floor ?? floor });
-            if (target.exp.length > MAX_EXP) target.exp.splice(0, target.exp.length - MAX_EXP);
             if (!fillOnly && patch.exp.length) {
                 touched.push('经历');
                 if (!patch.basis) result.audits.push({ name: target.name, kind: 'exp', floor, day, reason: 'exp_no_basis' });
@@ -722,8 +725,7 @@ export function createNpcLedger({ maxRecords = 200, now = () => new Date() } = {
                     if (!mentionedKey) continue;
                     const mentioned = records.get(mentionedKey);
                     if (!mentioned) continue;
-                    mentioned.log.push({ floor, day, text: text(`${target.name}：${line}`, 200), ...(logSrc ? { src: logSrc } : {}) });
-                    if (mentioned.log.length > MAX_LOG) mentioned.log.splice(0, mentioned.log.length - MAX_LOG);
+                    mentioned.log.push({ floor, day, text: text(`${target.name}：${line}`), ...(logSrc ? { src: logSrc } : {}) });
                     mentioned.version += 1;
                     mentioned.updatedAt = stamp();
                     result.crossWritten.push({ from: target.name, to: mentioned.name, floor, day });
@@ -736,6 +738,31 @@ export function createNpcLedger({ maxRecords = 200, now = () => new Date() } = {
         if (!patches.length) result.status = 'empty';
         if (!result.applied.length && patches.length) result.status = 'ignored';
         return result;
+    }
+
+    /**
+     * 删楼自愈：聊天被删过楼层后，回写基线（lastReply.floor）与档案楼层标记可能指向已不存在的楼——
+     * 撤回永远不可能成立，基线洞检测还会把新楼误拦成「账本超前」。把所有 > maxFloor 的过期标记
+     * 作废（档案内容原样保留）。lastFloor 与 firstFloor 都要清：normalize 读档时会拿 firstFloor
+     * 当 lastFloor 兜底，只清一个会从另一个复活。返回 { dropped, floor, cleared }。
+     */
+    function dropStaleFloors(maxFloor) {
+        const cap = Number.isSafeInteger(maxFloor) && maxFloor >= 0 ? maxFloor : null;
+        if (cap === null) return { dropped: false, floor: null, cleared: 0 };
+        let cleared = 0;
+        let baselineFloor = null;
+        for (const record of records.values()) {
+            const staleLast = Number.isInteger(record.lastFloor) && record.lastFloor > cap;
+            const staleFirst = Number.isInteger(record.firstFloor) && record.firstFloor > cap;
+            if (staleLast) record.lastFloor = null;
+            if (staleFirst) record.firstFloor = null;
+            if (staleLast || staleFirst) cleared += 1;
+        }
+        if (lastReply && lastReply.floor > cap) {
+            baselineFloor = lastReply.floor;
+            lastReply = null;
+        }
+        return { dropped: baselineFloor !== null, floor: baselineFloor, cleared };
     }
 
     /** Latest reply replacement is allowed only while its complete after-book is untouched. */
@@ -784,7 +811,7 @@ export function createNpcLedger({ maxRecords = 200, now = () => new Date() } = {
         const key = findKey(name);
         if (!key) return { status: 'not_found' };
         const record = records.get(key);
-        const clean = (Array.isArray(entries) ? entries : []).map(item => normalizeExpEntry(item)).filter(item => item.text).slice(-MAX_EXP);
+        const clean = (Array.isArray(entries) ? entries : []).map(item => normalizeExpEntry(item)).filter(item => item.text);
         const before = record.exp.length;
         const changed = JSON.stringify(record.exp) !== JSON.stringify(clean);
         record.exp = clean;
@@ -808,7 +835,7 @@ export function createNpcLedger({ maxRecords = 200, now = () => new Date() } = {
             if (!field) continue;
             let next;
             if (field.type === 'text') next = text(raw);
-            else if (field.type === 'list') next = list(raw);
+            else if (field.type === 'list') next = textList(raw);
             else if (field.type === 'things') next = things(raw, fieldKey === 'clothes' ? 8 : MAX_THINGS);
             else if (field.type === 'triples') next = triples(raw);
             else if (field.type === 'secret') next = secretValue(raw);
@@ -833,7 +860,6 @@ export function createNpcLedger({ maxRecords = 200, now = () => new Date() } = {
         if (!clean.text) return { status: 'empty' };
         const record = records.get(key);
         record.exp.push({ ...clean, floor: Number.isInteger(floor) ? floor : record.lastFloor ?? null });
-        if (record.exp.length > MAX_EXP) record.exp.splice(0, record.exp.length - MAX_EXP);
         record.version += 1;
         record.updatedAt = stamp();
         changes += 1;
@@ -938,8 +964,10 @@ export function createNpcLedger({ maxRecords = 200, now = () => new Date() } = {
         return describeFull(record);
     }
 
-    function injection({ budget = 900, maxFull = 6, maxBrief = 14, header = NPC_LEDGER_HEADER } = {}) {
-        const cap = value => Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+    /** 注入三参数全部默认不限制（用户拍板的口径）：挑人靠四象限与评分，不靠数字截流；
+     * 设置层把 0/留空换算成 Infinity 传进来，只有用户显式填了正数才按数降级。 */
+    function injection({ budget = Infinity, maxFull = Infinity, maxBrief = Infinity, header = NPC_LEDGER_HEADER } = {}) {
+        const cap = value => Number.isFinite(value) ? Math.max(0, Math.floor(value)) : Infinity;
         budget = cap(budget); maxFull = cap(maxFull); maxBrief = cap(maxBrief);
         const all = [...records.values()];
         // 档内排序不再按插入序：动态分值 = 最近出场为主 + 近期好感波动 + 剧情钩子（经历/在做/秘密）。
@@ -998,6 +1026,7 @@ export function createNpcLedger({ maxRecords = 200, now = () => new Date() } = {
 
     return Object.freeze({
         apply, recordReply, get, list, remove, clear, status, exportAll, load, describe, injection, exps, replaceExp, restoreSnapshots,
+        dropStaleFloors,
         setFields, addExp, removeExp, decayMoods,
         find: name => (findKey(name) ? true : false),
         names: () => [...records.values()].map(record => record.name),
@@ -1087,4 +1116,4 @@ function describeLine(record) {
     return parts.join('｜');
 }
 
-export { MAX_LOG, MAX_FAVOR_LOG, FIELD_BY_KEY as NPC_FIELD_INDEX };
+export { FIELD_BY_KEY as NPC_FIELD_INDEX };

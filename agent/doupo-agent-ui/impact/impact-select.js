@@ -192,18 +192,19 @@ export function parseImpactSelect(raw, { records = [] } = {}) {
  * 把挑选结果拼成正文注入文本：抬头 + 每条一行，带 ★（世界级）/？（传闻）标记，
  * 未到发酵日的写成“还没发作”，超预算从尾部丢。
  */
-export function buildImpactInjectionFromPicks(records = [], picks = [], { maxChars = 800, maxLines = MAX_PICKS, day = 1 } = {}) {
+export function buildImpactInjectionFromPicks(records = [], picks = [], { maxChars = Infinity, maxLines = Infinity, day = 1 } = {}) {
     return buildImpactInjectionFromPicksDetail(records, picks, { maxChars, maxLines, day }).text;
 }
 
 /**
  * 与 buildImpactInjectionFromPicks 同内容，但多给一份 usedIds：
  * 正文注入后要能回答“这一轮到底用了哪几条”，设置页才能标“本轮已注入”。
+ * 字数/条数默认不限制（用户拍板的口径）：有限正数才截断，不填＝全量注入。
  */
-export function buildImpactInjectionFromPicksDetail(records = [], picks = [], { maxChars = 800, maxLines = MAX_PICKS, day = 1 } = {}) {
+export function buildImpactInjectionFromPicksDetail(records = [], picks = [], { maxChars = Infinity, maxLines = Infinity, day = 1 } = {}) {
     const today = clampInt(day, 1, 99999, 1);
-    const budget = clampInt(maxChars, 60, 4000, 800);
-    const limit = clampInt(maxLines, 1, 20, MAX_PICKS);
+    const budget = Number.isFinite(Number(maxChars)) && Number(maxChars) > 0 ? Math.floor(Number(maxChars)) : Infinity;
+    const limit = Number.isFinite(Number(maxLines)) && Number(maxLines) > 0 ? Math.floor(Number(maxLines)) : Infinity;
     const byId = new Map((Array.isArray(records) ? records : []).map(record => [record.id, record]));
     const entries = [];
     for (const pick of Array.isArray(picks) ? picks : []) {
@@ -231,4 +232,3 @@ export function buildImpactInjectionFromPicksDetail(records = [], picks = [], { 
     return { text: [IMPACT_HEADER, ...kept.map(item => item.line)].join('\n'), usedIds: kept.map(item => item.id) };
 }
 
-export const IMPACT_SELECT_LIMITS = Object.freeze({ maxPicks: MAX_PICKS, maxLineChars: MAX_LINE_CHARS, maxNoteChars: MAX_NOTE_CHARS });

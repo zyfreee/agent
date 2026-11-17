@@ -95,4 +95,18 @@ for (const weight of ['world', 'major', 'minor']) {
     }
 }
 
+// —— 注入字数/条数默认不限制：不传上限时没收场的影响全量进提示词，填了正数才截 ——
+{
+    const many = Array.from({ length: 12 }, (_, index) => ({
+        id: `u${index}`, day: 5, title: `影响${index}`, detail: '情'.repeat(200), target: '乌坦城',
+        kind: 'direct', weight: 'major', certainty: 'certain', evidence: `第 ${index + 1} 楼`, canon: '',
+        shift: 'none', state: 'active', ripenDay: null, resolution: '', parent: '', depth: 0,
+    }));
+    const unlimited = buildImpactInjection(many);
+    assert.ok(many.every(record => unlimited.includes(record.title)), '不传 maxChars/maxLines 时 12 条全量注入');
+    const capped = buildImpactInjection(many, { maxChars: 600 });
+    assert.ok(capped.length <= 620, `填了正数才按字数截：${capped.length}`);
+    assert.ok(!capped.includes('影响11'), '超预算的留在库里');
+}
+
 console.log('impact ops tests passed');

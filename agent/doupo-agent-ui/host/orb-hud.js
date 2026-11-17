@@ -22,6 +22,7 @@ export const ORB_ITEMS = Object.freeze([
     Object.freeze({ id: 'self', icon: '◉', title: '纳戒', hint: '主角自身与随身之物' }),
     Object.freeze({ id: 'memory', icon: '✧', title: '记忆存储', hint: '大小记忆与本轮注入' }),
     Object.freeze({ id: 'npcledger', icon: '☰', title: '人物簿', hint: '人物档案与好感' }),
+    Object.freeze({ id: 'npc', icon: '☯', title: 'NPC 决策', hint: '自由对话与主动联系' }),
     Object.freeze({ id: 'cold', icon: '❄', title: '冷藏推进', hint: '后台人物的推进记录' }),
     Object.freeze({ id: 'impact', icon: '⌁', title: '世界影响', hint: '世界被改成了什么样' }),
     Object.freeze({ id: 'facts', icon: '▤', title: '原著资料', hint: '设定库与注入通道' }),
@@ -220,10 +221,13 @@ export function buildSelfPanel({ status, snapshot } = {}) {
     const realm = `${text(status?.realm?.realm)}${text(status?.realm?.stage)}`;
     // 各栏都带全量：主信息窗只摆前几条，右上角「全部」按同一个栏目弹副窗。
     const titles = [...(snapshot?.titles ?? [])];
-    const martialItem = item => entry(
+    // 条目带 ref（kind self + 所属清单 + 条目 id）：悬浮球信息窗里点开详情小卡，与其他栏同款。
+    // 称号是纯字符串没有 id，用称号文本本身当引用键（账本里称号不重复）。
+    const martialItem = list => item => entry(
         `${item.name}${item.grade ? `（${item.grade}）` : ''}`,
         item.type,
         item.note,
+        ref('self', item?.id, { list }),
     );
     const techniques = [...(snapshot?.techniques ?? [])];
     const skills = [...(snapshot?.skills ?? [])];
@@ -254,36 +258,37 @@ export function buildSelfPanel({ status, snapshot } = {}) {
         summary: [`第 ${status?.day ?? '?'} 天`, text(profile.name) || '（未命名）', realm || '（无境界）'].filter(Boolean).join(' · '),
         rows,
         lists: [
-            list('称号', '还没有称号。', titles.map(title => entry(title))),
-            list('功法', '还没有修行的功法。', techniques.map(martialItem)),
-            list('斗技', '还没有学会的斗技。', skills.map(martialItem)),
+            list('称号', '还没有称号。', titles.map(title => entry(title, '', '', ref('self', title, { list: 'titles' })))),
+            list('功法', '还没有修行的功法。', techniques.map(martialItem('techniques'))),
+            list('斗技', '还没有学会的斗技。', skills.map(martialItem('skills'))),
             list('装备', '还没有穿戴任何装备。', equipment.map(item => entry(
                 `${item.name}${item.grade ? `（${item.grade}）` : ''}`,
-                item.type, item.note,
+                item.type, item.note, ref('self', item?.id, { list: 'equipment' }),
             ))),
             list('天材地宝', '还没有天材地宝。', treasures.map(item => entry(
                 `${item.name}${item.grade ? `（${item.grade}）` : ''}`,
-                item.type, item.note,
+                item.type, item.note, ref('self', item?.id, { list: 'treasures' }),
             ))),
             list('行囊', '行囊空空如也。', items.map(item => entry(
                 `${item.equipped ? '[装备中] ' : ''}${item.name}${item.grade ? `（${item.grade}）` : ''} ×${item.count}`,
-                item.category, item.note,
+                item.category, item.note, ref('self', item?.id, { list: 'items' }),
             ))),
             list('炼丹', '还没有掌握丹方。', recipes.map(recipe => entry(
                 `${recipe.name}${recipe.grade ? `（${recipe.grade}）` : ''}`,
-                recipe.craft, recipe.note,
+                recipe.craft, recipe.note, ref('self', recipe?.id, { list: 'recipes' }),
             ))),
             list('炼制中', '没有进行中的炼制。', crafts.map(job => {
                 const overdue = job.endDay !== null && job.endDay !== undefined && job.endDay < (status?.day ?? 0);
                 return entry(
                     `${job.craft || '炼制'}·${job.name}${job.count > 1 ? `×${job.count}` : ''}`,
                     [`第 ${job.startDay ?? '?'} 天开工`, job.endDay !== null && job.endDay !== undefined ? (overdue ? '已超期' : `剩 ${job.endDay - (status?.day ?? 0) + 1} 天`) : ''].filter(Boolean).join(' · '),
-                    job.note,
+                    job.note, ref('self', job?.id, { list: 'crafts' }),
                 );
             })),
             list('目标', '还没有立下目标。', goals.map(goal => entry(
                 `${goal.done ? '[已达成] ' : goal.priority === '主线' ? '★ ' : '· '}${goal.title || goal.text}`,
                 [goal.due, goal.title && goal.text && goal.title !== goal.text ? goal.text : '', goal.source].filter(Boolean).join(' · '),
+                '', ref('self', goal?.id, { list: 'goals' }),
             ))),
         ],
     };
@@ -307,25 +312,37 @@ function favorLabel(value) {
     return number === 0 ? '冷淡' : '';
 }
 
-/** 人物簿：档案计数与人物一览，只读。 */
-export function buildNpcPanel({ status, records } = {}) {
+/** 人物簿：档案计数、主动联系队列与人物一览，只读。 */
+export function buildNpcPanel({ status, records, reachout = [] } = {}) {
     // 人物簿的 list() 已经把“重要 / 最近活动”排前面，主窗取前几条就是最该看的几个人。
     const people = [...(records ?? [])];
+    const pending = Array.isArray(reachout) ? reachout : [];
     const rows = capRows([
         row('档案总数', status?.total !== undefined ? `${status.total} 人` : ''),
         row('在场', status?.present !== undefined ? `${status.present} 人` : ''),
         row('重要', status?.important !== undefined ? `${status.important} 人` : ''),
+        row('想找你', pending.length ? `${pending.length} 人` : '—', pending.length ? '有人排队等着来找你' : ''),
     ]);
+    // 主动联系队列：条目带 { kind: 'reachout' } 引用，点击应约在 index.js 的条目卡点击里特判。
+    const reachoutEntries = pending.map(item => entry(
+        item?.npcId ?? '（未知名）',
+        [item?.reason || '', item?.opening ? `「${String(item.opening).slice(0, 36)}${String(item.opening).length > 36 ? '…' : ''}」` : ''].filter(Boolean).join(' · '),
+        '有人想主动来找你，点开应约',
+        { kind: 'reachout', id: item?.id },
+    ));
     return {
         title: '人物簿', icon: '☰',
         summary: status?.total ? `记了 ${status.total} 人，在场 ${status.present} 人` : '还没有人物档案。',
         rows,
-        lists: [list('人物一览', '还没有人物档案。正文里出现的人会记在这里。', people.map(record => entry(
-            record.name,
-            [`${favorLabel(record.favor)}（${Number(record.favor) || 0}）`, record.presence, record.importance].filter(Boolean).join(' · '),
-            record.identity,
-            ref('npc', record?.name),
-        )))],
+        lists: [
+            ...(reachoutEntries.length ? [list('待他来找你', '', reachoutEntries)] : []),
+            list('人物一览', '还没有人物档案。正文里出现的人会记在这里。', people.map(record => entry(
+                record.name,
+                [`${favorLabel(record.favor)}（${Number(record.favor) || 0}）`, record.presence, record.importance].filter(Boolean).join(' · '),
+                record.identity,
+                ref('npc', record?.name),
+            ))),
+        ],
     };
 }
 
@@ -899,13 +916,51 @@ export function buildSettlePanel({ lastAdjudication } = {}) {
     };
 }
 
-/** 一次折好十二个信息窗；输入缺哪块，哪个窗就是“暂无”状态。每个功能各吃各的输入包，互不撞字段。 */
+/** NPC 决策：待处理的主动联系（点条目应约开聊）与可对话的人物（点条目直接找他聊）。 */
+export function buildNpcDecisionPanel({ reachout = [], reachoutStatus = null, chatEnabled = true, reachoutEnabled = false, records = [] } = {}) {
+    const pending = Array.isArray(reachout) ? reachout : [];
+    const people = (Array.isArray(records) ? records : []).filter(record => record?.name);
+    const chatty = people.filter(record => record.presence === '在场' || (record.reachable === true || (typeof record.reachable === 'string' && record.reachable.trim() && record.reachable.trim() !== '不可')));
+    const reachoutEntries = pending.map(item => entry(
+        item?.npcId ?? '（未知名）',
+        [item?.reason || '', item?.opening ? `「${String(item.opening).slice(0, 36)}${String(item.opening).length > 36 ? '…' : ''}」` : ''].filter(Boolean).join(' · '),
+        '有人想主动来找你，点开应约',
+        { kind: 'reachout', id: item?.id },
+    ));
+    const chatEntries = chatty.slice(0, 8).map(record => entry(
+        record.name,
+        [`${favorLabel(record.favor)}（${Number(record.favor) || 0}）`, record.presence === '在场' ? '当面' : '传讯'].filter(Boolean).join(' · '),
+        record.identity,
+        { kind: 'npc-chat', id: record.name },
+    ));
+    const rows = capRows([
+        row('待他来找你', pending.length ? `${pending.length} 人` : '—', pending.length ? '有人排队等着来找你' : ''),
+        row('可对话的人', `${chatty.length} 人`),
+        row('自由对话', chatEnabled ? '开' : '关'),
+        row('主动联系', reachoutEnabled ? (reachoutStatus?.quiet?.active ? '开·勿扰中' : '开') : '关'),
+        row('本轮额度', reachoutStatus ? `剩 ${reachoutStatus.quotaLeft}/${reachoutStatus.quota}` : '—'),
+    ]);
+    return {
+        title: 'NPC 决策', icon: '☯',
+        summary: pending.length
+            ? `${pending.length} 个人想来找你；可对话 ${chatty.length} 人。`
+            : chatEnabled ? `没有待处理联系；可对话 ${chatty.length} 人。` : 'NPC 对话已关闭；在 NPC 决策页打开后这里列出可聊的人。',
+        rows,
+        lists: [
+            ...(reachoutEntries.length ? [list('待他来找你', '', reachoutEntries)] : []),
+            list('可对话的人', '人物簿里还没有能联系上的人。正文里出现人物并记账后，这里就能直接找他聊。', chatEntries),
+        ],
+    };
+}
+
+/** 一次折好十三个信息窗；输入缺哪块，哪个窗就是“暂无”状态。每个功能各吃各的输入包，互不撞字段。 */
 export function buildOrbPanels(input = {}) {
     return {
         overview: buildOverviewPanel(input),
         world: buildWorldPanel(input.world),
         self: buildSelfPanel(input.self),
         memory: buildMemoryPanel(input.memory),
+        npc: buildNpcDecisionPanel(input.npc ?? {}),
         npcledger: buildNpcPanel(input.npcledger),
         cold: buildColdPanel(input.cold),
         impact: buildImpactPanel(input.impact),

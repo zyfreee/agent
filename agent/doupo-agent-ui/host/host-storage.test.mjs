@@ -107,7 +107,7 @@ assert.equal(embedStorage.settings().value.memory.embedding.baseUrl, 'https://ap
 assert.equal(embedStorage.settings().value.memory.embedding.apiKey, 'sk-test');
 embedStorage.updateSettings({ memory: { embedding: { enabled: true } } });
 assert.deepEqual(embedStorage.settings().value.memory.embedding, { enabled: true, baseUrl: 'https://api.example.com/v1', apiKey: 'sk-test', model: 'text-embedding-3-small' }, '四个字段齐全，互不覆盖');
-assert.equal(embedStorage.settings().value.memory.catalogBudget, 4000, 'embedding 深合并不伤 memory 同层其它键');
+assert.equal(embedStorage.settings().value.memory.catalogBudget, 0, 'embedding 深合并不伤 memory 同层其它键（schemaVersion 15 起目录预算默认不限制）');
 // 载入愈合：修复前单层合并写出的"缺字段半截对象"，载入时按默认值补齐。
 const partialContext = { extensionSettings: { doupo_agent_ui: { memory: { embedding: { baseUrl: 'https://old.example.com/v1' } } } } };
 const partial = createHostStorage({ getContext: () => partialContext }).settings().value.memory.embedding;
@@ -127,7 +127,7 @@ const freshStorage = createHostStorage({ getContext: () => freshContext });
 const selfSettings = freshStorage.settings().value.self;
 assert.equal(freshStorage.settings().value.enableSelfLedger, true);
 assert.equal(selfSettings.inject, true);
-assert.equal(selfSettings.injectBudget, 900);
+assert.equal(selfSettings.injectBudget, 0, '注入预算默认 0＝不限制（schemaVersion 15 口径）');
 assert.equal(selfSettings.decideEnabled, true);
 assert.equal(selfSettings.decideAuto, true);
 assert.equal(selfSettings.decideMode, undefined, '旧的手填决定连接键不该再有（连接走方案）');
@@ -315,4 +315,38 @@ assert.equal(freshSettings.npc.consistencyAuto, true, '进阶键默认值：一�
 assert.equal(freshSettings.npc.relationsInject, true, '进阶键默认值：关系网注入');
 const v14FullContext = { extensionSettings: { doupo_agent_ui: { schemaVersion: 14, apiMode: 'full' } } };
 assert.equal(createHostStorage({ getContext: () => v14FullContext }).settings().value.apiMode, 'full', '版本门已过，玩家手动选回完整版不再被翻回去');
+// 曾短暂把 NPC 决策并成 npc.apiPreset 的存档：拆回原样——收编值回到空的记录员绑定，统一键删掉；
+// 记录员已有绑定时统一键直接丢弃（以原绑定为准）；拆完幂等。
+const unifiedNpcContext = { extensionSettings: { doupo_agent_ui: { schemaVersion: 14, npc: { apiPreset: 'p1', chatApiPreset: 'p2' } } } };
+const foldedNpc = createHostStorage({ getContext: () => unifiedNpcContext }).settings().value.npc;
+assert.equal(foldedNpc.ledgerApiPreset, 'p1', '统一键拆回记录员绑定');
+assert.equal(foldedNpc.apiPreset, undefined, '统一键删除');
+assert.equal(foldedNpc.chatApiPreset, 'p2', '分路键原样保留');
+const keptNpc = createHostStorage({ getContext: () => ({ extensionSettings: { doupo_agent_ui: { schemaVersion: 14, npc: { apiPreset: 'p9', ledgerApiPreset: 'p1' } } } }) }).settings().value.npc;
+assert.equal(keptNpc.ledgerApiPreset, 'p1', '记录员已有绑定不覆盖');
+assert.equal(keptNpc.apiPreset, undefined, '统一键照删');
+// schemaVersion 15：注入字数/人数上限默认口径统一成「0 或留空＝不限制」。
+// 老存档里与旧默认完全相等的值清成 0，玩家手调过的原样保留；跑过版本门的不再清。
+const v14BudgetsContext = { extensionSettings: { doupo_agent_ui: {
+    schemaVersion: 14,
+    npc: { ledgerBudget: 900, ledgerMaxFull: 6, ledgerMaxBrief: 3 },
+    plot: { injectBudget: 500 },
+    self: { injectBudget: 900 },
+    memory: { injectBudget: 800, catalogBudget: 4000, wakeUpBudget: 500 },
+    impact: { injectBudget: 800, injectMaxLines: 8 },
+} } };
+const v15Migrated = createHostStorage({ getContext: () => v14BudgetsContext }).settings().value;
+assert.equal(v15Migrated.schemaVersion, DEFAULT_SETTINGS.schemaVersion);
+assert.equal(v15Migrated.npc.ledgerBudget, 0, '人物簿字数预算旧默认清 0＝不限制');
+assert.equal(v15Migrated.npc.ledgerMaxFull, 0, '全字段人数旧默认清 0＝不限制');
+assert.equal(v15Migrated.plot.injectBudget, 0);
+assert.equal(v15Migrated.self.injectBudget, 0);
+assert.equal(v15Migrated.memory.injectBudget, 0);
+assert.equal(v15Migrated.memory.catalogBudget, 0);
+assert.equal(v15Migrated.memory.wakeUpBudget, 0);
+assert.equal(v15Migrated.impact.injectBudget, 0);
+assert.equal(v15Migrated.impact.injectMaxLines, 0, '影响条数上限旧默认清 0＝不限制');
+assert.equal(v15Migrated.npc.ledgerMaxBrief, 3, '玩家手调过的值原样保留');
+const v15Once = createHostStorage({ getContext: () => ({ extensionSettings: { doupo_agent_ui: { schemaVersion: 15, npc: { ledgerBudget: 900 } } } }) }).settings().value;
+assert.equal(v15Once.npc.ledgerBudget, 900, '版本门已过（schemaVersion=15）不再清值');
 console.log('host storage tests passed');

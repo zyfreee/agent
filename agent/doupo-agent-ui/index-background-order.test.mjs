@@ -9,7 +9,7 @@ const settings = { enableDbBridge: false, world: { decideAuto: false }, self: { 
 const makeContext = id => ({ chatId: id, chat: [{ mes: '第一轮正文', is_user: false }], chatMetadata: {}, chatCompletionSettings: sampling,
     extensionSettings: { doupo_agent_ui: settings }, eventSource: events,
     event_types: { CHAT_CHANGED: 'chat', GENERATION_STARTED: 'started', GENERATION_ENDED: 'ended', CHARACTER_MESSAGE_RENDERED: 'rendered' }, saveMetadata() {},
-    generateQuietPrompt: options => new Promise(resolve => pending.push({ options, resolve })),
+    generateQuietPrompt: (options = {}) => new Promise(resolve => pending.push({ options, resolve })),
 });
 let active = makeContext('A');
 const flush = () => new Promise(resolve => setImmediate(resolve));

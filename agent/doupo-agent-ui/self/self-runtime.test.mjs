@@ -21,7 +21,7 @@ for (const [count, take] of [[3, 3], [1, 1], [3, 1], [3, undefined]]) {
 }
 for (const count of [1, 3]) {
     const bagRuntime = createSelfRuntime({ now: () => 'invalid-bag' });
-    bagRuntime.apply([{ op: 'addItem', name: '益气散', count }], { source: 'manual' });
+    bagRuntime.apply([{ op: 'addItem', name: '益气散', count, effect: '恢复斗气' }], { source: 'manual' });
     for (const take of [0, -1, 0.5, count + 1]) {
         const before = bagRuntime.snapshot();
         const rejected = bagRuntime.apply([{ op: 'removeItem', id: before.items[0].id, count: take }], { source: 'manual' });
@@ -48,7 +48,7 @@ for (const count of [1, 3]) {
 for (const kind of ['Technique', 'Skill', 'Equipment', 'Treasure', 'Item']) {
     let tick = 0;
     const guarded = createSelfRuntime({ now: () => `update-${++tick}` });
-    const added = guarded.apply([{ op: `add${kind}`, name: '原名称', count: 3 }], { source: 'manual' });
+    const added = guarded.apply([{ op: `add${kind}`, name: '原名称', count: 3, effect: '测试效果' }], { source: 'manual' });
     const id = added.applied[0].id;
     for (const count of [-1, 0.5, 1000000, 'not-a-number']) {
         const before = guarded.snapshot();
@@ -56,9 +56,11 @@ for (const kind of ['Technique', 'Skill', 'Equipment', 'Treasure', 'Item']) {
         assert.equal(rejected.rejected[0]?.reason, 'bad_count');
         assert.deepEqual(guarded.snapshot(), before, `${kind} 拒绝更新不得留下字段、日志或时间戳变化`);
     }
+    // 名字不设字数上限（用户口径 2026-11-17）：31 字照收且原样保留
     const before = guarded.snapshot();
-    assert.equal(guarded.apply([{ op: `update${kind}`, id, name: '长'.repeat(31), count: 2 }], { source: 'manual' }).rejected[0]?.reason, 'name_too_long');
-    assert.deepEqual(guarded.snapshot(), before);
+    const longNamed = guarded.apply([{ op: `update${kind}`, id, name: '长'.repeat(31), count: 2 }], { source: 'manual' });
+    assert.equal(longNamed.status, 'applied');
+    assert.equal(guarded.snapshot()[{ Technique: 'techniques', Skill: 'skills', Equipment: 'equipment', Treasure: 'treasures', Item: 'items' }[kind]].find(item => item.id === id).name, '长'.repeat(31), '长名字原样保留');
     assert.equal(guarded.apply([{ op: `update${kind}`, id, name: '合法名称', count: 2 }], { source: 'manual' }).status, 'applied');
 }
 
@@ -92,7 +94,7 @@ for (const [kind, key] of [['Technique', 'techniques'], ['Skill', 'skills'], ['E
 }
 {
     const r = createSelfRuntime({ now: () => 'failure' });
-    r.apply([{ op: 'addItem', name: '已被手动移除' }, { op: 'addGold', amount: 10 }], { floor: 4 });
+    r.apply([{ op: 'addItem', name: '已被手动移除', effect: '测试效果' }, { op: 'addGold', amount: 10 }], { floor: 4 });
     r.apply([{ op: 'removeItem', id: 'b1' }], { source: 'manual' });
     const before = r.snapshot();
     assert.throws(() => r.baselineForFloor(4), error => error.code === 'rollback_failed');
@@ -106,9 +108,9 @@ for (const [kind, key] of [['Technique', 'techniques'], ['Skill', 'skills'], ['E
 {
     const r = createSelfRuntime({ maxSkills: 5, now: () => 'inverse' });
     const progress = '一二三四五六七八九十甲乙丙丁戊己';
-    r.apply([{ op: 'addTitle', text: '第一称号' }, { op: 'addTitle', text: '第二称号' }, ...Array.from({ length: 5 }, (_, i) => ({ op: 'addSkill', name: `斗技${i}`, progress }))], { source: 'manual' });
+    r.apply([{ op: 'addTitle', text: '第一称号' }, { op: 'addTitle', text: '第二称号' }, ...Array.from({ length: 5 }, (_, i) => ({ op: 'addSkill', name: `斗技${i}`, progress, effect: '测试效果' }))], { source: 'manual' });
     const before = r.snapshot();
-    r.apply([{ op: 'removeTitle', text: '第一称号' }, { op: 'updateSkill', id: 's3', progress: '新进度' }, { op: 'addSkill', name: '会挤掉旧条目' }], { floor: 7 });
+    r.apply([{ op: 'removeTitle', text: '第一称号' }, { op: 'updateSkill', id: 's3', progress: '新进度' }, { op: 'addSkill', name: '会挤掉旧条目', effect: '测试效果' }], { floor: 7 });
     const reloaded = createSelfRuntime({ maxSkills: 5, now: () => 'inverse' });
     assert.equal(reloaded.restore(r.snapshot()).replay, 'restored');
     reloaded.apply([], { floor: 7 });
@@ -119,15 +121,15 @@ for (const [kind, key] of [['Technique', 'techniques'], ['Skill', 'skills'], ['E
 // OPT-007：保存恢复不能丢同楼逆操作、去重或编号水位；旧档不编造历史。
 {
     const r = createSelfRuntime({ now: () => 'save' });
-    r.apply([{ op: 'addGoal', title: '旧目标', text: '完成旧目标' }, { op: 'addItem', name: '旧丹', count: 2 }], { source: 'manual' });
-    r.apply([{ op: 'addGold', amount: 10, opId: 'old-floor' }, { op: 'addItem', name: '新丹', count: 3 }, { op: 'finishGoal', id: 'g1' }], { floor: 6 });
-    r.apply([{ op: 'setProfile', field: 'name', text: '手动改名' }, { op: 'addItem', name: '手动购买', count: 2, opId: 'manual-id' }], { source: 'manual' });
+    r.apply([{ op: 'addGoal', title: '旧目标', text: '完成旧目标' }, { op: 'addItem', name: '旧丹', count: 2, effect: '测试效果' }], { source: 'manual' });
+    r.apply([{ op: 'addGold', amount: 10, opId: 'old-floor' }, { op: 'addItem', name: '新丹', count: 3, effect: '测试效果' }, { op: 'finishGoal', id: 'g1' }], { floor: 6 });
+    r.apply([{ op: 'setProfile', field: 'name', text: '手动改名' }, { op: 'addItem', name: '手动购买', count: 2, opId: 'manual-id', effect: '测试效果' }], { source: 'manual' });
     const loaded = createSelfRuntime({ now: () => 'save' });
     const saved = r.snapshot();
     assert.equal(saved._runtime?.version, 1);
     assert.equal(saved._runtime.lastFloor.floor, 6);
     assert.equal(loaded.restore(JSON.parse(JSON.stringify(saved))).replay, 'restored');
-    const next = [{ op: 'addGold', amount: 10, opId: 'old-floor' }, { op: 'addItem', name: '新丹', count: 2 }, { op: 'finishGoal', id: 'g1' }, { op: 'addGold', amount: 5, opId: 'manual-id' }];
+    const next = [{ op: 'addGold', amount: 10, opId: 'old-floor' }, { op: 'addItem', name: '新丹', count: 2, effect: '测试效果' }, { op: 'finishGoal', id: 'g1' }, { op: 'addGold', amount: 5, opId: 'manual-id' }];
     assert.deepEqual(loaded.apply(next, { floor: 6 }), r.apply(next, { floor: 6 }));
     assert.deepEqual(loaded.snapshot(), r.snapshot(), '恢复后同楼与不中断路径完全相等');
     assert.equal(loaded.status().gold, 10);
@@ -135,11 +137,11 @@ for (const [kind, key] of [['Technique', 'techniques'], ['Skill', 'skills'], ['E
     assert.equal(loaded.snapshot().items.find(item => item.name === '手动购买').count, 2);
     assert.equal(loaded.baselineForFloor(6)._runtime, undefined, '业务基线不夹带运行时元数据');
     const watermarked = createSelfRuntime({ now: () => 'save' });
-    watermarked.apply([{ op: 'addItem', name: '最高号' }], { source: 'manual' });
+    watermarked.apply([{ op: 'addItem', name: '最高号', effect: '测试效果' }], { source: 'manual' });
     watermarked.apply([{ op: 'removeItem', id: 'b1' }], { source: 'manual' });
     const reloadWatermark = createSelfRuntime();
     reloadWatermark.restore(watermarked.snapshot());
-    assert.equal(reloadWatermark.apply([{ op: 'addItem', name: '下一号' }]).applied[0].id, 'b2');
+    assert.equal(reloadWatermark.apply([{ op: 'addItem', name: '下一号', effect: '测试效果' }]).applied[0].id, 'b2');
     loaded.reset();
     loaded.apply([{ op: 'addGold', amount: 10, opId: 'old-floor' }], { floor: 6 });
     assert.equal(loaded.status().gold, 10, '重置隔离不同聊天基线');
@@ -224,7 +226,7 @@ for (const [kind, key] of [['Technique', 'techniques'], ['Skill', 'skills'], ['E
 // SELF-NPC-R1：模型新增栈被手动转移后，不能用旧楼逆操作复制已穿的一件。
 for (const reload of [false, true]) for (const replay of [false, true]) {
     let r = createSelfRuntime({ now: () => 'transfer-replay' });
-    const op = { op: 'addItem', name: 'sword', count: 3, opId: 'floor-item' };
+    const op = { op: 'addItem', name: 'sword', count: 3, opId: 'floor-item', effect: '削铁如泥' };
     r.apply([op], { floor: 1 });
     assert.equal(r.transferEquipment('b1', { direction: 'equip' }).status, 'applied');
     if (reload) {
@@ -243,7 +245,7 @@ for (const reload of [false, true]) for (const replay of [false, true]) {
 // SELF-NPC-R2：恢复旧式 equipped 迁移改变清单归属时，不谎称原逆操作仍可重放。
 {
     const r = createSelfRuntime({ now: () => 'migration-replay' });
-    r.apply([{ op: 'addItem', name: 'sword' }], { source: 'manual' });
+    r.apply([{ op: 'addItem', name: 'sword', effect: '削铁如泥' }], { source: 'manual' });
     r.apply([{ op: 'updateItem', id: 'b1', equipped: true }], { floor: 1 });
     const saved = JSON.parse(JSON.stringify(r.snapshot()));
     const loaded = createSelfRuntime({ now: () => 'migration-replay' });
@@ -284,8 +286,8 @@ for (const length of [1024, 1025]) {
     r.apply([{ op: 'updateItem', id: 'b1', note: 'new' }, { op: 'finishGoal', id: 'g1' }, { op: 'finishCraft', id: 'c1', result: 'success', note: '新备注' }], { floor: 1 });
     const saved = JSON.parse(JSON.stringify(r.snapshot()));
     for (const [index, field, bad] of [
-        [0, 'note', true], [0, 'note', 3], [0, 'note', '长'.repeat(121)],
-        [0, 'name', true], [0, 'name', ''], [0, 'name', '长'.repeat(31)],
+        [0, 'note', true], [0, 'note', 3],
+        [0, 'name', true], [0, 'name', ''],
         [0, 'count', true], [0, 'count', '3'], [0, 'count', 0], [0, 'count', 1000000],
         [0, 'equipped', 'false'], [0, 'equipped', 0], [0, 'id', null],
         [0, 'unknown', 'field'], [1, 'done', 'false'], [1, 'done', 0],
@@ -323,20 +325,21 @@ for (const length of [1024, 1025]) {
 const runtime = createSelfRuntime({ now: () => 't0' });
 
 // —— 身份档案与境界 ——
-let result = runtime.apply([
+let // 身份/境界内容不设字数上限（用户口径 2026-11-17）：180 字外貌、20 字境界照收
+result = runtime.apply([
     { op: 'setProfile', field: 'name', text: '萧炎' },
     { op: 'setProfile', field: 'age', text: '15岁' },
     { op: 'setProfile', field: 'appearance', text: '黑色衣袍的清瘦少年'.repeat(20) },
     { op: 'setProfile', field: 'mood', text: '坏字段' },
-    { op: 'setRealm', realm: '斗之气', stage: '三段' },
-    { op: 'setRealm', realm: '' },
     { op: 'setRealm', realm: 'x'.repeat(20) },
+    { op: 'setRealm', realm: '' },
+    { op: 'setRealm', realm: '斗之气', stage: '三段' },
 ], { source: 'llm', floor: 1, day: 3 });
 assert.equal(result.status, 'applied');
-assert.deepEqual(result.rejected.map(item => item.reason), ['bad_field', 'realm_missing', 'realm_too_long']);
+assert.deepEqual(result.rejected.map(item => item.reason), ['bad_field', 'realm_missing']);
 assert.equal(runtime.status().profile.name, '萧炎');
 assert.equal(runtime.status().profile.age, '15岁');
-assert.equal(runtime.snapshot().profile.appearance.length, 160, '外貌限长 160');
+assert.equal(runtime.snapshot().profile.appearance.length, 180, '外貌不截断，180 字原样存');
 assert.deepEqual(runtime.status().realm, { realm: '斗之气', stage: '三段' });
 
 // —— 金币与称号 ——
@@ -356,9 +359,9 @@ assert.deepEqual(runtime.snapshot().titles, ['萧家废物']);
 
 // —— 功法 / 斗技：新增、去重、修改、删除 ——
 result = runtime.apply([
-    { op: 'addTechnique', name: '焚决', grade: '黄阶低级', type: '修炼功法', progress: '第三层', source: '药老所赠' },
+    { op: 'addTechnique', name: '焚决', grade: '黄阶低级', type: '修炼功法', progress: '第三层', source: '药老所赠', effect: '吞噬异火进化' },
     { op: 'addTechnique', name: '焚决', progress: '第四层' },
-    { op: 'addSkill', name: '八极崩', grade: '黄阶高级', type: '攻击' },
+    { op: 'addSkill', name: '八极崩', grade: '黄阶高级', type: '攻击', effect: '贴身爆发' },
     { op: 'addSkill', name: '' },
 ], { source: 'llm', floor: 3, day: 4 });
 assert.equal(result.applied.length, 2);
@@ -375,10 +378,10 @@ assert.equal(runtime.snapshot().techniques[0].grade, '玄阶');
 
 // —— 行囊：合并、消耗、用光移除、装备标记 ——
 result = runtime.apply([
-    { op: 'addItem', name: '回气丹', category: '丹药', count: 3 },
+    { op: 'addItem', name: '回气丹', category: '丹药', count: 3, effect: '恢复斗气' },
     { op: 'addItem', name: '回气丹', category: '丹药', count: 2 },
-    { op: 'addItem', name: '回气丹', category: '材料', count: 1 },
-    { op: 'addItem', name: '玄重尺', category: '武器', count: 1 },
+    { op: 'addItem', name: '回气丹', category: '材料', count: 1, effect: '测试效果' },
+    { op: 'addItem', name: '玄重尺', category: '武器', count: 1, effect: '压出尺影' },
     { op: 'updateItem', id: 'b3', equipped: true },
     { op: 'removeItem', id: 'b1', count: 4 },
     { op: 'removeItem', id: 'b1', count: 1 },
@@ -396,9 +399,9 @@ assert.equal(runtime.snapshot().items.some(item => item.id === 'b2'), false);
 
 // —— 装备栏：新增、去重、修改、删除、行囊↔装备栏成对移动 ——
 result = runtime.apply([
-    { op: 'addEquipment', name: '玄重尺', grade: '玄阶中品', type: '武器', source: '家传' },
+    { op: 'addEquipment', name: '玄重尺', grade: '玄阶中品', type: '武器', source: '家传', effect: '压出尺影' },
     { op: 'addEquipment', name: '玄重尺', type: '武器' },
-    { op: 'addEquipment', name: '复元甲', grade: '玄阶中品', type: '防具' },
+    { op: 'addEquipment', name: '复元甲', grade: '玄阶中品', type: '防具', effect: '护住前胸' },
     { op: 'addEquipment', name: '' },
 ], { source: 'llm', floor: 9, day: 12 });
 assert.equal(result.applied.length, 2, JSON.stringify(result));
@@ -413,12 +416,24 @@ result = runtime.apply([
 assert.equal(result.applied.length, 1);
 assert.equal(runtime.snapshot().equipment[0].grade, '玄阶高级');
 assert.equal(runtime.status().equipment, 2);
+// 效果字段（详情卡的「有什么用」行）：登记可带、更新可改、超长截断不拒单。
+result = runtime.apply([
+    { op: 'addEquipment', name: '寒铁护腕', type: '防具', effect: '格挡时凝出寒冰盾，冻缓来敌' },
+], { source: 'llm', floor: 11, day: 12 });
+assert.equal(result.applied.length, 1);
+const bracerId = result.applied[0].id;
+assert.equal(runtime.snapshot().equipment.find(item => item.id === bracerId).effect, '格挡时凝出寒冰盾，冻缓来敌');
+result = runtime.apply([
+    { op: 'updateEquipment', id: bracerId, effect: '长'.repeat(200) },
+], { source: 'llm', floor: 12, day: 12 });
+assert.equal(result.applied.length, 1, '超长效果照收不拒单');
+assert.equal(runtime.snapshot().equipment.find(item => item.id === bracerId).effect.length, 200, '效果不截断，200 字原样存');
 // 穿上＝行囊移进装备栏（removeItem + addEquipment 一批）；卸下＝反向一批。
-result = runtime.apply([{ op: 'addItem', name: '风行履', category: '防具', grade: '黄阶高级' }], { source: 'llm', floor: 11, day: 13 });
+result = runtime.apply([{ op: 'addItem', name: '风行履', category: '防具', grade: '黄阶高级', effect: '步履如风' }], { source: 'llm', floor: 11, day: 13 });
 const shoeBagId = result.applied[0].id;
 result = runtime.apply([
     { op: 'removeItem', id: shoeBagId },
-    { op: 'addEquipment', name: '风行履', grade: '黄阶高级', type: '防具' },
+    { op: 'addEquipment', name: '风行履', grade: '黄阶高级', type: '防具', effect: '步履如风' },
 ], { source: 'llm', floor: 12, day: 13 });
 assert.equal(result.applied.length, 2, JSON.stringify(result));
 assert.equal(runtime.snapshot().items.some(item => item.name === '风行履'), false, '穿上后行囊里不再有');
@@ -426,14 +441,14 @@ assert.equal(runtime.snapshot().equipment.some(item => item.name === '风行履'
 const shoeId = runtime.snapshot().equipment.find(item => item.name === '风行履').id;
 result = runtime.apply([
     { op: 'removeEquipment', id: shoeId },
-    { op: 'addItem', name: '风行履', category: '防具', grade: '黄阶高级', count: 1 },
+    { op: 'addItem', name: '风行履', category: '防具', grade: '黄阶高级', count: 1, effect: '步履如风' },
 ], { source: 'llm', floor: 13, day: 13 });
 assert.equal(result.applied.length, 2, JSON.stringify(result));
 assert.equal(runtime.snapshot().items.some(item => item.name === '风行履'), true, '卸下放回行囊');
 
 // —— 天材地宝：与装备同构的增删改，同名不重录，id 走 z 前缀 ——
 result = runtime.apply([
-    { op: 'addTreasure', name: '青莲地心火', grade: '异火榜第十九', type: '异火', source: '塔戈沙漠地底收服' },
+    { op: 'addTreasure', name: '青莲地心火', grade: '异火榜第十九', type: '异火', source: '塔戈沙漠地底收服', effect: '吞噬异火' },
 ], { source: 'llm', floor: 14, day: 14 });
 assert.equal(result.applied.length, 1, JSON.stringify(result));
 const treasureId = result.applied[0].id;
@@ -465,31 +480,31 @@ assert.equal(jobs.find(job => job.id === 'c2').endDay, null, '不带 days 就没
 assert.equal(runtime.status().crafting, 1);
 assert.ok(runtime.craftLine(jobs.find(job => job.id === 'c2')).includes('炼器·玄重铠'), runtime.craftLine(jobs[1]));
 
-// —— 目标：短标题必填 ≤20 字，内容另存；撤销整条恢复（含 done） ——
+// —— 目标：短标题必填（缺了整条拒绝），标题与内容都不设字数上限；撤销整条恢复（含 done） ——
 result = runtime.apply([
     { op: 'addGoal', title: '三年之约雪前耻', text: '三年之约，云岚宗一雪前耻，当众赢回萧家颜面', priority: '主线', due: '三年后' },
     { op: 'addGoal', title: '凑齐焚决后续', text: '凑齐焚决后续功法' },
     { op: 'addGoal', title: '', text: '没标题的目标' },
     { op: 'addGoal', text: '只有正文没有标题' },
-    { op: 'addGoal', title: '一二三四五六七八九十甲乙丙丁戊己庚辛壬癸子丑寅卯辰巳午未申酉戌亥', text: '超长标题' },
+    { op: 'addGoal', title: '一二三四五六七八九十甲乙丙丁戊己庚辛壬癸子丑寅卯辰巳午未申酉戌亥', text: '超长标题也照收' },
     { op: 'finishGoal', id: 'g2' },
     { op: 'removeGoal', id: 'g2' },
     { op: 'removeGoal', id: 'g2' },
 ], { source: 'llm', floor: 8, day: 11 });
-assert.equal(result.applied.length, 4, JSON.stringify(result));
-assert.deepEqual(result.rejected.map(item => item.reason), ['title_missing', 'title_missing', 'title_too_long', 'id_not_found']);
+assert.equal(result.applied.length, 5, JSON.stringify(result));
+assert.deepEqual(result.rejected.map(item => item.reason), ['title_missing', 'title_missing', 'id_not_found']);
 const goals = runtime.snapshot().goals;
-assert.equal(goals.length, 1);
+assert.equal(goals.length, 2, '长标题目标也入账，剩 g1 与长标题 g3');
 assert.equal(goals[0].priority, '主线');
 assert.equal(goals[0].title, '三年之约雪前耻', '短标题原样入库');
 assert.equal(goals[0].text, '三年之约，云岚宗一雪前耻，当众赢回萧家颜面', '完整内容与标题分开保存');
-assert.equal(runtime.status().goals, 1);
+assert.equal(runtime.status().goals, 2);
 // 移除后再撤销（重 roll 回滚路径）：整条目标原样回来，完成状态不丢。
 const goalBefore = goals[0];
 runtime.apply([{ op: 'removeGoal', id: goalBefore.id }], { source: 'llm', floor: 11, day: 11 });
-assert.equal(runtime.snapshot().goals.length, 0, '目标已移除');
+assert.equal(runtime.snapshot().goals.length, 1, 'g1 已移除（长标题目标还在）');
 runtime.apply([{ op: '_restoreGoal', entry: { ...goalBefore, done: true } }], { source: 'llm' });
-const restoredGoal = runtime.snapshot().goals[0];
+const restoredGoal = runtime.snapshot().goals.find(item => item.id === goalBefore.id);
 assert.equal(restoredGoal.id, goalBefore.id, '撤销恢复保留原编号');
 assert.equal(restoredGoal.title, goalBefore.title, '撤销恢复保留短标题');
 assert.equal(restoredGoal.text, goalBefore.text, '撤销恢复保留完整内容');
@@ -508,7 +523,7 @@ assert.equal(runtime.journal()[0].source, 'llm');
 const techniqueCount = runtime.snapshot().techniques.length;
 result = runtime.apply([{ op: 'removeTechnique', id: techniqueId }], { source: 'llm', floor: 10, day: 12 });
 assert.equal(runtime.snapshot().techniques.length, techniqueCount - 1);
-result = runtime.apply([{ op: 'addSkill', name: '吸掌', grade: '玄阶低级' }], { source: 'llm', floor: 10, day: 12 });
+result = runtime.apply([{ op: 'addSkill', name: '吸掌', grade: '玄阶低级', effect: '隔空摄物' }], { source: 'llm', floor: 10, day: 12 });
 assert.equal(runtime.snapshot().techniques.length, techniqueCount, '重 roll 撤销把功法还了回来');
 const skillIds = runtime.snapshot().skills.map(item => item.id);
 assert.equal(new Set(skillIds).size, skillIds.length, '编号不重复');
@@ -536,7 +551,7 @@ assert.equal(legacyResult.status, 'restored');
 assert.deepEqual(legacy.snapshot().equipment.map(item => `${item.id}:${item.name}`), ['b3:玄重尺'], 'equipped 条目迁进装备栏并保留编号');
 assert.equal(legacy.snapshot().items.some(item => item.id === 'b3'), false, '行囊里不再留搬迁后的条目');
 assert.equal(legacy.status().equipment, 1);
-const legacyBag = legacy.apply([{ op: 'addItem', name: '回气丹', category: '丹药', count: 1 }], { source: 'llm' });
+const legacyBag = legacy.apply([{ op: 'addItem', name: '回气丹', category: '丹药', count: 1, effect: '恢复斗气' }], { source: 'llm' });
 assert.notEqual(legacyBag.applied[0].id, 'b3', 'b 号水位要算上迁移条目，行囊补发不重号');
 assert.equal(legacyBag.applied[0].id.startsWith('b'), true);
 const restored = createSelfRuntime({ now: () => 't1' });
@@ -545,7 +560,7 @@ assert.equal(restoredResult.status, 'restored');
 assert.equal(restored.snapshot().techniques.some(item => item.id === 't7'), true);
 assert.equal(restored.snapshot().gold, 0, '负数金币清洗为 0');
 assert.equal(restored.snapshot().items.some(item => item.id === 'b999'), false, '坏条目丢弃');
-const followUp = restored.apply([{ op: 'addTechnique', name: '新功法' }], { source: 'llm' });
+const followUp = restored.apply([{ op: 'addTechnique', name: '新功法', effect: '测试效果' }], { source: 'llm' });
 assert.equal(followUp.applied[0].id, 't8', '发号器跳过恢复进来的编号');
 restored.reset();
 assert.equal(restored.status().techniques, 0);
@@ -555,5 +570,38 @@ assert.equal(restored.snapshot().profile.name, '');
 assert.equal(restored.note('本轮纳戒无变化。').status, 'noted');
 assert.equal(restored.journal()[0].summaries[0], '本轮纳戒无变化。');
 assert.equal(restored.status().gold, 0);
+
+
+// —— 详情纪律：光杆名字（note/effect/grade/source/progress 全空）整条拒绝，六种描述性新增同规；重名 duplicate 优先 ——
+{
+    const r = createSelfRuntime({ now: () => 'detail' });
+    const bare = [
+        { op: 'addTechnique', name: '无名功法' },
+        { op: 'addSkill', name: '无名斗技' },
+        { op: 'addEquipment', name: '无名装备' },
+        { op: 'addTreasure', name: '无名宝物' },
+        { op: 'addItem', name: '无名物品' },
+        { op: 'addRecipe', name: '无名丹方' },
+    ];
+    const result = r.apply(bare, { source: 'decide' });
+    assert.deepEqual(result.rejected.map(item => item.reason), Array(6).fill('details_missing'), '光杆名字整条拒绝');
+    assert.deepEqual(result.applied, [], '没有条目入账');
+    assert.ok(r.snapshot().skills.length === 0 && r.snapshot().techniques.length === 0, '账本无残留');
+    // 细节字段任一有货即可入账：effect/note 之外，grade/source/progress/materials 这些有据可查的
+    // 字段同样算数——2026-11-16 实跑教训：聚火草 grade+source 都有却被 note/effect 一刀切拒掉，
+    // 30 金币扣了货没入账；薄条目交给「详情待补」标记后续逼模型补全。
+    const ok = r.apply([
+        { op: 'addSkill', name: '有效果斗技', effect: '贴身爆发' },
+        { op: 'addItem', name: '有备注丹药', note: '瓷瓶装' },
+        { op: 'addTreasure', name: '有品阶异火', grade: '异火榜第十九' },
+        { op: 'addEquipment', name: '有来历武器', source: '第 40 楼坊市购得' },
+        { op: 'addTechnique', name: '有进度功法', progress: '第三层' },
+        { op: 'addRecipe', name: '有材料丹方', materials: '凝骨草、青灵芝' },
+    ], { source: 'decide' });
+    assert.equal(ok.applied.length, 6, '细节字段任一非空即通过');
+    // 重名 duplicate 优先于详情拒绝：已存在条目的同名重录照旧报 duplicate
+    const dup = r.apply([{ op: 'addSkill', name: '有效果斗技' }], { source: 'decide' });
+    assert.equal(dup.rejected[0].reason, 'duplicate', '重名判定先于详情判定');
+}
 
 console.log('self runtime tests passed');

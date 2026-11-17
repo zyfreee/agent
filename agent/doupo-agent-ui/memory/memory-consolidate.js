@@ -6,6 +6,7 @@
  */
 
 import { extractJson } from '../host/llm-client.js';
+import { capMemoryOp } from './memory-ops.js';
 import { TIER_LABELS } from './memory-runtime.js';
 
 /** 默认总结提示词（system）。改写时保持"只输出 JSON"与字段名不变，否则解析不到。 */
@@ -79,7 +80,8 @@ export function parseConsolidation(raw) {
     }
     const text = typeof object.text === 'string' ? object.text.trim() : '';
     if (!text) return { status: 'invalid', error: '总结缺少 text' };
-    const title = typeof object.title === 'string' ? object.title.trim() : '';
+    // 模型输出字段上限（用户口径 2026-11-17）：title ≤14、text ≤300、basis ≤80、quote ≤60
+    const title = typeof object.title === 'string' ? object.title.trim().slice(0, 14) : '';
     if (!title) return { status: 'invalid', error: '总结缺少 title' };
     const pickNames = value => (Array.isArray(value) ? value : [])
         .filter(item => typeof item === 'string' && item.trim())
@@ -88,11 +90,11 @@ export function parseConsolidation(raw) {
         status: 'ok',
         big: {
             title,
-            text,
-            basis: typeof object.basis === 'string' ? object.basis.trim() : '',
+            text: text.slice(0, 300),
+            basis: typeof object.basis === 'string' ? object.basis.trim().slice(0, 80) : '',
             related: pickNames(object.related),
             aliases: pickNames(object.aliases),
-            quote: typeof object.quote === 'string' ? object.quote.trim() : '',
+            quote: typeof object.quote === 'string' ? object.quote.trim().slice(0, 60) : '',
             weight: object.weight === 'minor' ? 'minor' : 'major',
             tag: VALID_TAGS.has(object.tag) ? object.tag : '',
         },

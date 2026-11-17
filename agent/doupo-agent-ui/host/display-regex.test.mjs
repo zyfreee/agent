@@ -102,7 +102,7 @@ assert.equal(transformUserFloor(''), '');
 // 归一化行尾：Windows 检出（autocrlf）会把样式变 CRLF，样式文本断言按 LF 写，先统一。
 const css = readFileSync(new URL('./style.css', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 assert.ok(
-    css.includes('#chat > .mes:has(.dpz-floor-veil):not(:nth-last-child(-n+3))'),
+    css.includes('#chat > .mes:has(.dpz-floor-veil):not(:nth-last-child(-n+4))'),
     '收口规则应按位置动态隐藏（:has + :nth-last-child）',
 );
 assert.ok(css.includes('.custom-dpz-floor-veil'), '酒馆会给楼层内 class 加 custom- 前缀，两组选择器都要有');
@@ -116,7 +116,7 @@ for (const script of DISPLAY_REGEX_SCRIPTS.slice(1, 4)) {
 assert.equal(DISPLAY_REGEX_SCRIPTS[0].replaceString, '\n', '空行守护就是把空行换成一个换行');
 assert.equal(DISPLAY_REGEX_SCRIPTS[3].replaceString, '', '申报收纳就是把整块删掉');
 assert.equal(DISPLAY_REGEX_SCRIPTS[4].replaceString, `${VEIL_MARK}\n\n$1`, '帷幕替换串 = 标记 + 空行分隔 + 原文');
-for (const script of DISPLAY_REGEX_SCRIPTS) {
+for (const script of DISPLAY_REGEX_SCRIPTS.slice(0, 5)) {
     assert.match(script.findRegex, /^\/[\s\S]+\/g$/, `${script.scriptName} 的 findRegex 应带 /…/g 包裹`);
     assert.equal(script.markdownOnly, true, '只改渲染');
     assert.equal(script.promptOnly, false, '提示词不受影响');
@@ -130,17 +130,31 @@ assert.deepEqual(DISPLAY_REGEX_SCRIPTS[3].placement, [1, 2], '申报收纳用户
 assert.deepEqual(DISPLAY_REGEX_SCRIPTS[4].placement, [1, 2], '帷幕用户楼与 AI 楼都钉');
 assert.equal(DISPLAY_REGEX_SCRIPTS[4].minDepth, 0, '帷幕每楼都钉，收不收由位置动态算，不看渲染时刻的深度');
 
-// 卡片局部补装：缺哪条补哪条，按 守护→卡片→收纳→申报收纳→帷幕 的顺序追加；同名已存在（含手改）一律不碰。
+// 提示词侧远楼层清空：与帷幕同一窗口（VEIL_VISIBLE_FLOORS），promptOnly + 替换为空——
+// 主提示词只带窗口内的楼层，提示词查看器 token 随之回落；渲染预览不套它。
+const promptHide = DISPLAY_REGEX_SCRIPTS[5];
+assert.equal(promptHide.scriptName, '斗破Agent · 远楼层不进提示词');
+assert.equal(promptHide.markdownOnly, false, '提示词侧脚本不参与显示渲染');
+assert.equal(promptHide.promptOnly, true, '只在提示词阶段生效');
+assert.equal(promptHide.replaceString, '', '整楼清空');
+assert.equal(promptHide.minDepth, 4, '窗口与帷幕的保留楼数同源（VEIL_VISIBLE_FLOORS）');
+assert.equal(promptHide.maxDepth, null, '窗口外全部清掉，不设上界');
+assert.deepEqual(promptHide.placement, [1, 2], '用户楼与 AI 楼都清');
+assert.match(promptHide.findRegex, /^\/[\s\S]+\/g$/, '整楼匹配带 /…/g 包裹');
+
+// 卡片局部补装：缺哪条补哪条，按 守护→卡片→收纳→申报收纳→帷幕→远楼层不进提示词 的顺序追加；同名已存在（含手改）一律不碰。
 // 夹具里的两条卡面脚本取自真实卡片（斗破卡面测试.png data.extensions.regex_scripts）的形状。
 const COVER_A = { id: 'cover-a', scriptName: '【试运行·测试卡】[卡面]斗破封面', findRegex: '/[\\s\\S]+/g', replaceString: 'x', placement: [2], markdownOnly: true, promptOnly: false, runOnEdit: false, disabled: false };
 const COVER_B = { id: 'cover-b', scriptName: '【试运行·测试卡】[卡面]封面不进提示词', findRegex: '/x/g', replaceString: '', placement: [2], markdownOnly: true, promptOnly: false, runOnEdit: false, disabled: false };
 {
     const first = ensureScopedDisplayRegexScripts([COVER_A, COVER_B]);
     assert.equal(first.status, 'ready');
-    assert.deepEqual(first.added, DISPLAY_REGEX_SCRIPTS.map(script => script.scriptName), '卡上没有我们的脚本时五条全补');
+    assert.deepEqual(first.added, DISPLAY_REGEX_SCRIPTS.map(script => script.scriptName), '卡上没有我们的脚本时六条全补');
     assert.deepEqual(first.scripts.slice(0, 2), [COVER_A, COVER_B], '卡片自己的局部正则原样保序在前');
-    assert.deepEqual(first.scripts.slice(2).map(script => script.scriptName), first.added, '我们的五条按定义顺序追加在后');
+    assert.deepEqual(first.scripts.slice(2).map(script => script.scriptName), first.added, '我们的六条按定义顺序追加在后');
     assert.deepEqual(first.scripts[6].placement, [1, 2], '补装出来的楼位照定义拷贝');
+    assert.equal(first.scripts[7].promptOnly, true, '补装出来的提示词侧脚本只在提示词生效');
+    assert.equal(first.scripts[7].minDepth, 4, '提示词侧窗口照定义拷贝');
 
     // 纯函数不改入参：writeExtensionField 是整表替换，原数组不能被顺手改掉
     const original = [COVER_A, COVER_B];
@@ -158,15 +172,15 @@ const COVER_B = { id: 'cover-b', scriptName: '【试运行·测试卡】[卡面]
     const edited = ensureScopedDisplayRegexScripts([{ ...DISPLAY_REGEX_SCRIPTS[1], replaceString: '用户自己的改法' }]);
     assert.deepEqual(
         edited.added,
-        ['斗破Agent · 输入段空行守护', '斗破Agent · 召回导语收纳', '斗破Agent · 变量申报收纳', '斗破Agent · 旧楼层隐去'],
-        '只补缺的四条',
+        ['斗破Agent · 输入段空行守护', '斗破Agent · 召回导语收纳', '斗破Agent · 变量申报收纳', '斗破Agent · 旧楼层隐去', '斗破Agent · 远楼层不进提示词'],
+        '只补缺的五条',
     );
     assert.equal(edited.scripts.find(script => script.scriptName === '斗破Agent · 本轮输入卡片').replaceString, '用户自己的改法', '用户手改的脚本不覆盖');
-    assert.equal(edited.scripts.length, 5, '同名不覆盖，总数不变');
+    assert.equal(edited.scripts.length, 6, '同名不覆盖，总数不变');
 
     const fromNothing = ensureScopedDisplayRegexScripts(undefined);
     assert.equal(fromNothing.status, 'ready', '卡还没带局部正则就从空表起步');
-    assert.equal(fromNothing.scripts.length, 5, '起步补全五条');
+    assert.equal(fromNothing.scripts.length, 6, '起步补全六条');
 }
 
 // 全局回收：老版本装进全局列表的五条（id 带 doupo-agent- 前缀）被摘走，用户自己的全局正则原样保序。
@@ -186,7 +200,7 @@ const COVER_B = { id: 'cover-b', scriptName: '【试运行·测试卡】[卡面]
         [...users.map(script => script.scriptName), '没有 id 的脚本'],
         '用户的与无名脚本原样保序',
     );
-    assert.equal(store.length, 8, '入参数组不被改动（写回由调用方负责）');
+    assert.equal(store.length, users.length + DISPLAY_REGEX_SCRIPTS.length + 1, '入参数组不被改动（写回由调用方负责）');
     const clean = stripGlobalDisplayRegexScripts(users);
     assert.deepEqual(clean.removed, [], '没有本扩展脚本时空转');
     assert.deepEqual(clean.kept, users, '空转时原数组直接返回');
