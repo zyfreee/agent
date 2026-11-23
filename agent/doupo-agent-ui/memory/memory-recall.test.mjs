@@ -28,41 +28,32 @@ assert.ok(catalogLines[0].includes('m2|大记忆|洗骨草扣货（药老）'), 
 assert.ok(catalogLines[2].includes('m3|小记忆|坊市打听异火（异火）'), catalogLines[2]);
 assert.ok(catalogLines[3].includes('m4|小记忆|无标题的小记忆'), '没标题回退正文');
 
-// 超预算从尾部丢，至少保住一行
+// 目录无预算（用户口径 2026-11-19）：50 条大记忆全量进目录，一行不丢、标题不截。
 const fat = { entries: Array.from({ length: 50 }, (_, index) => ({ id: `m${index + 1}`, tier: 'big', title: `记忆${index}`, text: 'x', related: [], day: index + 1 })) };
-const tight = buildRecallCatalog(fat, { maxChars: 300 });
-assert.ok(tight.length <= 300);
-assert.equal(tight.split('\n').length < 50, true, '超预算要丢行');
+assert.equal(buildRecallCatalog(fat).split('\n').length, 50, '全量目录：条目一个不少');
+const hugeLabels = { entries: [
+    { id: 'large-label', tier: 'big', title: '巨'.repeat(1000), related: [], day: 1 },
+    { id: 'small-label', tier: 'small', title: '小'.repeat(1000), related: [], day: 2 },
+] };
+const fullLabels = buildRecallCatalog(hugeLabels, { sceneText: '不相关' });
+assert.ok(fullLabels.includes('巨'.repeat(1000)) && fullLabels.includes('小'.repeat(1000)), '长标题原样进目录，不截断');
 
-// OPT-049: scene matches in either tier survive flooded catalogs within the hard budget.
+// OPT-049: 场景命中只影响排序，不影响数量——全部条目仍在目录里。
 const flooded = { entries: [
     ...Array.from({ length: 300 }, (_, i) => ({ id: `b${i}`, tier: 'big', title: `无关大记忆${i}`, related: ['背景'], day: i + 2 })),
     { id: 'old-big', tier: 'big', title: '旧约', related: ['古约'], day: 1 },
     { id: 'new-small', tier: 'small', title: '新事', related: ['某人'], aliases: ['小名'], day: 999 },
 ] };
-const relevantCatalog = buildRecallCatalog(flooded, { maxChars: 4000, sceneText: '小名回来追问古约。' });
-assert.ok(relevantCatalog.includes('- new-small|小记忆|'), 'unique relevant new small survives big flood');
-assert.ok(relevantCatalog.includes('- old-big|大记忆|'), 'unique relevant oldest big survives recency flood');
-assert.ok(relevantCatalog.length <= 4000);
-const fair = buildRecallCatalog(flooded, { maxChars: 200 });
-assert.ok(fair.includes('- new-small|小记忆|'), 'without scene reserve visibility for both tiers');
-assert.ok(fair.length <= 200);
-assert.ok(buildRecallUser({ snapshot: flooded, floors: [{ role: '玩家', text: '小名回来追问古约。' }] }).includes('- old-big|大记忆|'), 'user builder forwards bounded scene');
-const hugeLabels = { entries: [
-    { id: 'large-label', tier: 'big', title: '巨'.repeat(1000), related: [], day: 1 },
-    { id: 'small-label', tier: 'small', title: '小'.repeat(1000), related: [], day: 2 },
-] };
-const bounded = buildRecallCatalog(hugeLabels, { maxChars: 200, sceneText: '不相关' });
-assert.ok(bounded.length <= 200 && bounded.includes('- large-label|') && bounded.includes('- small-label|'), 'truncate labels, not complete ID prefixes');
-assert.ok(bounded.includes('…'));
-for (const maxChars of [NaN, -1, 0, 'bad', 200.5]) {
-    assert.ok(buildRecallCatalog(flooded, { maxChars }).length <= 4000, 'invalid budget defaults to finite cap');
+const relevantCatalog = buildRecallCatalog(flooded, { sceneText: '小名回来追问古约。' });
+assert.equal(relevantCatalog.split('\n').length, flooded.entries.length, '场景目录仍全量');
+assert.ok(relevantCatalog.includes('- new-small|小记忆|'), 'unique relevant new small present');
+assert.ok(relevantCatalog.includes('- old-big|大记忆|'), 'unique relevant oldest big present');
+assert.ok(relevantCatalog.indexOf('new-small') < relevantCatalog.indexOf('b0'), '场景相关的条目排到最前');
+for (const maxChars of [NaN, -1, 0, 'bad', 200.5, Infinity]) {
+    assert.equal(buildRecallCatalog(flooded, { maxChars }).split('\n').length, flooded.entries.length, '任何预算参数都被忽略：全量目录');
 }
-// Infinity＝不限制（设置层把「0＝不限制」换算成 Infinity 传进来）：全部条目进目录，不再按 4000 截。
-const unlimitedCatalog = buildRecallCatalog(flooded, { maxChars: Infinity });
-assert.ok(unlimitedCatalog.split('\n').length >= flooded.entries.length, 'unlimited budget keeps every entry line');
-assert.ok(buildRecallUser({ snapshot: flooded, floors: [], catalogChars: Infinity }).includes('- old-big|大记忆|'), 'user builder forwards unlimited budget');
-assert.equal(buildRecallCatalog({ entries: [{ id: 'x'.repeat(500), tier: 'big', title: 'a', related: [] }] }, { maxChars: 200 }), '', 'do not emit partial IDs when prefix cannot fit');
+assert.ok(buildRecallUser({ snapshot: flooded, floors: [{ role: '玩家', text: '小名回来追问古约。' }] }).includes('- old-big|大记忆|'), 'user builder forwards scene');
+assert.ok(buildRecallCatalog({ entries: [{ id: 'x'.repeat(500), tier: 'big', title: 'a', related: [] }] }).includes('x'.repeat(500)), '超长编号也整行进目录');
 // 空库
 assert.equal(buildRecallCatalog({}), '（记忆库还是空的）');
 
@@ -142,8 +133,8 @@ assert.equal(parseRecallDecision('{"ids":["m1"]}', { maxIds: -1 }).status, 'ok',
 assert.deepEqual(parseRecallDecision('{"ids":["m99","m1"]}', { snapshot, maxIds: 1 }).ids, ['m1'], 'unknown IDs do not consume known-ID capacity');
 
 const overflow = parseRecallDecision(JSON.stringify({ note: 'n', ids: Array.from({ length: 30 }, (_, index) => `m${index + 1}`) }));
-assert.equal(overflow.ids.length, 25, '编号上限 25');
-assert.equal(overflow.dropped, 5);
+assert.equal(overflow.ids.length, 30, '编号不设上限：给多少收多少');
+assert.equal(overflow.dropped, 0);
 
 const deduped = parseRecallDecision('{"note":"n","ids":["m1","m1","m2","",7,null]}');
 assert.deepEqual(deduped.ids, ['m1', 'm2'], '去重、空串与非字符串丢弃');

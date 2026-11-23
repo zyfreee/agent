@@ -540,9 +540,9 @@ const JOURNAL_EVENTS = Object.freeze({
     npc_plan_reassessment_requested: 'NPC 计划重估', npc_plan_reassessment_duplicate: '重估重复', npc_plan_reassessment_blocked: '重估受阻',
     npc_plan_reassessment_cleared: '重估解除', npc_plan_candidates_invalidated: 'NPC 候选作废',
     narrative_candidates_invalidated: '正文候选作废', history_changed_after_commit: '提交后历史变动', history_candidate_invalidated: '历史候选作废',
-    turn_mvu_arbitrate: '纳戒仲裁', turn_memory_decide: '记忆总结', turn_npc_record: '人物记账', turn_world_decision: '世界推进',
+    turn_self_decide: '纳戒决定', turn_memory_decide: '记忆总结', turn_npc_record: '人物记账', turn_world_decision: '世界推进',
     turn_impact_decide: '影响记录', turn_settle_adjudicate: '行动结算', turn_facts_inject: '原著注入', turn_lite_settle: '总结算',
-    turn_fact_check: '正文核验',
+    turn_fact_check: '正文核验', turn_plot_decision: '剧情决定', npc_consistency: '一致性体检', npc_unbacked_change: '无依据变动', npc_exp_auto_condense: '经历精简',
 });
 const JOURNAL_OUTCOMES = Object.freeze({
     completed: '完成', processing: '进行中', aborted: '中止', aborted_before_stage: '未开始就中止',

@@ -1,6 +1,5 @@
 import { parseComment } from './facts-index.js';
 
-const MAX_ENTRIES = 2000;
 const CN_DIGITS = Object.freeze({ 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 });
 
 function parseChineseNumber(value) {
@@ -74,7 +73,6 @@ export async function loadWorldbookEntries(context, name) {
     const entries = [];
     let skipped = 0;
     for (const [uid, raw] of Object.entries(table)) {
-        if (entries.length >= MAX_ENTRIES) break;
         const entry = normalizeEntry(uid, raw);
         if (!entry) { skipped++; continue; }
         entries.push(entry);

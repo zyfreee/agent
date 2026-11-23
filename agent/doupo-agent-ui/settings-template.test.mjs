@@ -65,8 +65,9 @@ for (const legacyButton of ['data-llm-models', 'data-facts-models', 'data-settle
     assert.doesNotMatch(entry, new RegExp(legacyButton.replace(/-/g, '\\-')), `每卡拉取模型按钮应已删除（方案卡上保留）：${legacyButton}`);
 }
 assert.doesNotMatch(entry, /CONNECTION_MODE_TOGGLERS/, '连接模式登记表应随模式选择一起删除');
-// 非连接类的运行参数保留在卡上：全局超时（按秒填）、世界/记忆的喂楼数（条目上限已退役——决定改读原著资料注入内容）。
-for (const keep of ['llm.timeoutSec', 'world.decideMaxFloors', 'memory.decideMaxFloors']) {
+// 非连接类的运行参数保留在卡上：全局超时（按秒填）、记忆召回的喂楼数（条目上限已退役——决定改读原著资料注入内容；
+// 2026-11-18 起正文后调用只读「用户输入＋正文」两楼，world/self/plot/impact 的喂楼数设置随死字段一起删除）。
+for (const keep of ['llm.timeoutSec', 'memory.decideMaxFloors']) {
     assert.match(hubMarkup, new RegExp(`data-setting="${keep.replace('.', '\\.')}"`), `模型设置页应保留运行参数：${keep}`);
 }
 for (const retired of ['world.decideMaxEntries', 'self.decideMaxEntries', 'memory.decideMaxEntries', 'impact.decideMaxEntries']) {

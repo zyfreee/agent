@@ -18,14 +18,14 @@ const SHIFTS = Object.freeze(['none', 'accelerate', 'delay', 'avoid', 'alter']);
 const STATES = Object.freeze(['active', 'ripened', 'closed', 'reverted']);
 const SOURCES = Object.freeze(['decide', 'reply', 'manual']);
 
-const MAX_RIPEN_DAYS = 365;
+const MAX_RIPEN_DAYS = 999999;
 // 判“疑似同一件事”的时间窗：同一个对象、同一种改写、这几天里换了说法又记一遍。
 // 参数与相似度算法在世界事件账（world-runtime）共用同一份（core/text-similarity.js）。
 
 // 0 = 不限：账本本身不因为“条数多”而丢东西（注入只挑几条，用不着为了正文缩库）。
 const DEFAULT_MAX_RECORDS = 0;
 const DEFAULT_MAX_ARCHIVE = 0;
-const DEFAULT_MAX_LOG = 40;
+const DEFAULT_MAX_LOG = 999999;
 const DEFAULT_MAX_OPS = 6;
 const DEFAULT_MAX_CHAIN = 4;
 const OPID_MEMORY = 200;
@@ -134,7 +134,7 @@ function rankRecord(record) {
 export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchive = DEFAULT_MAX_ARCHIVE, maxLog = DEFAULT_MAX_LOG, maxOps = DEFAULT_MAX_OPS, maxChainDepth = DEFAULT_MAX_CHAIN, now = () => new Date().toISOString() } = {}) {
     maxRecords = clampInt(maxRecords, 0, 100000, DEFAULT_MAX_RECORDS);
     maxArchive = clampInt(maxArchive, 0, 100000, DEFAULT_MAX_ARCHIVE);
-    maxLog = clampInt(maxLog, 5, 200, DEFAULT_MAX_LOG);
+    maxLog = clampInt(maxLog, 1, 999999, DEFAULT_MAX_LOG);
     maxOps = clampInt(maxOps, 1, 24, DEFAULT_MAX_OPS);
     maxChainDepth = clampInt(maxChainDepth, 0, 8, DEFAULT_MAX_CHAIN);
     let state = initialState(now);

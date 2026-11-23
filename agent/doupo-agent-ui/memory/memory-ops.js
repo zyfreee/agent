@@ -17,8 +17,7 @@ import { recallKeys, textSimilarity, topCandidates } from './memory-retrieve.js'
 // 召回钥匙与文本相似度工具住在 memory-retrieve.js（召回目录与兜底共用），这里转发保持旧导入路径可用。
 export { recallKeys, textSimilarity };
 
-const DEFAULT_MAX_CHARS = 900;
-const RECALL_LIMIT = 12;
+const DEFAULT_MAX_CHARS = Infinity;
 const CONFLICT_SIMILARITY = 0.6;
 const FENCE_RE = /```memory[^\S\n]*\n([\s\S]*?)```/g;
 const OP_LINE_RE = /^[ \t]*\{[ \t]*"op"[ \t]*:/;
@@ -51,8 +50,9 @@ function text(value) {
  * 向量相似度（vectorSim）与当前天数（currentDay）由调用方可选传入。
  * advanced=false（完整版/简略版口径）退回旧行为：召回钥匙整词命中才算，大记忆优先 → 关键优先 → 新的优先。
  */
-export function recallHits(snapshot = {}, { sceneText = '', limit = RECALL_LIMIT, currentDay = null, vectorSim = null, advanced = true } = {}) {
-    return topCandidates(snapshot, { sceneText, currentDay, vectorSim, advanced }, { limit: clampInt(limit, 1, 40, RECALL_LIMIT) });
+export function recallHits(snapshot = {}, { sceneText = '', limit = Infinity, currentDay = null, vectorSim = null, advanced = true } = {}) {
+    // 关键词兜底不设条数上限（用户口径 2026-11-19）：勾到多少注多少。
+    return topCandidates(snapshot, { sceneText, currentDay, vectorSim, advanced }, { limit });
 }
 
 function entryLine(entry) {

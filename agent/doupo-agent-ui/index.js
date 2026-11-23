@@ -239,6 +239,7 @@ function bindHostLifecycle() {
         restoreNpcReachoutFromChat();
         restoreSelfFromChat();
         restoreMemoryFromChat();
+        refreshNpcActionCapsules();
         // 开局摘要门闩：启动恢复完成后武装，应用启动后的第一条回复交底一次。
         try { wakeUpPendingChatId = String(getHostContext()?.chatId ?? ''); } catch { /* 上下文不可用时保持关闭 */ }
         hydrateFactsLastInjection();
@@ -291,6 +292,7 @@ function bindHostLifecycle() {
             try { restoreMemoryFromChat(); } catch { /* 换聊天读不到记忆时按空账开局 */ }
             // 旧聊天里攒下的球边胶囊对下一局没有意义：换聊天整列作废。
             try { clearOrbToasts(); } catch { /* 清不掉也无碍 */ }
+            refreshNpcActionCapsules();
             // 开局摘要门闩：新聊天武装一次，下一轮生成时交底一次。
             try { wakeUpPendingChatId = String(getHostContext()?.chatId ?? ''); } catch { /* 上下文不可用时保持原状 */ }
             hydrateFactsLastInjection();
@@ -323,6 +325,11 @@ function bindHostLifecycle() {
         const turn = completedGeneration;
         if (!generationCurrent(turn) || !turn.ended || !turn.rendered || turn.launched
             || turn.reply !== turn.chat[lastReplyIndex(turn.chat)] || agentLlmClient.isQuietBusy()) return;
+        turn.endLength = turn.chat.length;
+        turn.endTail = turn.chat.at(-1);
+        // 结构口径（与 captureAgentContinuation 同理）：mes 内容会被 TavernHelper 生态脚本
+        // （「标签补全」等）在结束后合法追加/改写，内容指纹会把这种改写误判成新回合。
+        turn.endIdentity = JSON.stringify([turn.chat.length, turn.chat.at(-1)?.swipe_id ?? null]);
         turn.launched = true;
         resumeGenerationEnd?.();
     };
@@ -330,7 +337,18 @@ function bindHostLifecycle() {
         hostQuietIdleUnsubscribe = agentLlmClient.onQuietIdle(() => { quietLifecycle = false; queueMicrotask(finishGeneration); });
         const started = (type, options, dryRun) => {
             if (dryRun) return;
-            quietLifecycle = type === 'quiet';
+            const turn = completedGeneration;
+            // 我方静默窗口：聊天自上一回合落定后结构未变（没加新楼、没换 swipe、楼层对象没被换掉；
+            // mes 内容被「标签补全」这类生态脚本合法改写不算）就不是新回合——不清续算凭据、不覆盖
+            // 回合登记。我方 rawPrompt 通道（行动结算/正文核验）走 generateRaw → Generate('normal')，
+            // 广播的 GENERATION_STARTED type 带不上 quiet，isQuietBusy 也感知不到：按 type 判会把
+            // 这些辅助调用全误当新回合，把刚捕获的记账凭据整批作废。
+            const ownQuietWindow = turn?.launched === true
+                && turn.chat === getHostContext()?.chat
+                && turn.chat?.length === turn.endLength
+                && turn.chat?.at(-1) === turn.endTail
+                && JSON.stringify([turn.chat?.length, turn.chat?.at(-1)?.swipe_id ?? null]) === turn.endIdentity;
+            quietLifecycle = type === 'quiet' || ownQuietWindow;
             if (quietLifecycle) return;
             invalidateAgentContinuations();
             completedGeneration = { epoch: agentContinuationEpoch, scope: settleScopeKey(), chat: getHostContext()?.chat, ended: false, rendered: false, launched: false };
@@ -544,7 +562,6 @@ const AUDIT_EVENT_TASKS = Object.freeze({
     turn_plot_decision: '剧情决定',
     turn_fact_check: '正文核验',
     turn_pregen_abort: '备料中止',
-    turn_mvu_arbitrate: 'MVU 仲裁',
     npc_exp_auto_condense: '经历精简',
     npc_consistency: '一致性体检',
     npc_unbacked_change: '无依据变动',
@@ -679,11 +696,8 @@ export const agentFactsSelector = createFactsSelector({
     // 设置页里改的选条规则即时生效；留空则用内置默认。
     getRules: () => currentSettings().prompt?.select || SELECT_RULES,
     getLookupRules: () => currentSettings().prompt?.lookup || LOOKUP_RULES,
-    // 单次检索出条目上限：设置页数字每次选条现读，不设天花板，留空回落默认 8。
-    getMaxPicks: () => {
-        const value = Number(currentSettings().setting?.maxItems);
-        return Number.isInteger(value) && value > 0 ? value : DEFAULT_MAX_PICKS;
-    },
+    // 选条条数不设上限（用户口径 2026-11-19）：提到多少收多少。
+    getMaxPicks: () => DEFAULT_MAX_PICKS,
 });
 export const agentTurnStages = createTurnStages({
     settings: agentSettingSupply,
@@ -698,8 +712,8 @@ export const agentTurnStages = createTurnStages({
         // 沙盒口径不用世界书：设定挑选与按需注入整条停用，即使世界书开关还开着。
         if (setting.enabled === false || sandboxModeActive()) return null;
         return {
-            maxCandidates: Number.isInteger(setting.maxCandidates) && setting.maxCandidates > 0 ? setting.maxCandidates : 40,
-            maxItems: Number.isInteger(setting.maxItems) && setting.maxItems > 0 ? setting.maxItems : 8,
+            maxCandidates: Infinity,
+            maxItems: Infinity,
             // 0 = 不限制（与设置页文案一致）：assemble 对 0/空按“选中几条注几条全文”处理。
             injectionBudget: Number.isInteger(setting.injectionBudget) && setting.injectionBudget > 0 ? setting.injectionBudget : 0,
         };
@@ -792,7 +806,14 @@ function mergeMemoryFromTables(derived, current) {
  * 世界运转不连数据库（只在扩展台账与聊天存档里），也没有镜像/收养/回拉。 */
 function restoreWorldFromChat() {
     const record = hostStorage?.worldState?.();
-    return record?.status === 'ready' && record.value ? agentWorldRuntime.restore(record.value) : agentWorldRuntime.reset();
+    const result = record?.status === 'ready' && record.value ? agentWorldRuntime.restore(record.value) : agentWorldRuntime.reset();
+    try {
+        // 已了结的事件不占账（用户口径 2026-11-18）：恢复台账后清一遍存量并写回，
+        // 别让旧聊天里已了结的事件一直躺在元数据里；写回失败下一轮 apply 会再清。
+        const purged = agentWorldRuntime.purgeResolved?.() ?? 0; // 事件与已完成的任务一起清
+        if (purged > 0) Promise.resolve(persistWorld()).catch(() => { /* 下轮再清 */ });
+    } catch { /* 清理失败不影响恢复 */ }
+    return result;
 }
 
 function persistWorld() {
@@ -854,7 +875,6 @@ function selfLedgerSettings() {
         injectBudget: Number.isInteger(self.injectBudget) && self.injectBudget > 0 ? self.injectBudget : Infinity,
         decideEnabled: self.decideEnabled !== false,
         decideAuto: self.decideAuto !== false,
-        maxFloors: Number.isInteger(self.decideMaxFloors) && self.decideMaxFloors > 0 ? Math.min(12, self.decideMaxFloors) : Math.min(12, globalReadFloors()),
         prompt: typeof self.decidePrompt === 'string' && self.decidePrompt.trim() ? self.decidePrompt.trim() : SELF_DECIDE_PROMPT,
         // 绑定了 API设置方案整套走方案；没绑＝跟随酒馆主连接。
         overrides: presetOverrides('self') ?? { connection: 'tavern' },
@@ -955,9 +975,8 @@ function memorySettings() {
         injectBudget: Number.isInteger(memory.injectBudget) && memory.injectBudget > 0 ? memory.injectBudget : 0,
         decideEnabled: memory.decideEnabled !== false,
         decideAuto: memory.decideAuto !== false,
-        consolidateAfter: Number.isInteger(memory.consolidateAfter) && memory.consolidateAfter >= 0 ? Math.min(30, memory.consolidateAfter) : 6,
+        consolidateAfter: Number.isInteger(memory.consolidateAfter) && memory.consolidateAfter >= 0 ? memory.consolidateAfter : 6,
         // 记忆目录字数预算：召回决定喂给模型的目录上限（混合检索分数序，超预算从尾部丢）；0＝不限制。
-        catalogBudget: Number.isInteger(memory.catalogBudget) && memory.catalogBudget > 0 ? memory.catalogBudget : 0,
         // 开局摘要：切聊天后第一条回复前的一次性交底；关掉后完全不注。
         wakeUp: memory.wakeUp !== false,
         // 开局摘要字数 0/留空＝不限制、默认不限制（用户拍板的口径）；摘要为空时本轮不注。
@@ -969,7 +988,7 @@ function memorySettings() {
             apiKey: typeof memory.embedding?.apiKey === 'string' ? memory.embedding.apiKey.trim() : '',
             model: typeof memory.embedding?.model === 'string' ? memory.embedding.model.trim() : '',
         },
-        maxFloors: Number.isInteger(memory.decideMaxFloors) && memory.decideMaxFloors > 0 ? Math.min(12, memory.decideMaxFloors) : Math.min(12, globalReadFloors()),
+        maxFloors: Number.isInteger(memory.decideMaxFloors) && memory.decideMaxFloors > 0 ? memory.decideMaxFloors : globalReadFloors(),
         prompt: typeof memory.decidePrompt === 'string' && memory.decidePrompt.trim() ? memory.decidePrompt.trim() : MEMORY_DECIDE_PROMPT,
         recallEnabled: memory.recallEnabled !== false,
         recallAuto: memory.recallAuto !== false,
@@ -1168,7 +1187,7 @@ async function runMemoryRecall({ source = 'manual', chat = null, note = '' } = {
         const snapshot = agentMemoryRuntime.snapshot();
         // 语义检索（可选）：查询向量取相似度表喂给目录排序；没开/失败静默退回纯本地混合检索。
         const vectorSim = await memoryVectorSim(snapshot, floors.map(floor => floor.text ?? '').join('\n'));
-        const user = withPlayerNote(buildRecallUser({ snapshot, floors, worldbookLines: bookLines, currentDay: worldDay(), vectorSim, catalogChars: settings.catalogBudget > 0 ? settings.catalogBudget : Infinity, advanced: advancedMode() }), note);
+        const user = withPlayerNote(buildRecallUser({ snapshot, floors, worldbookLines: bookLines, currentDay: worldDay(), vectorSim, advanced: advancedMode() }), note);
         const raw = await agentLlmClient.complete({
             label: '记忆召回',
             system: settings.recallPrompt,
@@ -1521,17 +1540,9 @@ async function runSelfDecision({ source = 'auto', note = '' } = {}) {
     try {
         const context = getHostContext();
         const chat = Array.isArray(context?.chat) ? context.chat : [];
-        const floors = [];
-        const rawFloors = [];
-        for (let cursor = chat.length - 1; cursor >= 0 && rawFloors.length < settings.maxFloors; cursor -= 1) {
-            const message = chat[cursor];
-            if (!message || typeof message.mes !== 'string' || !message.mes.trim()) continue;
-            if (message.is_system === true) continue;
-            rawFloors.unshift({ role: message.is_user === true ? '玩家' : '角色', text: message.mes, isUser: message.is_user === true, depth: chat.length - 1 - cursor });
-        }
-        floors.push(...await cleanFloorEntries(rawFloors));
+        const floors = await collectReplyFloor(chat);
         if (!floors.length) {
-            setSelfDecideStatus('聊天里还没有内容，模型无从决定。');
+            setSelfDecideStatus('聊天里还没有正文，纳戒决定无从下手（只读用户输入＋正文两楼）。');
             return { status: 'no_input' };
         }
         // 世界书侧输入：直接复用原著资料本轮注入通道里的现成内容（选条流程的产物），决定调用不自己翻世界书条目。
@@ -2046,7 +2057,7 @@ function impactSettings() {
         injectBudget: Number.isInteger(impact.injectBudget) && impact.injectBudget > 0 ? impact.injectBudget : Infinity,
         injectSmart: impact.injectSmart !== false,
         injectMaxLines: Number.isInteger(impact.injectMaxLines) && impact.injectMaxLines > 0 ? impact.injectMaxLines : Infinity,
-        injectFloors: Number.isInteger(impact.injectFloors) && impact.injectFloors > 0 ? Math.min(12, impact.injectFloors) : Math.min(12, globalReadFloors()),
+        injectFloors: Number.isInteger(impact.injectFloors) && impact.injectFloors > 0 ? impact.injectFloors : globalReadFloors(),
         injectModel: typeof impact.injectModel === 'string' ? impact.injectModel.trim() : '',
         injectMode: impact.injectMode === 'custom' ? 'custom' : 'tavern',
         injectBaseUrl: typeof impact.injectBaseUrl === 'string' ? impact.injectBaseUrl.trim() : '',
@@ -2056,27 +2067,26 @@ function impactSettings() {
         injectPrompt: typeof impact.injectPrompt === 'string' && impact.injectPrompt.trim() ? impact.injectPrompt.trim() : IMPACT_INJECT_PROMPT,
         decideEnabled: impact.decideEnabled !== false,
         decideAuto: impact.decideAuto !== false,
-        decideEvery: Number.isInteger(Number(impact.decideEvery)) && Number(impact.decideEvery) >= 1 ? Math.min(10, Number(impact.decideEvery)) : 1,
-        decideMaxFloors: Number.isInteger(impact.decideMaxFloors) && impact.decideMaxFloors > 0 ? Math.min(12, impact.decideMaxFloors) : Math.min(12, globalReadFloors()),
+        decideEvery: Number.isInteger(Number(impact.decideEvery)) && Number(impact.decideEvery) >= 1 ? Number(impact.decideEvery) : 1,
         decideMode: impact.decideMode === 'custom' ? 'custom' : 'tavern',
         decideModel: typeof impact.decideModel === 'string' ? impact.decideModel.trim() : '',
         decideBaseUrl: typeof impact.decideBaseUrl === 'string' ? impact.decideBaseUrl.trim() : '',
         decideApiKey: typeof impact.decideApiKey === 'string' ? impact.decideApiKey.trim() : '',
         decideProvider: impact.decideProvider === 'anthropic' ? 'anthropic' : impact.decideProvider === 'openai' ? 'openai' : '',
         decideTemperature: impactParam(impact.decideTemperature, 2),
-        decideMaxTokens: Number.isInteger(impact.decideMaxTokens) && impact.decideMaxTokens > 0 ? Math.min(32768, impact.decideMaxTokens) : undefined,
+        decideMaxTokens: Number.isInteger(impact.decideMaxTokens) && impact.decideMaxTokens > 0 ? impact.decideMaxTokens : undefined,
         decideTopP: impactParam(impact.decideTopP, 1),
         decidePresencePenalty: impactParam(impact.decidePresencePenalty, 2),
         decideFrequencyPenalty: impactParam(impact.decideFrequencyPenalty, 2),
         injectTemperature: impactParam(impact.injectTemperature, 2),
-        injectMaxTokens: Number.isInteger(impact.injectMaxTokens) && impact.injectMaxTokens > 0 ? Math.min(32768, impact.injectMaxTokens) : undefined,
+        injectMaxTokens: Number.isInteger(impact.injectMaxTokens) && impact.injectMaxTokens > 0 ? impact.injectMaxTokens : undefined,
         injectTopP: impactParam(impact.injectTopP, 1),
         injectPresencePenalty: impactParam(impact.injectPresencePenalty, 2),
         injectFrequencyPenalty: impactParam(impact.injectFrequencyPenalty, 2),
         prompt: typeof impact.prompt === 'string' && impact.prompt.trim() ? impact.prompt.trim() : IMPACT_DECIDE_PROMPT,
         // 账本不设上限：注入每轮只挑几条，记多少条都不影响正文。
         maxRecords: 0,
-        maxChainDepth: Number.isInteger(impact.maxChainDepth) ? Math.min(8, Math.max(0, impact.maxChainDepth)) : 4,
+        maxChainDepth: Number.isInteger(impact.maxChainDepth) ? Math.max(0, impact.maxChainDepth) : 4,
     };
 }
 
@@ -2341,13 +2351,13 @@ function npcLedgerSettings() {
     return {
         enabled: settings.enableNpcLedger !== false,
         auto: npc.ledgerAuto !== false,
-        every: Number.isInteger(every) && every >= 1 ? Math.min(10, every) : 1,
+        every: Number.isInteger(every) && every >= 1 ? every : 1,
         inject: npc.ledgerInject !== false,
         // 注入三参数 0/留空＝不限制、默认不限制（与记忆同一口径，用户拍板）：填了正数才按数降级，没有天花板。
         budget: Number.isInteger(budget) && budget > 0 ? budget : Infinity,
         maxFull: Number.isInteger(maxFull) && maxFull > 0 ? maxFull : Infinity,
         maxBrief: Number.isInteger(maxBrief) && maxBrief > 0 ? maxBrief : Infinity,
-        floors: Number.isInteger(floors) && floors > 0 ? Math.min(12, floors) : Math.min(12, globalReadFloors()),
+        floors: Number.isInteger(floors) && floors > 0 ? floors : globalReadFloors(),
         // 绑定了 API设置方案＝自定义连接（守卫只认 connection，方案里自带地址密钥模型）；没绑＝跟随酒馆。
         connection: presetOverrides('npcLedger') ? 'custom' : 'tavern',
         model: typeof npc.ledgerModel === 'string' ? npc.ledgerModel.trim() : '',
@@ -2355,7 +2365,7 @@ function npcLedgerSettings() {
         apiKey: typeof npc.ledgerApiKey === 'string' ? npc.ledgerApiKey.trim() : '',
         provider: npc.ledgerProvider === 'anthropic' ? 'anthropic' : npc.ledgerProvider === 'openai' ? 'openai' : '',
         temperature: impactParam(npc.ledgerTemperature, 2),
-        maxTokens: Number.isInteger(npc.ledgerMaxTokens) && npc.ledgerMaxTokens > 0 ? Math.min(32768, npc.ledgerMaxTokens) : undefined,
+        maxTokens: Number.isInteger(npc.ledgerMaxTokens) && npc.ledgerMaxTokens > 0 ? npc.ledgerMaxTokens : undefined,
         topP: impactParam(npc.ledgerTopP, 1),
         presencePenalty: impactParam(npc.ledgerPresencePenalty, 2),
         frequencyPenalty: impactParam(npc.ledgerFrequencyPenalty, 2),
@@ -2456,7 +2466,7 @@ function npcChatSettings() {
     const npc = settings.npc ?? {};
     return {
         enabled: npc.chatEnabled === true,
-        maxTurns: Number.isInteger(npc.chatMaxTurns) && npc.chatMaxTurns > 0 ? Math.min(60, npc.chatMaxTurns) : 20,
+        maxTurns: Number.isInteger(npc.chatMaxTurns) && npc.chatMaxTurns > 0 ? npc.chatMaxTurns : 20,
         writeback: npc.chatWriteback !== false,
         prompt: typeof npc.chatPrompt === 'string' && npc.chatPrompt.trim() ? npc.chatPrompt.trim() : NPC_CHAT_PROMPT,
         connection: presetOverrides('npcChat') ? 'custom' : 'tavern',
@@ -2471,9 +2481,9 @@ function npcReachoutSettings() {
     const cooldown = Number(npc.reachoutCooldown);
     return {
         enabled: npc.reachoutEnabled === true,
-        interval: Number.isInteger(interval) && interval >= 1 ? Math.min(60, interval) : 5,
-        quota: Number.isInteger(quota) && quota > 0 ? Math.min(20, quota) : 6,
-        cooldown: Number.isInteger(cooldown) && cooldown >= 1 ? Math.min(720, cooldown) : 30,
+        interval: Number.isInteger(interval) && interval >= 1 ? interval : 5,
+        quota: Number.isInteger(quota) && quota > 0 ? quota : 6,
+        cooldown: Number.isInteger(cooldown) && cooldown >= 1 ? cooldown : 30,
         quietFrom: Number.isInteger(npc.reachoutQuietFrom) && npc.reachoutQuietFrom >= 0 && npc.reachoutQuietFrom <= 23 ? npc.reachoutQuietFrom : 0,
         quietTo: Number.isInteger(npc.reachoutQuietTo) && npc.reachoutQuietTo >= 0 && npc.reachoutQuietTo <= 23 ? npc.reachoutQuietTo : 0,
         motivesFavor: npc.reachoutMotivesFavor !== false,
@@ -2487,7 +2497,7 @@ function npcReachoutSettings() {
 
 /** 对话往来按聊天走：Map(name → { history, loops, updatedAt })，换聊天读那一份。 */
 const npcChatSessions = new Map();
-const NPC_CHAT_HISTORY_MAX = 40;
+const NPC_CHAT_HISTORY_MAX = 999999;
 let npcChatActive = null; // { name, channel, busy, recappedTurns }（视图态，不落盘）
 
 function restoreNpcChatFromChat() {
@@ -2911,6 +2921,7 @@ async function runNpcReachoutTick() {
     if (queued) {
         persistNpcReachout();
         syncOrbReachoutBadge();
+        refreshReachoutCapsules();
         try { refreshNpcDecisionPage(document.getElementById(SETTINGS_PANEL_ID)); } catch { /* 面板未开时忽略 */ }
     }
     return { status: 'ticked', queued };
@@ -2933,6 +2944,7 @@ async function generateNpcReachoutOpening(item, record) {
         if (attached.status === 'attached') {
             recordAgentAudit({ event: 'npc_reachout', outcome: 'queued', detail: `${record.name}：${parsed.reason || MOTIVE_LABELS[item.motive] || '他想来找你'}` });
             setNpcLedgerStatus(`${record.name} 想来找你：${parsed.reason || '他主动来了'}（NPC 决策页可应约）`);
+            refreshReachoutCapsules();
         }
     } catch (error) {
         agentNpcReachout.dequeue(item.id);
@@ -2950,6 +2962,7 @@ function acceptNpcReachout(id) {
     recordAgentAudit({ event: 'npc_reachout', outcome: 'accepted', detail: removed.item.npcId });
     const channel = record.presence === '在场' ? '面对面' : '传讯';
     const opened = openNpcChat(record.name, { channel, opening: removed.item.opening, reason: removed.item.reason });
+    refreshReachoutCapsules();
     try { refreshNpcDecisionPage(document.getElementById(SETTINGS_PANEL_ID)); } catch { /* 面板未开时忽略 */ }
     return opened;
 }
@@ -2960,6 +2973,7 @@ function dismissNpcReachout(id) {
         agentNpcReachout.markIgnored(dismissed.item.npcId);
         persistNpcReachout();
         syncOrbReachoutBadge();
+        refreshReachoutCapsules();
         recordAgentAudit({ event: 'npc_reachout', outcome: 'dismissed', detail: dismissed.item.npcId });
         try { refreshNpcDecisionPage(document.getElementById(SETTINGS_PANEL_ID)); } catch { /* 面板未开时忽略 */ }
     }
@@ -3039,11 +3053,11 @@ function npcColdSettings() {
         apiKey: typeof npc.coldApiKey === 'string' ? npc.coldApiKey.trim() : '',
         provider: npc.coldProvider === 'anthropic' ? 'anthropic' : npc.coldProvider === 'openai' ? 'openai' : '',
         temperature: impactParam(npc.coldTemperature, 2),
-        maxTokens: Number.isInteger(npc.coldMaxTokens) && npc.coldMaxTokens > 0 ? Math.min(32768, npc.coldMaxTokens) : undefined,
+        maxTokens: Number.isInteger(npc.coldMaxTokens) && npc.coldMaxTokens > 0 ? npc.coldMaxTokens : undefined,
         topP: impactParam(npc.coldTopP, 1),
         presencePenalty: impactParam(npc.coldPresencePenalty, 2),
         frequencyPenalty: impactParam(npc.coldFrequencyPenalty, 2),
-        floors: Number.isInteger(npc.ledgerFloors) && npc.ledgerFloors > 0 ? Math.min(12, npc.ledgerFloors) : Math.min(12, globalReadFloors()),
+        floors: Number.isInteger(npc.ledgerFloors) && npc.ledgerFloors > 0 ? npc.ledgerFloors : globalReadFloors(),
         prompt: typeof npc.coldPrompt === 'string' && npc.coldPrompt.trim() ? npc.coldPrompt.trim() : NPC_COLD_PROMPT,
     };
 }
@@ -3138,6 +3152,7 @@ async function runNpcColdPreview() {
         if (npcColdRunning === continuation) npcColdRunning = false;
     }
     setNpcLedgerStatus(`冷藏草稿已生成 ${previews.length} 份${failed.length ? `；失败 ${failed.join('、')}` : ''}${droppedForeign.length ? `；丢弃名单外补丁 ${droppedForeign.join('；')}` : ''}。请逐份确认后才会写回人物簿。`);
+    refreshColdCapsule();
     refreshNpcLedgerPage();
     return { status: 'previewed', previews, failed };
 }
@@ -3172,6 +3187,7 @@ function confirmNpcColdPreview(id) {
     persistNpcLedger();
     persistNpcCold();
     setNpcLedgerStatus(`已确认 ${preview.name} 的冷藏推进；人物簿已更新。确认错了可以点「撤销上次确认」退回。`);
+    refreshColdCapsule();
     refreshNpcLedgerPage();
     return { status: 'confirmed', result };
 }
@@ -3193,6 +3209,7 @@ function undoLastNpcColdConfirm() {
     persistNpcLedger();
     persistNpcCold();
     setNpcLedgerStatus(`已撤销 ${undo.name} 的最近一次冷藏确认：档案退回快照，游标回到第 ${rolled.status === 'unmarked' ? rolled.value.lastDay : undo.previousDay} 天，草稿回到待确认。`);
+    refreshColdCapsule();
     refreshNpcLedgerPage();
     return { status: 'undone', rolled };
 }
@@ -3201,6 +3218,7 @@ function discardNpcColdPreview(id) {
     const result = agentNpcColdRuntime.discard(id);
     persistNpcCold();
     setNpcLedgerStatus('已放弃这份冷藏草稿，人物簿没有变化。');
+    refreshColdCapsule();
     refreshNpcLedgerPage();
     return result;
 }
@@ -3449,14 +3467,9 @@ async function runNpcConsistencyCheck({ source = 'manual' } = {}) {
         return { status: 'not_configured' };
     }
     const chat = Array.isArray(getHostContext()?.chat) ? getHostContext().chat : [];
-    const rawFloors = [];
-    for (let cursor = chat.length - 1; cursor >= 0 && rawFloors.length < 2; cursor -= 1) {
-        const message = chat[cursor];
-        if (!message || typeof message.mes !== 'string' || !message.mes.trim() || message.is_system === true) continue;
-        rawFloors.unshift({ role: message.is_user === true ? '玩家' : '角色', text: message.mes });
-    }
-    if (!rawFloors.length) return { status: 'no_floors' };
-    const floors = await cleanFloorEntries(rawFloors);
+    // 正文后体检只读「用户输入＋正文」两楼（全文不截）——用户口径 2026-11-18。
+    const floors = await collectReplyFloor(chat);
+    if (!floors.length) return { status: 'no_floors' };
     const presentImportant = agentNpcLedger.list().filter(record => record.presence === '在场');
     const pool = source === 'auto'
         ? presentImportant.filter(record => record.importance === '重要').slice(0, 3)
@@ -3566,7 +3579,7 @@ function adoptNpcRelationsFromResult(result, source = '正文') {
 }
 
 /**
- * 生成后的记账：读最近几楼 + 人物簿索引，让记录员只写“这一轮发生的变化”。
+ * 生成后的记账：只读「用户输入＋正文」两楼（全文不截）+ 人物簿索引，让记录员只写“这一轮发生的变化”——用户口径 2026-11-18。
  * 节奏按“上次记账之后又生成了几楼”算，换聊天/删楼都不会乱。
  */
 async function runNpcLedgerRecord({ source = 'auto' } = {}) {
@@ -3602,15 +3615,7 @@ async function runNpcLedgerRecord({ source = 'auto' } = {}) {
     npcRecordRunning = continuation;
     setNpcLedgerStatus('人物记录员正在读这一轮……');
     try {
-        const floors = [];
-        const rawFloors = [];
-        for (let cursor = chat.length - 1; cursor >= 0 && rawFloors.length < settings.floors; cursor -= 1) {
-            const message = chat[cursor];
-            if (!message || typeof message.mes !== 'string' || !message.mes.trim()) continue;
-            if (message.is_system === true) continue;
-            rawFloors.unshift({ role: message.is_user === true ? '玩家' : '角色', text: message.mes, isUser: message.is_user === true, depth: chat.length - 1 - cursor });
-        }
-        floors.push(...await cleanFloorEntries(rawFloors));
+        const floors = await collectReplyFloor(chat);
         const recordUser = buildNpcRecordUser({
             floors,
             records: agentNpcLedger.list(),
@@ -4590,6 +4595,13 @@ function openNpcProfileModal(panel, name, { tab = 'basic' } = {}) {
 
     // —— 流水页：只读，最近 30 条；「❄ 自行活动」＝冷藏推进写回的，「新」＝最近一次生成/推进加进来的 ——
     const logPane = makeElement('div', 'dai-npc-pane');
+    // 往来概要压在明细上方：模型每轮看到的"全程脉络"在这里也一眼可见。
+    if (typeof record.logSummary === 'string' && record.logSummary.trim()) {
+        const summaryRow = makeElement('p', 'dai-exp-entry dai-npc-log-summary');
+        summaryRow.append(makeElement('span', 'dai-profile-chip is-accent', '往来概要'));
+        summaryRow.append(document.createTextNode(record.logSummary));
+        logPane.append(summaryRow);
+    }
     const logList = makeElement('div', 'dai-npc-log-list');
     const chatFloors = Array.isArray(getHostContext()?.chat) ? getHostContext().chat : [];
     const latestFloor = lastReplyIndex(chatFloors);
@@ -4853,7 +4865,7 @@ function confirmExpCondense(panel, name) {
  *  楼层按主提示词同款口径套角色卡正则（被隐藏的块不进挑选员），因此是异步的。 */
 async function impactConversation(chat, limit = 6) {
     const messages = Array.isArray(chat) ? chat : [];
-    const want = Number.isInteger(limit) && limit > 0 ? Math.min(12, limit) : 6;
+    const want = Number.isInteger(limit) && limit > 0 ? limit : 6;
     const raws = [];
     for (let index = messages.length - 1; index >= 0 && raws.length < want; index -= 1) {
         const message = messages[index];
@@ -4968,7 +4980,7 @@ function skipProfiledNpcEntry(entry) {
 function liteSettingBudget() {
     const setting = currentSettings().setting ?? {};
     return {
-        maxItems: Number.isInteger(setting.maxItems) && setting.maxItems > 0 ? setting.maxItems : 8,
+        maxItems: Infinity,
         injectionBudget: Number.isInteger(setting.injectionBudget) && setting.injectionBudget > 0 ? setting.injectionBudget : 0,
     };
 }
@@ -5039,11 +5051,7 @@ const agentLiteSettle = createLiteSettle({
     overrides: () => presetOverrides('liteSettle') ?? { connection: 'tavern' },
     worldDay, factsIndex: agentFactsIndex, sandboxActive: () => sandboxModeActive(),
     volumeOf: () => currentVolumeForWorld(),
-    floorsMax: () => Math.max(
-        worldDecideSettings().maxFloors, selfLedgerSettings().maxFloors,
-        memorySettings().maxFloors, npcLedgerSettings().floors,
-    ),
-    entriesMax: () => 12, // 原著候选匹配上限：固定默认（旧「世界书条目上限」设置已删除）
+    entriesMax: () => Infinity,
     settleLines: settleVerdictLinesForDecide,
     npc: {
         list: () => agentNpcLedger.list(),
@@ -5137,19 +5145,21 @@ async function prepareInjectionForPrompt({ chat } = {}) {
     let input = '';
     const recent = [];
     {
+        // 拾卷喂料：跟隐藏正则走的可见窗口（默认四楼）里有多少读多少，全文不截——用户口径 2026-11-18。
+        const window = globalReadFloors();
         let rawInput = null;
         const rawRecents = [];
         for (let index = messages.length - 1; index >= 0; index -= 1) {
             const message = messages[index];
             if (!message || typeof message.mes !== 'string' || !message.mes.trim()) continue;
-            if (message.is_user === true) { if (rawInput === null) rawInput = { text: message.mes.trim(), depth: messages.length - 1 - index }; continue; }
+            if (message.is_user === true) { if (rawInput === null) rawInput = { text: message.mes.trim(), depth: messages.length - 1 - index }; }
             if (message.is_system === true) continue;
-            if (rawRecents.length < 2) rawRecents.unshift({ text: message.mes, depth: messages.length - 1 - index });
-            if (rawInput !== null && rawRecents.length >= 2) break;
+            if (rawRecents.length < window) rawRecents.unshift({ text: message.mes, isUser: message.is_user === true, depth: messages.length - 1 - index });
+            if (rawInput !== null && rawRecents.length >= window) break;
         }
         const [cleanedInput, cleanedRecents] = await Promise.all([
             rawInput ? cleanFloorText({ mes: rawInput.text, is_user: true }, rawInput.depth) : Promise.resolve(''),
-            Promise.all(rawRecents.map(entry => cleanFloorText({ mes: entry.text, is_user: false }, entry.depth))),
+            Promise.all(rawRecents.map(entry => cleanFloorText({ mes: entry.text, is_user: entry.isUser }, entry.depth))),
         ]);
         input = cleanedInput.trim();
         recent.push(...cleanedRecents.filter(text => text.trim()));
@@ -5376,7 +5386,8 @@ async function collectSettleMaterials(chat = null) {
     const userFloor = sourceChat.findLastIndex(message => message?.is_user === true && typeof message.mes === 'string' && message.mes.trim());
     const input = userFloor >= 0 ? sourceChat[userFloor].mes.trim() : '';
     // 手动重判也只能读到玩家输入为止，不能把该输入的旧AI回复当成既定结果。
-    const { floors } = await impactConversation(userFloor >= 0 ? sourceChat.slice(0, userFloor + 1) : [], 6);
+    // 过秤是备料路：跟隐藏正则走的可见窗口（默认四楼）全文喂——用户口径 2026-11-18。
+    const { floors } = await impactConversation(userFloor >= 0 ? sourceChat.slice(0, userFloor + 1) : [], globalReadFloors());
     const settings = settleSettings();
     const state = settleStateFromSelf();
     const contextState = buildSettleContextState(state, input);
@@ -5598,6 +5609,26 @@ function lastReplyIndex(chat) {
     return -1;
 }
 
+/** 正文后调用（记账/决定/核验/体检）的喂料：读两楼——触发这轮的玩家输入 + 正文那一楼（旧→新），全文不截。
+ *  用户口径 2026-11-18：账从「玩家这轮做了什么 + 正文演了什么」里记，更早的历史楼一概不读、单楼也不截；
+ *  生成前的备料路（召回/拾卷/过秤/场记挑选）另按可见窗口读，与此处无关。 */
+async function collectReplyFloor(chat = null) {
+    const sourceChat = Array.isArray(chat) ? chat : (getHostContext()?.chat ?? []);
+    const replyIndex = lastReplyIndex(sourceChat);
+    if (replyIndex < 0) return [];
+    const replyMessage = sourceChat[replyIndex];
+    if (!replyMessage || typeof replyMessage.mes !== 'string' || !replyMessage.mes.trim()) return [];
+    let userInputIndex = -1;
+    for (let cursor = replyIndex - 1; cursor >= 0; cursor -= 1) {
+        const message = sourceChat[cursor];
+        if (message?.is_user === true && typeof message.mes === 'string' && message.mes.trim()) { userInputIndex = cursor; break; }
+    }
+    const raws = [];
+    if (userInputIndex >= 0) raws.push({ role: '玩家', text: sourceChat[userInputIndex].mes, isUser: true, depth: sourceChat.length - 1 - userInputIndex });
+    raws.push({ role: '角色', text: replyMessage.mes, isUser: false, depth: sourceChat.length - 1 - replyIndex });
+    return cleanFloorEntries(raws);
+}
+
 /** 某一楼正文的身份指纹：mes + swipe 编号。重 roll / 编辑只变指纹不变楼层号，
  *  各路“生成后”记账用它判断同楼要不要撤回重算（人物簿记录员同款口径）。 */
 function replyIdentityOf(chat, index) {
@@ -5733,7 +5764,7 @@ function apiPresetHtml(preset) {
     const text = value => escapeHtml(String(value ?? ''));
     const providerOption = (value, label) => `<option value="${value}"${preset.provider === value ? ' selected' : ''}>${label}</option>`;
     const numberRow = (name, label, small, max, step) => `<label class="dai-setting-row"><span><b>${label}</b><small>${small}</small></span><input type="number" min="0" max="${max}" step="${step}" data-api-preset-field="${name}" value="${text(preset[name] ?? 0)}"></label>`;
-    return `<details class="dai-settle-category dai-api-preset" data-api-preset-id="${id}"><summary><span class="dai-feature-icon" aria-hidden="true">${daiIcon("letter")}</span><span><b>${text(preset.name || '未命名方案')}</b><small>${preset.tavern === true ? '走酒馆通道' : text(preset.baseUrl || '还没填接口地址')}</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row dai-setting-toggle"><span><b>走酒馆通道</b><small>开：绑定这个方案的功能经由酒馆当前的 API 连接发出，下面的地址、密钥、模型都用不上；关：按下面填的接口直连。</small></span><input type="checkbox" data-api-preset-field="tavern" ${preset.tavern === true ? 'checked' : ''}></label><label class="dai-setting-row"><span><b>方案名称</b><small>「模型设置」页各功能选方案时显示的名字。</small></span><input type="text" data-api-preset-field="name" value="${text(preset.name)}" placeholder="例如：深修直连"></label><label class="dai-setting-row"><span><b>接口协议</b><small>留空按接口地址自动判断。</small></span><select data-api-preset-field="provider">${providerOption('', '自动判断')}${providerOption('openai', 'OpenAI 兼容')}${providerOption('anthropic', 'Anthropic')}</select></label><label class="dai-setting-row"><span><b>接口地址</b><small>OpenAI 兼容的 Base URL，填到 /v1 为止（同酒馆自定义接口）。</small></span><input type="text" data-api-preset-field="baseUrl" value="${text(preset.baseUrl)}" placeholder="https://api.example.com/v1"></label><label class="dai-setting-row"><span><b>API Key</b><small>只保存到扩展设置，不写入聊天消息。</small></span><input type="password" data-api-preset-field="apiKey" value="${text(preset.apiKey)}" autocomplete="off" placeholder="留空表示不使用密钥"></label><label class="dai-setting-row"><span><b>模型名称</b><small>填好地址后点“拉取模型”，弹出列表里下滑点一个就填上；也可以手填。</small></span><input type="text" data-api-preset-field="model" value="${text(preset.model)}" placeholder="例如 deepseek-chat"></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-api-preset-models="${id}">拉取模型</button><small role="status" data-api-preset-models-status="${id}"></small></div><div class="dai-setting-grid dai-param-grid">${numberRow('temperature', 'Temperature', '0 更稳，2 更发散；0 ＝不指定。', 2, 0.05)}${numberRow('maxTokens', '最大输出 Token', 'tokens；0 ＝不指定。', 32768, 64)}${numberRow('topP', 'top_p', '0–1；0 ＝不指定。', 1, 0.05)}${numberRow('presencePenalty', '存在惩罚', '0–2；0 ＝不指定。', 2, 0.1)}${numberRow('frequencyPenalty', '频率惩罚', '0–2；0 ＝不指定。', 2, 0.1)}</div><label class="dai-setting-row"><span><b>包括主体参数</b><small>YAML 对象，最后并进聊天补全请求体（酒馆附加参数同语义）；例：top_k: 20</small></span><textarea data-api-preset-field="includeBody" rows="3" spellcheck="false" placeholder="top_k: 20">${text(preset.includeBody)}</textarea></label><label class="dai-setting-row"><span><b>排除主体参数</b><small>YAML 数组，最后从请求体删掉这些顶层字段；例：- frequency_penalty</small></span><textarea data-api-preset-field="excludeBody" rows="3" spellcheck="false" placeholder="- frequency_penalty">${text(preset.excludeBody)}</textarea></label><label class="dai-setting-row"><span><b>包含请求标头</b><small>YAML 对象，合并覆盖请求头（可覆盖鉴权头）；例：CustomHeader: custom-value</small></span><textarea data-api-preset-field="headers" rows="3" spellcheck="false" placeholder="CustomHeader: custom-value">${text(preset.headers)}</textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-api-preset-copy="${id}">复制方案</button><button type="button" class="dai-button dai-button-ghost" data-api-preset-remove="${id}">删除方案</button><small>改动即时保存；删除后用到它的功能自动回到跟随酒馆主连接。</small></div></div></details>`;
+    return `<details class="dai-settle-category dai-api-preset" data-api-preset-id="${id}"><summary><span class="dai-feature-icon" aria-hidden="true">${daiIcon("letter")}</span><span><b>${text(preset.name || '未命名方案')}</b><small>${preset.tavern === true ? '走酒馆通道' : text(preset.baseUrl || '还没填接口地址')}</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row dai-setting-toggle"><span><b>走酒馆通道</b><small>开：绑定这个方案的功能经由酒馆当前的 API 连接发出，下面的地址、密钥、模型都用不上；关：按下面填的接口直连。</small></span><input type="checkbox" data-api-preset-field="tavern" ${preset.tavern === true ? 'checked' : ''}></label><label class="dai-setting-row"><span><b>方案名称</b><small>「模型设置」页各功能选方案时显示的名字。</small></span><input type="text" data-api-preset-field="name" value="${text(preset.name)}" placeholder="例如：深修直连"></label><label class="dai-setting-row"><span><b>接口协议</b><small>留空按接口地址自动判断。</small></span><select data-api-preset-field="provider">${providerOption('', '自动判断')}${providerOption('openai', 'OpenAI 兼容')}${providerOption('anthropic', 'Anthropic')}</select></label><label class="dai-setting-row"><span><b>接口地址</b><small>OpenAI 兼容的 Base URL，填到 /v1 为止（同酒馆自定义接口）。</small></span><input type="text" data-api-preset-field="baseUrl" value="${text(preset.baseUrl)}" placeholder="https://api.example.com/v1"></label><label class="dai-setting-row"><span><b>API Key</b><small>只保存到扩展设置，不写入聊天消息。</small></span><input type="password" data-api-preset-field="apiKey" value="${text(preset.apiKey)}" autocomplete="off" placeholder="留空表示不使用密钥"></label><label class="dai-setting-row"><span><b>模型名称</b><small>填好地址后点“拉取模型”，弹出列表里下滑点一个就填上；也可以手填。</small></span><input type="text" data-api-preset-field="model" value="${text(preset.model)}" placeholder="例如 deepseek-chat"></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-api-preset-models="${id}">拉取模型</button><small role="status" data-api-preset-models-status="${id}"></small></div><details class="dai-advanced-fold dai-advanced-preset"><summary>高级参数 · 采样与附加参数（一般不用动）</summary><div class="dai-advanced-body"><div class="dai-setting-grid dai-param-grid">${numberRow('temperature', 'Temperature', '0 更稳，2 更发散；0 ＝不指定。', 2, 0.05)}${numberRow('maxTokens', '最大输出 Token', 'tokens；0 ＝不指定。', 32768, 64)}${numberRow('topP', 'top_p', '0–1；0 ＝不指定。', 1, 0.05)}${numberRow('presencePenalty', '存在惩罚', '0–2；0 ＝不指定。', 2, 0.1)}${numberRow('frequencyPenalty', '频率惩罚', '0–2；0 ＝不指定。', 2, 0.1)}</div><label class="dai-setting-row"><span><b>包括主体参数</b><small>YAML 对象，最后并进聊天补全请求体（酒馆附加参数同语义）；例：top_k: 20</small></span><textarea data-api-preset-field="includeBody" rows="3" spellcheck="false" placeholder="top_k: 20">${text(preset.includeBody)}</textarea></label><label class="dai-setting-row"><span><b>排除主体参数</b><small>YAML 数组，最后从请求体删掉这些顶层字段；例：- frequency_penalty</small></span><textarea data-api-preset-field="excludeBody" rows="3" spellcheck="false" placeholder="- frequency_penalty">${text(preset.excludeBody)}</textarea></label><label class="dai-setting-row"><span><b>包含请求标头</b><small>YAML 对象，合并覆盖请求头（可覆盖鉴权头）；例：CustomHeader: custom-value</small></span><textarea data-api-preset-field="headers" rows="3" spellcheck="false" placeholder="CustomHeader: custom-value">${text(preset.headers)}</textarea></label></div></details><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-api-preset-copy="${id}">复制方案</button><button type="button" class="dai-button dai-button-ghost" data-api-preset-remove="${id}">删除方案</button><small>改动即时保存；删除后用到它的功能自动回到跟随酒馆主连接。</small></div></div></details>`;
 }
 
 function renderApiPresets(panel, openId = null) {
@@ -5741,6 +5772,10 @@ function renderApiPresets(panel, openId = null) {
     if (!list) return;
     const presets = currentSettings().api?.presets ?? [];
     list.innerHTML = presets.map(apiPresetHtml).join('');
+    // API设置页的方案计数：加/删方案后这里同步刷新。
+    for (const slot of document.querySelectorAll('[data-api-preset-count]')) {
+        slot.textContent = presets.length ? `已配置 ${presets.length} 套方案` : '还没有方案：点下方「＋ 新建 API 设置」建一套';
+    }
     if (openId) {
         const item = list.querySelector(`[data-api-preset-id="${CSS.escape(openId)}"]`);
         if (item) {
@@ -6045,7 +6080,6 @@ function worldDecideSettings() {
     return {
         enabled: world.decideEnabled !== false,
         auto: world.decideAuto !== false,
-        maxFloors: Number.isInteger(world.decideMaxFloors) && world.decideMaxFloors > 0 ? Math.min(12, world.decideMaxFloors) : Math.min(12, globalReadFloors()),
         prompt: typeof world.decidePrompt === 'string' && world.decidePrompt.trim() ? world.decidePrompt.trim() : WORLD_DECIDE_PROMPT,
         // 绑定了 API设置方案整套走方案；没绑＝跟随酒馆主连接。
         overrides: presetOverrides('world') ?? { connection: 'tavern' },
@@ -6117,17 +6151,9 @@ async function runWorldDecision({ source = 'auto', note = '' } = {}) {
     try {
         const context = getHostContext();
         const chat = Array.isArray(context?.chat) ? context.chat : [];
-        const floors = [];
-        const rawFloors = [];
-        for (let cursor = chat.length - 1; cursor >= 0 && rawFloors.length < settings.maxFloors; cursor -= 1) {
-            const message = chat[cursor];
-            if (!message || typeof message.mes !== 'string' || !message.mes.trim()) continue;
-            if (message.is_system === true) continue;
-            rawFloors.unshift({ role: message.is_user === true ? '玩家' : '角色', text: message.mes, isUser: message.is_user === true, depth: chat.length - 1 - cursor });
-        }
-        floors.push(...await cleanFloorEntries(rawFloors));
+        const floors = await collectReplyFloor(chat);
         if (!floors.length) {
-            setWorldDecideStatus('聊天里还没有内容，模型无从决定。');
+            setWorldDecideStatus('聊天里还没有正文，世界决定无从下手（只读用户输入＋正文两楼）。');
             return { status: 'no_input' };
         }
         // 世界书侧输入：直接复用原著资料本轮注入通道里的现成内容（选条流程的产物），决定调用不自己翻世界书条目。
@@ -6187,7 +6213,6 @@ function plotLedgerSettings() {
         budget: Number.isInteger(plot.injectBudget) && plot.injectBudget > 0 ? plot.injectBudget : Infinity,
         decideEnabled: plot.decideEnabled !== false,
         decideAuto: plot.decideAuto !== false,
-        maxFloors: Number.isInteger(plot.decideMaxFloors) && plot.decideMaxFloors > 0 ? Math.min(12, plot.decideMaxFloors) : Math.min(12, globalReadFloors()),
         prompt: typeof plot.decidePrompt === 'string' && plot.decidePrompt.trim() ? plot.decidePrompt.trim() : PLOT_DECIDE_PROMPT,
         // 绑定了 API设置方案整套走方案；没绑＝跟随酒馆主连接。
         overrides: presetOverrides('plot') ?? { connection: 'tavern' },
@@ -6264,7 +6289,7 @@ let plotDecideRunning = false;
 let plotDecidedFloor = null;
 
 /**
- * 剧情决定主入口：读最近聊天 + 世界时钟 + 剧情账本 → 模型决定 → 脚本逐条校验执行 →
+ * 剧情决定主入口：读「用户输入＋正文」两楼（全文不截）+ 世界时钟 + 剧情账本 → 模型决定 → 脚本逐条校验执行 →
  * 结果呈现到面板。生成结束后自动跑（排在世界决定之后），面板按钮可手动跑。
  * 解析失败带错误信息自动重试一次（instructor 式），坏输出不再一票否决整轮决定。
  */
@@ -6295,17 +6320,9 @@ async function runPlotDecision({ source = 'auto', note = '' } = {}) {
     try {
         const context = getHostContext();
         const chat = Array.isArray(context?.chat) ? context.chat : [];
-        const floors = [];
-        const rawFloors = [];
-        for (let cursor = chat.length - 1; cursor >= 0 && rawFloors.length < settings.maxFloors; cursor -= 1) {
-            const message = chat[cursor];
-            if (!message || typeof message.mes !== 'string' || !message.mes.trim()) continue;
-            if (message.is_system === true) continue;
-            rawFloors.unshift({ role: message.is_user === true ? '玩家' : '角色', text: message.mes, isUser: message.is_user === true, depth: chat.length - 1 - cursor });
-        }
-        floors.push(...await cleanFloorEntries(rawFloors));
+        const floors = await collectReplyFloor(chat);
         if (!floors.length) {
-            setPlotDecideStatus('聊天里还没有内容，模型无从决定。');
+            setPlotDecideStatus('聊天里还没有正文，剧情决定无从下手（只读用户输入＋正文两楼）。');
             return { status: 'no_input' };
         }
         let user = buildPlotDecideUser({ snapshot: agentPlotRuntime.snapshot(), clockText: agentWorldRuntime.formatClock(), floors, settleLines: settleVerdictLinesForDecide() });
@@ -6534,16 +6551,9 @@ async function runFactCheck({ source = 'auto' } = {}) {
     // 可观测性：无论结果如何都落 lastRun——否则“跑了没结果”与“根本没跑”无法区分。
     const lastRun = { floor: replyFloor, ts: new Date().toISOString(), status: 'started', claims: 0, nameIssues: 0, reason: '' };
     try {
-        const floors = [];
-        for (let cursor = chat.length - 1; cursor >= 0 && floors.length < 2; cursor -= 1) {
-            const message = chat[cursor];
-            if (!message || typeof message.mes !== 'string' || !message.mes.trim()) continue;
-            if (message.is_system === true) continue;
-            floors.unshift({ role: message.is_user === true ? '玩家' : '角色', text: message.mes, isUser: message.is_user === true, depth: chat.length - 1 - cursor });
-        }
-        const cleaned = floors.length ? await cleanFloorEntries(floors) : [];
-        const newest = [...cleaned].reverse().find(item => item.role !== '玩家') ?? cleaned.at(-1) ?? null;
-        const proseText = newest?.text ?? '';
+        const cleaned = await collectReplyFloor(chat);
+        // 两楼口径（玩家输入+正文）里正文是最后一楼；断言与快筛都只对正文，玩家输入只作上下文。
+        const proseText = cleaned.at(-1)?.text ?? '';
         // ① 名字比对：setting-supply 的确定性审计（旧管线遗留能力）。实跑发现 lore 密集的正文
         // 一楼能命中 40+ 条目名（酒馆原生世界书还在自己注入，正文引用非注入条目是常态），
         // 默认关（verify.nameAudit）；开了才作为确定性车道随核验执行，零模型调用。
@@ -6717,17 +6727,9 @@ async function runMemoryDecision({ source = 'auto', note = '' } = {}) {
     try {
         const context = getHostContext();
         const chat = Array.isArray(context?.chat) ? context.chat : [];
-        const floors = [];
-        const rawFloors = [];
-        for (let cursor = chat.length - 1; cursor >= 0 && rawFloors.length < settings.maxFloors; cursor -= 1) {
-            const message = chat[cursor];
-            if (!message || typeof message.mes !== 'string' || !message.mes.trim()) continue;
-            if (message.is_system === true) continue;
-            rawFloors.unshift({ role: message.is_user === true ? '玩家' : '角色', text: message.mes, isUser: message.is_user === true, depth: chat.length - 1 - cursor });
-        }
-        floors.push(...await cleanFloorEntries(rawFloors));
+        const floors = await collectReplyFloor(chat);
         if (!floors.length) {
-            setMemoryDecideStatus('聊天里还没有内容，书记官无从下手。');
+            setMemoryDecideStatus('聊天里还没有正文，书记官无从下手（只读用户输入＋正文两楼）。');
             return { status: 'no_input' };
         }
         // 总结式记忆：输入只带现有清单与最近聊天，正文总结不需要世界书/召回材料。
@@ -6969,17 +6971,9 @@ async function runImpactDecision({ source = 'auto', note = '' } = {}) {
     try {
         const context = getHostContext();
         const chat = Array.isArray(context?.chat) ? context.chat : [];
-        const floors = [];
-        const rawFloors = [];
-        for (let cursor = chat.length - 1; cursor >= 0 && rawFloors.length < settings.decideMaxFloors; cursor -= 1) {
-            const message = chat[cursor];
-            if (!message || typeof message.mes !== 'string' || !message.mes.trim()) continue;
-            if (message.is_system === true) continue;
-            rawFloors.unshift({ role: message.is_user === true ? '玩家' : '角色', text: message.mes, isUser: message.is_user === true, depth: chat.length - 1 - cursor });
-        }
-        floors.push(...await cleanFloorEntries(rawFloors));
+        const floors = await collectReplyFloor(chat);
         if (!floors.length) {
-            setImpactStatus('聊天里还没有内容，记录员无从下手。');
+            setImpactStatus('聊天里还没有正文，影响决定无从下手（只读用户输入＋正文两楼）。');
             return { status: 'no_input' };
         }
         // 世界书侧输入：直接复用原著资料本轮注入通道里的现成内容（选条流程的产物），决定调用不自己翻世界书条目。
@@ -7071,6 +7065,7 @@ export const doupoAgent = Object.freeze({
     npcPlanReassessment: agentNpcPlanReassessment,
     npcConflict: agentNpcConflictCoordinator,
     npcCommitGate: agentNpcCommitGate,
+    orbToasts: agentOrbToasts,
     reviewNpcCandidate: options => agentNpcAutonomyPlanner.reviewCandidate({ ...options, decisionGuard: agentNpcDecisionGuard }),
     registerNpcPlan: options => agentNpcAutonomyPlanner.registerPlan(options),
     adjustNpcPlan: options => agentNpcAutonomyPlanner.adjustPlan(options),
@@ -7606,12 +7601,23 @@ function ensureOrbToastHost() {
         orbToastElement = makeElement('div', 'dai-orb-toasts');
         orbToastElement.setAttribute('role', 'status');
         orbToastElement.setAttribute('aria-label', '账本变化提醒');
-        // 点胶囊即提前退场；不带任何操作，详细内容去对应页面看。
+        // 点胶囊即提前退场；带 action 的常驻胶囊（冷藏确认/主动找你）顺手把事办了——
+        // 主动找你直接开和那个人的对话窗（带开场白），不再绕设置页（用户口径 2026-11-18）。
         orbToastElement.addEventListener('click', event => {
             const pill = event.target?.closest?.('.dai-orb-toast');
             if (!pill?.dataset.toastId) return;
+            const action = pill.dataset.action || '';
+            const toastKey = pill.dataset.toastKey || '';
             agentOrbToasts.dismiss(Number(pill.dataset.toastId));
             renderOrbToasts();
+            if (toastKey) markNpcCapsuleHandled(toastKey);
+            if (action === 'reachout') {
+                // key 是 reachout:<队列条目id>：走与「去聊」按钮同一条 accept 链——出队、记回应、带开场白开聊窗。
+                const id = toastKey.startsWith('reachout:') ? toastKey.slice('reachout:'.length) : '';
+                const opened = id ? acceptNpcReachout(id) : { status: 'invalid' };
+                // NPC 对话功能没开时聊天窗开不出来：引到「NPC 决策」页去开开关。
+                if (opened?.status === 'disabled') openAgentPage('npc');
+            } else if (action === 'cold') openAgentPage('npcledger', 'npc-cold-bench');
         });
         orbElement.append(orbToastElement);
     }
@@ -7623,8 +7629,10 @@ function renderOrbToasts() {
     if (!host) return;
     const entries = agentOrbToasts.active();
     host.replaceChildren(...entries.map(entry => {
-        const pill = makeElement('div', `dai-orb-toast is-${entry.tone}`);
+        const pill = makeElement('div', `dai-orb-toast is-${entry.tone}${entry.sticky ? ' is-sticky' : ''}`);
         pill.dataset.toastId = String(entry.id);
+        if (entry.key) pill.dataset.toastKey = entry.key;
+        if (entry.action) pill.dataset.action = entry.action;
         pill.title = entry.detail ? `${entry.detail} · ${entry.text}` : entry.text;
         const icon = makeElement('span', 'dai-orb-toast-icon');
         icon.innerHTML = daiIcon(entry.icon);
@@ -7671,6 +7679,81 @@ function clearOrbToasts() {
     agentOrbToasts.clear();
     if (orbToastTimer) { clearTimeout(orbToastTimer); orbToastTimer = 0; }
     try { renderOrbToasts(); } catch { /* 球不在就作罢 */ }
+}
+
+/** 常驻胶囊直达：开设置面板并切到指定页（模拟点导航项）；modalOpen 给了就顺手把对应弹窗打开。 */
+function openAgentPage(page, modalOpen = '') {
+    try {
+        openSettingsPanel();
+        const panel = document.getElementById(SETTINGS_PANEL_ID);
+        if (!panel) return;
+        panel.querySelector(`[data-settings-page="${page}"]`)?.click();
+        if (modalOpen) panel.querySelector(`[data-modal-open="${modalOpen}"]`)?.click();
+    } catch { /* 打不开面板就只当胶囊被点了 */ }
+}
+
+// —— 常驻胶囊（用户口径 2026-11-18）：冷藏推进确认与角色主动找你不自动退场，
+// 球边一直挂着，玩家点了或把事办了才消失；多了就沿球边往下排。 ——
+let knownReachoutCapsules = new Set();
+let dismissedReachoutCapsules = new Set();
+let coldCapsuleSeenCount = null;
+
+/** 玩家点了常驻胶囊：记下「这条我已经看见过」，刷新时不再弹回来，直到队列里换新的。 */
+function markNpcCapsuleHandled(toastKey) {
+    if (toastKey.startsWith('reachout:')) dismissedReachoutCapsules.add(toastKey);
+    else if (toastKey === 'cold') {
+        try { coldCapsuleSeenCount = (agentNpcColdRuntime.status().previews ?? []).filter(item => item.status === 'pending').length; } catch { coldCapsuleSeenCount = null; }
+    }
+}
+
+/** 角色主动找你 → 常驻胶囊：队列里还有谁没处理就挂谁（一人一条，key 按队列条目 id）；
+ *  已被玩家点掉的不弹回来，除非队列里换了新的一条。 */
+function refreshReachoutCapsules() {
+    try {
+        const pending = agentNpcReachout.pendingList?.() ?? [];
+        const wanted = new Set();
+        for (const item of pending) {
+            const key = `reachout:${item.id ?? item.npcId}`;
+            wanted.add(key);
+            if (dismissedReachoutCapsules.has(key)) continue;
+            const record = agentNpcLedger.get(item.npcId);
+            const name = record?.name ?? item.npcId;
+            const reason = (typeof item.reason === 'string' ? item.reason.trim() : '').split(/[，。；！？]/)[0] || '';
+            const text = `想找你${reason ? `：${reason.slice(0, 12)}` : ''}`;
+            agentOrbToasts.push({ key, sticky: true, action: 'reachout', icon: 'letter', title: name, tone: 'info', text, detail: '角色主动联系 · 点开直接和他聊（带开场白）' });
+        }
+        for (const key of [...knownReachoutCapsules]) {
+            if (!wanted.has(key)) {
+                agentOrbToasts.dismissKey(key);
+                dismissedReachoutCapsules.delete(key);
+            }
+        }
+        knownReachoutCapsules = wanted;
+        renderOrbToasts();
+    } catch { /* 队列读不到就维持现状 */ }
+}
+
+/** 冷藏推进 → 常驻胶囊：还有待确认的草稿就挂一条（同 key 替换，草稿数实时更新）；
+ *  玩家点过之后同数量不再弹回，数量变了或清零（自动摘除）才再动。 */
+function refreshColdCapsule() {
+    try {
+        const pending = (agentNpcColdRuntime.status().previews ?? []).filter(item => item.status === 'pending');
+        if (!pending.length) {
+            agentOrbToasts.dismissKey('cold');
+            coldCapsuleSeenCount = null;
+        } else if (coldCapsuleSeenCount !== pending.length) {
+            const names = pending.map(item => item.name).slice(0, 3).join('、');
+            agentOrbToasts.push({ key: 'cold', sticky: true, action: 'cold', icon: 'ledger', title: '冷藏推进', tone: 'info', text: `${pending.length} 份草稿待确认：${names}${pending.length > 3 ? ' 等' : ''}`.slice(0, 76), detail: '点开去人物簿 · 冷藏推进台' });
+            coldCapsuleSeenCount = null;
+        }
+        renderOrbToasts();
+    } catch { /* 冷藏台读不到就维持现状 */ }
+}
+
+/** 两类常驻胶囊一起刷新：恢复台账/换聊天之后各刷一次，未处理的就一直挂着。 */
+function refreshNpcActionCapsules() {
+    refreshReachoutCapsules();
+    refreshColdCapsule();
 }
 
 function mountOrbHud() {
@@ -9085,6 +9168,127 @@ function closeWorldTileEditors(panel) {
     }
 }
 
+/** 精简面板：各页低频卡收进「高级设置」折叠区。只移动 DOM（卡一张不少、存储路径原样），
+ *  匹配口径＝卡标题前缀；同一节内命中多张就全收。折叠区固定挂在该页末尾。
+ *  另有一份按"设置路径"收整行的清单：0＝不限制之类的调参框不摆在页面明面上。 */
+const ADVANCED_FOLD_SPECS = Object.freeze({
+    overview: ['模型调用体检', '卡面脚本'],
+    hub: ['功能读取楼层数'],
+    facts: ['检索库状态', '检索库 · 条目浏览', '注入通道', '正文核验（事实审计）'],
+    action: ['行动结算注入', '类别规则与自定义判定'],
+    world: ['模型决定（LLM 决定脚本执行）', '接一个任务', '登记势力', '登记人物', '登记事件'],
+    npc: ['NPC 自由对话', '主动联系（他来找你）'],
+    npcledger: ['一致性体检', '手动记账', '冷藏推进台'],
+    self: ['模型决定（LLM 决定脚本执行）', '身份档案', '登记功法', '登记斗技', '登记装备', '记录天材地宝', '放入物品', '记配方', '开工炼制', '立目标'],
+    memory: ['模型决定（LLM 决定脚本执行）', '召回决定（LLM 挑选注入哪些记忆）', '记忆注入', '记忆体检', '按人整合', '手动登记'],
+    impact: ['记录与注入', '记一条世界影响'],
+});
+// 从整卡折叠里把「启用」开关提到锚点行后面：功能开关留在页面上看得见，参数随原卡折叠。
+// 顺序即插入顺序（后一条锚在前一条上）。
+const ADVANCED_PROMOTE_TOGGLES = Object.freeze([
+    { path: 'npc.chatEnabled', anchor: 'enableNpcAutonomy' },
+    { path: 'npc.reachoutEnabled', anchor: 'npc.chatEnabled' },
+]);
+// 卡内低频行：开关留在卡面，配置行收进所在卡自己的折叠条（语义检索的地址/密钥/模型/重建按钮）。
+const ADVANCED_CARD_FOLD_ROWS = Object.freeze([
+    '[data-setting="memory.embedding.baseUrl"]',
+    '[data-setting="memory.embedding.apiKey"]',
+    '[data-setting="memory.embedding.model"]',
+    '[data-memory-vector-rebuild]',
+]);
+// 这些路径的输入行（0＝不限制一类的调参框、子功能开关）整行挪进所在页的折叠区。
+// 注意：dai-feature-toggle 型的卡面总开关不能进这里——那是卡片的标题开关，整行搬走会把标签拆坏；
+// 要藏它们就整卡收折（进 ADVANCED_FOLD_SPECS）。
+const ADVANCED_FOLD_INPUTS = Object.freeze([
+    'setting.injectionBudget', 'injection.depth', 'injection.maxChars',
+    'world.eventBudget', 'world.eventInject', 'plot.injectBudget', 'plot.inject', 'plot.decideAuto',
+    'npc.maxCandidates', 'npc.requireConfirmation', 'npc.allowConflicts',
+    'npc.ledgerBudget', 'npc.ledgerMaxFull', 'npc.ledgerMaxBrief', 'npc.ledgerFloors',
+    'npc.ledgerAuto', 'npc.ledgerEvery', 'npc.ledgerInject',
+    'npc.reachoutInterval', 'npc.reachoutQuota', 'npc.reachoutCooldown', 'npc.reachoutQuietFrom', 'npc.reachoutQuietTo',
+    'self.injectBudget', 'self.inject', 'enableDbBridge',
+    'memory.injectBudget', 'memory.consolidateAfter', 'memory.wakeUpBudget',
+    'memory.inject', 'memory.decideAuto', 'memory.decideEnabled', 'memory.recallEnabled', 'memory.recallAuto', 'memory.wakeUp',
+    'impact.recentCount', 'impact.injectBudget', 'impact.injectFloors', 'impact.maxChainDepth',
+    'sandbox.inertia', 'sandbox.canonCharactersAutonomous',
+]);
+
+function applyAdvancedFolds(panel) {
+    if (!panel || panel.dataset.advancedFoldsApplied === 'true') return;
+    const headingOf = card => (card.querySelector('.dai-card-heading b, .dai-feature-toggle b, b')?.textContent ?? card.textContent ?? '').trim();
+    // 先提「启用」开关（必须在整卡收折之前做，否则行跟着卡一起进折叠区）。
+    for (const spec of ADVANCED_PROMOTE_TOGGLES) {
+        const input = panel.querySelector(`[data-setting="${spec.path}"]`);
+        if (!input || input.closest('.dai-advanced-fold')) continue;
+        const row = input.closest('.dai-setting-row');
+        if (!row) continue;
+        const anchorInput = panel.querySelector(`[data-setting="${spec.anchor}"]`);
+        if (!anchorInput) continue;
+        const anchorRow = anchorInput.closest('.dai-feature-toggle') ?? anchorInput.closest('.dai-setting-row');
+        if (!anchorRow || anchorRow.contains(row)) continue;
+        anchorRow.insertAdjacentElement('afterend', row);
+    }
+    for (const [sectionName, prefixes] of Object.entries(ADVANCED_FOLD_SPECS)) {
+        const section = panel.querySelector(`[data-settings-section="${sectionName}"]`);
+        if (!section) continue;
+        // 只挑"最外层"的卡：嵌套在别的卡里的（结算自定义判定等）不重复收。
+        const cards = [...section.querySelectorAll('.dai-settings-card')]
+            .filter(card => !card.parentElement.closest('.dai-settings-card'));
+        const matched = cards.filter(card => prefixes.some(prefix => headingOf(card).startsWith(prefix)));
+        if (!matched.length) continue;
+        const fold = makeElement('details', 'dai-advanced-fold');
+        fold.innerHTML = '<summary>高级设置 · 低频项<span>点开调整；收起不影响任何功能</span></summary>';
+        const body = makeElement('div', 'dai-advanced-body');
+        fold.append(body);
+        for (const card of matched) body.append(card);
+        section.append(fold);
+        // 嵌套在别的卡里的命中卡：同样挪进折叠区，别漏。
+        const nested = [...section.querySelectorAll('.dai-settings-card')]
+            .filter(card => card.parentElement.closest('.dai-settings-card')
+                && !card.closest('.dai-advanced-fold')
+                && prefixes.some(prefix => headingOf(card).startsWith(prefix)));
+        for (const card of nested) body.append(card);
+    }
+    // 卡内低频行：开关留在卡面，配置行收进所在卡自己的折叠条（不进页级折叠区）。
+    for (const selector of ADVANCED_CARD_FOLD_ROWS) {
+        for (const el of panel.querySelectorAll(selector)) {
+            const row = el.closest('.dai-setting-row');
+            if (!row || row.closest('.dai-advanced-fold')) continue;
+            const card = row.closest('.dai-settings-card');
+            if (!card) continue;
+            let fold = card.querySelector(':scope > .dai-advanced-fold');
+            if (!fold) {
+                fold = makeElement('details', 'dai-advanced-fold');
+                fold.innerHTML = '<summary>高级设置 · 低频项<span>点开调整；收起不影响任何功能</span></summary>';
+                const body = makeElement('div', 'dai-advanced-body');
+                fold.append(body);
+                card.append(fold);
+            }
+            fold.querySelector(':scope > .dai-advanced-body').append(row);
+        }
+    }
+    // 调参行（0＝不限制一类）：整行挪进所在页的折叠区；已在折叠卡里的跳过。
+    for (const path of ADVANCED_FOLD_INPUTS) {
+        for (const input of panel.querySelectorAll(`[data-setting="${path}"]`)) {
+            if (input.closest('.dai-advanced-fold')) continue;
+            const section = input.closest('[data-settings-section]');
+            if (!section) continue;
+            const row = input.closest('.dai-setting-row') ?? input.parentElement;
+            if (!row || row.closest('.dai-advanced-fold')) continue;
+            let fold = section.querySelector(':scope > .dai-advanced-fold');
+            if (!fold) {
+                fold = makeElement('details', 'dai-advanced-fold');
+                fold.innerHTML = '<summary>高级设置 · 低频项<span>点开调整；收起不影响任何功能</span></summary>';
+                const body = makeElement('div', 'dai-advanced-body');
+                fold.append(body);
+                section.append(fold);
+            }
+            fold.querySelector(':scope > .dai-advanced-body').append(row);
+        }
+    }
+    panel.dataset.advancedFoldsApplied = 'true';
+}
+
 function createSettingsPanel() {
     if (document.getElementById(SETTINGS_PANEL_ID)) return;
     const panel = makeElement('section', 'dai-settings-panel');
@@ -9142,11 +9346,11 @@ function createSettingsPanel() {
                     
                     <section class="dai-settings-page" data-settings-section="apis" role="tabpanel" hidden>
                         <div class="dai-page-heading"><h3>API设置</h3><p>把每套接口配置（地址、密钥、模型、采样参数、附加参数）存成命名方案，「模型设置」页里每个功能直接选一套，不用再逐项手填。每个方案自己决定走不走酒馆通道（卡上的「走酒馆通道」开关）。附加参数与酒馆「自定义接口 · 附加参数」同语义：包括主体参数并进请求体、排除主体参数删字段、包含请求标头覆盖请求头。</p></div>
-                        <div class="dai-settings-card"><div class="dai-card-heading"><b>接口方案</b><small>方案只保存在扩展设置里（密钥也是），不进聊天消息；改完方案下一轮调用就生效，不用重启。功能在「模型设置」页绑定方案。</small></div><div data-api-preset-list></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-api-add-preset>＋ 新建 API 设置</button><small role="status" data-api-preset-status>最多 20 个方案。</small></div></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>接口方案</b><small>方案只保存在扩展设置里（密钥也是），不进聊天消息；改完方案下一轮调用就生效，不用重启。功能在「模型设置」页绑定方案。</small></div><p data-api-preset-count role="status">已配置 0 套方案</p><div data-api-preset-list></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-api-add-preset>＋ 新建 API 设置</button><small role="status" data-api-preset-status>最多 20 个方案。</small></div></div>
                     </section>
                                         <section class="dai-settings-page" data-settings-section="hub" role="tabpanel" hidden>
                         <div class="dai-page-heading"><h3>模型设置</h3><p>扩展会发起的每一次独立模型调用，在这一页只回答一个问题：这个功能用哪套方案。方案（地址、密钥、模型、采样参数、附加参数）在「API设置」页维护，改方案下一轮调用就生效；不绑方案＝跟随酒馆主连接。各功能的提示词不在这一页——到对应功能页里改。</p></div>
-                        <div class="dai-settings-card dai-api-mode-card"><div class="dai-card-heading"><b>调用版本</b><small>简略版＝备料三路并成一次「素材总挑选」、记账五路并成一次「总结算」，一轮最多 3 次模型调用（进阶增强关闭）；完整版＝每个功能各一路调用（原有行为，进阶增强关闭）；进阶版＝完整版逐路管线，再叠上全部进阶增强（难度骰子、正文核验、一致性体检、人物关系网、开局摘要、剧情账本决定、语义检索）。切换立即生效，下一轮开始按新版本跑；各版各自记住自己的方案绑定，互不覆盖。</small></div><div class="dai-api-mode-switch" role="radiogroup" aria-label="调用版本"><button type="button" class="dai-api-mode-option" data-api-mode="lite"><b>简略版</b><small>合并调用省次数</small></button><button type="button" class="dai-api-mode-option" data-api-mode="full"><b>完整版</b><small>每功能一路调用</small></button><button type="button" class="dai-api-mode-option" data-api-mode="advanced"><b>进阶版</b><small>完整版＋进阶增强</small></button></div></div><div class="dai-settings-card"><div class="dai-card-heading"><b>功能读取楼层数（全局默认）</b><small>各功能的"看最近几楼 / 喂最近几楼"没单独填就用这个。留空或 0＝自动跟随当前角色卡自带的"整楼隐藏"正则深度：提示词侧清空的正则、显示侧清空的正则都算；扩展自装的「旧楼层隐去」帷幕按屏幕上实际保留的楼数（最近四楼）算——屏幕和主提示词看不见的楼层，功能调用默认就不读。卡上没有这类正则时回落 8；只看角色脚本，不看全局正则；想多喂楼就在这里手动填，单独填的优先。功能调用读楼层本身会按主提示词同款口径套用角色正则，再把显示侧清空类正则（变量申报收纳、召回导语收纳这类替换成空的）也剥掉——被隐藏的块不进功能调用，被整楼隐藏的楼层自动剔除。</small></div><label class="dai-setting-row"><span><b>默认读几楼</b><small>想单独调某个功能，去该功能页填自己的楼数即可，单独填的优先。</small></span><input type="number" min="1" step="1" data-setting="readFloors" placeholder="留空或 0＝跟随角色正则"></label></div>
+                        <div class="dai-settings-card dai-api-mode-card"><div class="dai-card-heading"><b>调用版本</b><small>简略版＝备料三路并成一次「素材总挑选」、记账五路并成一次「总结算」，一轮最多 3 次模型调用（进阶增强关闭）；完整版＝每个功能各一路调用（原有行为，进阶增强关闭）；进阶版＝完整版逐路管线，再叠上全部进阶增强（难度骰子、正文核验、一致性体检、人物关系网、开局摘要、剧情账本决定、语义检索）。切换立即生效，下一轮开始按新版本跑；各版各自记住自己的方案绑定，互不覆盖。</small></div><div class="dai-api-mode-switch" role="radiogroup" aria-label="调用版本"><button type="button" class="dai-api-mode-option" data-api-mode="lite"><b>简略版</b><small>合并调用省次数</small></button><button type="button" class="dai-api-mode-option" data-api-mode="full"><b>完整版</b><small>每功能一路调用</small></button><button type="button" class="dai-api-mode-option" data-api-mode="advanced"><b>进阶版</b><small>完整版＋进阶增强</small></button></div></div><div class="dai-settings-card"><div class="dai-card-heading"><b>功能读取楼层数（全局默认）</b><small>各功能的"看最近几楼 / 喂最近几楼"没单独填就用这个。留空或 0＝自动跟随当前角色卡自带的"整楼隐藏"正则深度：提示词侧清空的正则、显示侧清空的正则都算；扩展自装的「旧楼层隐去」帷幕按屏幕上实际保留的楼数（最近四楼）算——屏幕和主提示词看不见的楼层，功能调用默认就不读。卡上没有这类正则时回落 8；只看角色脚本，不看全局正则；想多喂楼就在这里手动填，单独填的优先。功能调用读楼层本身会按主提示词同款口径套用角色正则，再把显示侧清空类正则（变量申报收纳、召回导语收纳这类替换成空的）也剥掉——被隐藏的块不进功能调用，被整楼隐藏的楼层自动剔除。正文后的调用（人物/世界/影响/纳戒/记忆记账、核验、体检）只读「用户输入＋正文」两楼、全文不截，不看这个数。</small></div><label class="dai-setting-row"><span><b>默认读几楼</b><small>想单独调某个功能，去该功能页填自己的楼数即可，单独填的优先。</small></span><input type="number" min="1" step="1" data-setting="readFloors" placeholder="留空或 0＝跟随角色正则"></label></div>
                         <div data-api-mode-section="advanced" hidden>
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>进阶功能一览</b><small>进阶版＝完整版逐路管线，再叠上学 GitHub 仓库的全部增强，只有进阶版生效，切回完整版/简略版整体静默。各卡位置：难度骰子与变数在「行动结算」页；正文核验在「原著资料」页；一致性体检、人物关系网、传播传闻在「人物簿」页；记忆体检、按人整合、开局摘要在「记忆存储」页；剧情账本在「世界运转」页；语义检索在本页下方。每项仍有自己的开关，进阶版只是放行的总闸。</small></div><ul class="dai-status-list"><li><b>记忆混合检索打分</b><span>钥匙/引文/标题/词面/时间邻近/重要度多路合分排序（Generative Agents 三因子）；完整版/简略版退回钥匙整词命中的旧排序</span></li><li><b>记忆写入查重</b><span>共钥匙且词面相似 ≥0.85 的复述在写入时拦住（MemPalace）；旧口径只查同层同文</span></li><li><b>记忆体检</b><span>孤立钥匙、目录覆盖率、疑似矛盾对的纯本地统计卡</span></li><li><b>按人整合＋相关记忆跳转</b><span>跨账本时间线与共钥匙详情跳转（A-MEM）</span></li><li><b>开局摘要（wake-up）</b><span>切聊天后第一条回复前一次跨账本交底，只注一次</span></li><li><b>语义向量检索</b><span>embeddings 端点叠加余弦相似度，失败静默退回纯本地检索</span></li><li><b>难度＋骰子裁定</b><span>模型报风险档位与带依据修正，脚本掷 d20 对难度判成败，只降不升；波折轮掷变数 Oracle，部分成功补结构化保底代价</span></li><li><b>正文核验（VeriScore 三标签）</b><span>生成后旁路小调用把正文拆成断言对照台账裁决，只记审计不拦正文</span></li><li><b>剧情账本决定</b><span>滚动计划与线索账的自动维护调用，排在世界决定之后</span></li></ul></div>
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>语义检索（可选）</b><small>记忆召回与兜底的语义增强：OpenAI 兼容 /v1/embeddings 独立端点（不走酒馆连接、不绑 API 方案——酒馆连接做不了 embeddings）。开启后混合检索在关键词/词面/时间邻近之外叠加语义相似度，同义改述（"陨落心炎"写成"心火"）也能勾回旧账；没配置时全部走纯本地混合检索，零行为变化。向量按聊天存在浏览器 IndexedDB，落账后后台自动补嵌，改文本或换模型会自动重嵌。</small></div><label class="dai-setting-row dai-setting-toggle"><span><b>启用语义检索</b><small>开关在这里，记忆召回决定与关键词兜底自动吃到相似度加成。</small></span><input type="checkbox" data-setting="memory.embedding.enabled"></label><label class="dai-setting-row"><span><b>接口地址</b><small>如 https://api.example.com/v1（/v1 结尾自动接 /embeddings）。</small></span><input type="text" data-setting="memory.embedding.baseUrl" placeholder="https://api.example.com/v1" spellcheck="false"></label><label class="dai-setting-row"><span><b>密钥</b><small>本地服务（LM Studio 等）可留空。</small></span><input type="password" data-setting="memory.embedding.apiKey" spellcheck="false"></label><label class="dai-setting-row"><span><b>向量模型</b><small>如 text-embedding-3-small / embedding-3 / bge-m3；换模型会自动重嵌。</small></span><input type="text" data-setting="memory.embedding.model" spellcheck="false"></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-memory-vector-rebuild>重建本聊天向量</button><small role="status" data-memory-vector-stats>语义检索未开启。</small></div></div>
@@ -9155,9 +9359,9 @@ function createSettingsPanel() {
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>全局连接（正文与默认调用）</b><small>扩展侧的意图解析、正文撰写、设定挑选等默认调用走哪套；正文由酒馆自己生成，不经过这里。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案（接口、参数、附加参数全按方案来）。</small></span><select data-setting="llm.apiPreset" data-api-preset-select></select></label><label class="dai-setting-row"><span><b>单次等待上限（秒）</b><small>所有扩展调用的超时上限，按秒填：60 就是一分钟；范围 1～600 秒，方案不能覆盖这一项。</small></span><input type="number" min="1" max="600" step="1" data-setting="llm.timeoutSec" placeholder="默认 60"></label></div>
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>原著设定 · 选条与卷外点选</b><small>每轮生成前“挑哪些原著条目进正文”的独立调用。选条与卷外点选的提示词在「原著资料」页修改。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="setting.apiPreset" data-api-preset-select></select></label></div>
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>行动结算 · 判定调用</b><small>分类判定与最终判定共用这一套 API：生成前一次调用直判本轮全部行动（旧分类管线也走这套）。判定开关与提示词在「行动结算」页改。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="settle.resultApiPreset" data-api-preset-select></select></label></div>
-                        <div class="dai-settings-card"><div class="dai-card-heading"><b>世界运转 · 模型决定</b><small>世界事件决定调用；决定提示词与降级指令指南在「世界运转」页改。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="world.decideApiPreset" data-api-preset-select></select></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>喂最近几楼聊天</b></span><input type="number" min="1" max="12" step="1" data-setting="world.decideMaxFloors" placeholder="留空或 0＝跟随角色正则"></label></div></div><div class="dai-settings-card"><div class="dai-card-heading"><b>剧情账本 · 决定模型</b><small>滚动计划与线索账的维护调用，排在世界决定之后；决定开关与提示词在「世界运转」页改。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="plot.decideApiPreset" data-api-preset-select></select></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>喂最近几楼聊天</b><small>剧情决定自己的一份，与世界决定分开。</small></span><input type="number" min="1" max="12" step="1" data-setting="plot.decideMaxFloors" placeholder="留空或 0＝跟随角色正则"></label></div></div><div class="dai-settings-card"><div class="dai-card-heading"><b>正文核验 · 事实审计</b><small>生成后拆断言对照台账的旁路小调用；开关、审计列表与提示词在「原著资料」页改。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="verify.apiPreset" data-api-preset-select></select></label></div>
-                        <div class="dai-settings-card"><div class="dai-card-heading"><b>纳戒 · 决定模型</b><small>纳戒决定是一条独立调用（生成后自动跑或手动“让模型决定一次”）；决定开关与提示词在「纳戒」页改。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="self.decideApiPreset" data-api-preset-select></select></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>喂最近几楼聊天</b><small>纳戒决定自己的一份，与记忆分开。</small></span><input type="number" min="1" max="12" step="1" data-setting="self.decideMaxFloors" placeholder="留空或 0＝跟随角色正则"></label></div></div>
-                        <div class="dai-settings-card"><div class="dai-card-heading"><b>记忆 · 决定模型</b><small>记忆决定专用；召回与总结各有独立连接卡。决定提示词与开关在「记忆存储」页改。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="memory.decideApiPreset" data-api-preset-select></select></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>喂最近几楼聊天</b><small>记忆决定自己的一份，与纳戒分开。</small></span><input type="number" min="1" max="12" step="1" data-setting="memory.decideMaxFloors" placeholder="留空或 0＝跟随角色正则"></label></div></div><div class="dai-settings-card"><div class="dai-card-heading"><b>记忆 · 召回模型</b><small>用户输入之后、生成之前，按记忆目录挑要注入的旧记忆；召回提示词与自动开关在「记忆存储」页。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="memory.recallApiPreset" data-api-preset-select></select></label></div><div class="dai-settings-card"><div class="dai-card-heading"><b>记忆 · 总结模型</b><small>小记忆攒够条数总结成一条大记忆；阈值在「记忆存储」页。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="memory.consolidateApiPreset" data-api-preset-select></select></label></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>世界运转 · 模型决定</b><small>世界事件决定调用；决定提示词与降级指令指南在「世界运转」页改。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="world.decideApiPreset" data-api-preset-select></select></label></div><div class="dai-settings-card"><div class="dai-card-heading"><b>剧情账本 · 决定模型</b><small>滚动计划与线索账的维护调用，排在世界决定之后；决定开关与提示词在「世界运转」页改。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="plot.decideApiPreset" data-api-preset-select></select></label></div><div class="dai-settings-card"><div class="dai-card-heading"><b>正文核验 · 事实审计</b><small>生成后拆断言对照台账的旁路小调用；开关、审计列表与提示词在「原著资料」页改。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="verify.apiPreset" data-api-preset-select></select></label></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>纳戒 · 决定模型</b><small>纳戒决定是一条独立调用（生成后自动跑或手动“让模型决定一次”）；决定开关与提示词在「纳戒」页改。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="self.decideApiPreset" data-api-preset-select></select></label></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>记忆 · 决定模型</b><small>记忆决定专用；召回与总结各有独立连接卡。决定提示词与开关在「记忆存储」页改。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="memory.decideApiPreset" data-api-preset-select></select></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>喂召回员最近几楼聊天</b><small>召回员（生成前挑旧记忆）读最近聊天用的楼数；正文后的书记官只读「用户输入＋正文」两楼，不看这个数。留空或 0＝跟随角色正则。</small></span><input type="number" min="1" max="12" step="1" data-setting="memory.decideMaxFloors" placeholder="留空或 0＝跟随角色正则"></label></div></div><div class="dai-settings-card"><div class="dai-card-heading"><b>记忆 · 召回模型</b><small>用户输入之后、生成之前，按记忆目录挑要注入的旧记忆；召回提示词与自动开关在「记忆存储」页。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="memory.recallApiPreset" data-api-preset-select></select></label></div><div class="dai-settings-card"><div class="dai-card-heading"><b>记忆 · 总结模型</b><small>小记忆攒够条数总结成一条大记忆；阈值在「记忆存储」页。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="memory.consolidateApiPreset" data-api-preset-select></select></label></div>
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>世界影响 · 记录员与场记</b><small>生成后记账与生成前挑选的两个调用；提示词在「世界影响」页改。场记不绑方案就跟着记录员走。</small></div><label class="dai-setting-row"><span><b>记录员用哪套API设置</b><small>生成结束后记账的那个。</small></span><select data-setting="impact.decideApiPreset" data-api-preset-select></select></label><label class="dai-setting-row"><span><b>场记用哪套API设置</b><small>生成前挑影响的那个；不绑＝跟记录员同一套。</small></span><select data-setting="impact.injectApiPreset" data-api-preset-select></select></label></div>
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>人物簿 · 记录员</b><small>生成后补人物档案的小调用；提示词在「人物簿」页改。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="npc.ledgerApiPreset" data-api-preset-select></select></label></div><div class="dai-settings-card"><div class="dai-card-heading"><b>人物簿 · 档案抄录</b><small>按世界书给人物补空字段的小调用（面板「按世界书重抽」也会用到）。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="npc.extractApiPreset" data-api-preset-select></select></label></div><div class="dai-settings-card"><div class="dai-card-heading"><b>人物簿 · 经历精简</b><small>把某人的经历清单压缩成草稿、确认后写回的手动调用。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="npc.expApiPreset" data-api-preset-select></select></label></div><div class="dai-settings-card"><div class="dai-card-heading"><b>人物簿 · 冷藏推进员</b><small>给勾选的冷藏人物补世界时间走过那一段的小调用；提示词在「人物簿」页改。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="npc.coldApiPreset" data-api-preset-select></select></label></div><div class="dai-settings-card"><div class="dai-card-heading"><b>NPC 自由对话 · 调用模型</b><small>和人物簿里的人当面/传讯私聊的调用；开关与回合上限在「NPC 决策」页。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="npc.chatApiPreset" data-api-preset-select></select></label></div><div class="dai-settings-card"><div class="dai-card-heading"><b>主动联系 · 开场白模型</b><small>NPC 主动来找你的开场白生成调用；开关、动机与队列在「NPC 决策」页。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="npc.reachoutApiPreset" data-api-preset-select></select></label></div>
                         </div>
@@ -9169,7 +9373,7 @@ function createSettingsPanel() {
                         </div>
                     </section>
                     <section class="dai-settings-page" data-settings-section="facts" role="tabpanel" hidden>
-                        <div class="dai-page-heading"><h3>原著设定</h3><p>把世界书条目变成“按需注入”的设定库：建索引、按卷出目录、模型点名、按预算注入正文提示词。</p></div><div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon" aria-hidden="true">${daiIcon('book')}</span><span><b>启用原著设定注入</b><small>每轮先按本轮输入召回候选，再由模型挑出真正要用的设定，按预算注入正文提示词。</small></span><input type="checkbox" data-setting="setting.enabled"></div></div><div class="dai-settings-card"><div class="dai-card-heading"><b>运行状态</b><small>打开这一页时读取，生成结束后也会刷新。</small></div><ul class="dai-status-list" data-facts-status><li><b>状态</b><span>正在读取……</span></li></ul></div><div class="dai-settings-card"><div class="dai-card-heading"><b>检索库状态</b><small>只读世界书，不改原文件；改完世界书后重新导入一次即可。</small></div><p class="dai-turn-result" data-worldbook-stats role="status">还没有导入。</p><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>选择世界书</b><small>扫描到的名字会记住；选过之后刷新酒馆不用重选。</small></span><select data-worldbook-pick><option value="">（尚未选择）</option></select></label><label class="dai-setting-row"><span><b>手动填写</b><small>列表里没有就填世界书面板里的名字。</small></span><input type="text" list="dai-worldbook-options" data-setting="setting.worldbook" placeholder="例如 斗破世界书"></label></div><datalist id="dai-worldbook-options"></datalist><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-agent-worldbook-scan>扫描可选世界书</button><button type="button" class="dai-secondary-button" data-agent-worldbook-import>从世界书导入</button></div><p class="dai-turn-result" data-agent-worldbook-status role="status">还没有导入。</p></div><div class="dai-settings-card"><div class="dai-card-heading"><b>检索库 · 条目浏览</b><small>整库条目在这里翻：按类别/卷过滤、按关键词搜（标题、别名、摘要、正文都算），点行看全文。纯本地过滤，不花模型调用。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>关键词</b></span><input type="text" data-facts-search placeholder="例如 加列家 / 乌坦城 / 萧炎"></label><label class="dai-setting-row"><span><b>类别</b></span><select data-facts-cat><option value="">全部类别</option></select></label><label class="dai-setting-row"><span><b>范围</b></span><select data-facts-scope><option value="volume">当前剧情卷</option><option value="all">全书</option></select></label></div><p class="dai-turn-result" data-facts-browser-status role="status">打开页面后自动列出。</p><div class="dai-facts-browser" data-facts-browser></div></div><div class="dai-settings-card"><div class="dai-card-heading"><b>上次注入</b><small>最近一轮实际写进提示词的原著条目；与上面的运行状态分开看。</small></div><div class="dai-facts-injection" data-facts-last-injection role="status">本轮还没有注入过。</div></div><div class="dai-settings-card"><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>当前剧情卷</b><small>自动＝按本轮输入和模型估计；手动选＝锁定这一卷，识别到更后面的卷也会被压回。</small></span><select data-setting="setting.progress"><option value="0">自动判定</option><option value="1">第 1 卷</option><option value="2">第 2 卷</option><option value="3">第 3 卷</option><option value="4">第 4 卷</option><option value="5">第 5 卷</option><option value="6">第 6 卷</option><option value="7">第 7 卷</option><option value="8">第 8 卷</option><option value="9">第 9 卷</option><option value="10">第 10 卷</option><option value="11">第 11 卷</option><option value="12">第 12 卷</option><option value="13">第 13 卷</option><option value="14">第 14 卷</option><option value="15">第 15 卷</option><option value="16">第 16 卷</option><option value="17">第 17 卷</option><option value="18">第 18 卷</option><option value="19">第 19 卷</option><option value="20">第 20 卷</option><option value="21">第 21 卷</option></select></label><label class="dai-setting-row"><span><b>单次注入字数</b><small>0 = 不限制，选中几条就注入几条全文。</small></span><input type="number" min="0" step="100" data-setting="setting.injectionBudget"></label><label class="dai-setting-row"><span><b>单次检索出条目上限</b><small>选条模型单次最多挑几条原著条目（含本卷故事线背景），直接按你填的来，不设天花板；留空默认 8，填 0 或负数也按默认处理。上下文里提到的条目多于上限时按相关度取前几条。改完下一轮选条就生效。</small></span><input type="number" min="1" step="1" data-setting="setting.maxItems" placeholder="默认 8"></label></div></div><div class="dai-settings-card"><div class="dai-card-heading"><b>注入通道</b><small data-injection-status role="status">打开这一页时检测。</small></div><div class="dai-setting-grid"><label class="dai-setting-row dai-setting-toggle"><span><b>启用注入</b><small>关闭后不往提示词里写任何原著内容，正文照常生成。</small></span><input type="checkbox" data-setting="injection.enabled"></label><label class="dai-setting-row"><span><b>插入深度</b><small>从最新一楼往回数；0 表示紧贴末尾、离生成最近。</small></span><input type="number" min="0" max="99" step="1" data-setting="injection.depth"></label><label class="dai-setting-row"><span><b>最大字数</b><small>0 = 不截断；填了才在写入时截断。</small></span><input type="number" min="0" step="100" data-setting="injection.maxChars"></label></div></div><details class="dai-settle-category"><summary><span class="dai-feature-icon" aria-hidden="true">${daiIcon("slip")}</span><span><b>选条提示词</b><small>模型判断“本轮要用哪些原著条目”时收到的 system 指令；点开修改，清空恢复内置默认；MAX_PICKS 会换成每条上限。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>规则正文</b><small>改完下一轮生效，不用重启。</small></span><textarea data-setting="prompt.select" rows="9" spellcheck="false" placeholder="打开页面会自动铺入当前生效的规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-prompt-default>填入默认规则</button><small>默认规则口径：提到的就出、本卷故事线默认带、不许编 uid、只输出 JSON。</small></div></div></details><details class="dai-settle-category"><summary><span class="dai-feature-icon" aria-hidden="true">${daiIcon("slip")}</span><span><b>卷外点选提示词</b><small>模型在目录里找不到、报出名字后，脚本搜到候选再问它一次时用的 system 指令；点开修改，清空恢复内置默认。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>规则正文</b><small>只影响“卷外二次点选”，改完下一轮生效。</small></span><textarea data-setting="prompt.lookup" rows="7" spellcheck="false" placeholder="打开页面会自动铺入当前生效的规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-prompt-default="lookup">填入默认规则</button><small>默认规则含“只从候选里挑、后续卷默认不选”。</small></div></div></details><div class="dai-settings-card" data-api-mode-section="advanced"><div class="dai-card-heading"><b>正文核验（事实审计）</b><small>生成结束后一次旁路小调用：把正文拆成可验证断言，对照本轮注入条目与三本台账裁决（有据/矛盾/无据），只记审计、不拦正文。排在世界/纳戒/人物记账之后跑。整卡只在进阶版显示；接口在「模型设置」页「正文核验」卡。</small></div><div class="dai-feature-toggle"><span class="dai-feature-icon" aria-hidden="true">${daiIcon('book')}</span><span><b>启用正文核验</b><small>关闭后自动与手动都不再跑。</small></span><input type="checkbox" data-setting="verify.enabled"></div><label class="dai-setting-row dai-setting-toggle"><span><b>每轮生成后自动核验</b><small>关闭后只能点“核验这一楼”手动跑。</small></span><input type="checkbox" data-setting="verify.auto"></label><label class="dai-setting-row dai-setting-toggle"><span><b>快筛（省调用）</b><small>正文命中条目名/人物名/境界/数量才发起调用；关闭则每个 AI 楼层都核。闲聊楼层永不产生核验调用。</small></span><input type="checkbox" data-setting="verify.gate"></label><label class="dai-setting-row dai-setting-toggle"><span><b>名字比对（未注入条目审计）</b><small>正文出现没注入过的条目名就记一条。实跑在设定密集的卡上一楼能记 40+ 条（原生世界书注入的设定被正文引用是常态），默认关；要漂移报告再开。</small></span><input type="checkbox" data-setting="verify.nameAudit"></label><p class="dai-turn-result" data-verify-status role="status">还没有运行。生成结束后会自动核验。</p><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-verify-run>核验这一楼</button></div><div class="dai-world-decide-result" data-verify-result></div><div class="dai-facts-injection" data-verify-entries role="status">还没有核验记录。</div><details class="dai-prompt-fold"><summary><span><b>核验提示词</b><small>核验模型收到的 system 规则；点开修改，清空恢复内置默认。改写时保持“只输出 JSON”与 claims/verdict 字段名不变。</small></span></summary><label class="dai-setting-row"><span><b>规则正文</b><small>三标签裁决、传闻只判无据、断言不抄原句的规矩都在这里，可按玩法改写。</small></span><textarea data-setting="verify.prompt" rows="10" spellcheck="false" placeholder="打开页面会自动铺入当前生效的规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-secondary-button" data-verify-default>填入默认规则</button><small>默认规则含“矛盾必须有明确反证、传闻不当事实”。</small></div></details></div></section>
+                        <div class="dai-page-heading"><h3>原著设定</h3><p>把世界书条目变成“按需注入”的设定库：建索引、按卷出目录、模型点名、按预算注入正文提示词。</p></div><div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon" aria-hidden="true">${daiIcon('book')}</span><span><b>启用原著设定注入</b><small>每轮先按本轮输入召回候选，再由模型挑出真正要用的设定，按预算注入正文提示词。</small></span><input type="checkbox" data-setting="setting.enabled"></div></div><div class="dai-settings-card"><div class="dai-card-heading"><b>运行状态</b><small>打开这一页时读取，生成结束后也会刷新。</small></div><ul class="dai-status-list" data-facts-status><li><b>状态</b><span>正在读取……</span></li></ul></div><div class="dai-settings-card"><div class="dai-card-heading"><b>检索库状态</b><small>只读世界书，不改原文件；改完世界书后重新导入一次即可。</small></div><p class="dai-turn-result" data-worldbook-stats role="status">还没有导入。</p><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>选择世界书</b><small>扫描到的名字会记住；选过之后刷新酒馆不用重选。</small></span><select data-worldbook-pick><option value="">（尚未选择）</option></select></label><label class="dai-setting-row"><span><b>手动填写</b><small>列表里没有就填世界书面板里的名字。</small></span><input type="text" list="dai-worldbook-options" data-setting="setting.worldbook" placeholder="例如 斗破世界书"></label></div><datalist id="dai-worldbook-options"></datalist><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-agent-worldbook-scan>扫描可选世界书</button><button type="button" class="dai-secondary-button" data-agent-worldbook-import>从世界书导入</button></div><p class="dai-turn-result" data-agent-worldbook-status role="status">还没有导入。</p></div><div class="dai-settings-card"><div class="dai-card-heading"><b>检索库 · 条目浏览</b><small>整库条目在这里翻：按类别/卷过滤、按关键词搜（标题、别名、摘要、正文都算），点行看全文。纯本地过滤，不花模型调用。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>关键词</b></span><input type="text" data-facts-search placeholder="例如 加列家 / 乌坦城 / 萧炎"></label><label class="dai-setting-row"><span><b>类别</b></span><select data-facts-cat><option value="">全部类别</option></select></label><label class="dai-setting-row"><span><b>范围</b></span><select data-facts-scope><option value="volume">当前剧情卷</option><option value="all">全书</option></select></label></div><p class="dai-turn-result" data-facts-browser-status role="status">打开页面后自动列出。</p><div class="dai-facts-browser" data-facts-browser></div></div><div class="dai-settings-card"><div class="dai-card-heading"><b>上次注入</b><small>最近一轮实际写进提示词的原著条目；与上面的运行状态分开看。</small></div><div class="dai-facts-injection" data-facts-last-injection role="status">本轮还没有注入过。</div></div><div class="dai-settings-card"><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>当前剧情卷</b><small>自动＝按本轮输入和模型估计；手动选＝锁定这一卷，识别到更后面的卷也会被压回。</small></span><select data-setting="setting.progress"><option value="0">自动判定</option><option value="1">第 1 卷</option><option value="2">第 2 卷</option><option value="3">第 3 卷</option><option value="4">第 4 卷</option><option value="5">第 5 卷</option><option value="6">第 6 卷</option><option value="7">第 7 卷</option><option value="8">第 8 卷</option><option value="9">第 9 卷</option><option value="10">第 10 卷</option><option value="11">第 11 卷</option><option value="12">第 12 卷</option><option value="13">第 13 卷</option><option value="14">第 14 卷</option><option value="15">第 15 卷</option><option value="16">第 16 卷</option><option value="17">第 17 卷</option><option value="18">第 18 卷</option><option value="19">第 19 卷</option><option value="20">第 20 卷</option><option value="21">第 21 卷</option></select></label><label class="dai-setting-row"><span><b>单次注入字数</b><small>0 = 不限制，选中几条就注入几条全文。</small></span><input type="number" min="0" step="100" data-setting="setting.injectionBudget"></label></div></div><div class="dai-settings-card"><div class="dai-card-heading"><b>注入通道</b><small data-injection-status role="status">打开这一页时检测。</small></div><div class="dai-setting-grid"><label class="dai-setting-row dai-setting-toggle"><span><b>启用注入</b><small>关闭后不往提示词里写任何原著内容，正文照常生成。</small></span><input type="checkbox" data-setting="injection.enabled"></label><label class="dai-setting-row"><span><b>插入深度</b><small>从最新一楼往回数；0 表示紧贴末尾、离生成最近。</small></span><input type="number" min="0" max="99" step="1" data-setting="injection.depth"></label><label class="dai-setting-row"><span><b>最大字数</b><small>0 = 不截断；填了才在写入时截断。</small></span><input type="number" min="0" step="100" data-setting="injection.maxChars"></label></div></div><details class="dai-settle-category"><summary><span class="dai-feature-icon" aria-hidden="true">${daiIcon("slip")}</span><span><b>选条提示词</b><small>模型判断“本轮要用哪些原著条目”时收到的 system 指令；点开修改，清空恢复内置默认。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>规则正文</b><small>改完下一轮生效，不用重启。</small></span><textarea data-setting="prompt.select" rows="9" spellcheck="false" placeholder="打开页面会自动铺入当前生效的规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-prompt-default>填入默认规则</button><small>默认规则口径：提到的就出、本卷故事线默认带、不许编 uid、只输出 JSON。</small></div></div></details><details class="dai-settle-category"><summary><span class="dai-feature-icon" aria-hidden="true">${daiIcon("slip")}</span><span><b>卷外点选提示词</b><small>模型在目录里找不到、报出名字后，脚本搜到候选再问它一次时用的 system 指令；点开修改，清空恢复内置默认。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>规则正文</b><small>只影响“卷外二次点选”，改完下一轮生效。</small></span><textarea data-setting="prompt.lookup" rows="7" spellcheck="false" placeholder="打开页面会自动铺入当前生效的规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-prompt-default="lookup">填入默认规则</button><small>默认规则含“只从候选里挑、后续卷默认不选”。</small></div></div></details><div class="dai-settings-card" data-api-mode-section="advanced"><div class="dai-card-heading"><b>正文核验（事实审计）</b><small>生成结束后一次旁路小调用：把正文拆成可验证断言，对照本轮注入条目与三本台账裁决（有据/矛盾/无据），只记审计、不拦正文。排在世界/纳戒/人物记账之后跑。整卡只在进阶版显示；接口在「模型设置」页「正文核验」卡。</small></div><div class="dai-feature-toggle"><span class="dai-feature-icon" aria-hidden="true">${daiIcon('book')}</span><span><b>启用正文核验</b><small>关闭后自动与手动都不再跑。</small></span><input type="checkbox" data-setting="verify.enabled"></div><label class="dai-setting-row dai-setting-toggle"><span><b>每轮生成后自动核验</b><small>关闭后只能点“核验这一楼”手动跑。</small></span><input type="checkbox" data-setting="verify.auto"></label><label class="dai-setting-row dai-setting-toggle"><span><b>快筛（省调用）</b><small>正文命中条目名/人物名/境界/数量才发起调用；关闭则每个 AI 楼层都核。闲聊楼层永不产生核验调用。</small></span><input type="checkbox" data-setting="verify.gate"></label><label class="dai-setting-row dai-setting-toggle"><span><b>名字比对（未注入条目审计）</b><small>正文出现没注入过的条目名就记一条。实跑在设定密集的卡上一楼能记 40+ 条（原生世界书注入的设定被正文引用是常态），默认关；要漂移报告再开。</small></span><input type="checkbox" data-setting="verify.nameAudit"></label><p class="dai-turn-result" data-verify-status role="status">还没有运行。生成结束后会自动核验。</p><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-verify-run>核验这一楼</button></div><div class="dai-world-decide-result" data-verify-result></div><div class="dai-facts-injection" data-verify-entries role="status">还没有核验记录。</div><details class="dai-prompt-fold"><summary><span><b>核验提示词</b><small>核验模型收到的 system 规则；点开修改，清空恢复内置默认。改写时保持“只输出 JSON”与 claims/verdict 字段名不变。</small></span></summary><label class="dai-setting-row"><span><b>规则正文</b><small>三标签裁决、传闻只判无据、断言不抄原句的规矩都在这里，可按玩法改写。</small></span><textarea data-setting="verify.prompt" rows="10" spellcheck="false" placeholder="打开页面会自动铺入当前生效的规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-secondary-button" data-verify-default>填入默认规则</button><small>默认规则含“矛盾必须有明确反证、传闻不当事实”。</small></div></details></div></section>
                     <section class="dai-settings-page" data-settings-section="action" role="tabpanel" hidden>
                         <div class="dai-page-heading"><h3>行动结算</h3><p>生成前一次调用直判本轮行动的结果与资源变化，只有审核后的结果进入正文通道。</p></div><div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon" aria-hidden="true">${daiIcon("arrow")}</span><span><b>启用行动结算（总开关）</b><small>关闭后行动不再结算：不判定、不算数值变化；正文照常生成，状态保持原样。</small></span><input type="checkbox" data-setting="enableActionResolution"></div></div><div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon" aria-hidden="true">${daiIcon("balance")}</span><span><b>行动结算注入（生成前直判）</b><small>一次调用按实际行动分别判定，读取相关世界书正文、六路已注入提示词和真账本；有文字后果也正常裁决。只有审核后的结果进入正文通道。生成后仍由原入口记账，并只读核对金币、境界和库存，不会双份扣账。关闭后不调用不注入。</small></span><input type="checkbox" data-setting="settle.resultEnabled"></div><div data-api-mode-section="advanced" hidden><label class="dai-setting-row dai-setting-toggle"><span><b>难度＋骰子裁定（进阶版）</b><small>模型报风险档位（受控/常规/冒险/绝望）与带依据修正（单条 ±3、总计 ±4），脚本掷 d20 对难度判成败，只降不升；对手境界每高一大境界抬一档；波折轮 25% 掷变数 Oracle；部分成功补【类型·等级】结构化保底代价。关闭＝不掷骰，模型怎么判就怎么记。</small></span><input type="checkbox" data-setting="settle.diceEnabled"></label></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button" data-settle-adjudicate-run>手动预览一次（不注入）</button><span class="dai-turn-result" data-settle-result-status role="status">还没有判定过。生成前判定员会直判这一轮的行动结果并注入正文提示词。</span></div><div class="dai-turn-result" data-settle-result>本轮还没有判定结果。</div><details class="dai-settle-category"><summary><span class="dai-feature-icon" aria-hidden="true">${daiIcon("flame")}</span><span><b>判定提示词</b><small>一次调用输出 version:2 与 actions；每项有行动依据、依赖、结果、文字后果和 effects。清空恢复内置默认。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>提示词正文</b></span><textarea data-setting="settle.resultPrompt" rows="9" spellcheck="false"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-prompt-default="settleResult">载入新版多行动模板</button><button type="button" class="dai-button dai-button-ghost" data-settle-follow-default>恢复跟随默认</button><small role="status" data-settle-prompt-warning>自定义原文保留，旧单行动结果可兼容。</small></div></div></details></div><div class="dai-settings-card"><div class="dai-card-heading"><b>类别规则与自定义判定</b><small>生成前一次调用分别裁决多个行动；本页自定义规则作为补充，不会每类再调一次模型。</small></div>${SETTLE_CATEGORY_HTML}<div data-settle-custom-list></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-settle-add-category>＋ 添加自定义判定</button><small role="status" data-settle-custom-status>自定义判定只有名字和提示词：判定走你写的规则，脚本仍做字段白名单把关；最多 8 个。</small></div></div></section>
                     <section class="dai-settings-page" data-settings-section="world" role="tabpanel" hidden>
@@ -9182,15 +9386,14 @@ function createSettingsPanel() {
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>人物</b><small>与主角有交情或恩怨的人物及态度，正文按这里写人物反应。</small><button type="button" class="dai-impact-edit" data-modal-open="world-person" data-modal-title="登记人物">＋ 登记</button></div><div class="dai-world-people" data-world-people></div></div>
                         <div class="dai-modal-dock" data-modal-dock="world-task" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>接一个任务</b><small>模型没立但你想要的，自己记一笔。</small></div><label class="dai-setting-row"><span><b>任务名</b><small>必填；列表只显示这一行。</small></span><input type="text" required data-world-task-title placeholder="例：查出城东窃贼的来历"></label><label class="dai-setting-row"><span><b>详细资料</b><small>目标、背景、现状，写多少都行。</small></span><input type="text" data-world-task-detail placeholder="例：连日失窃，掌柜悬赏；已知窃贼夜行、身法利落"></label><label class="dai-setting-row"><span><b>来源</b><small>这任务从哪来：谁托付、什么契机。</small></span><input type="text" data-world-task-basis placeholder="例：药铺掌柜悬赏托付"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>时限（天）</b><small>留空不限期。</small></span><input type="number" min="1" max="90" step="1" data-world-task-days placeholder="如 7"></label></div><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-world-addtask>接下任务</button><button type="button" class="dai-secondary-button" data-agent-modal-close>取消</button></div></div></div><div class="dai-modal-dock" data-modal-dock="world-faction" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>登记势力</b><small>与主角有恩怨往来的势力；同名直接更新，留空的档案字段保持原值。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>势力名</b></span><input type="text" data-world-faction-name placeholder="例：云岚宗"></label><label class="dai-setting-row"><span><b>类型</b><small>宗门/家族/帝国/学院/佣兵团/商会/联盟…</small></span><input type="text" data-world-faction-type placeholder="例：宗门"></label><label class="dai-setting-row"><span><b>态度</b></span><select data-world-faction-stance><option value="hostile">敌对</option><option value="wary">警惕</option><option value="neutral">中立</option><option value="friendly">友好</option><option value="allied">同盟</option></select></label><label class="dai-setting-row"><span><b>首领</b><small>名字 + 称谓境界。</small></span><input type="text" data-world-faction-leader placeholder="例：云韵（宗主·斗王）"></label></div><label class="dai-setting-row"><span><b>实力档次</b><small>这方势力有多强。</small></span><input type="text" data-world-faction-level placeholder="例：加玛帝国一流"></label><label class="dai-setting-row"><span><b>高层阵容</b><small>太上长老/大长老/长老/护法/客卿。</small></span><input type="text" data-world-faction-elders placeholder="例：老宗主云山、大长老云棱、客卿海波东"></label><label class="dai-setting-row"><span><b>成员构成</b><small>规模与强者数量。</small></span><input type="text" data-world-faction-members placeholder="例：弟子千余，斗王三人"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>驻地/地盘</b></span><input type="text" data-world-faction-location placeholder="例：云岚宗山门·加玛帝国"></label><label class="dai-setting-row"><span><b>势力关系</b><small>与其他势力的恩怨与依附。</small></span><input type="text" data-world-faction-relations placeholder="例：世仇萧家；背靠皇室"></label></div><label class="dai-setting-row"><span><b>底蕴与产业</b><small>传承功法、异火、拍卖行、附属势力。</small></span><input type="text" data-world-faction-assets placeholder="例：镇派功法、名下拍卖行"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>动向</b><small>势力现在在干什么。</small></span><input type="text" data-world-faction-dynamics placeholder="例：为退婚一事派使者常驻乌坦城"></label><label class="dai-setting-row"><span><b>依据</b></span><input type="text" data-world-faction-basis placeholder="例：本楼使者登门"></label></div><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-world-setfaction>登记 / 更新</button><button type="button" class="dai-secondary-button" data-agent-modal-close>取消</button></div></div></div><div class="dai-modal-dock" data-modal-dock="world-person" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>登记人物</b><small>与主角有交情或恩怨的人及态度；同名直接更新。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>人物名</b></span><input type="text" data-world-person-name placeholder="例：药老"></label><label class="dai-setting-row"><span><b>对主角的态度</b></span><input type="text" data-world-person-attitude placeholder="例：严厉但护短，亦师亦父"></label></div><label class="dai-setting-row"><span><b>依据</b></span><input type="text" data-world-person-basis placeholder="例：第二楼药老出手相护"></label><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-world-setperson>登记 / 更新</button><button type="button" class="dai-secondary-button" data-agent-modal-close>取消</button></div></div></div><div class="dai-modal-dock" data-modal-dock="world-event" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>登记事件</b><small>模型漏记时在这里补一笔，格式与模型指令一致。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>范围</b></span><select data-world-add-scope><option value="near">主角身边</option><option value="world">世界大事</option></select></label><label class="dai-setting-row"><span><b>分量</b></span><select data-world-add-weight><option value="minor">普通</option><option value="major">重大</option><option value="rumor">传闻（未证实）</option></select></label></div><label class="dai-setting-row"><span><b>短标题</b><small>必填；列表页只显示这一行。</small></span><input type="text" required data-world-add-title placeholder="例：城东连环失窃"></label><label class="dai-setting-row"><span><b>事件内容</b><small>一句话说清发生了什么，不拘题材；全文进详情弹窗。</small></span><input type="text" data-world-add-text placeholder="例：城东连着三家铺子夜里失窃"></label><label class="dai-setting-row"><span><b>依据</b><small>它从哪来：哪楼、谁、什么事引出的。</small></span><input type="text" data-world-add-basis placeholder="例：上一楼酒馆闲谈提到的失窃传闻"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>地点</b><small>跨地发生的事写明地点。</small></span><input type="text" data-world-add-location placeholder="例：乌坦城·城东坊市"></label><label class="dai-setting-row"><span><b>有效期（天）</b><small>留空长期有效；到期自动了结。</small></span><input type="number" min="1" max="90" step="1" data-world-add-days placeholder="如 5"></label></div><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-world-add>登记事件</button><button type="button" class="dai-secondary-button" data-agent-modal-close>取消</button></div></div></div>
                         <details class="dai-settle-category"><summary><span class="dai-feature-icon" aria-hidden="true">${daiIcon("mountain")}</span><span><b>指令指南（降级模式）</b><small>关闭自动决定时随世界现状注入的规则正文；点开修改，清空恢复内置默认。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>规则正文</b><small>事件取材规则、时限要求都写在这里，可按你的玩法改写。</small></span><textarea data-setting="world.eventGuide" rows="9" spellcheck="false" placeholder="打开页面会自动铺入当前生效的规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-secondary-button" data-world-guide-default>填入默认规则</button><small>默认规则含“事件要有依据、不照搬原著、时限必带 days”。</small></div></div></details>
-                        <div class="dai-settings-card"><div class="dai-card-heading"><b>模型决定（LLM 决定脚本执行）</b><small>生成结束后，模型读最近聊天 + 原著资料已注入的原著条目 + 世界台账做一次独立决定，输出严格 JSON，脚本逐条校验执行并显示在这里。决定用的接口与参数在「模型设置」页。</small></div><div class="dai-feature-toggle"><span class="dai-feature-icon" aria-hidden="true">${daiIcon("mountain")}</span><span><b>启用模型决定</b><small>关闭后退回“只认正文指令块”的降级模式。</small></span><input type="checkbox" data-setting="world.decideEnabled"></div><label class="dai-setting-row dai-setting-toggle"><span><b>每轮生成后自动决定</b><small>关闭后只能点“让模型决定一次”手动跑。</small></span><input type="checkbox" data-setting="world.decideAuto"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>喂最近几楼聊天</b></span><input type="number" min="1" max="12" step="1" data-setting="world.decideMaxFloors" placeholder="留空或 0＝跟随角色正则"></label></div><p class="dai-turn-result" data-world-decide-status role="status">还没有运行。生成结束后会自动决定。</p><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-world-decide-run>让模型决定一次</button></div><div class="dai-world-decide-result" data-world-decide-result></div><details class="dai-prompt-fold"><summary><span><b>决定提示词</b><small>模型做决定时收到的 system 规则；点开修改，清空恢复内置默认。改写时保持“只输出 JSON”和操作字段名不变。</small></span></summary><label class="dai-setting-row"><span><b>规则正文</b><small>事件取材、传闻、机遇危机、名声通缉的规则都在这里，可按玩法改写。</small></span><textarea data-setting="world.decidePrompt" rows="10" spellcheck="false" placeholder="打开页面会自动铺入当前生效的规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-secondary-button" data-world-decide-default>填入默认规则</button><small>默认规则含“事件要有依据、传闻不当事实、机遇危机偶尔投放”。</small></div></details></div>
-                        <div class="dai-settings-card" data-api-mode-section="advanced"><div class="dai-card-heading"><b>剧情账本（长篇一致性）</b><small>滚动计划（本幕目标/下一步走向）+ 线索账（伏笔/悬念/恩怨）。生成后一次小调用读最近聊天和世界时钟滚动维护，生成前把“剧情前瞻”注入正文提示词——正文顺着方向推进、别跟已埋线索唱反调。决定用的接口在「模型设置」页。整卡只在进阶版显示；关闭决定后已记的线索照旧注入。</small></div><div class="dai-feature-toggle"><span class="dai-feature-icon" aria-hidden="true">${daiIcon("compass")}</span><span><b>启用剧情账本</b><small>关闭后不注入、不决定；已记的线索留在聊天存档里。</small></span><input type="checkbox" data-setting="plot.enabled"></div><label class="dai-setting-row dai-setting-toggle"><span><b>注入剧情前瞻</b><small>生成前把滚动方向与未回收线索写进提示词。</small></span><input type="checkbox" data-setting="plot.inject"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>注入字数预算</b><small>0 或留空＝不限制（默认）：计划与全部未回收线索都进提示词；填了正数才先丢线索保计划。</small></span><input type="number" min="0" step="100" data-setting="plot.injectBudget"></label><label class="dai-setting-row"><span><b>喂最近几楼聊天</b><small>剧情决定自己的一份。</small></span><input type="number" min="1" max="12" step="1" data-setting="plot.decideMaxFloors" placeholder="留空或 0＝跟随角色正则"></label></div><div class="dai-feature-toggle"><span class="dai-feature-icon" aria-hidden="true">${daiIcon("compass")}</span><span><b>启用剧情决定</b><small>生成后滚动维护计划与线索；关闭后只注入不更新。</small></span><input type="checkbox" data-setting="plot.decideEnabled"></div><label class="dai-setting-row dai-setting-toggle"><span><b>每轮生成后自动决定</b><small>排在世界决定之后跑；关闭后只能点“让模型决定一次”手动跑。</small></span><input type="checkbox" data-setting="plot.decideAuto"></label><p class="dai-turn-result" data-plot-decide-status role="status">还没有运行。生成结束后会自动决定。</p><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-plot-decide-run>让模型决定一次</button></div><div class="dai-world-decide-result" data-plot-decide-result></div><div data-plot-ledger-view role="status"></div><div class="dai-settings-card"><div class="dai-card-heading"><b>剧情指令流水</b><small>最近几批剧情指令的执行结果；重 roll 一楼会先撤销它上一版指令。</small></div><div class="dai-world-journal" data-plot-journal></div></div><details class="dai-prompt-fold"><summary><span><b>决定提示词</b><small>模型做剧情决定时收到的 system 规则；点开修改，清空恢复内置默认。改写时保持“只输出 JSON”和操作字段名不变。</small></span></summary><label class="dai-setting-row"><span><b>规则正文</b><small>计划怎么滚、线索怎么埋怎么收的规矩都在这里，可按玩法改写。</small></span><textarea data-setting="plot.decidePrompt" rows="10" spellcheck="false" placeholder="打开页面会自动铺入当前生效的规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-secondary-button" data-plot-decide-default>填入默认规则</button><small>默认规则含“计划从剧情长出来、线索要有依据、回收不硬凑”。</small></div></details></div>
-                        <div class="dai-settings-card"><div class="dai-card-heading"><b>世界指令流水</b><small>最近几批指令的执行结果；重 roll 一楼会先撤销它上一版指令。</small></div><div class="dai-world-journal" data-world-journal></div></div>
-                                            </section>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>模型决定（LLM 决定脚本执行）</b><small>生成结束后，模型读「用户输入＋正文」两楼（全文不截）+ 原著资料已注入的原著条目 + 世界台账做一次独立决定，输出严格 JSON，脚本逐条校验执行并显示在这里。决定用的接口与参数在「模型设置」页。</small></div><div class="dai-feature-toggle"><span class="dai-feature-icon" aria-hidden="true">${daiIcon("mountain")}</span><span><b>启用模型决定</b><small>关闭后退回“只认正文指令块”的降级模式。</small></span><input type="checkbox" data-setting="world.decideEnabled"></div><label class="dai-setting-row dai-setting-toggle"><span><b>每轮生成后自动决定</b><small>关闭后只能点“让模型决定一次”手动跑。</small></span><input type="checkbox" data-setting="world.decideAuto"></label><p class="dai-turn-result" data-world-decide-status role="status">还没有运行。生成结束后会自动决定。</p><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-world-decide-run>让模型决定一次</button></div><div class="dai-world-decide-result" data-world-decide-result></div><details class="dai-prompt-fold"><summary><span><b>决定提示词</b><small>模型做决定时收到的 system 规则；点开修改，清空恢复内置默认。改写时保持“只输出 JSON”和操作字段名不变。</small></span></summary><label class="dai-setting-row"><span><b>规则正文</b><small>事件取材、传闻、机遇危机、名声通缉的规则都在这里，可按玩法改写。</small></span><textarea data-setting="world.decidePrompt" rows="10" spellcheck="false" placeholder="打开页面会自动铺入当前生效的规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-secondary-button" data-world-decide-default>填入默认规则</button><small>默认规则含“事件要有依据、传闻不当事实、机遇危机偶尔投放”。</small></div></details></div>
+                        <div class="dai-settings-card" data-api-mode-section="advanced"><div class="dai-card-heading"><b>剧情账本（长篇一致性）</b><small>滚动计划（本幕目标/下一步走向）+ 线索账（伏笔/悬念/恩怨）。生成后一次小调用读「用户输入＋正文」两楼（全文不截）和世界时钟滚动维护，生成前把“剧情前瞻”注入正文提示词——正文顺着方向推进、别跟已埋线索唱反调。决定用的接口在「模型设置」页。整卡只在进阶版显示；关闭决定后已记的线索照旧注入。</small></div><div class="dai-feature-toggle"><span class="dai-feature-icon" aria-hidden="true">${daiIcon("compass")}</span><span><b>启用剧情账本</b><small>关闭后不注入、不决定；已记的线索留在聊天存档里。</small></span><input type="checkbox" data-setting="plot.enabled"></div><label class="dai-setting-row dai-setting-toggle"><span><b>注入剧情前瞻</b><small>生成前把滚动方向与未回收线索写进提示词。</small></span><input type="checkbox" data-setting="plot.inject"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>注入字数预算</b><small>0 或留空＝不限制（默认）：计划与全部未回收线索都进提示词；填了正数才先丢线索保计划。</small></span><input type="number" min="0" step="100" data-setting="plot.injectBudget"></label></div><div class="dai-feature-toggle"><span class="dai-feature-icon" aria-hidden="true">${daiIcon("compass")}</span><span><b>启用剧情决定</b><small>生成后滚动维护计划与线索；关闭后只注入不更新。</small></span><input type="checkbox" data-setting="plot.decideEnabled"></div><label class="dai-setting-row dai-setting-toggle"><span><b>每轮生成后自动决定</b><small>排在世界决定之后跑；关闭后只能点“让模型决定一次”手动跑。</small></span><input type="checkbox" data-setting="plot.decideAuto"></label><p class="dai-turn-result" data-plot-decide-status role="status">还没有运行。生成结束后会自动决定。</p><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-plot-decide-run>让模型决定一次</button></div><div class="dai-world-decide-result" data-plot-decide-result></div><div data-plot-ledger-view role="status"></div><details class="dai-prompt-fold"><summary><span><b>决定提示词</b><small>模型做剧情决定时收到的 system 规则；点开修改，清空恢复内置默认。改写时保持“只输出 JSON”和操作字段名不变。</small></span></summary><label class="dai-setting-row"><span><b>规则正文</b><small>计划怎么滚、线索怎么埋怎么收的规矩都在这里，可按玩法改写。</small></span><textarea data-setting="plot.decidePrompt" rows="10" spellcheck="false" placeholder="打开页面会自动铺入当前生效的规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-secondary-button" data-plot-decide-default>填入默认规则</button><small>默认规则含“计划从剧情长出来、线索要有依据、回收不硬凑”。</small></div></details></div>
+                                                                    </section>
                     <section class="dai-settings-page" data-settings-section="npc" role="tabpanel" hidden>
                         <div class="dai-page-heading"><h3>NPC 决策</h3><p>控制相关人物的有限决策候选，不替 NPC 直接越过确认边界。</p></div><div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon" aria-hidden="true">${daiIcon("person")}</span><span><b>启用 NPC 自主决策</b><small>控制人物候选计划是否参与调度。</small></span><input type="checkbox" data-setting="enableNpcAutonomy"></div><label class="dai-setting-row dai-setting-toggle"><span><b>提交前要求确认</b><small>候选计划必须经过确认才可继续。</small></span><input type="checkbox" data-setting="npc.requireConfirmation"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>最多候选计划</b></span><input type="number" min="1" max="20" step="1" data-setting="npc.maxCandidates"></label><label class="dai-setting-row dai-setting-toggle"><span><b>允许人物冲突候选</b><small>保留冲突供上层处理。</small></span><input type="checkbox" data-setting="npc.allowConflicts"></label></div></div><div class="dai-settings-card"><div class="dai-card-heading"><b>NPC 自由对话</b><small>和人物簿里的人当面/传讯私聊：上下文读人物簿档案、关系与知情范围，收尾把长期影响回写档案。入口在本页下方的人物列表。</small></div><label class="dai-setting-row dai-setting-toggle"><span><b>启用 NPC 自由对话</b><small>关掉后对话入口隐藏；已有的对话往来保留在聊天存档里。</small></span><input type="checkbox" data-setting="npc.chatEnabled"></label><label class="dai-setting-row dai-setting-toggle"><span><b>收尾回写人物簿</b><small>对话收尾时把经历、流水与好感净变化写进档案；关掉后只聊不记。</small></span><input type="checkbox" data-setting="npc.chatWriteback"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>单次对话回合上限</b><small>一轮聊到这个数就提示收尾，防止停不下来。</small></span><input type="number" min="1" max="60" step="1" data-setting="npc.chatMaxTurns"></label></div></div><div class="dai-settings-card"><div class="dai-card-heading"><b>主动联系（他来找你）</b><small>动机加权攒够紧急度才开口：情谊节点、旧约到期、风闻想分享、兴起。排上队只是「他想来」，你应约才开对话；连着没理他几次会自动收敛；深夜默认勿扰。默认关闭——这条路会自己发起模型调用。</small></div><label class="dai-setting-row dai-setting-toggle"><span><b>启用主动联系</b><small>开启后后台定时检查谁想来找你；关闭只是不判断，队列里已有的应约保留。</small></span><input type="checkbox" data-setting="npc.reachoutEnabled"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>检查间隔（分钟）</b></span><input type="number" min="1" max="60" step="1" data-setting="npc.reachoutInterval"></label><label class="dai-setting-row"><span><b>每次检查最多判断几次</b><small>失败的判断也算数，防止故障时打爆连接。</small></span><input type="number" min="0" max="20" step="1" data-setting="npc.reachoutQuota"></label><label class="dai-setting-row"><span><b>同一人最小间隔（分钟）</b></span><input type="number" min="1" max="720" step="1" data-setting="npc.reachoutCooldown"></label><label class="dai-setting-row"><span><b>勿扰开始（时）</b><small>0-23；起止相等＝不设勿扰</small></span><input type="number" min="0" max="23" step="1" data-setting="npc.reachoutQuietFrom"></label><label class="dai-setting-row"><span><b>勿扰结束（时）</b></span><input type="number" min="0" max="23" step="1" data-setting="npc.reachoutQuietTo"></label></div><label class="dai-setting-row dai-setting-toggle"><span><b>情谊节点</b><small>好感够高的人会惦记你、主动来看你。</small></span><input type="checkbox" data-setting="npc.reachoutMotivesFavor"></label><label class="dai-setting-row dai-setting-toggle"><span><b>旧约到期</b><small>对话里他许下的承诺到日子没兑现，他来问你。</small></span><input type="checkbox" data-setting="npc.reachoutMotivesLoop"></label><label class="dai-setting-row dai-setting-toggle"><span><b>风闻想分享</b><small>听到传闻憋不住想说给你（素材源接通后生效）。</small></span><input type="checkbox" data-setting="npc.reachoutMotivesGossip"></label><label class="dai-setting-row dai-setting-toggle"><span><b>兴起</b><small>小概率的纯随机搭话，让世界偶尔有点意外。</small></span><input type="checkbox" data-setting="npc.reachoutMotivesRandom"></label></div><div class="dai-settings-card"><div class="dai-card-heading"><b>待处理的主动联系</b><small>应约＝他带着开场白进来聊；忽略＝加倍冷却，连着几次他会先收敛。</small></div><div data-npc-reachout-list></div></div><div class="dai-settings-card"><div class="dai-card-heading"><b>人物对话入口</b><small>在场的人当面聊；不在场但档案里有远程联系渠道的人走传讯玉简。</small></div><div data-npc-chat-list></div></div></section>
                     <section class="dai-settings-page" data-settings-section="npcledger" role="tabpanel" hidden>
                         <div class="dai-page-heading"><h3>人物簿</h3><p>每个人按同一套格式记账：身份、外貌、修为、性格、对你的好感、资产、处境、秘密和经历流水。正文写完后由“人物记录员”补一笔，下一楼再按“在场 × 重要”决定给正文模型看多少人、看多少细节。点人名看完整档案；重大转变单独记在「人物经历」页。</p></div>
-                        <div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon" aria-hidden="true">${daiIcon("ledger")}</span><span><b>启用人物簿</b><small>关闭后不记账、不注入；已经记下的档案仍留在聊天存档里，不会被删。</small></span><input type="checkbox" data-setting="enableNpcLedger"></div><label class="dai-setting-row dai-setting-toggle"><span><b>生成后自动记账</b><small>每轮正文结束后让“人物记录员”读最近两楼，把这一轮的变化记进档案；关掉后只能手动记一次。</small></span><input type="checkbox" data-setting="npc.ledgerAuto"></label><label class="dai-setting-row"><span><b>记账节奏</b><small>每轮都记更像实时，但每轮多一次小调用；每三轮更省，代价是中间两轮的变化要等下次记账才进档。</small></span><select data-setting="npc.ledgerEvery"><option value="1">每轮生成后</option><option value="2">每两轮生成后</option><option value="3">每三轮生成后</option></select></label><label class="dai-setting-row dai-setting-toggle"><span><b>把人物档案写进正文提示词</b><small>关掉后只记账、不告诉正文模型——人物就会“忘了自己身上发生过什么”。</small></span><input type="checkbox" data-setting="npc.ledgerInject"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>注入字数预算</b><small>0 或留空＝不限制（默认）：该注入的人物全量进提示词；填了正数才按预算降级（先降一行、再挤掉）。</small></span><input type="number" min="0" step="100" data-setting="npc.ledgerBudget"></label><label class="dai-setting-row"><span><b>全字段最多几个人</b><small>0 或留空＝不限制（默认）：“在场且重要”的人全写完整档案；填了正数，超出的人只写一行。</small></span><input type="number" min="0" step="1" data-setting="npc.ledgerMaxFull"></label><label class="dai-setting-row"><span><b>一行简档最多几个人</b><small>0 或留空＝不限制（默认）：在场但不重要、不在场但重要的人都给一行；填了正数，超出的人这轮不注入。</small></span><input type="number" min="0" step="1" data-setting="npc.ledgerMaxBrief"></label><label class="dai-setting-row"><span><b>记录员看最近几楼</b><small>看太少会漏，看太多会慢；留空或 0＝跟随角色正则（主模型能看几楼，记录员就看几楼）。</small></span><input type="number" min="1" max="12" step="1" data-setting="npc.ledgerFloors" placeholder="留空或 0＝跟随角色正则"></label></div></div>
+                        <div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon" aria-hidden="true">${daiIcon("ledger")}</span><span><b>启用人物簿</b><small>关闭后不记账、不注入；已经记下的档案仍留在聊天存档里，不会被删。</small></span><input type="checkbox" data-setting="enableNpcLedger"></div><label class="dai-setting-row dai-setting-toggle"><span><b>生成后自动记账</b><small>每轮正文结束后让“人物记录员”读「用户输入＋正文」两楼（全文不截），把这一轮的变化记进档案；关掉后只能手动记一次。</small></span><input type="checkbox" data-setting="npc.ledgerAuto"></label><label class="dai-setting-row"><span><b>记账节奏</b><small>每轮都记更像实时，但每轮多一次小调用；每三轮更省，代价是中间两轮的变化要等下次记账才进档。</small></span><select data-setting="npc.ledgerEvery"><option value="1">每轮生成后</option><option value="2">每两轮生成后</option><option value="3">每三轮生成后</option></select></label><label class="dai-setting-row dai-setting-toggle"><span><b>把人物档案写进正文提示词</b><small>关掉后只记账、不告诉正文模型——人物就会“忘了自己身上发生过什么”。</small></span><input type="checkbox" data-setting="npc.ledgerInject"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>注入字数预算</b><small>0 或留空＝不限制（默认）：该注入的人物全量进提示词；填了正数才按预算降级（先降一行、再挤掉）。</small></span><input type="number" min="0" step="100" data-setting="npc.ledgerBudget"></label><label class="dai-setting-row"><span><b>全字段最多几个人</b><small>0 或留空＝不限制（默认）：“在场且重要”的人全写完整档案；填了正数，超出的人只写一行。</small></span><input type="number" min="0" step="1" data-setting="npc.ledgerMaxFull"></label><label class="dai-setting-row"><span><b>一行简档最多几个人</b><small>0 或留空＝不限制（默认）：在场但不重要、不在场但重要的人都给一行；填了正数，超出的人这轮不注入。</small></span><input type="number" min="0" step="1" data-setting="npc.ledgerMaxBrief"></label><label class="dai-setting-row"><span><b>正文参考读最近几楼</b><small>只给「冷藏推进」用：时间快进推演时读最近正文作参考的楼数；人物记录员本身只读「用户输入＋正文」两楼，不看这个数。留空或 0＝跟随角色正则。</small></span><input type="number" min="1" max="12" step="1" data-setting="npc.ledgerFloors" placeholder="留空或 0＝跟随角色正则"></label></div></div>
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>本局人物</b><small>主界面只铺最近活动的 8 个人（点名字开信息面板，行尾小图标=在场/重要/冷藏）；全部人物、筛选和搜索收进「人物总簿」。</small></div><p class="dai-state-strip" data-npc-ledger-summary>还没有载入人物簿。</p><p class="dai-turn-result" data-npc-ledger-status role="status">还没有记账。生成结束后，人物记录员会把这一轮的人物变化写进档案。</p><div data-npc-exp-auto></div><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-modal-open="npc-ledger-browser" data-modal-title="人物总簿">打开人物总簿</button><button type="button" class="dai-secondary-button" data-npc-ledger-run>让记录员记一次</button><button type="button" class="dai-secondary-button" data-npc-ledger-refresh>刷新名单</button><button type="button" class="dai-secondary-button" data-npc-ledger-extract>按世界书补空字段</button><button type="button" class="dai-secondary-button" data-api-mode-section="advanced" data-npc-gossip-run>传播传闻</button><button type="button" class="dai-secondary-button" data-npc-consistency-run>一致性体检</button><button type="button" class="dai-secondary-button" data-modal-open="npc-patch" data-modal-title="记进人物簿">＋ 补一笔</button></div><ul class="dai-status-list dai-npc-grid" data-npc-ledger-recent></ul></div>
                         <div class="dai-settings-card" data-api-mode-section="advanced"><div class="dai-card-heading"><b>人物关系网</b><small>档案「对他人」的有向边汇总：谁认谁是什么关系。金边=在场、黄点=有情绪、虚线=未建档；力导向自动排版（玩家居中），拖动可钉住微调、点节点开档案；箭头=关系的方向。单边强绑定、两边立场打架会列在明细里提醒；进阶版下生成前本楼人物的一跳/二跳关系会随人物注入带进提示词。跟着聊天存档。</small></div><p class="dai-state-strip" data-npc-relations-summary>还没有关系边。</p><div data-npc-relations-graph></div><div class="dai-rel-legend"><span><i style="background:#b39ddb"></i>血亲/师徒/同门</span><span><i style="background:#34d399"></i>同盟</span><span><i style="background:#86efac"></i>友好</span><span><i style="background:#9ca3af"></i>中立</span><span><i style="background:#fbbf24"></i>警惕</span><span><i style="background:#f87171"></i>敌对</span></div><details class="dai-rel-details"><summary>关系明细与提醒</summary><div class="dai-world-events" data-npc-relations-list></div></details><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-npc-relations-refresh>刷新关系网</button></div></div>
                         <div class="dai-settings-card" data-api-mode-section="advanced"><div class="dai-card-heading"><b>一致性体检</b><small>旁路小调用：拿在场人物档案对照最近正文，只报「写违反档案的地方」（说话风格/雷区/称呼/境界/态度方向），不改档案、不拦正文。进阶版下每次记账后自动查在场重要人物，也可手动全量查。</small></div><p class="dai-state-strip" data-npc-consistency-summary>还没有体检过。</p><div class="dai-world-events" data-npc-consistency-list></div></div>
@@ -9220,8 +9423,7 @@ function createSettingsPanel() {
                         <div data-self-pane="profile">
                             <div class="dai-settings-card"><div class="dai-card-heading"><b>主角面板</b><small>标签固定，读到了就填，没读到就空着；正文模型每轮都看得到这些。</small></div><div class="dai-self-panel"><div class="dai-self-panel-row"><span>姓名</span><b data-self-panel="name">—</b></div><div class="dai-self-panel-row"><span>性别</span><b data-self-panel="gender">—</b></div><div class="dai-self-panel-row"><span>年龄</span><b data-self-panel="age">—</b></div><div class="dai-self-panel-row"><span>种族</span><b data-self-panel="race">—</b></div><div class="dai-self-panel-row"><span>出身</span><b data-self-panel="origin">—</b></div><div class="dai-self-panel-row"><span>所属</span><b data-self-panel="affiliation">—</b></div><div class="dai-self-panel-row"><span>斗气属性</span><b data-self-panel="attribute">—</b></div><div class="dai-self-panel-row"><span>天赋</span><b data-self-panel="talent">—</b></div><div class="dai-self-panel-row dai-self-panel-wide"><span>外貌</span><b data-self-panel="appearance">—</b></div><div class="dai-self-panel-row"><span>境界</span><b data-self-panel="realm">—</b></div><div class="dai-self-panel-row"><span>金币</span><b data-self-panel="gold">—</b></div><div class="dai-self-panel-row dai-self-panel-wide"><span>称号</span><b data-self-panel="titles">—</b></div></div><p class="dai-turn-result" data-self-dbbridge></p><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-modal-open="self-profile" data-modal-title="编辑主角档案">编辑档案</button></div></div>
                             <div class="dai-modal-dock" data-modal-dock="self-profile" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>身份档案</b><small>正文模型每轮都会看到这些；年龄由剧情推进更新，不要手填了又让模型改回去。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>姓名</b></span><input type="text" data-self-profile-input="name" placeholder="如 萧炎"></label><button type="button" class="dai-secondary-button" data-self-profile-set="name">设定</button><label class="dai-setting-row"><span><b>性别</b></span><input type="text" data-self-profile-input="gender" placeholder="如 男"></label><button type="button" class="dai-secondary-button" data-self-profile-set="gender">设定</button><label class="dai-setting-row"><span><b>年龄</b></span><input type="text" data-self-profile-input="age" placeholder="如 15岁"></label><button type="button" class="dai-secondary-button" data-self-profile-set="age">设定</button><label class="dai-setting-row"><span><b>种族</b></span><input type="text" data-self-profile-input="race" placeholder="如 人族"></label><button type="button" class="dai-secondary-button" data-self-profile-set="race">设定</button><label class="dai-setting-row"><span><b>出身</b></span><input type="text" data-self-profile-input="origin" placeholder="如 乌坦城萧家"></label><button type="button" class="dai-secondary-button" data-self-profile-set="origin">设定</button><label class="dai-setting-row"><span><b>所属</b></span><input type="text" data-self-profile-input="affiliation" placeholder="如 萧家 / 迦南学院"></label><button type="button" class="dai-secondary-button" data-self-profile-set="affiliation">设定</button><label class="dai-setting-row"><span><b>斗气属性</b><small>火/风/雷/冰/水/土/木/暗/毒/无属性，最多 12 字。</small></span><input type="text" data-self-profile-input="attribute" placeholder="如 火 / 无属性"></label><button type="button" class="dai-secondary-button" data-self-profile-set="attribute">设定</button><label class="dai-setting-row"><span><b>天赋</b></span><input type="text" data-self-profile-input="talent" placeholder="如 曾经的斗气天才"></label><button type="button" class="dai-secondary-button" data-self-profile-set="talent">设定</button><label class="dai-setting-row"><span><b>外貌</b><small>最多 160 字。</small></span><input type="text" data-self-profile-input="appearance" placeholder="黑色衣袍的清瘦少年"></label><button type="button" class="dai-secondary-button" data-self-profile-set="appearance">设定</button></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>境界</b><small>斗之气→斗者→…→斗帝。</small></span><input type="text" data-self-realm placeholder="如 斗者"></label><label class="dai-setting-row"><span><b>段位</b><small>段/星/层。</small></span><input type="text" data-self-stage placeholder="如 三段"></label><button type="button" class="dai-secondary-button" data-self-realm-set>突破</button><label class="dai-setting-row"><span><b>金币</b></span><input type="number" min="0" max="999999999" step="1" data-self-gold placeholder="3200"></label><button type="button" class="dai-secondary-button" data-self-gold-set>设定</button></div><label class="dai-setting-row"><span><b>称号</b><small>写一个加一个；下面的称号点 × 移除。</small></span><input type="text" data-self-title placeholder="如 乌坦城新星"></label><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-self-title-add>加称号</button></div><div class="dai-self-titles" data-self-titles></div></div><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-agent-modal-close>完成</button></div></div>
-                            <div class="dai-settings-card"><div class="dai-card-heading"><b>纳戒流水</b><small>最近几批指令的执行结果；重 roll 一楼会先撤销它上一版指令。</small></div><div class="dai-world-journal" data-self-journal></div></div>
-                        </div>
+                                                    </div>
                         <div data-self-pane="techniques" hidden>
                             <div class="dai-settings-card"><div class="dai-card-heading"><b>功法</b><small>修炼功法、身法、炼药术都记在这里；点条目看完整资料。</small><button type="button" class="dai-impact-edit" data-modal-open="self-techniques" data-modal-title="登记功法">＋ 添加</button></div><div class="dai-self-entries" data-self-list="techniques"></div></div>
                         </div>
@@ -9245,7 +9447,7 @@ function createSettingsPanel() {
                             <div class="dai-settings-card"><div class="dai-card-heading"><b>目标与约定</b><small>主线排最前并标星；达成后退场，正文模型每轮都看得到没完成的目标。</small><button type="button" class="dai-impact-edit" data-modal-open="self-goals" data-modal-title="立目标">＋ 添加</button></div><div class="dai-self-entries" data-self-list="goals"></div></div>
                         </div>
                         <details class="dai-settle-category"><summary><span class="dai-feature-icon" aria-hidden="true">${daiIcon("ring")}</span><span><b>指令指南（降级模式）</b><small>关闭自动决定时随纳戒现状注入的规则正文；点开修改，清空恢复内置默认。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>规则正文</b><small>操作清单、记账规则（有据可依、不照搬原著、炼成补账）都写在这里，可按你的玩法改写。</small></span><textarea data-setting="self.guide" rows="9" spellcheck="false" placeholder="打开页面会自动铺入当前生效的规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-secondary-button" data-self-guide-default>填入默认规则</button><small>默认规则含“只记主角自身、变化要有依据、炼成后补记行囊”。</small></div></div></details>
-                        <div class="dai-settings-card"><div class="dai-card-heading"><b>模型决定（LLM 决定脚本执行）</b><small>生成结束后，模型读最近聊天 + 原著资料已注入的原著条目 + 纳戒现状做一次独立决定，输出严格 JSON，脚本逐条校验执行并显示在这里。决定用的接口与喂料在「模型设置」页「纳戒 · 决定模型」卡（与记忆决定各自独立）。</small></div><div class="dai-feature-toggle"><span class="dai-feature-icon" aria-hidden="true">${daiIcon("ring")}</span><span><b>启用模型决定</b><small>关闭后退回“只认正文 self 指令块”的降级模式。</small></span><input type="checkbox" data-setting="self.decideEnabled"></div><label class="dai-setting-row dai-setting-toggle"><span><b>每轮生成后自动决定</b><small>关闭后只能点“让模型决定一次”手动跑。</small></span><input type="checkbox" data-setting="self.decideAuto"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>喂最近几楼聊天</b><small>纳戒决定自己的一份（与记忆决定分开）。</small></span><input type="number" min="1" max="12" step="1" data-setting="self.decideMaxFloors" placeholder="留空或 0＝跟随角色正则"></label></div><p class="dai-turn-result" data-self-decide-status role="status">还没有运行。生成结束后会自动决定。</p><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-self-decide-run>让模型决定一次</button><button type="button" class="dai-secondary-button" data-self-reset>清空本局纳戒</button></div><div class="dai-world-decide-result" data-self-decide-result></div><details class="dai-prompt-fold"><summary><span><b>决定提示词</b><small>模型做决定时收到的 system 规则；点开修改，清空恢复内置默认。改写时保持“只输出 JSON”和操作字段名不变。</small></span></summary><label class="dai-setting-row"><span><b>规则正文</b><small>境界阶梯、炼成补账、有据可依的规则都在这里，可按玩法改写。</small></span><textarea data-setting="self.decidePrompt" rows="10" spellcheck="false" placeholder="打开页面会自动铺入当前生效的规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-secondary-button" data-self-decide-default>填入默认规则</button><small>默认规则含“境界必须剧情真到位、炼成后补记行囊、无变化不记账”。</small></div></details></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>模型决定（LLM 决定脚本执行）</b><small>生成结束后，模型读「用户输入＋正文」两楼（全文不截）+ 原著资料已注入的原著条目 + 纳戒现状做一次独立决定，输出严格 JSON，脚本逐条校验执行并显示在这里。决定用的接口与喂料在「模型设置」页「纳戒 · 决定模型」卡（与记忆决定各自独立）。</small></div><div class="dai-feature-toggle"><span class="dai-feature-icon" aria-hidden="true">${daiIcon("ring")}</span><span><b>启用模型决定</b><small>关闭后退回“只认正文 self 指令块”的降级模式。</small></span><input type="checkbox" data-setting="self.decideEnabled"></div><label class="dai-setting-row dai-setting-toggle"><span><b>每轮生成后自动决定</b><small>关闭后只能点“让模型决定一次”手动跑。</small></span><input type="checkbox" data-setting="self.decideAuto"></label><p class="dai-turn-result" data-self-decide-status role="status">还没有运行。生成结束后会自动决定。</p><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-self-decide-run>让模型决定一次</button><button type="button" class="dai-secondary-button" data-self-reset>清空本局纳戒</button></div><div class="dai-world-decide-result" data-self-decide-result></div><details class="dai-prompt-fold"><summary><span><b>决定提示词</b><small>模型做决定时收到的 system 规则；点开修改，清空恢复内置默认。改写时保持“只输出 JSON”和操作字段名不变。</small></span></summary><label class="dai-setting-row"><span><b>规则正文</b><small>境界阶梯、炼成补账、有据可依的规则都在这里，可按玩法改写。</small></span><textarea data-setting="self.decidePrompt" rows="10" spellcheck="false" placeholder="打开页面会自动铺入当前生效的规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-secondary-button" data-self-decide-default>填入默认规则</button><small>默认规则含“境界必须剧情真到位、炼成后补记行囊、无变化不记账”。</small></div></details></div>
                         <div class="dai-modal-dock" data-modal-dock="self-techniques" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>登记功法</b><small>模型漏记时在这里补一笔。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>名称</b></span><input type="text" data-self-new="techniques.name" placeholder="如 焚决"></label><label class="dai-setting-row"><span><b>品级</b></span><input type="text" data-self-new="techniques.grade" placeholder="黄阶低级 ~ 天阶高级"></label><label class="dai-setting-row"><span><b>类型</b></span><input type="text" data-self-new="techniques.type" placeholder="修炼功法 / 身法 / 炼药术"></label><label class="dai-setting-row"><span><b>进度</b></span><input type="text" data-self-new="techniques.progress" placeholder="如 第三层"></label><label class="dai-setting-row"><span><b>来源</b></span><input type="text" data-self-new="techniques.source" placeholder="如 药老所赠"></label></div><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-self-create="techniques">登记功法</button><button type="button" class="dai-secondary-button" data-agent-modal-close>取消</button></div></div></div>
                         <div class="dai-modal-dock" data-modal-dock="self-skills" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>登记斗技</b></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>名称</b></span><input type="text" data-self-new="skills.name" placeholder="如 八极崩"></label><label class="dai-setting-row"><span><b>品级</b></span><input type="text" data-self-new="skills.grade" placeholder="黄阶低级 ~ 天阶高级"></label><label class="dai-setting-row"><span><b>类型</b></span><input type="text" data-self-new="skills.type" placeholder="攻击 / 防御 / 身法 / 辅助"></label><label class="dai-setting-row"><span><b>熟练度</b></span><input type="text" data-self-new="skills.progress" placeholder="如 小成"></label><label class="dai-setting-row"><span><b>来源</b></span><input type="text" data-self-new="skills.source" placeholder="从哪学来的"></label></div><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-self-create="skills">登记斗技</button><button type="button" class="dai-secondary-button" data-agent-modal-close>取消</button></div></div></div>
                         <div class="dai-modal-dock" data-modal-dock="self-equipment" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>登记装备</b><small>记的是穿戴中的装备；备用装备放行囊，点行囊条目的"装备"穿上。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>名称</b></span><input type="text" data-self-new="equipment.name" placeholder="如 玄重尺"></label><label class="dai-setting-row"><span><b>品级</b></span><input type="text" data-self-new="equipment.grade" placeholder="黄阶低级 ~ 天阶高级"></label><label class="dai-setting-row"><span><b>类型</b></span><select data-self-new="equipment.type"><option value="武器">武器</option><option value="防具">防具</option><option value="饰品">饰品</option><option value="其他">其他</option></select></label><label class="dai-setting-row"><span><b>来源</b></span><input type="text" data-self-new="equipment.source" placeholder="如 家传 / 药老所赠"></label></div><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-self-create="equipment">登记装备</button><button type="button" class="dai-secondary-button" data-agent-modal-close>取消</button></div></div></div>
@@ -9265,10 +9467,9 @@ function createSettingsPanel() {
                         <div class="dai-modal-dock" data-modal-dock="memory-browser" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>记忆总库</b><small>全部大记忆与小记忆：排序、按人过滤、翻页都在这里；行内转大/提关键/删除照常用，点行看详情。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>排序</b></span><select data-memory-sort><option value="time">按生成时间</option><option value="weight">按分量（关键优先）</option><option value="tag">按标签分类</option></select></label><label class="dai-setting-row"><span><b>只看关联</b><small>下场对手戏前按人扫一遍旧账。</small></span><select data-memory-person><option value="">全部</option></select></label></div><div class="dai-card-heading"><b>大记忆</b><small>★=关键；召回优先于小记忆。每页固定 6 条，翻页看更多。</small></div><div class="dai-world-events" data-memory-list-big></div><div class="dai-pager" data-memory-pager-big></div><div class="dai-card-heading"><b>小记忆</b><small>轻量近事；攒够阈值自动总结成一条大记忆（原条目退役）。每页固定 8 条，翻页看更多。</small></div><div class="dai-world-events" data-memory-list-small></div><div class="dai-pager" data-memory-pager-small></div></div><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-agent-modal-close>关闭</button></div></div>
                         <div class="dai-modal-dock" data-modal-dock="memory-person" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>按人整合</b><small>选一个人，把他散在三本账里的叙事并成一条时间线：记忆（按关联钥匙命中）、好感流水、人物簿经历与流水、世界事件与任务——按世界天新→旧排列，行首角标标注来源。</small></div><label class="dai-setting-row"><span><b>人物</b><small>人物簿里的人优先；没建人物簿时退回记忆关联里的钥匙。</small></span><select data-memory-person-view><option value="">选一个人</option></select></label><p class="dai-state-strip" data-memory-person-summary hidden></p><div class="dai-world-events" data-memory-person-timeline></div></div><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-agent-modal-close>关闭</button></div></div>
                         
-                        <div class="dai-settings-card"><div class="dai-card-heading"><b>模型决定（LLM 决定脚本执行）</b><small>生成结束后，书记官读最近聊天 + 相关世界书条目 + 本场召回的记忆做一次独立决定，输出严格 JSON，脚本逐条校验执行。</small></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button" data-memory-decide-run>手动决定一次</button><span data-memory-decide-status></span></div><div data-memory-decide-result></div><details class="dai-settle-category"><summary><span class="dai-feature-icon" aria-hidden="true">${daiIcon("flame")}</span><span><b>决定提示词</b><small>书记官的 system 指令；保持"只输出 JSON"与操作字段名不变，清空恢复内置默认。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>提示词正文</b></span><textarea data-setting="memory.decidePrompt" rows="9" spellcheck="false"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-memory-decide-default>填入默认提示词</button></div></div></details></div>
-                        <div class="dai-settings-card"><div class="dai-card-heading"><b>召回决定（LLM 挑选注入哪些记忆）</b><small>用户输入之后、生成之前，召回员读记忆目录（标题+钥匙）+ 最近聊天 + 世界书命中，挑出本轮要注入的旧记忆编号，脚本执行注入；目录按混合检索分数序排（钥匙/引文/词面/时间邻近/语义），场景勾得越深的排得越靠前；失败或关闭时退回同款混合分数的兜底匹配，不阻塞生成。</small></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button" data-memory-recall-run>手动召回一次</button><span data-memory-recall-status></span></div><div data-memory-recall-result></div><label class="dai-setting-row"><span><b>目录字数上限</b><small>发给召回员的记忆目录总字数；0 ＝ 不限制（默认），账本再大召回员也看得到全部。设了上限时超预算的条目按打分从尾部丢。</small></span><input type="number" min="0" step="500" data-setting="memory.catalogBudget"></label><details class="dai-settle-category"><summary><span class="dai-feature-icon" aria-hidden="true">${daiIcon("flame")}</span><span><b>召回提示词</b><small>召回员的 system 指令；保持"只输出 JSON"与 ids 字段名不变，清空恢复内置默认。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>提示词正文</b></span><textarea data-setting="memory.recallPrompt" rows="9" spellcheck="false"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-memory-recall-default>填入默认提示词</button></div></div></details></div>
-                        <div class="dai-settings-card"><div class="dai-card-heading"><b>记忆指令流水</b><small>最近几批指令的执行结果；重 roll 一楼会先撤销它上一版指令。</small></div><div class="dai-world-journal" data-memory-journal></div></div>
-                    <div class="dai-modal-dock" data-modal-dock="memory-add" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>手动登记</b><small>书记官漏记时在这里补一笔，校验与模型指令完全一致。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>层级</b></span><select data-memory-new-tier><option value="small">小记忆</option><option value="big">大记忆</option></select></label><label class="dai-setting-row"><span><b>标签（大记忆可选）</b></span><select data-memory-new-tag><option value="">不标</option><option value="grudge">恩怨</option><option value="intel">情报</option><option value="thread">伏笔</option><option value="milestone">大事记</option></select></label><label class="dai-setting-row"><span><b>分量</b></span><select data-memory-new-weight><option value="minor">一般</option><option value="major">关键</option></select></label></div><label class="dai-setting-row"><span><b>短标题</b><small>必填；列表主页只显示这一行。</small></span><input type="text" data-memory-new-title required></label><label class="dai-setting-row"><span><b>内容</b><small>一句话说清记住了什么、为什么值得记。</small></span><input type="text" data-memory-new-text></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>依据</b><small>从哪来：哪楼/谁/什么事。</small></span><input type="text" data-memory-new-basis></label><label class="dai-setting-row"><span><b>关联（必填）</b><small>人名/地名/物名，顿号分隔——这是日后按需召回的钥匙。</small></span><input type="text" data-memory-new-related></label></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>别名（可选）</b><small>同一记忆的其余叫法（药老/药尘），也算召回钥匙。</small></span><input type="text" data-memory-new-aliases></label><label class="dai-setting-row"><span><b>引文（可选）</b><small>当时的一句原话，召回时以「」带回正文。</small></span><input type="text" data-memory-new-quote></label></div><label class="dai-setting-row"><span><b>备注（可选）</b><small>细节、背景、后续影响——列表行内只显示内容一句，这些都在详情弹窗里。</small></span><input type="text" data-memory-new-note></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button" data-memory-add>登记这条记忆</button></div></div><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-agent-modal-close>取消</button></div></div></section>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>模型决定（LLM 决定脚本执行）</b><small>生成结束后，书记官读「用户输入＋正文」两楼（全文不截）+ 本场召回的记忆做一次独立决定，输出严格 JSON，脚本逐条校验执行。</small></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button" data-memory-decide-run>手动决定一次</button><span data-memory-decide-status></span></div><div data-memory-decide-result></div><details class="dai-settle-category"><summary><span class="dai-feature-icon" aria-hidden="true">${daiIcon("flame")}</span><span><b>决定提示词</b><small>书记官的 system 指令；保持"只输出 JSON"与操作字段名不变，清空恢复内置默认。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>提示词正文</b></span><textarea data-setting="memory.decidePrompt" rows="9" spellcheck="false"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-memory-decide-default>填入默认提示词</button></div></div></details></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>召回决定（LLM 挑选注入哪些记忆）</b><small>用户输入之后、生成之前，召回员读记忆目录（标题+钥匙）+ 最近聊天 + 世界书命中，挑出本轮要注入的旧记忆编号，脚本执行注入；目录按混合检索分数序排（钥匙/引文/词面/时间邻近/语义），场景勾得越深的排得越靠前；失败或关闭时退回同款混合分数的兜底匹配，不阻塞生成。</small></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button" data-memory-recall-run>手动召回一次</button><span data-memory-recall-status></span></div><div data-memory-recall-result></div><details class="dai-settle-category"><summary><span class="dai-feature-icon" aria-hidden="true">${daiIcon("flame")}</span><span><b>召回提示词</b><small>召回员的 system 指令；保持"只输出 JSON"与 ids 字段名不变，清空恢复内置默认。</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>提示词正文</b></span><textarea data-setting="memory.recallPrompt" rows="9" spellcheck="false"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-memory-recall-default>填入默认提示词</button></div></div></details></div>
+                                            <div class="dai-modal-dock" data-modal-dock="memory-add" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>手动登记</b><small>书记官漏记时在这里补一笔，校验与模型指令完全一致。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>层级</b></span><select data-memory-new-tier><option value="small">小记忆</option><option value="big">大记忆</option></select></label><label class="dai-setting-row"><span><b>标签（大记忆可选）</b></span><select data-memory-new-tag><option value="">不标</option><option value="grudge">恩怨</option><option value="intel">情报</option><option value="thread">伏笔</option><option value="milestone">大事记</option></select></label><label class="dai-setting-row"><span><b>分量</b></span><select data-memory-new-weight><option value="minor">一般</option><option value="major">关键</option></select></label></div><label class="dai-setting-row"><span><b>短标题</b><small>必填；列表主页只显示这一行。</small></span><input type="text" data-memory-new-title required></label><label class="dai-setting-row"><span><b>内容</b><small>一句话说清记住了什么、为什么值得记。</small></span><input type="text" data-memory-new-text></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>依据</b><small>从哪来：哪楼/谁/什么事。</small></span><input type="text" data-memory-new-basis></label><label class="dai-setting-row"><span><b>关联（必填）</b><small>人名/地名/物名，顿号分隔——这是日后按需召回的钥匙。</small></span><input type="text" data-memory-new-related></label></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>别名（可选）</b><small>同一记忆的其余叫法（药老/药尘），也算召回钥匙。</small></span><input type="text" data-memory-new-aliases></label><label class="dai-setting-row"><span><b>引文（可选）</b><small>当时的一句原话，召回时以「」带回正文。</small></span><input type="text" data-memory-new-quote></label></div><label class="dai-setting-row"><span><b>备注（可选）</b><small>细节、背景、后续影响——列表行内只显示内容一句，这些都在详情弹窗里。</small></span><input type="text" data-memory-new-note></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button" data-memory-add>登记这条记忆</button></div></div><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-agent-modal-close>取消</button></div></div></section>
                     <section class="dai-settings-page" data-settings-section="impact" role="tabpanel" hidden>
                         <div class="dai-page-heading"><h3>世界影响</h3><p>记录你把这局世界改成了什么样：烧掉的据点、得罪的势力、提前发生或没能发生的原著事件。库跟着这份聊天存档走，写进后续每一轮的正文提示词。账本在下面；添加和编辑都走弹窗。</p></div>
                         <div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon" aria-hidden="true">${daiIcon("ripple")}</span><span><b>启用世界影响库</b><small>关掉后不记录、不注入，但已记下的内容仍留在聊天存档里。</small></span><input type="checkbox" data-setting="enablePlayerImpact"></div></div><div class="dai-settings-card"><div class="dai-card-heading"><b>世界线最近变化</b><small data-impact-summary>加载中…</small></div><p class="dai-state-strip" data-impact-stats>本轮还没挑过注入；生成前会自动挑。</p><p class="dai-turn-result" data-impact-decide-status role="status">默认按上面的节奏自动记录；也可以点“现在记录一次”。</p><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-impact-open-ledger>打开世界账本</button><button type="button" class="dai-secondary-button" data-impact-add>＋ 记一条</button><button type="button" class="dai-secondary-button" data-impact-record>现在记录一次</button></div><ul class="dai-impact-list dai-impact-recent" data-impact-recent></ul></div><div class="dai-modal-dock" data-modal-dock="impact-ledger" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>世界账本</b><small>全部记录都在这里：筛选、搜索、编辑、收场、删除与档案恢复。</small></div><div class="dai-impact-toolbar"><select data-impact-filter aria-label="筛选影响"><option value="all">全部</option><option value="active">未了结</option><option value="ripened">已发酵</option><option value="closed">已了结</option></select><select data-impact-weight aria-label="按分量筛选"><option value="">分量</option><option value="world">世界级</option><option value="major">大事</option><option value="minor">小事</option></select><select data-impact-kind aria-label="按性质筛选"><option value="">性质</option><option value="direct">直接</option><option value="ripple">涟漪</option><option value="butterfly">蝴蝶</option></select><input type="search" data-impact-search placeholder="搜标题、对象或原著" aria-label="搜索影响"><button type="button" class="dai-button dai-button-ghost" data-impact-refresh>刷新</button></div><ul class="dai-impact-list" data-impact-library></ul><details class="dai-impact-archive" data-impact-archive><summary>档案 <small data-impact-archive-count>0 条</small></summary><p class="dai-impact-empty">被删除或因为库满挤出去的旧影响会留在这里，可以恢复。</p><ol class="dai-impact-list" data-impact-archive-list></ol></details><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-agent-modal-close>关闭</button></div></div></div>
@@ -9288,7 +9489,8 @@ function createSettingsPanel() {
                 <footer class="dai-settings-footer"><span>修改会自动保存到酒馆扩展设置</span><button type="button" class="dai-secondary-button" data-settings-close>完成</button></footer>
             </main>
         </div>`;
-    document.body.append(panel);
+        document.body.append(panel);
+        applyAdvancedFolds(panel);
     /** 调用版本切换：按钮高亮 + 按 `data-api-mode-section`（空格分隔多版本）只显示属于当前版本的卡片。
      *  完整版与进阶版共用逐路连接卡；进阶版另有一组 GitHub 系增强卡（完整版/简略版下整体隐藏）。 */
     function renderApiMode(target = panel) {
@@ -11052,7 +11254,7 @@ function refreshMemoryAuditCard(section, { pairs } = {}) {
     const audit = auditMemory({
         snapshot,
         pairs: Array.isArray(pairs) ? pairs : null,
-        catalogText: buildRecallCatalog(snapshot, { maxChars: settings.catalogBudget > 0 ? settings.catalogBudget : Infinity }),
+        catalogText: buildRecallCatalog(snapshot),
         catalogBudget: settings.catalogBudget,
         knownNames: ledgerKnownNames(),
     });
@@ -11924,7 +12126,7 @@ function renderImpactRecent(panel) {
     const list = panel?.querySelector?.('[data-impact-recent]');
     if (!list) return;
     const configured = Number(currentSettings().impact?.recentCount);
-    const limit = Number.isInteger(configured) && configured > 0 ? Math.min(20, configured) : 5;
+    const limit = Number.isInteger(configured) && configured > 0 ? configured : 5;
     const all = agentImpactRuntime.list();
     const recent = [...all]
         .sort((a, b) => (b.day - a.day) || String(b.id).localeCompare(String(a.id), 'zh', { numeric: true }))

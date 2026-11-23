@@ -232,7 +232,7 @@ export function createNpcColdRuntime({ now = () => new Date().toISOString() } = 
                 lastNote: previous.lastNote ?? '',
                 eventIds: newEvents.map(event => event.id),
                 events: newEvents,
-                floors: Array.isArray(floors) ? floors.slice(-4) : [],
+                floors: Array.isArray(floors) ? floors : [],
                 reason: newEvents.length
                     ? `发现 ${newEvents.length} 条牵连到${record.name}的事件${named ? '（事件点名）' : ''}${viaName ? `（经关系牵连：${viaName}）` : ''}`
                     : `世界已从第 ${previous.lastDay || toDay} 天走到第 ${toDay} 天`,

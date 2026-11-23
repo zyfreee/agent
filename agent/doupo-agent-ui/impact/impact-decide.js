@@ -11,10 +11,6 @@ import { buildWorldInjection } from '../world/world-ops.js';
 import { buildImpactLedgerLines } from './impact-ops.js';
 import { extractJson } from '../host/llm-client.js';
 
-const MAX_FLOORS = 10;
-const FLOOR_CHARS = 700;
-const MAX_BOOK_LINES = 30;
-
 export const IMPACT_DECIDE_PROMPT = [
     '你是《斗破苍穹》同人长篇的"世界记录员"。你只管账，不管戏：每轮对话结束，你读一遍刚才发生了什么，把"这个世界因此变成了什么样"记进世界线账本。',
     '你不写剧情、不扮演角色、不评价玩家，也不改任何数值。你只输出一个 JSON 对象：{"note":"给你的同事看的一句话","ops":[…]}。除 JSON 外不要写任何字。',
@@ -116,24 +112,23 @@ function clampInt(value, min, max, fallback) {
 
 /** 组装发给模型的 user 内容：世界台账 + 影响库 + 本轮结算裁定 + 原著资料已注入内容 + 最近聊天（旧→新）。 */
 export function buildImpactDecideUser({ snapshot = {}, floors = [], worldbookLines = [], settleLines = [] } = {}) {
-    const worldBlock = buildWorldInjection(snapshot, { maxChars: 900 });
+    const worldBlock = buildWorldInjection(snapshot, { maxChars: Infinity });
     const records = Array.isArray(snapshot.records) ? snapshot.records : [];
     const day = clampInt(snapshot?.clock?.day, 1, 99999, 1);
-    const ledger = buildImpactLedgerLines(records, { day, maxChars: 1800, maxLines: 30 });
+    const ledger = buildImpactLedgerLines(records, { day });
     const counts = {
         active: records.filter(record => record.state === 'active').length,
         ripened: records.filter(record => record.state === 'ripened').length,
         closed: records.filter(record => record.state === 'closed' || record.state === 'reverted').length,
     };
     const bookLines = (Array.isArray(worldbookLines) ? worldbookLines : [])
-        .filter(line => typeof line === 'string' && line.trim())
-        .slice(0, MAX_BOOK_LINES);
+        .filter(line => typeof line === 'string' && line.trim());
     const settle = (Array.isArray(settleLines) ? settleLines : []).filter(line => typeof line === 'string' && line.trim());
+    // 正文后影响决定只喂「用户输入＋正文」两楼，全文不截——用户口径 2026-11-18。
     const chat = (Array.isArray(floors) ? floors : [])
-        .slice(-MAX_FLOORS)
         .map(floor => {
             const role = floor?.role === '玩家' ? '玩家' : '角色';
-            const body = typeof floor?.text === 'string' ? floor.text.trim().slice(0, FLOOR_CHARS) : '';
+            const body = typeof floor?.text === 'string' ? floor.text.trim() : '';
             return body ? `[${role}] ${body}` : null;
         })
         .filter(Boolean);

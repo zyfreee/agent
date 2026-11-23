@@ -12,9 +12,6 @@ import { SELF_DECIDE_PROMPT } from '../self/self-decide.js';
 import { MEMORY_DECIDE_PROMPT } from '../memory/memory-decide.js';
 import { NPC_RECORD_PROMPT } from '../npc/npc-recorder.js';
 
-const MAX_FLOORS = 12;
-const FLOOR_CHARS = 800;
-const MAX_BOOK_LINES = 40;
 const MAX_NOTE_CHARS = 300;
 
 /** 从单路提示词里切出操作字典段：从 marker 首次出现处取到结尾。 */
@@ -142,7 +139,7 @@ function memoryIndexLines(snapshot = {}, { maxLines = 60 } = {}) {
         .filter(line => line.length > 4);
 }
 
-/** 组装发给模型的 user 内容：只带还开着的账本现状 + 本轮结算裁定 + 相关世界书 + 最近聊天（旧→新）。 */
+/** 组装发给模型的 user 内容：只带还开着的账本现状 + 本轮结算裁定 + 相关世界书 + 「用户输入＋正文」两楼（全文不截）。 */
 export function buildLiteSettleUser({
     floors = [], day = null, bookLines = [],
     npcLines = [], worldBlock = '', impactLines = [], selfBlock = '', memoryLines = [], consolidateLines = [],
@@ -150,14 +147,13 @@ export function buildLiteSettleUser({
     sections = {},
 } = {}) {
     const chat = (Array.isArray(floors) ? floors : [])
-        .slice(-MAX_FLOORS)
         .map(floor => {
             const role = floor?.role === '玩家' ? '玩家' : '角色';
-            const body = typeof floor?.text === 'string' ? floor.text.trim().slice(0, FLOOR_CHARS) : '';
+            const body = typeof floor?.text === 'string' ? floor.text.trim() : '';
             return body ? `[${role}] ${body}` : null;
         })
         .filter(Boolean);
-    const book = (Array.isArray(bookLines) ? bookLines : []).filter(line => typeof line === 'string' && line.trim()).slice(0, MAX_BOOK_LINES);
+    const book = (Array.isArray(bookLines) ? bookLines : []).filter(line => typeof line === 'string' && line.trim());
     const settle = (Array.isArray(settleLines) ? settleLines : []).filter(line => typeof line === 'string' && line.trim());
     const wantNpc = sections.npc !== false;
     const wantWorld = sections.world !== false;
@@ -201,7 +197,7 @@ export function buildLiteSettleUser({
  */
 export function createLiteSettle({
     mode, getContext, lastReplyIndex, capture, available, worldDay,
-    floorsMax = () => 8, entriesMax = () => 12,
+    entriesMax = () => 12,
     complete, overrides, factsIndex, sandboxActive, volumeOf,
     // 本轮结算裁定行（Thunk 现读，与 gates 同口径）：结算判过的成败喂给总账房，五本账照着记。
     settleLines = () => [],
@@ -250,15 +246,20 @@ export function createLiteSettle({
         const continuation = capture();
         running = continuation;
         try {
-            const floors = [];
-            const rawFloors = [];
-            for (let cursor = chat.length - 1; cursor >= 0 && rawFloors.length < floorsMax(); cursor -= 1) {
-                const message = chat[cursor];
-                if (!message || typeof message.mes !== 'string' || !message.mes.trim()) continue;
-                if (message.is_system === true) continue;
-                rawFloors.unshift({ role: message.is_user === true ? '玩家' : '角色', text: message.mes, isUser: message.is_user === true, depth: chat.length - 1 - cursor });
+            // 正文后的总结算读两楼：触发这轮的玩家输入 + 正文那一楼，全文不截——用户口径 2026-11-18。
+            const replyMessage = chat[index];
+            const raws = [];
+            if (replyMessage && typeof replyMessage.mes === 'string' && replyMessage.mes.trim()) {
+                for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+                    const message = chat[cursor];
+                    if (message?.is_user === true && typeof message.mes === 'string' && message.mes.trim()) {
+                        raws.unshift({ role: '玩家', text: message.mes, isUser: true, depth: chat.length - 1 - cursor });
+                        break;
+                    }
+                }
+                raws.push({ role: '角色', text: replyMessage.mes, isUser: false, depth: 0 });
             }
-            floors.push(...await cleanFloorEntries(rawFloors));
+            const floors = raws.length ? await cleanFloorEntries(raws) : [];
             if (!floors.length) return { status: 'no_input' };
             // 各功能的启用/自动开关先算好：关了哪本账，提示词里就不带那侧的现状与字典。
             const gate = {

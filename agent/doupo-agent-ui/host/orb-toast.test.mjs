@@ -94,3 +94,37 @@ test('纳戒结果 → 弹窗：金币看正负、境界喜、移除红、新增
     assert.deepEqual([toasts[5].tone, toasts[5].icon], ['good', 'ring']);
     assert.equal(toasts[6].tone, 'info', '身份改动中性');
 });
+
+test('常驻胶囊（冷藏确认/主动找你）：不到期、不占上限、同 key 替换、按 key 摘除', () => {
+    const clock = fakeClock();
+    const toasts = createOrbToasts({ max: 2, seconds: 8, now: clock.now });
+    toasts.push({ key: 'cold', sticky: true, text: '冷藏推进 1 份待确认', tone: 'info' });
+    toasts.push({ key: 'reachout:i3', sticky: true, action: 'reachout', title: '萧炎', text: '想主动找你', tone: 'info' });
+    clock.advance(60_000);
+    assert.equal(toasts.active().length, 2, '常驻胶囊不随时间退场');
+    assert.equal(toasts.nextExpiry(), null, '只剩常驻时没有到期时刻');
+
+    // 非常驻条目照常挤掉最老；常驻的不被挤也不占名额
+    toasts.push({ text: '好感 +3', tone: 'good' });
+    toasts.push({ text: '金币+50', tone: 'good' });
+    toasts.push({ text: '境界：斗者 → 斗师', tone: 'good' });
+    const mixed = toasts.active();
+    assert.equal(mixed.filter(entry => !entry.sticky).length, 2, '非常驻条目仍受上限约束');
+    assert.equal(mixed.filter(entry => entry.sticky).length, 2, '常驻条目不被挤掉');
+
+    // 同 key 替换：草稿数更新时不重复堆叠
+    toasts.push({ key: 'cold', sticky: true, text: '冷藏推进 2 份待确认', tone: 'info' });
+    const coldList = toasts.active().filter(entry => entry.key === 'cold');
+    assert.equal(coldList.length, 1, '同 key 不重复堆叠');
+    assert.equal(coldList[0].text, '冷藏推进 2 份待确认');
+
+    // 玩家操作后按 key 摘除
+    assert.equal(toasts.dismissKey('reachout:i3'), 1);
+    assert.equal(toasts.active().some(entry => entry.key === 'reachout:i3'), false);
+    assert.equal(toasts.dismissKey('不存在'), 0);
+
+    // 常驻不挡非常驻的到期清算：再过 8 秒非常驻全走，常驻还在
+    clock.advance(8000);
+    assert.equal(toasts.active().filter(entry => !entry.sticky).length, 0, '过期的非常驻照常退场');
+    assert.equal(toasts.active().filter(entry => entry.sticky).length, 1, '常驻还在');
+});

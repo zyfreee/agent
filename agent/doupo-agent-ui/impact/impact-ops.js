@@ -117,7 +117,7 @@ function ledgerLine(record, day) {
     return parts.join('｜');
 }
 
-export function buildImpactLedgerLines(records, { maxChars = 1600, maxLines = 30, day = 1 } = {}) {
+export function buildImpactLedgerLines(records, { maxChars = Infinity, maxLines = Infinity, day = 1 } = {}) {
     const today = Number.isInteger(day) && day > 0 ? day : 1;
     const list = (Array.isArray(records) ? records : [])
         .filter(record => record && record.title)

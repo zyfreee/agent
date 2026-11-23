@@ -9,13 +9,6 @@
 import { buildSelfInjection, capSelfOp, SELF_MODEL_OPS_MAX } from './self-ops.js';
 import { extractJson } from '../host/llm-client.js';
 
-const MAX_FLOORS = 12;
-const FLOOR_CHARS = 800;
-// 最新楼是决定的正文靶子：验药、擦拭装备这类细节段落全在中后段，800 字截断让账房
-// 只看到开场就交卷——「凝气固脉」没抄进 effect、玄重尺擦了整段也不补（2026-11-17 实跑）。
-// 旧楼维持短截断，总预算可控。
-const HEAD_FLOOR_CHARS = 6000;
-const MAX_BOOK_LINES = 40;
 const MAX_NOTE_CHARS = 300;
 
 /** 默认决定提示词（system）。改写时保持"只输出 JSON"与操作字段名不变，否则脚本解析不到。
@@ -123,7 +116,7 @@ function pendingDetailNames(snapshot = {}, chatText = '') {
         }
         if (out.length >= 6) break;
     }
-    return out.slice(0, 6);
+    return out;
 }
 
 /** 组装发给模型的 user 内容：纳戒现状（带编号，供 update/remove 引用）+ 本轮结算裁定 + 原著资料已注入内容 + 最近聊天（旧→新）。 */
@@ -133,14 +126,12 @@ export function buildSelfDecideUser({ snapshot = {}, floors = [], worldbookLines
     const selfBlock = buildSelfInjection(snapshot, { withIds: true });
     const bookLines = (Array.isArray(worldbookLines) ? worldbookLines : [])
         .filter(line => typeof line === 'string' && line.trim())
-        .slice(0, MAX_BOOK_LINES);
     const settle = (Array.isArray(settleLines) ? settleLines : []).filter(line => typeof line === 'string' && line.trim());
+    // 正文后纳戒决定只喂「用户输入＋正文」两楼，全文不截——用户口径 2026-11-18。
     const chat = (Array.isArray(floors) ? floors : [])
-        .slice(-MAX_FLOORS)
-        .map((floor, index, list) => {
+        .map(floor => {
             const role = floor?.role === '玩家' ? '玩家' : '角色';
-            const cap = index === list.length - 1 ? HEAD_FLOOR_CHARS : FLOOR_CHARS;
-            const body = typeof floor?.text === 'string' ? floor.text.trim().slice(0, cap) : '';
+            const body = typeof floor?.text === 'string' ? floor.text.trim() : '';
             return body ? `[${role}] ${body}` : null;
         })
         .filter(Boolean);

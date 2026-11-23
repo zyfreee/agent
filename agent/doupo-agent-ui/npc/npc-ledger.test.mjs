@@ -240,18 +240,17 @@ for (const day of [null, undefined, '', '  ', 0, -1, 1.5, 100000, true, 'bad', 1
     assert.ok(view.used.length >= 2);
 }
 
-// OPT-059: preserve complete visible profiles before omission; metadata matches text.
+// OPT-059（2026-11-19 口径）：简档不再压缩、不填预算＝全量完整档案；填了预算才整条让位，绝不拦腰截断。
 {
     const ledger = createNpcLedger();
     ledger.apply({ 人物: ['A', 'B'].map(name => ({ name, identity: '身'.repeat(200), presence: '在场', importance: '重要' })) });
-    const view = ledger.injection({ budget: 300 });
+    const view = ledger.injection();
     assert.deepEqual(view.used.sort(), ['A', 'B']);
-    // 可行布局：A 全档 + B 简档已 ≤300，只降级 B；不得继续把 A 也降掉。
-    assert.deepEqual(view.degraded, ['B']);
+    assert.deepEqual(view.degraded, []);
     assert.deepEqual(view.omitted, []);
-    assert.equal(view.counts.full, 1); assert.equal(view.counts.brief, 1);
+    assert.equal(view.counts.full, 2); assert.equal(view.counts.brief, 0);
     for (const name of view.used) assert.match(view.text, new RegExp(name));
-    assert.ok(view.chars <= 300);
+    assert.ok(view.text.includes('身'.repeat(200)), '长身份字段原样进注入');
     for (const budget of [0, 1, 10, 30, 60, 120]) {
         const small = ledger.injection({ budget });
         assert.ok(small.chars <= budget);
@@ -679,3 +678,24 @@ for (const day of [null, undefined, '', '  ', 0, -1, 1.5, 100000, true, 'bad', 1
 }
 
 console.log('npc-ledger 测试通过');
+
+// —— 往来概要：随补丁落账、注入替代近事、restore 往返不丢 ——
+{
+    const ledger = createNpcLedger({ now: () => 'fixed' });
+    ledger.apply({ name: 'B', identity: '药铺掌柜', presence: '在场', importance: '重要', log: ['卖了凝血散'], 往来概要: '连着三天和玩家做药材生意，开始留意这个少年' });
+    const record = ledger.exportAll().records.find(item => item.name === 'B');
+    assert.equal(record.logSummary, '连着三天和玩家做药材生意，开始留意这个少年');
+    const injected = ledger.injection({ maxFull: 5, maxBrief: 5 }).text;
+    assert.ok(injected.includes('往来：连着三天和玩家做药材生意'), '有概要时注入往来概要');
+    assert.ok(!injected.includes('近事：'), '概要在场时近事被替代');
+    const saved = JSON.parse(JSON.stringify(ledger.exportAll()));
+    const reloaded = createNpcLedger({ now: () => 'fixed' });
+    reloaded.load(saved);
+    assert.equal(reloaded.exportAll().records.find(item => item.name === 'B').logSummary, '连着三天和玩家做药材生意，开始留意这个少年', 'restore 往返不丢概要');
+}
+{
+    const ledger = createNpcLedger({ now: () => 'fixed' });
+    ledger.apply({ name: 'C', identity: '守门人', presence: '在场', importance: '重要', log: ['登记了来意'] });
+    const injected = ledger.injection({ maxFull: 5, maxBrief: 5 }).text;
+    assert.ok(injected.includes('近事：登记了来意'), '没有概要时回退近事');
+}

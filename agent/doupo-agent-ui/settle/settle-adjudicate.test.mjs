@@ -71,23 +71,23 @@ test('bounded model snapshot selects late relevant entries, preserves full local
     const context = buildSettleContextState(source, '消耗药材499号');
     assert.equal(context.inventory[0].id, 'b499');
     assert.equal(context.inventory[0].count, 500);
-    assert.ok(context.warnings.some(value => value.includes('未提供')));
+    assert.equal(context.inventoryTotal, 500, '总数不打折');
+    assert.equal(context.inventory.length, 1, '命中的相关条目优先展示');
     assert.ok(context.itemCategories.includes('药材'));
-    assert.ok(JSON.stringify(context).length <= 5000);
     assert.deepEqual(source, before);
     assert.equal(buildSettleState(source).inventory.length, 500);
     const oversized = buildSettleContextState({ inventory: Array.from({ length: 100 }, (_, i) => ({ id: 'x'.repeat(10000), name: `物品${i}`, category: 'c'.repeat(10000), count: 1 })) }, '');
-    assert.ok(JSON.stringify(oversized).length <= 5000);
     assert.ok(oversized.warnings.length);
+    assert.ok(oversized.inventory.length === 100, '材料不再截断：500 条库存也全量');
 });
-test('model user keeps all input through 12000 chars, refuses overflow before request', () => {
+test('model user keeps all input without any length cap', () => {
     const input = `${'甲'.repeat(11980)}最后付金币买药`;
     const result = buildSettleResultUser({ input, state: state() });
     assert.ok(result.includes(input));
     assert.ok(result.includes('最后付金币买药'));
-    assert.ok(result.length <= 30000);
-    assert.throws(() => buildSettleResultUser({ input: '甲'.repeat(12001) }), /12000/);
-    assert.ok(buildSettleResultUser({ input: '甲'.repeat(12000) }).includes('甲'.repeat(12000)));
+    // 输入不再有 12000 上限（用户口径 2026-11-19）：多长都全量进材料，绝不拒收。
+    const huge = buildSettleResultUser({ input: '甲'.repeat(40000), state: state() });
+    assert.ok(huge.includes('甲'.repeat(40000)));
 });
 test('context includes real worldbook content and marks every non-input clipping channel', () => {
     const result = buildSettleResultUser({ input: '服回气丹', state: state(),
@@ -97,10 +97,9 @@ test('context includes real worldbook content and marks every non-input clipping
         customCategories: [{ id: 'craft', name: '炼器', prompt: 'x'.repeat(3000) }],
     });
     assert.ok(result.includes('只能回暖气息，不能直接突破'));
-    assert.ok(result.includes('已截断'));
+    assert.ok(result.includes('条目0'), '世界书条目不再截断');
     assert.ok(result.includes('〈记忆〉（本轮没有注入）'));
     assert.ok(result.includes('相关有界快照'));
-    assert.ok(result.length <= 30000);
     assert.ok(buildSettleResultUser({}).includes('本轮所有通道都是空的'));
 });
 
@@ -400,7 +399,7 @@ test('renderer rejects raw even with approved-looking actions; bounded rendering
     assert.ok(small.includes('审核预算保护'));
     assert.ok(small.length <= 300);
     const normal = renderSettleInjection(result);
-    assert.ok(normal.length <= 6000);
+    assert.ok(normal.includes('安全叙事'), '默认不限制：结算全文注入，不再降级（用户口径 2026-11-19）');
     assert.ok(normal.includes('[success]'));
 });
 
@@ -418,27 +417,30 @@ test('context preserves bounded abilities/NPCs and original omission warnings on
         assert.equal(result.inventory[0].id, 'b99');
         assert.equal(result.profile.name, '萧炎');
         assert.equal(result.profile.appearance, undefined);
-        assert.equal(result.npcs.length, 6);
+        assert.equal(result.npcs.length, 8, '人物上下文不再截断：全量');
         assert.equal(result.npcs[0].privateData, undefined);
         assert.equal(result.npcNote, source.npcNote);
         assert.equal(result.skills[0].name, '吸掌');
         assert.equal(result.equipment[0].name, '吸掌');
         assert.equal(result.techniques[0].name, '吸掌');
-        assert.ok(result.warnings.some(value => value.includes('99 条未提供')));
-        assert.ok(JSON.stringify(result).length <= 5000);
+        assert.equal(result.inventory.length, 1, '命中相关条目优先（total 仍是全量 100）');
     }
     const user = buildSettleResultUser({ input: '药材99号和吸掌', state: first });
     assert.ok(user.includes('人物0'));
     assert.ok(user.includes('人物身体状态按文字理解'));
     assert.ok(user.includes('"inventoryTotal":100'));
 });
-test('all context branches remain bounded with hostile oversized metadata', () => {
+test('hostile oversized metadata passes through in full (no bounds anywhere)', () => {
     const source = state();
     source.warnings = Array.from({ length: 100 }, (_, i) => `warn${i}${'x'.repeat(3000)}`);
     source.itemCategories = Array.from({ length: 100 }, (_, i) => `cat${i}${'x'.repeat(1000)}`);
     source.skills = Array.from({ length: 100 }, () => ({ id: 'x'.repeat(1000), name: 'y'.repeat(1000), grade: 'z'.repeat(1000), type: 'a'.repeat(1000), progress: 'b'.repeat(1000) }));
     source.npcs = Array.from({ length: 100 }, () => Object.fromEntries(['name', 'realm', 'location', 'injury', 'qi', 'douqi', 'presence'].map(key => [key, 'x'.repeat(5000)])));
-    assert.ok(JSON.stringify(buildSettleContextState(source, '')).length <= 5000);
+    const context = buildSettleContextState(source, '');
+    assert.equal(context.skills.length, 100, '能力全量');
+    assert.equal(context.npcs.length, 100, '人物全量');
+    assert.ok(source.warnings.every(w => context.warnings.includes(w)), '警告全量保留（外加脚本本地的未知提醒）');
+    assert.ok(JSON.stringify(context).length > 5000, '不再有任何总预算');
 });
 test('explicit precision in reverse word order and split actual-stat effects cannot bypass review', () => {
     for (const outcome of ['恢复20点生命', '恢复20斗气', '增加50声望', '生命恢复二十']) assert.equal(review([action('a1', '服药', { outcome, effects: [] })]).actions[0].approved, false, outcome);
@@ -618,7 +620,8 @@ test('retry builder feeds diagnostics back and refuses to overflow the user budg
     assert.ok(retry.includes('重新输出完整 v2 JSON'));
     assert.ok(retry.includes('evidence 仍逐字取自'));
     assert.equal(buildSettleRetryUser('', invalid), '');
-    assert.equal(buildSettleRetryUser('x'.repeat(29999), invalid), '', '装不下就放弃重试，绝不截断玩家输入');
+    const bigRetry = buildSettleRetryUser('x'.repeat(29999), invalid);
+    assert.ok(bigRetry.includes('x'.repeat(29999)) && bigRetry.includes('重新输出完整 v2 JSON'), '重试材料全量保留');
     assert.equal(buildSettleRetryUser('正常输入', null).includes('invalid_json'), true, '无诊断时按 invalid_json 兜底');
 });
 

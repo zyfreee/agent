@@ -9,8 +9,6 @@
 import { extractJson } from '../host/llm-client.js';
 import { capMemoryOp, MEMORY_MODEL_OPS_MAX } from './memory-ops.js';
 
-const MAX_FLOORS = 12;
-const FLOOR_CHARS = 800;
 
 /** 默认决定提示词（system）。改写时保持"只输出 JSON"与操作字段名不变，否则脚本解析不到。 */
 export const MEMORY_DECIDE_PROMPT = [
@@ -91,14 +89,13 @@ export function buildDecideUser({ snapshot = {}, floors = [], consolidateIds = [
     // 现有记忆全清单（只列标题）：不给模型看，它就不知道哪些近事已经记过，换个措辞重记一遍。
     const existing = (Array.isArray(snapshot?.entries) ? snapshot.entries : [])
         .map(entry => `${entry.id}|${entry.tier === 'big' ? '大' : '小'}|${String(entry.title || entry.text || '').trim().slice(0, 24)}`)
-        .filter(line => line.length > 4)
-        .slice(0, 60);
+        .filter(line => line.length > 4);
     const settle = (Array.isArray(settleLines) ? settleLines : []).filter(line => typeof line === 'string' && line.trim());
+    // 正文后书记官只喂「用户输入＋正文」两楼，全文不截——用户口径 2026-11-18。
     const chat = (Array.isArray(floors) ? floors : [])
-        .slice(-MAX_FLOORS)
         .map(floor => {
             const role = floor?.role === '玩家' ? '玩家' : '角色';
-            const body = typeof floor?.text === 'string' ? floor.text.trim().slice(0, FLOOR_CHARS) : '';
+            const body = typeof floor?.text === 'string' ? floor.text.trim() : '';
             return body ? `[${role}] ${body}` : null;
         })
         .filter(Boolean);

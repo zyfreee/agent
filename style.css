@@ -13,12 +13,9 @@
    之前 static 时会在文档尾部占出一节流式高度，浏览器把页滚下去就露出大片空白。 */
 .dai-root { position: fixed; inset: 0 auto auto 0; width: 0; height: 0; overflow: visible; }
 .dai-root[hidden] { display: none; }
-/* 楼层美化的配套保险（文件级，不依赖脚本库版本，旧页面回写设置也覆盖不掉）：
-   ① 美化的焰装规则曾把酒馆原版 #sheld 的 absolute 覆盖成 relative，
-      导致输入框/发送键被挤出窗口——这里用更高优先级钉回原版定位；
-   ② 视口锁：美化开着时 document/body 不允许滚动（悬空根修）。 */
-body.doupo-dress-page.doupo-blaze #sheld { position: absolute; }
-html.doupo-vp-lock, html.doupo-vp-lock body { overflow: hidden !important; }
+/* 楼层美化的悬空修正与视口锁一律住角色卡内嵌的「斗破 · 楼层美化」脚本里
+   （用户口径 2026-11-18：兜底/修正不放 agent 插件，卡一进去就要生效）。
+   本文件只管 agent 自己的 UI（面板/悬浮球/弹层），不再写卡片侧规则。 */
 .dai-settings-panel, .dai-root, .dai-orb {
     --dai-bg: #16120c;
     --dai-sidebar: #100d08;
@@ -710,6 +707,32 @@ svg.dai-svg { width: 1em; height: 1em; flex: none; display: inline-block; vertic
 .dai-settle-category-body { padding: 0.4rem 1rem 0.8rem; }
 .dai-settle-category-body .dai-setting-row textarea { width: 100%; min-height: 12rem; }
 
+/* ---- 精简面板：各页低频卡收进「高级设置」折叠区（只移动不删减） ---- */
+.dai-advanced-fold {
+    margin-top: 0.9rem;
+    border: 1px dashed var(--dai-border);
+    border-radius: var(--dai-radius-card);
+    background: transparent;
+}
+.dai-advanced-fold > summary {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    min-height: 2.8rem;
+    padding: 0.5rem 0.9rem;
+    list-style: none;
+    cursor: pointer;
+    color: var(--dai-muted);
+    border-radius: var(--dai-radius-card);
+}
+.dai-advanced-fold > summary::-webkit-details-marker { display: none; }
+.dai-advanced-fold > summary span { flex: 1; font-size: var(--dai-fs-md); }
+.dai-advanced-fold > summary::after { content: '▸'; color: var(--dai-muted); transition: transform 0.15s ease; }
+.dai-advanced-fold[open] > summary::after { content: '▾'; }
+.dai-advanced-fold[open] > summary { border-bottom: 1px dashed var(--dai-border); }
+.dai-advanced-fold > .dai-advanced-body { padding: 0.2rem 0.6rem 0.6rem; }
+.dai-advanced-fold > .dai-advanced-body > .dai-settings-card { margin: 0.5rem 0; }
+
 /* ---- 悬浮球：小球 ⇄ 竖直拉伸的胶囊长条 ⇄ 只读信息窗 ---- */
 .dai-orb { position: fixed; z-index: 9999; top: 18vh; right: 0.9rem; display: block; touch-action: none; }
 .dai-orb[hidden] { display: none; }
@@ -1298,5 +1321,7 @@ button.dai-body-slot__name:hover { text-decoration: underline; }
 .dai-orb-toast.is-good { border-color: var(--dai-good); }
 .dai-orb-toast.is-good .dai-orb-toast-icon, .dai-orb-toast.is-good .dai-orb-toast-name { color: var(--dai-good); }
 .dai-orb-toast.is-bad { border-color: var(--dai-error); }
+.dai-orb-toast.is-sticky { border-left: 2px solid var(--dai-accent); }
+.dai-npc-log-summary { border-left: 2px solid var(--dai-accent); background: linear-gradient(90deg, var(--dai-accent-soft), transparent 90%); }
 .dai-orb-toast.is-bad .dai-orb-toast-icon, .dai-orb-toast.is-bad .dai-orb-toast-name { color: var(--dai-error); }
 @keyframes dai-toast-in { from { opacity: 0; transform: translateX(0.6rem); } to { opacity: 1; transform: none; } }

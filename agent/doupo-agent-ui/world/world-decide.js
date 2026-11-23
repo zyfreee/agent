@@ -10,9 +10,6 @@ import { buildWorldInjection } from './world-ops.js';
 import { extractJson } from '../host/llm-client.js';
 import { capWorldOp } from './world-runtime.js';
 
-const MAX_FLOORS = 12;
-const FLOOR_CHARS = 800;
-const MAX_BOOK_LINES = 40;
 const MAX_NOTE_CHARS = 300;
 const MAX_OPS = 12;
 
@@ -110,16 +107,15 @@ function clampInt(value, min, max, fallback) {
 
 /** 组装发给模型的 user 内容：台账现状 + 本轮结算裁定 + 原著资料已注入内容 + 最近聊天（旧→新）。 */
 export function buildDecideUser({ snapshot = {}, floors = [], worldbookLines = [], settleLines = [] } = {}) {
-    const worldBlock = buildWorldInjection(snapshot, { maxChars: 1200 });
+    const worldBlock = buildWorldInjection(snapshot, { maxChars: Infinity });
     const bookLines = (Array.isArray(worldbookLines) ? worldbookLines : [])
-        .filter(line => typeof line === 'string' && line.trim())
-        .slice(0, MAX_BOOK_LINES);
+        .filter(line => typeof line === 'string' && line.trim());
     const settle = (Array.isArray(settleLines) ? settleLines : []).filter(line => typeof line === 'string' && line.trim());
+    // 正文后世界决定只喂「用户输入＋正文」两楼，全文不截——用户口径 2026-11-18。
     const chat = (Array.isArray(floors) ? floors : [])
-        .slice(-MAX_FLOORS)
         .map(floor => {
             const role = floor?.role === '玩家' ? '玩家' : '角色';
-            const body = typeof floor?.text === 'string' ? floor.text.trim().slice(0, FLOOR_CHARS) : '';
+            const body = typeof floor?.text === 'string' ? floor.text.trim() : '';
             return body ? `[${role}] ${body}` : null;
         })
         .filter(Boolean);

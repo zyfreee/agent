@@ -7,16 +7,17 @@
 
 export const ORB_TOAST_TONES = Object.freeze(['good', 'bad', 'info']);
 
-const DEFAULT_MAX = 6;
+const DEFAULT_MAX = Infinity;
 const DEFAULT_SECONDS = 8;
-const TOAST_TEXT_MAX = 80;
 
 export function createOrbToasts({ max = DEFAULT_MAX, seconds = DEFAULT_SECONDS, now = () => Date.now() } = {}) {
     const entries = [];
     let seq = 0;
     const cap = Math.max(1, Number(max) || DEFAULT_MAX);
     const life = Math.max(1, Number(seconds) || DEFAULT_SECONDS) * 1000;
-    /** 一批弹窗入列；text 为空的条目直接丢弃，溢出时从最老的开始挤掉。返回实际入列数。 */
+    /** 一批弹窗入列；text 为空的条目直接丢弃。带 key 的常驻条目（sticky）同 key 替换——
+     *  草稿数/文案更新时不重复堆叠；溢出只挤「非常驻」的最老条目，常驻的不被挤也不占名额
+     *  （冷藏确认/主动找你这类要玩家处理的，一直挂着直到玩家点了或操作了）。返回实际入列数。 */
     function push(input) {
         const list = Array.isArray(input) ? input : [input];
         const at = now();
@@ -24,25 +25,43 @@ export function createOrbToasts({ max = DEFAULT_MAX, seconds = DEFAULT_SECONDS, 
         for (const item of list) {
             const text = typeof item?.text === 'string' ? item.text.trim() : '';
             if (!text) continue;
+            const sticky = item?.sticky === true;
+            const key = typeof item?.key === 'string' && item.key.trim() ? item.key.trim() : '';
+            if (key) {
+                const index = entries.findIndex(entry => entry.key === key);
+                if (index >= 0) entries.splice(index, 1);
+            }
             const title = typeof item?.title === 'string' ? item.title.trim() : '';
             entries.push({
                 id: ++seq,
+                key,
+                sticky,
+                action: typeof item?.action === 'string' && item.action ? item.action : '',
                 icon: typeof item?.icon === 'string' && item.icon ? item.icon : 'ring',
-                title: title.length > 20 ? `${title.slice(0, 19)}…` : title,
-                text: text.length > TOAST_TEXT_MAX ? `${text.slice(0, TOAST_TEXT_MAX - 1)}…` : text,
+                title,
+                text,
                 tone: ORB_TOAST_TONES.includes(item?.tone) ? item.tone : 'info',
                 detail: typeof item?.detail === 'string' ? item.detail.trim() : '',
                 at,
-                until: at + life,
+                until: sticky ? Number.POSITIVE_INFINITY : at + life,
             });
             added += 1;
         }
-        while (entries.length > cap) entries.shift();
+        // 上限只数「非常驻」条目。
+        let excess = entries.filter(entry => !entry.sticky).length - cap;
+        for (let index = 0; index < entries.length && excess > 0; index += 1) {
+            if (entries[index].sticky) continue;
+            entries.splice(index, 1);
+            excess -= 1;
+            index -= 1;
+        }
         return added;
     }
-    /** 清到当前时刻为止已到期的条目，返回剩余条数。 */
+    /** 清到当前时刻为止已到期的「非常驻」条目，返回剩余条数。 */
     function tick(nowTs = now()) {
-        while (entries.length && entries[0].until <= nowTs) entries.shift();
+        for (let index = entries.length - 1; index >= 0; index -= 1) {
+            if (!entries[index].sticky && entries[index].until <= nowTs) entries.splice(index, 1);
+        }
         return entries.length;
     }
     /** 当前该显示的条目快照（先清算再拷贝，渲染层拿到的永远是干净列表）。 */
@@ -57,15 +76,32 @@ export function createOrbToasts({ max = DEFAULT_MAX, seconds = DEFAULT_SECONDS, 
         entries.splice(index, 1);
         return true;
     }
+    /** 按 key 退场：玩家在别处把事办了、队列清空时由刷新逻辑调用。返回清掉的条数。 */
+    function dismissKey(key) {
+        const wanted = typeof key === 'string' ? key.trim() : '';
+        if (!wanted) return 0;
+        let removed = 0;
+        for (let index = entries.length - 1; index >= 0; index -= 1) {
+            if (entries[index].key === wanted) {
+                entries.splice(index, 1);
+                removed += 1;
+            }
+        }
+        return removed;
+    }
     function clear() {
         entries.length = 0;
     }
-    /** 最近的到期时刻；没有条目时为 null——渲染层靠它安排下一次清算。 */
+    /** 最近的到期时刻（常驻条目不参与）；只剩常驻或没有条目时为 null——渲染层靠它安排下一次清算。 */
     function nextExpiry() {
-        if (!entries.length) return null;
-        return Math.min(...entries.map(entry => entry.until));
+        let next = null;
+        for (const entry of entries) {
+            if (entry.sticky) continue;
+            if (next === null || entry.until < next) next = entry.until;
+        }
+        return next;
     }
-    return Object.freeze({ push, tick, active, dismiss, clear, nextExpiry });
+    return Object.freeze({ push, tick, active, dismiss, dismissKey, clear, nextExpiry });
 }
 
 /** 人物簿一行的字段标签里，好感已由 delta 单独表达，标签里的「好感+3」不再重复。 */

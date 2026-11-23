@@ -43,7 +43,7 @@ export function buildGossipUser({ rumors = [], targets = [], day = null, maxChar
         })
         .filter(Boolean);
     blocks.push(rumorLines.length ? `【传闻清单】（都是未证实的消息）\n${rumorLines.join('\n')}` : '【传闻清单】\n（没有传闻，输出 {"人物":[]}）');
-    const targetBlocks = (Array.isArray(targets) ? targets : []).slice(0, TARGET_MAX).map(target => {
+    const targetBlocks = (Array.isArray(targets) ? targets : []).map(target => {
         const record = target?.record ?? {};
         const bits = [record.name || '（未知名）'];
         if (record.identity) bits.push(record.identity);
@@ -51,7 +51,7 @@ export function buildGossipUser({ rumors = [], targets = [], day = null, maxChar
         if (record.taboo) bits.push(`雷区：${record.taboo}`);
         if (record.attitude) bits.push(`对玩家现状：${record.attitude}`);
         bits.push(`好感 ${record.favor ?? 0}`);
-        const heard = (Array.isArray(target?.heard) ? target.heard : []).slice(0, HEARD_MAX)
+        const heard = (Array.isArray(target?.heard) ? target.heard : [])
             .map(item => {
                 const from = typeof item?.from === 'string' ? item.from : '';
                 const via = typeof item?.via === 'string' && item.via ? `（${item.via}）` : '';

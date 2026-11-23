@@ -35,7 +35,7 @@ const prompt = buildSelectPrompt({
     catalog: index.catalogFor(2).lines,
     maxPicks: 6,
 });
-assert.match(prompt.system, /取前 6 条/);
+assert.doesNotMatch(prompt.system, /MAX_PICKS|取前/);
 assert.match(prompt.user, /【当前进度】卷02/);
 assert.match(prompt.user, /【最近对话】/);
 assert.match(prompt.user, /1041\|物品\|青莲地心火/);
@@ -87,8 +87,8 @@ assert.deepEqual(dup.ids, [1041]);
 assert.equal(dup.invalid[0].reason, 'duplicate');
 
 const capped = parseSelection(JSON.stringify({ need: [{ uid: 1041 }, { uid: 217 }, { uid: 42 }] }), { index, volume: 2, maxPicks: 2 });
-assert.equal(capped.ids.length, 2);
-assert.deepEqual(capped.invalid.map(item => item.reason), ['over_pick']);
+assert.deepEqual(capped.ids, [1041, 217, 42], '选条不再截断：maxPicks 参数一并退役');
+assert.deepEqual(capped.invalid, []);
 
 assert.equal(parseSelection('{"need":[],"no_match":true}', { index }).status, 'no_match');
 assert.equal(parseSelection('{"need":[]}', { index }).status, 'empty');
@@ -124,11 +124,11 @@ const fallback = await selector.select({ input: '青莲地心火', volume: null 
 assert.equal(fallback.status, 'selected');
 assert.equal(fallback.meta.truncated, false);
 
-// 单次检索上限动态读取：设置页数字每次现读，规则文本的 MAX_PICKS 同步替换，超出的截断。
+// 选条条数不设上限（用户口径 2026-11-19）：模型给几条收几条，动态上限机制退役。
 const dynamicCalls = [];
 const dynamic = createFactsSelector({
     index,
-    getMaxPicks: () => 2,
+    getMaxPicks: () => Infinity,
     complete: async ({ system }) => {
         dynamicCalls.push(system);
         return '{"need":[{"uid":1041,"why":"异火"},{"uid":217,"why":"药老"},{"uid":42,"why":"故事线"}],"no_match":false}';
@@ -136,13 +136,10 @@ const dynamic = createFactsSelector({
 });
 const dynamicPicked = await dynamic.select({ input: '青莲地心火和药老', volume: 2 });
 assert.equal(dynamicPicked.status, 'selected');
-assert.deepEqual(dynamicPicked.ids, [1041, 217], '模型给了 3 条，按动态上限 2 截断');
-assert.match(dynamicCalls.at(-1), /取前 2 条/, '规则文本的 MAX_PICKS 换成动态上限');
-assert.equal(dynamicPicked.meta.maxPicks, 2, 'meta 带出本次生效的上限');
-// 单次调用自带覆盖：优先生效，这次只留 1 条
+assert.deepEqual(dynamicPicked.ids, [1041, 217, 42], '模型给了 3 条，全量照收');
+assert.doesNotMatch(dynamicCalls.at(-1), /MAX_PICKS|取前/);
 const overridePicked = await dynamic.select({ input: '青莲地心火', volume: 2, maxPicks: 1 });
-assert.deepEqual(overridePicked.ids, [1041], '单次覆盖上限优先生效');
-assert.equal(overridePicked.meta.maxPicks, 1);
+assert.deepEqual(overridePicked.ids, [1041, 217, 42], '单次覆盖也不再截断');
 // 动态读取非法值（0/负数/非数字）回落默认 8
 const broken = createFactsSelector({
     index,
@@ -150,7 +147,7 @@ const broken = createFactsSelector({
     complete: async () => '{"need":[{"uid":1041,"why":"异火"}],"no_match":false}',
 });
 const brokenPicked = await broken.select({ input: '青莲地心火', volume: 2 });
-assert.equal(brokenPicked.meta.maxPicks, 8, '非法上限回落默认 8');
+assert.equal(brokenPicked.meta.maxPicks, Infinity, '非法上限也回退为不限');
 // 不设天花板：填 40 就是 40，不再钳到 24
 const free = createFactsSelector({
     index,
@@ -161,21 +158,20 @@ const free = createFactsSelector({
     },
 });
 const freePicked = await free.select({ input: '青莲地心火', volume: 2 });
-assert.equal(freePicked.meta.maxPicks, 40, '上限不设天花板，按设置直通');
-assert.match(dynamicCalls.at(-1), /取前 40 条/, '规则文本同步换成 40');
+assert.equal(freePicked.meta.maxPicks, Infinity, '条数上限整体退役：meta 带出无限');
+assert.doesNotMatch(dynamicCalls.at(-1), /MAX_PICKS|取前/);
 
 // 选条规则可改：设置页写入后每轮现读，MAX_PICKS 占位符要换成当前上限。
 const ruleCalls = [];
 const customRules = createFactsSelector({
     index,
-    maxPicks: 3,
     rules: '内置规则 MAX_PICKS',
     getRules: () => '自定义规则，最多 MAX_PICKS 条',
     complete: async args => { ruleCalls.push(args); return '{"need":[],"no_match":true}'; },
 });
 const noMatch = await customRules.select({ input: '随便', volume: 2 });
 assert.equal(noMatch.status, 'no_match');
-assert.equal(ruleCalls[0].system, '自定义规则，最多 3 条');
+assert.equal(ruleCalls[0].system, '自定义规则，最多 不限 条');
 
 const blankRules = createFactsSelector({ index, rules: '   ', complete: async args => { ruleCalls.push(args); return '{}'; } });
 await blankRules.select({ input: '随便', volume: 2 });

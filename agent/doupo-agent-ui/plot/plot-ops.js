@@ -6,8 +6,6 @@
 
 import { KIND_LABELS } from './plot-runtime.js';
 
-const DEFAULT_MAX_CHARS = 500;
-
 function text(value) {
     return typeof value === 'string' ? value.trim() : '';
 }

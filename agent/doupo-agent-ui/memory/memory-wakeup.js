@@ -31,24 +31,21 @@ export function buildWakeUpSummary({ worldSnapshot = {}, memorySnapshot = {}, np
         const weather = text(worldSnapshot?.info?.weather);
         lines.push(`时间：第 ${day} 天·${seasonOf(day)}季${where ? `·${where}` : ''}${weather ? `（${weather}）` : ''}`);
     }
-    // 在场人物：人物簿在场记录，重要的带 ★ 垒到前面；最多 6 个名字，只报名不展开档案。
+    // 在场人物：人物簿在场记录，重要的带 ★ 垒到前面；全部列出（用户口径 2026-11-19）。
     const present = (Array.isArray(npcRecords) ? npcRecords : [])
         .filter(record => text(record?.name) && text(record?.presence) === '在场')
         .sort((a, b) => (b?.importance === '重要') - (a?.importance === '重要') || intOr(b?.lastFloor, 0) - intOr(a?.lastFloor, 0))
-        .slice(0, 6)
         .map(record => `${text(record.name)}${record.importance === '重要' ? '★' : ''}`);
     if (present.length) lines.push(`在场人物：${present.join('、')}`);
-    // 待办任务：只取进行中的，最多 3 条。
+    // 待办任务：只取进行中的，全部列出。
     const tasks = (Array.isArray(worldSnapshot?.tasks) ? worldSnapshot.tasks : [])
-        .filter(task => task?.status === 'active' && text(task?.title))
-        .slice(0, 3);
+        .filter(task => task?.status === 'active' && text(task?.title));
     if (tasks.length) lines.push(`待办任务：${tasks.map(task => `${text(task.title)}（第 ${intOr(task.day)} 天接）`).join('、')}`);
-    // 记忆线头与恩怨：未覆盖的伏笔/恩怨标签条目，新的在前，各最多 3 条。
+    // 记忆线头与恩怨：未覆盖的伏笔/恩怨标签条目，新的在前，全部列出。
     const open = (Array.isArray(memorySnapshot?.entries) ? memorySnapshot.entries : []).filter(entry => entry && !text(entry.supersededBy));
     const byTag = tag => open
         .filter(entry => entry.tag === tag && entryHead(entry))
         .sort((a, b) => intOr(b?.day, 0) - intOr(a?.day, 0))
-        .slice(0, 3)
         .map(entryHead);
     const threads = byTag('thread');
     if (threads.length) lines.push(`未了线头：${threads.join('、')}`);

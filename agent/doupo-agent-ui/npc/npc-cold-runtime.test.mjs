@@ -232,11 +232,12 @@ for (const chosenDay of [2, 3]) {
     assert.deepEqual(droppedNames, ['纳兰嫣然'], '名单外的人被丢弃并计数');
 }
 
-// —— B2/B3 注入材料：分块预算装包、留痕段、事件行带点名 ——
+// —— B2/B3 注入材料：事件全量装包、留痕段、事件行带点名 ——
 {
     const manyEvents = Array.from({ length: 40 }, (_, index) => ({ id: `m${index}`, day: 2, text: `事件正文${index}。`.repeat(50) }));
     const packed = buildNpcColdUser({ record: { name: '萧战' }, fromDay: 1, toDay: 2, events: manyEvents, floors: [] });
-    assert.match(packed, /另有 \d+ 条较次要的事件没装进来/, '装不下的整条丢并计数');
+    assert.ok(!packed.includes('另有'), '事件全量装包，不再有丢弃计数（用户口径 2026-11-19）');
+    assert.ok(packed.includes('事件正文39'), '第 40 条事件也在喂料里');
     assert.ok(!packed.includes('…【'), '事件行不被拦腰截断');
     const withNote = buildNpcColdUser({ record: { name: '萧战' }, fromDay: 1, toDay: 2, events: [], floors: [], lastNote: '位置:乌坦城；派人打探消息' });
     assert.match(withNote, /【上次冷藏推进留痕】/);

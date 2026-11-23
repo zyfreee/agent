@@ -40,12 +40,12 @@ test('对话上下文：档案/关系/知情/开环/时间五块都拼出来，�
     assert.match(bare, /当面交谈/);
 });
 
-test('对话用户块：历史截尾、玩家最新一句在最后，没说话也给出空手牌', () => {
+test('对话用户块：历史全量进喂料、玩家最新一句在最后，没说话也给出空手牌', () => {
     const history = Array.from({ length: 15 }, (_, index) => ({ who: index % 2 ? '他' : '玩家', text: `第${index}句` }));
     const user = buildChatUser({ history, playerText: '前辈，焚决第三层卡住了', context: '【人物档案】药老' });
     assert.match(user, /【人物档案】药老/);
-    assert.match(user, /第3句/, '15 句截尾保留最后 12 句（第3句起）');
-    assert.doesNotMatch(user, /第2句/, '更早的截掉');
+    assert.match(user, /第0句/, '默认不截尾：历史全量进喂料（用户口径 2026-11-19）');
+    assert.match(user, /第14句/, '最早到最新一句不少');
     assert.match(user, /【玩家这次说】\n玩家：前辈，焚决第三层卡住了/);
     const silent = buildChatUser({ history: [], playerText: '', context: '' });
     assert.match(silent, /（刚开始，还没有说过话）/);
@@ -78,4 +78,11 @@ test('收尾回写解析：log 必有，learned 截到 6 条，favor 压回带�
     assert.equal(NPC_CHAT_JSON_SCHEMA.required[0], 'say');
     assert.equal(NPC_CHAT_RECAP_JSON_SCHEMA.required[0], 'log');
     assert.equal(Object.isFrozen(NPC_CHAT_JSON_SCHEMA), true);
+});
+
+test('对话上下文：往来概要单独成行', () => {
+    const context = buildChatContext({
+        record: { name: '掌柜', logSummary: '连着三天做药材生意', log: [{ text: '卖了凝血散' }], exp: [], favor: 3 },
+    });
+    assert.ok(context.includes('往来概要：连着三天做药材生意'), context);
 });

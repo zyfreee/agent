@@ -147,25 +147,20 @@ assert.deepEqual(Object.values(TAG_LABELS), ['恩怨', '情报', '伏笔', '大�
     assert.equal(rt2.consolidate({ ids: [small2.id], big: { title: '总结成的大记忆', text: '总结成的大记忆', related: ['别处'] } }).reason, 'duplicate_text');
 }
 
-// OPT-050C: a capacity-failed undo must not partially replace a model floor.
+// OPT-050C: 退役登记不封顶（用户口径 2026-11-19）——200+ 条墓碑照常收，楼层撤销照常成功。
 {
     const rt = createMemoryRuntime({ now: NOW });
     const tail = Array.from({ length: 199 }, (_, i) => [String(10 + i * 2), String(10 + i * 2)]);
     rt.restore({ entries: [{ id: 'm2', text: '待撤销删除' }], retiredIds: [], retiredSeqRanges: [['1', '1'], ['3', '3'], ...tail.slice(0, 198)], externalRetiredIds: [] });
-    rt.apply([{ op: 'forgetMemory', id: 'm2', opId: 'delete' }], { source: 'decide', floor: 9 });
-    rt.apply([{ op: '_restoreEntry', entry: { id: 'm406', text: '补满容量' } }], { source: 'panel' });
-    rt.apply([{ op: 'forgetMemory', id: 'm406' }], { source: 'panel' });
-    const before = rt.snapshot();
-    const retry = rt.apply([], { source: 'decide', floor: 9, day: 99 });
-    assert.equal(retry.status, 'rejected');
-    assert.equal(retry.rejected[0].reason, 'rollback_failed');
-    assert.deepEqual(rt.snapshot(), before, 'failed floor rollback is atomic');
-    assert.deepEqual(rt.apply([{ op: 'forgetMemory', id: 'm2', opId: 'delete' }], { source: 'panel' }).duplicate, ['delete'], 'failed undo does not release opId');
-    rt.apply([{ op: 'remember', title: '日期未变', text: '日期未变', related: ['某地'] }], { source: 'panel' });
-    assert.equal(rt.snapshot().entries.at(-1).day, 1, 'rejected rollback does not change hidden current day');
+    assert.equal(rt.apply([{ op: 'forgetMemory', id: 'm2', opId: 'delete' }], { source: 'decide', floor: 9 }).status, 'applied', '第 201 条退役照常接受');
+    assert.equal(rt.apply([{ op: '_restoreEntry', entry: { id: 'm406', text: '补满容量' } }], { source: 'panel' }).status, 'applied');
+    assert.equal(rt.apply([{ op: 'forgetMemory', id: 'm406' }], { source: 'panel' }).status, 'applied');
+    assert.equal(rt.apply([], { source: 'decide', floor: 9, day: 99 }).status, 'noop', '楼层撤销不再有容量障碍');
+    assert.equal(rt.isRetired('m2'), false, '撤销恢复 m2');
+    assert.equal(rt.isRetired('m406'), true, 'panel 改动不受楼层撤销影响');
 }
 
-// OPT-050B: mutations retain all tombstones, enforce capacity atomically, undo splits exactly.
+// OPT-050B: mutations retain all tombstones（退役登记不封顶）, undo splits exactly.
 {
     const rt = createMemoryRuntime({ now: NOW });
     const add = label => rt.apply([{ op: 'remember', title: label, text: label, related: ['某地'] }], { source: 'panel' }).applied[0].id;
@@ -173,7 +168,7 @@ assert.deepEqual(Object.values(TAG_LABELS), ['恩怨', '情报', '伏笔', '大�
     rt.restore(JSON.parse(JSON.stringify(rt.snapshot())));
     assert.equal(rt.isRetired('m1'), true, 'oldest tombstone survives201 retirements/reload');
     assert.deepEqual(rt.snapshot().retiredSeqRanges, [['1', '201']]);
-    assert.equal(rt.snapshot().retiredIds.length, 200, 'bounded compatibility ring unchanged');
+    assert.equal(rt.snapshot().retiredIds.length, 201, '退役登记全量保留，不封顶');
     assert.equal(rt.status().legacy_gap, false);
     rt.apply([{ op: '_restoreEntry', entry: { id: 'm100', text: '撤销中间删除' } }], { source: 'panel' });
     assert.deepEqual(rt.snapshot().retiredSeqRanges, [['1', '99'], ['101', '201']]);
@@ -188,22 +183,6 @@ assert.deepEqual(Object.values(TAG_LABELS), ['恩怨', '情报', '伏笔', '大�
     rt.apply([{ op: '_restoreEntry', entry: { id: 'm001', text: '恢复外部' } }], { source: 'panel' });
     assert.equal(rt.isRetired('m1'), true, 'external undo never clears canonical tombstone');
     assert.equal(rt.isRetired('m001'), false);
-
-    const fullRanges = Array.from({ length: 200 }, (_, i) => [String(i * 2 + 1), String(i * 2 + 1)]);
-    rt.restore({ entries: [{ id: 'm500', text: '不能删除', title: '小事', related: ['某地'], tier: 'small' }], retiredIds: [], retiredSeqRanges: fullRanges, externalRetiredIds: [] });
-    let before = rt.snapshot();
-    assert.equal(rt.apply([{ op: 'forgetMemory', id: 'm500' }], { source: 'panel' }).rejected[0].reason, 'capacity_exceeded');
-    assert.deepEqual(rt.snapshot(), before);
-    assert.equal(rt.consolidate({ ids: ['m500'], big: { title: '总结', text: '总结正文', related: ['某地'] } }).reason, 'capacity_exceeded');
-    assert.deepEqual(rt.snapshot(), before);
-    rt.restore({ entries: [{ id: 'external-new', text: '外部满额' }], retiredIds: [], retiredSeqRanges: [], externalRetiredIds: Array.from({ length: 200 }, (_, i) => `external-${i}`) });
-    before = rt.snapshot();
-    assert.equal(rt.apply([{ op: 'forgetMemory', id: 'external-new' }], { source: 'panel' }).rejected[0].reason, 'capacity_exceeded');
-    assert.deepEqual(rt.snapshot(), before);
-    rt.restore({ entries: [], retiredIds: [], retiredSeqRanges: [['1', '3'], ...fullRanges.slice(1).map(pair => pair.map(n => String(BigInt(n) + 10n)))], externalRetiredIds: [] });
-    before = rt.snapshot();
-    assert.equal(rt.apply([{ op: '_restoreEntry', entry: { id: 'm2', text: '不能分裂' } }], { source: 'panel' }).rejected[0].reason, 'capacity_exceeded');
-    assert.deepEqual(rt.snapshot(), before, 'undo cannot overflow by splitting into201 ranges');
 }
 
 // OPT-050A: bounded exact tombstone metadata, conservative legacy diagnostics and restore.
@@ -231,10 +210,8 @@ assert.deepEqual(Object.values(TAG_LABELS), ['恩怨', '情报', '伏笔', '大�
         { retiredSeqRanges: [['3', '2']], externalRetiredIds: [] },
         { retiredSeqRanges: [[1, 2]], externalRetiredIds: [] },
         { retiredSeqRanges: [['01', '2']], externalRetiredIds: [] },
-        { retiredSeqRanges: Array.from({ length: 201 }, (_, i) => [String(i * 2 + 1), String(i * 2 + 1)]), externalRetiredIds: [] },
-        { retiredSeqRanges: [], externalRetiredIds: Array.from({ length: 201 }, (_, i) => `external-${i}`) },
     ]) {
-        assert.equal(rt.restore(bad).status, 'rejected', 'invalid/overcapacity restore is fail-closed');
+        assert.equal(rt.restore(bad).status, 'rejected', 'invalid restore is fail-closed');
         assert.deepEqual(rt.snapshot(), before, 'failed restore is atomic');
     }
 }

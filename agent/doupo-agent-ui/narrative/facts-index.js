@@ -1,7 +1,5 @@
 import { VOLUME_INDEX } from './volume-index.generated.js';
 
-const MAX_ENTRIES = 4000;
-const CATALOG_SUMMARY_CHARS = 30;
 const TOKEN_MIN = 2;
 
 /**
@@ -160,7 +158,7 @@ export function createFactsIndex({ volumeIndex = VOLUME_INDEX } = {}) {
             ? Object.values(book.entries)
             : [];
         let skipped = 0;
-        for (const entry of raw.slice(0, MAX_ENTRIES)) {
+        for (const entry of raw) {
             if (!entry || typeof entry !== 'object') { skipped += 1; continue; }
             const uid = Number(entry.uid);
             const content = typeof entry.content === 'string' ? entry.content.trim() : '';

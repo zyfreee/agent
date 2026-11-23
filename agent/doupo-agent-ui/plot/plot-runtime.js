@@ -21,10 +21,10 @@ const MAX_THREAD_DETAIL = 200;
 const MAX_BASIS_TEXT = 80;
 const MAX_OUTCOME_TEXT = 80;
 /** addThread 的 dueDays（预期回收窗口）上限，与世界事件同时限同宽。 */
-const MAX_THREAD_DAYS = 90;
-const MAX_OPEN_THREADS = 12;
-const DEFAULT_MAX_THREADS = 40;
-const DEFAULT_MAX_LOG = 30;
+const MAX_THREAD_DAYS = 999999;
+const MAX_OPEN_THREADS = 999999;
+const DEFAULT_MAX_THREADS = 999999;
+const DEFAULT_MAX_LOG = 999999;
 const DEFAULT_MAX_OPS = 8;
 const MAX_ID_TEXT = 12;
 const MAX_LOG_TEXT = 300;
@@ -98,8 +98,8 @@ function normalizeState(raw, now) {
 }
 
 export function createPlotRuntime({ maxThreads = DEFAULT_MAX_THREADS, maxLog = DEFAULT_MAX_LOG, maxOps = DEFAULT_MAX_OPS, now = () => new Date().toISOString() } = {}) {
-    maxThreads = clampInt(maxThreads, 10, 200, DEFAULT_MAX_THREADS);
-    maxLog = clampInt(maxLog, 5, 200, DEFAULT_MAX_LOG);
+    maxThreads = clampInt(maxThreads, 1, 999999, DEFAULT_MAX_THREADS);
+    maxLog = clampInt(maxLog, 1, 999999, DEFAULT_MAX_LOG);
     maxOps = clampInt(maxOps, 1, 32, DEFAULT_MAX_OPS);
     let state = initialState(now);
     let seq = 0;

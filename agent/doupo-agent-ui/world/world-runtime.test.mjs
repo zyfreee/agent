@@ -41,8 +41,8 @@ const nearId = snap1.nearEvents[0].id;
 const worldId = snap1.worldEvents[0].id;
 result = runtime.apply([{ op: 'resolveEvent', id: nearId }, { op: 'pinEvent', id: worldId, pinned: true }]);
 assert.equal(result.applied.length, 2);
-assert.equal(runtime.snapshot().nearEvents[0].done, true);
-assert.equal(runtime.snapshot().worldEvents[0].pinned, true);
+assert.equal(runtime.snapshot().nearEvents.length, 0, '已了结事件整条出账（用户口径 2026-11-18）');
+assert.equal(runtime.snapshot().worldEvents[0].pinned, true, '未了结的事件照常置顶');
 assert.equal(runtime.status().near, 0, '已了结事件不再计入未了结数');
 
 // —— setInfo 与 setClock ——
@@ -80,9 +80,8 @@ assert.equal(runtime.apply([{ op: 'updateTask', id: 't1', detail: '已锁定嫌�
 assert.equal(runtime.snapshot().tasks[0].detail, '已锁定嫌疑人是米特尔家的护卫');
 result = runtime.apply([{ op: 'completeTask', id: 't1' }]);
 assert.equal(result.applied.length, 1);
-const doneTask = runtime.snapshot().tasks.find(task => task.id === 't1');
-assert.equal(doneTask.status, 'done');
-assert.equal(runtime.apply([{ op: 'completeTask', id: 't1' }]).rejected[0].reason, 'task_already_done');
+assert.equal(runtime.snapshot().tasks.some(task => task.id === 't1'), false, '完成的任务当场出账（用户口径 2026-11-18）');
+assert.equal(runtime.apply([{ op: 'completeTask', id: 't1' }]).rejected[0].reason, 'task_not_found');
 runtime.apply([{ op: 'addTask', title: '临时任务', detail: '待删' }]);
 result = runtime.apply([{ op: 'deleteTask', id: 't2' }]);
 assert.equal(result.applied.length, 1);
@@ -114,16 +113,17 @@ assert.equal(runtime.apply([{ op: 'completeTask', id: 't2' }]).rejected[0].reaso
     }
 }
 
-// —— 任务随存档恢复：详情/来源/状态一字不丢 ——
+// —— 任务随存档恢复：详情/来源/状态一字不丢（完成的任务已出账，存档里只剩进行中的） ——
+runtime.apply([{ op: 'addTask', title: '恢复用的进行中任务', detail: '已锁定嫌疑人是米特尔家的护卫', basis: '药铺掌柜悬赏托付' }]);
 const taskSaved = JSON.parse(JSON.stringify(runtime.snapshot()));
 const taskReloaded = createWorldRuntime({ now: () => 'rt' });
 taskReloaded.restore(taskSaved);
-const taskBack = taskReloaded.snapshot().tasks.find(task => task.id === 't1');
-assert.equal(taskBack.title, '查出城东窃贼的来历');
+const taskBack = taskReloaded.snapshot().tasks.find(task => task.title === '恢复用的进行中任务');
+assert.equal(taskBack.title, '恢复用的进行中任务');
 assert.equal(taskBack.detail, '已锁定嫌疑人是米特尔家的护卫');
 assert.equal(taskBack.basis, '药铺掌柜悬赏托付');
-assert.equal(taskBack.status, 'done');
-assert.equal(taskReloaded.apply([{ op: 'addTask', title: '恢复后立新任务' }]).applied[0].summary.includes('t2'), true, '编号接现存最大值');
+assert.equal(taskBack.status, 'active');
+assert.equal(taskReloaded.apply([{ op: 'addTask', title: '恢复后立新任务' }]).applied.length, 1, '编号接现存最大值，恢复后可继续立任务');
 
 // —— 势力：登记/更新/删除，按名字 upsert，存档保留 ——
 result = runtime.apply([
@@ -289,16 +289,16 @@ assert.equal(runtime.apply([{ op: 'addEvent', scope: 'near', title: '坏时限',
 runtime.apply([{ op: 'addEvent', scope: 'world', title: '短期悬赏', text: '短期悬赏', days: 2 }]);
 const bounty = runtime.snapshot().worldEvents.find(event => event.text === '短期悬赏');
 runtime.apply([{ op: 'setClock', day: runtime.status().clock.day + 5 }]);
-assert.equal(runtime.snapshot().worldEvents.find(event => event.id === bounty.id).done, true, '跳钟后限时事件到期');
+assert.equal(runtime.snapshot().worldEvents.some(event => event.id === bounty.id), false, '跳钟后限时事件到期即出账（用户口径 2026-11-18）');
 assert.ok(runtime.snapshot().log.some(entry => entry.summaries.some(text => text.includes('到期了结'))), '清扫要留流水');
 
 // —— 重 roll 撤销连带到期：旧批次的推进撤销时，被它到期了结的事件复活 ——
 runtime.apply([{ op: 'addEvent', scope: 'near', title: '将到期的悬案', text: '将到期的悬案', days: 2 }]);
 const coldCase = runtime.snapshot().nearEvents.find(event => event.text === '将到期的悬案');
 runtime.apply([{ op: 'advance', days: 5 }], { source: 'llm', floor: 30 });
-assert.equal(runtime.snapshot().nearEvents.find(event => event.id === coldCase.id).done, true);
+assert.equal(runtime.snapshot().nearEvents.some(event => event.id === coldCase.id), false, '到期了结即出账（用户口径 2026-11-18）');
 runtime.apply([{ op: 'advance', days: 1 }], { source: 'llm', floor: 30 });
-assert.equal(runtime.snapshot().nearEvents.find(event => event.id === coldCase.id).done, false, '撤销要连到期一起回滚');
+assert.equal(runtime.snapshot().nearEvents.some(event => event.id === coldCase.id), false, '被清走的了结事件不随回滚复活');
 
 // —— 同楼重 roll：先撤销上一版指令，再执行新指令，不重复记账 ——
 const clockBeforeSwipe = { ...runtime.snapshot().clock };
@@ -357,7 +357,7 @@ assert.equal(back.updatedAt, saved.updatedAt, '存档时间戳要保留，不能
 result = runtime.apply([{ op: 'addEvent', scope: 'near', title: '新事件', text: '新事件' }]);
 const ids = runtime.snapshot().nearEvents.map(event => event.id);
 assert.ok(ids.some(id => Number(id.slice(1)) > 9), `恢复后编号应接续最大值：${ids.join(',')}`);
-assert.equal(runtime.apply([{ op: 'resolveEvent', id: 'e9' }]).applied.length, 1, '已了结事件仍可再次定位');
+assert.equal(runtime.snapshot().worldEvents.some(event => event.id === 'e9'), false, 'restore 进来的已了结事件会在下一次落账时出账（用户口径 2026-11-18）');
 
 // —— 上限清理：先清已了结的，再清未置顶最老的，置顶永不丢 ——
 const bounded = createWorldRuntime({ maxEvents: 10 });
@@ -429,12 +429,7 @@ for (const days of [undefined, 2]) {
     assert.equal(r.snapshot().nearEvents.find(item => item.title === '散布者招供').cause, rumorId);
     const resolved = r.apply([{ op: 'resolveEvent', id: rumorId, outcome: '验证为假，散布者被扭送' }]);
     assert.ok(resolved.applied[0].summary.includes('结论：验证为假'), resolved.applied[0].summary);
-    assert.equal(r.snapshot().nearEvents.find(item => item.id === rumorId).resolvedNote, '验证为假，散布者被扭送');
-    // undo 连结论一起恢复
-    r.apply([resolved.applied[0].undo], { source: 'revert' });
-    const restored = r.snapshot().nearEvents.find(item => item.id === rumorId);
-    assert.equal(restored.done, false);
-    assert.equal(restored.resolvedNote, '', '了结结论随撤销清空');
+    assert.equal(r.snapshot().nearEvents.some(item => item.id === rumorId), false, '了结即出账（用户口径 2026-11-18），结论留在世界流水里');
 }
 
 // —— A3 updateEvent：大事推进阶段/传闻升级，undo 往返，无变化拒绝 ——
@@ -500,3 +495,32 @@ for (const days of [undefined, 2]) {
 }
 
 console.log('world runtime tests passed');
+
+// —— 已了结的事件不占账（用户口径 2026-11-18）——
+const purgeRuntime = createWorldRuntime({ now: () => 't1' });
+purgeRuntime.apply([
+    { op: 'addEvent', scope: 'near', title: '还活着的事', text: '进行中' },
+    { op: 'addEvent', scope: 'near', title: '马上要了结的事', text: '会被整条清走' },
+    { op: 'addEvent', scope: 'world', title: '已了结的世界事', text: 'resolveEvent 后清走' },
+], { source: 'llm' });
+purgeRuntime.apply([{ op: 'resolveEvent', id: 'e2', outcome: '完了' }, { op: 'resolveEvent', id: 'e3', outcome: '也完了' }], { source: 'llm' });
+const purgeStatus = purgeRuntime.status();
+assert.equal(purgeStatus.near, 1, '已了结的身边事件要整条清出账');
+assert.equal(purgeStatus.world, 0, '已了结的世界事件也要清');
+assert.equal(purgeStatus.total, 1, '账上只剩还活着的事件');
+const purgeSnap = purgeRuntime.snapshot();
+assert.equal(purgeSnap.nearEvents.some(event => event.done === true), false, 'done 事件不留账');
+assert.equal(purgeSnap.worldEvents.some(event => event.done === true), false, 'world 栏同理');
+assert.equal(purgeSnap.log.length > 0, true, '了结动作本身仍留在世界流水里');
+
+// —— 已完成的任务同样不占账（用户口径 2026-11-18）——
+const taskPurgeRuntime = createWorldRuntime({ now: () => 't2' });
+taskPurgeRuntime.apply([
+    { op: 'addTask', title: '还开着的任务', detail: '进行中' },
+    { op: 'addTask', title: '马上完成的任务', detail: '会被整条清走' },
+], { source: 'llm' });
+taskPurgeRuntime.apply([{ op: 'completeTask', id: 't2' }], { source: 'llm' });
+const taskPurgeStatus = taskPurgeRuntime.status();
+assert.equal(taskPurgeStatus.tasks.active, 1, '完成的任务要整条清出任务栏');
+assert.equal(taskPurgeStatus.tasks.done, 0, 'done 任务不留账');
+assert.equal(taskPurgeStatus.tasks.total, 1, '任务栏只剩还开着的');

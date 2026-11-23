@@ -27,7 +27,8 @@ assert.equal(runtime.apply([{ op: 'record', title: 't', detail: 'd' }], { day: 1
 assert.equal(runtime.apply([{ op: 'record', title: 't', detail: 'd', target: 'x'.repeat(41) }], { day: 12 }).applied.length, 1);
 assert.equal(runtime.snapshot().records.at(-1).target.length, 41, '超长 target 原样保留');
 assert.equal(runtime.apply([{ op: 'record', title: 't', detail: 'd', target: 't', ripen: 0 }], { day: 12 }).rejected[0].reason, 'bad_ripen');
-assert.equal(runtime.apply([{ op: 'record', title: 't', detail: 'd', target: 't', ripen: 366 }], { day: 12 }).rejected[0].reason, 'bad_ripen');
+// 发酵期限不再有 365 天帽（用户口径 2026-11-19）：366 天也照收。
+assert.equal(runtime.apply([{ op: 'record', title: 't366', detail: 'd366', target: 't366', ripen: 366 }], { day: 12 }).applied.length, 1);
 assert.equal(runtime.apply([{ op: 'spawn' }], { day: 12 }).rejected[0].reason, 'unknown_op');
 assert.equal(runtime.apply([{ op: 'record', ...auction }], { day: 12, floor: 11, source: 'manual' }).rejected[0].reason, 'duplicate_record');
 // 换一楼但同一天、同一个对象、同一个说法：按“同一件事”挡住，避免模型换楼重复记账。
@@ -46,11 +47,11 @@ assert.equal(deep.rejected[0].reason, 'chain_too_deep');
 // 发酵日：到点自动翻牌，不用人再点。
 const delayed = runtime.apply([{ op: 'record', title: '云岚宗过问', detail: '长老派人下山查青灵丹去向', target: '云岚宗', weight: 'major', ripen: 5 }], { day: 15, floor: 16 });
 assert.equal(delayed.applied[0].record.ripenDay, 20);
-assert.equal(runtime.pendingRipen(15).length, 1);
+assert.equal(runtime.pendingRipen(15).length, 2, 't366 与 delayed 都在待发酵队列');
 assert.equal(runtime.status().due, 0);
 const swept = runtime.apply([], { day: 20 });
 assert.deepEqual(swept.due, [delayed.applied[0].record.id]);
-assert.equal(runtime.pendingRipen(20).length, 0);
+assert.equal(runtime.pendingRipen(20).length, 1, 't366 还在待发酵队列里');
 assert.equal(runtime.status().ripened, 1);
 
 const ripen = runtime.apply([{ op: 'ripen', ref: 'i1', detail: '加列家族的人开始挨家问话' }], { day: 21 });

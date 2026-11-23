@@ -32,7 +32,7 @@ await test('OPT-053 full assembly: clock/season/presence/tasks/threads/grudges i
     assert.equal(lines.length, 6);
 });
 
-await test('OPT-053 tag sections sort newest first and cap at three, superseded excluded', () => {
+await test('OPT-053 tag sections sort newest first (no cap), superseded excluded', () => {
     const entries = [
         entry('m1', 'thread', '线头旧', 10),
         entry('m2', 'thread', '线头新', 20),
@@ -43,7 +43,8 @@ await test('OPT-053 tag sections sort newest first and cap at three, superseded 
     ];
     const summary = buildWakeUpSummary({ memorySnapshot: { entries }, worldSnapshot: {}, npcRecords: [] });
     const line = summary.split('\n').find(item => item.startsWith('未了线头：'));
-    assert.equal(line, '未了线头：线头四、线头五、线头新');
+    assert.equal(line, '未了线头：线头四、线头五、线头新、线头三、线头旧', '不设 3 条帽：全部按新→旧排列（用户口径 2026-11-19）');
+    assert.equal(line.includes('被覆盖的线头'), false, 'superseded excluded');
     assert.equal(summary.includes('旧账恩怨：'), false, 'no grudge tag means no grudge line');
     assert.equal(summary.split('\n').some(line => line.startsWith('时间：')), false, 'no clock means no time line');
     assert.equal(summary.split('\n').some(line => line.startsWith('在场人物：')), false);

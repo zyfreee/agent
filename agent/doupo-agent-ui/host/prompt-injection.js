@@ -1,7 +1,6 @@
 const DEFAULT_KEY = 'doupo_facts';
-const DEFAULT_MAX_CHARS = 2400;
+const DEFAULT_MAX_CHARS = Infinity;
 const MAX_DEPTH = 100;
-const MAX_USED_IDS = 24;
 
 function clampDepth(value) {
     const depth = Number.isFinite(Number(value)) ? Math.floor(Number(value)) : 0;
@@ -100,7 +99,7 @@ export function createPromptInjection({ getContext, key = DEFAULT_KEY, maxChars 
             last = { status: 'failed', at: stamp(), reason: String(error?.message ?? error) };
             return { status: 'failed', reason: String(error?.message ?? error) };
         }
-        const usedIds = Array.isArray(injection.usedIds) ? injection.usedIds.slice(0, MAX_USED_IDS) : [];
+        const usedIds = Array.isArray(injection.usedIds) ? injection.usedIds : [];
         last = { status: 'injected', at: stamp(), chars: text.length, truncated, depth, usedIds, cleared: false };
         return {
             status: 'injected',

@@ -41,10 +41,9 @@ assert.ok(user.includes('只输出 JSON'));
 const emptyUser = buildPlotDecideUser({ snapshot: {}, clockText: '', floors: [] });
 assert.ok(emptyUser.includes('账本还是空的'), '空账本要有占位说明');
 assert.ok(emptyUser.includes('（还没有聊天内容）'));
-// 楼层截断：正文超 800 字截掉
+// 2026-11-18 用户口径：正文整楼全喂不截断
 const longUser = buildPlotDecideUser({ snapshot, clockText: '', floors: [{ role: '角色', text: '长'.repeat(900) }] });
-assert.ok(longUser.includes('长'.repeat(800)));
-assert.ok(!longUser.includes('长'.repeat(801)), '单楼正文按 800 字截断');
+assert.ok(longUser.includes('长'.repeat(900)), '单楼正文全喂不截断');
 
 // —— parsePlotDecision：抽 JSON、坏输出分类、坏条目过滤 ——
 {

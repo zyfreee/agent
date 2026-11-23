@@ -37,9 +37,9 @@ assert.ok(user.includes('时钟：第 5 天 08:20'));
 assert.ok(user.includes('名声：乌坦城小有名气；通缉度：无'), '现状要带名声/通缉');
 assert.ok(user.includes('？(e3 第5天) 城东连着三家铺子夜里失窃（传闻·未证实）（依据：'), '传闻事件要带未证实标记');
 assert.ok(user.includes('123|物品|青莲地心火|异火榜第十九'));
-assert.ok(user.includes('【最近聊天记录（旧 → 新，共 12 楼）】'), '楼数上限 12，最新的留下');
-assert.ok(user.includes('第13楼的内容') && user.includes('第2楼的内容'), '保留最新的 12 楼');
-assert.ok(!user.includes('第1楼的内容') && !user.includes('第0楼的内容'), '最旧的两楼被裁掉');
+// 2026-11-18 用户口径：正文后调用只读「用户输入＋正文」两楼、全文不截——组装层不再有楼数天花板。
+assert.ok(user.includes('【最近聊天记录（旧 → 新，共 14 楼）】'), '给几楼喂几楼');
+assert.ok(user.includes('第13楼的内容') && user.includes('第0楼的内容'), '最旧最新的楼都在');
 
 // 空输入也有可读结构
 const empty = buildDecideUser({});

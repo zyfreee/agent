@@ -59,11 +59,16 @@ assert.equal(role, 0);
 assert.equal(injection.write({ text: 'x' }, { depth: -5 }).depth, 0);
 assert.equal(injection.write({ text: 'x' }, { depth: 999 }).depth, 100);
 
-// Budget cut keeps the head and says so.
-const long = '甲'.repeat(DEFAULT_MAX_CHARS + 10);
-const truncated = injection.write({ text: long });
+// 默认不限制（用户口径 2026-11-19）：不传预算就整段写入。
+const long = '甲'.repeat(5000);
+const whole = injection.write({ text: long });
+assert.equal(whole.truncated, false);
+assert.equal(whole.chars, 5000);
+
+// 明确给预算才截：保留头部并注明。
+const truncated = injection.write({ text: '乙'.repeat(2500) }, { maxChars: 2400 });
 assert.equal(truncated.truncated, true);
-assert.equal(truncated.chars <= DEFAULT_MAX_CHARS + 32, true);
+assert.equal(truncated.chars <= 2432, true);
 assert.equal(context.writes.at(-1)[1].includes('已按预算截断'), true);
 
 const custom = injection.write({ text: '乙'.repeat(50) }, { maxChars: 10 });

@@ -30,6 +30,8 @@ function prepareHarness() {
         agentPromptInjection: channel, persistFactsLastInjection() {}, currentAgentScope: () => ({ sessionId: 'A', branchId: 'main' }),
         agentTurnStages: { resolveInjection: request => { inputs.push(request); return pending.promise; } }, lastLookupInfo: null,
         getHostContext: () => ({ chat: [] }),
+        // 拾卷喂料的可见窗口（2026-11-18 起全文不截）：切片外依赖，桩给四楼。
+        globalReadFloors: () => 4,
     });
     return { run, pending, writes, inputs, invalidate: () => { current = false; } };
 }
@@ -131,7 +133,7 @@ function prepareHarness() {
             validatePreview: () => ({ status: valid ? 'ready' : 'stale' }), mark: (name, value) => marked.push(value),
             rememberUndo: value => remembered.push(value) },
         agentNpcLedger: { get: () => ({ name: 'A', version: 2 }), list: () => [{ name: 'A', aliases: [], titles: [] }] }, applyNpcLedgerPayload: () => { applied.push(1); return { status: 'applied' }; },
-        getHostContext: () => ({ chat: [] }), lastReplyIndex: () => 0, persistNpcLedger() {}, persistNpcCold() {}, setNpcLedgerStatus() {}, refreshNpcLedgerPage() {},
+        getHostContext: () => ({ chat: [] }), lastReplyIndex: () => 0, persistNpcLedger() {}, persistNpcCold() {}, setNpcLedgerStatus() {}, refreshNpcLedgerPage() {}, refreshColdCapsule() {},
     });
     assert.equal(confirm('cold-1').status, 'stale'); assert.equal(applied.length, 0);
     valid = true; assert.equal(confirm('cold-1').status, 'confirmed'); assert.equal(marked[0].previewId, 'cold-1');

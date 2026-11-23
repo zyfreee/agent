@@ -28,7 +28,6 @@ const WEIGHTS = Object.freeze(['major', 'minor']);
 // 字段不再设字数/条数上限（正文、标题、依据、细节、引文、召回钥匙一律原样入库）：
 // 详略由提示词引导，注入侧各有字数预算兜底；只保留 day 的合理性边界。
 const MAX_DAY = 99999;
-const DEFAULT_MAX_LOG = 40;
 const Opid_MEMORY = 200;
 
 function text(value) {
@@ -94,8 +93,6 @@ function normalizeOneEntry(raw) {
     };
 }
 
-const MAX_RETIRED_IDS = 200;
-
 // Internal counter only: persisted IDs stay exact decimal strings, including legacy large IDs.
 function identitySequence(id) {
     return /^m\d+$/.test(id) ? BigInt(id.slice(1)) : 0n;
@@ -136,7 +133,6 @@ function tombstoneMetadata(source, ids) {
         if (last && range[0] <= last[1] + 1n) { if (range[1] > last[1]) last[1] = range[1]; }
         else merged.push([...range]);
     }
-    if (merged.length > MAX_RETIRED_IDS || external.size > MAX_RETIRED_IDS) throw new Error('capacity_exceeded');
     return { retiredSeqRanges: merged.map(pair => pair.map(String)), externalRetiredIds: [...external] };
 }
 
@@ -172,7 +168,7 @@ function normalizeState(raw, now) {
         manualVersion: intIn(source.manualVersion, 0, 9999999) ?? 0,
         entries,
         log: (Array.isArray(source.log) ? source.log : []),
-        retiredIds: retired.slice(-MAX_RETIRED_IDS),
+        retiredIds: retired,
         ...metadata,
         legacy_gap: source.legacy_gap === true || !Array.isArray(source.retiredSeqRanges) || !Array.isArray(source.externalRetiredIds),
         updatedAt: text(source.updatedAt) || now(),
@@ -396,7 +392,7 @@ export function createMemoryRuntime({ maxOps, now = () => new Date().toISOString
         try { metadata = tombstoneMetadata(state, keys); }
         catch (error) { return { ok: false, reason: String(error?.message ?? error) }; }
         Object.assign(state, metadata);
-        state.retiredIds = [...new Set([...state.retiredIds, ...keys])].slice(-MAX_RETIRED_IDS);
+        state.retiredIds = [...new Set([...state.retiredIds, ...keys])];
         return { ok: true };
     }
 
@@ -411,7 +407,6 @@ export function createMemoryRuntime({ maxOps, now = () => new Date().toISOString
                 if (value < BigInt(b)) ranges.push([String(value + 1n), b]);
             }
         }
-        if (ranges.length > MAX_RETIRED_IDS) return { ok: false, reason: 'capacity_exceeded' };
         state.retiredSeqRanges = ranges;
         state.externalRetiredIds = state.externalRetiredIds.filter(key => key !== id);
         state.retiredIds = state.retiredIds.filter(key => key !== id);

@@ -14,9 +14,6 @@ import { titleSimilarity } from '../core/text-similarity.js';
 
 const CLAIM_TEXT_MAX = 80;
 const CLAIMS_MAX = 12;
-const FLOOR_TEXT_MAX = 1600;
-const INJECTED_TEXT_MAX = 4000;
-const STATUS_LINES_MAX = 1200;
 
 export const VERIFY_JSON_SCHEMA = Object.freeze({
     type: 'object',
@@ -98,34 +95,32 @@ export function shouldVerify({ text, supplyKeys = [], npcNames = [], gate = true
 }
 
 /**
- * 拼核验材料：最近正文 + 本轮注入的原著资料 + 三本台账现状行。
- * 各段独立截断，总量再压到 maxChars——证据不足时模型按规矩判 unverified。
+ * 拼核验材料：「用户输入＋正文」两楼（全文不截）+ 本轮注入的原著资料 + 三本台账现状行。
+ * 用户口径 2026-11-18：正文喂料不截断；台账/资料侧的证据行仍按各自上限装配。
  */
-export function buildVerifyUser({ floors = [], injectedText = '', worldLines = '', selfLines = '', npcLines = '', maxChars = 6000 } = {}) {
+export function buildVerifyUser({ floors = [], injectedText = '', worldLines = '', selfLines = '', npcLines = '' } = {}) {
     const blocks = [];
     const chatLines = (Array.isArray(floors) ? floors : []).map(floor => {
-        const text = typeof floor?.text === 'string' ? floor.text.slice(0, FLOOR_TEXT_MAX) : '';
+        const text = typeof floor?.text === 'string' ? floor.text.trim() : '';
         return text ? `【${floor.role === '玩家' ? '玩家' : '角色'}】${text}` : '';
     }).filter(Boolean);
-    blocks.push(chatLines.length ? `【最近正文】\n${chatLines.join('\n')}` : '【最近正文】\n（空的，输出 {"claims":[]}）');
-    const injected = typeof injectedText === 'string' ? injectedText.slice(0, INJECTED_TEXT_MAX) : '';
+    blocks.push(chatLines.length ? `【本轮输入与正文】\n${chatLines.join('\n')}` : '【本轮输入与正文】\n（空的，输出 {"claims":[]}）');
+    const injected = typeof injectedText === 'string' ? injectedText : '';
     blocks.push(injected ? `【原著资料（本轮已注入正文模型的）】\n${injected}` : '【原著资料（本轮已注入正文模型的）】\n（本轮没有注入原著条目）');
     const status = [
-        worldLines ? `【世界现状】\n${String(worldLines).slice(0, STATUS_LINES_MAX)}` : '',
-        selfLines ? `【纳戒现状】\n${String(selfLines).slice(0, STATUS_LINES_MAX)}` : '',
-        npcLines ? `【人物现状】\n${String(npcLines).slice(0, STATUS_LINES_MAX)}` : '',
+        worldLines ? `【世界现状】\n${String(worldLines)}` : '',
+        selfLines ? `【纳戒现状】\n${String(selfLines)}` : '',
+        npcLines ? `【人物现状】\n${String(npcLines)}` : '',
     ].filter(Boolean);
     if (status.length) blocks.push(status.join('\n\n'));
     else blocks.push('【台账现状】\n（三本台账都不可用；证据不足时按规矩判 unverified）');
-    const body = blocks.join('\n\n');
-    return body.length > maxChars ? body.slice(0, maxChars) : body;
+    return blocks.join('\n\n');
 }
 
 /** 带原因重试：坏 JSON 时把拒绝原因喂回去再试一次（与 npc-recorder 的 buildRecordRetryUser 同款）。 */
-export function buildVerifyRetryUser({ user = '', raw = '', reason = '', maxChars = 7000 } = {}) {
+export function buildVerifyRetryUser({ user = '', raw = '', reason = '' } = {}) {
     const note = `你上一次的输出无法使用（原因：${String(reason).slice(0, 200)}）。原始输出开头是：${String(raw).slice(0, 200)}。请重新只输出符合格式的 JSON。`;
-    const body = `${user}\n\n${note}`;
-    return body.length > maxChars ? body.slice(0, maxChars) : body;
+    return `${user}\n\n${note}`;
 }
 
 function stripFence(raw) {
@@ -213,8 +208,8 @@ export function normalizeVerifyLedger(value) {
     return {
         version: 1,
         seq: Number.isInteger(source.seq) && source.seq >= 0 ? source.seq : entries.length,
-        entries: entries.slice(-VERIFY_ENTRIES_MAX),
-        exemptions: exemptions.slice(-VERIFY_EXEMPTIONS_MAX),
+        entries: entries.slice(),
+        exemptions: exemptions.slice(),
     };
 }
 
@@ -242,7 +237,7 @@ export function buildVerifyEntries(claims, { floor = null, kind = 'claim' } = {}
 }
 
 /** 归并：豁免命中不记；同楼同断言不重记；FIFO 截断。 */
-export function mergeVerifyEntries(entries, additions, { exemptions = [], max = VERIFY_ENTRIES_MAX, floor = null } = {}) {
+export function mergeVerifyEntries(entries, additions, { exemptions = [], max = Infinity, floor = null } = {}) {
     const merged = [...(Array.isArray(entries) ? entries : [])];
     const floorKey = new Set(merged.filter(item => floor === null || item.floor === floor).map(item => `${item.floor}|${exemptKeyOf(item)}|${item.text}`));
     let added = 0;
@@ -271,7 +266,7 @@ export function markEntryFalsePositive(entries, { id, expectedRevision } = {}) {
 }
 
 /** 把误报条目的断言键升级成豁免（同键后续不再记）。 */
-export function addExemption(exemptions, entry, { max = VERIFY_EXEMPTIONS_MAX } = {}) {
+export function addExemption(exemptions, entry, { max = Infinity } = {}) {
     const list = Array.isArray(exemptions) ? [...exemptions] : [];
     const key = exemptKeyOf(entry);
     if (!key.replace(/\|/g, '')) return { accepted: false, reason: 'empty_key', exemptions: list };
@@ -297,4 +292,4 @@ export function isVerbatimCopy(claimText, proseText) {
 /** 相似度工具转发：测试与接线层共用同一把尺子。 */
 export { titleSimilarity };
 
-export { CLAIM_TEXT_MAX, CLAIMS_MAX, FLOOR_TEXT_MAX, INJECTED_TEXT_MAX, STATUS_LINES_MAX };
+export { CLAIM_TEXT_MAX, CLAIMS_MAX };

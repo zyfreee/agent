@@ -9,8 +9,6 @@
 
 import { NPC_FIELDS, favorLabel } from './npc-ledger.js';
 
-const MAX_FLOOR_CHARS = 1400;
-
 /** 记录员看到的字段清单，和档案格式同源，改格式不用改两处。 */
 function fieldMenu() {
     const groups = new Map();
@@ -42,6 +40,7 @@ ${fieldMenu()}
 依据：好感单次超过 ±5、或写了「经历」时必写一句（不超过 80 字）：正文里哪句话支撑了这个变化。普通小改动不用写。
 情绪：这个人这一楼冒出来的短期情绪（感激、恼怒、警惕、愧疚、畏惧、心疼……一个词），可选；三天后自动消散。长期态度走「态度」，别写进情绪。
 流水：一句话记“他做了什么/发生了什么”，会原样追加到流水里，不要覆盖旧记录。
+往来概要：把给出的「旧往来概要」与这几楼的新互动合并成一段不超过 100 字的概述——保留长期事实与没结的钩子（他在忙什么、和你之间悬着什么、欠着什么），旧概要里已有的内容不要重复展开，纯过场细节直接丢；没给旧概要就从这几楼的互动起笔。写了流水就顺带更新它，不用攒批。
 经历：只记“这个人从此不一样了”的重大转变——心智改变、态度反转、立场易帜、身份更替、结下死契或深仇这类。一件一行，写成完整的一句话；普通小事写“流水”，不要写进经历。
 在场：true 或 false；同时尽量给位置和正在做什么。
 重要：true 或 false。只对过了门槛建档的人打标：主角身边的关键人物为 true，其余为 false。
@@ -59,7 +58,7 @@ ${fieldMenu()}
 7. 只输出 JSON，不要解释、不要 Markdown 代码块、不要前后缀。
 
 【输出格式】
-{"人物":[{"姓名":"萧战","性别":"男","年龄":"四十五岁","出身":"萧家","身份":"萧家族长","师承":"萧家先祖","境界":"斗皇","态度":"对后辈多了几分认可","位置":"萧家议事厅","在场":true,"重要":true,"好感":3,"好感理由":"护住族人","流水":"主持族会，压下二长老的质疑","经历":"亲眼看见萧炎击败加列奥后，从轻视转为忌惮，开始暗中调查他的底细"}]}
+{"人物":[{"姓名":"萧战","性别":"男","年龄":"四十五岁","出身":"萧家","身份":"萧家族长","师承":"萧家先祖","境界":"斗皇","态度":"对后辈多了几分认可","位置":"萧家议事厅","在场":true,"重要":true,"好感":3,"好感理由":"护住族人","流水":"主持族会，压下二长老的质疑","往来概要":"萧战主持族会压下二长老质疑，转而暗中留意萧炎在比武中显露的实力","经历":"亲眼看见萧炎击败加列奥后，从轻视转为忌惮，开始暗中调查他的底细"}]}
 
 这一楼没有任何人物变化时，输出 {"人物":[]}。`;
 
@@ -89,6 +88,7 @@ export const NPC_RECORD_JSON_SCHEMA = Object.freeze({
                     在场: { type: 'boolean' },
                     重要: { type: 'boolean' },
                     流水: { type: 'string' },
+                    往来概要: { type: 'string' },
                     经历: { type: 'string' },
                 },
                 required: ['姓名'],
@@ -105,7 +105,7 @@ function clampText(value, limit) {
 }
 
 /** 人物簿索引：让人物记录员知道“谁已经建过档、现在什么状态”，避免重复造人和写错好感的起点。 */
-export function ledgerLines(records = [], { limit = 60 } = {}) {
+export function ledgerLines(records = [], { limit = Infinity } = {}) {
     return records.slice(0, limit).map(record => {
         const bits = [record.name];
         bits.push(record.presence === '在场' ? '在场' : '不在场');
@@ -114,23 +114,24 @@ export function ledgerLines(records = [], { limit = 60 } = {}) {
         if (record.identity) bits.push(record.identity);
         if (record.location) bits.push(`在${record.location}`);
         if (record.appellation) bits.push(`称呼玩家「${record.appellation}」`);
+        if (record.logSummary) bits.push(`往来：${record.logSummary}`);
         return bits.join('｜');
     });
 }
 
 /**
- * 拼给记录员的这一轮材料：最近楼层 + 人物簿索引 + 当前世界第几天。
- * 楼层只截最近一两楼——记录员是记账，不是回顾全书。
+ * 拼给记录员的这一轮材料：「用户输入＋正文」两楼（全文不截）+ 人物簿索引 + 当前世界第几天。
+ * 用户口径 2026-11-18：正文后的记账只看这两楼（玩家这轮做了什么 + 正文演了什么），整楼喂入，不截断。
  */
-export function buildNpcRecordUser({ floors = [], records = [], playerName = '', day = null, worldbookLines = [], playerContext = null, maxChars = 6000 } = {}) {
+export function buildNpcRecordUser({ floors = [], records = [], playerName = '', day = null, worldbookLines = [], playerContext = null } = {}) {
     const blocks = [];
     const chatLines = [];
     for (const floor of floors) {
-        const text = clampText(floor?.text, MAX_FLOOR_CHARS);
+        const text = typeof floor?.text === 'string' ? floor.text.trim() : '';
         if (!text) continue;
         chatLines.push(`【${floor.role === '玩家' ? (playerName || '玩家') : '角色'}】${text}`);
     }
-    if (chatLines.length) blocks.push(`【最近楼层】\n${chatLines.join('\n')}`);
+    if (chatLines.length) blocks.push(`【本轮输入与正文】\n${chatLines.join('\n')}`);
     const book = Array.isArray(worldbookLines) ? worldbookLines.filter(line => typeof line === 'string' && line.trim()) : [];
     if (book.length) blocks.push(`【世界书参考】（正文里点到的人物/地方，新建档时可以先照着填，条目没写的留空）\n${book.join('\n')}`);
     const context = playerContextLine(playerContext);
@@ -139,8 +140,7 @@ export function buildNpcRecordUser({ floors = [], records = [], playerName = '',
     if (index.length) blocks.push(`【人物簿索引】（已建档的人，只作参照，不要重复建档）\n${index.join('\n')}`);
     else blocks.push('【人物簿索引】\n（还是空的，这一轮出现的每个人都要新建档案）');
     if (Number.isFinite(Number(day))) blocks.push(`【世界时间】第 ${Number(day)} 天`);
-    const body = blocks.join('\n\n');
-    return body.length > maxChars ? body.slice(0, maxChars) : body;
+    return blocks.join('\n\n');
 }
 
 /** 玩家此刻在哪、什么境界——由外部“个人信息”模块接进来；没接就没有这一行。 */

@@ -30,7 +30,7 @@ const user = buildVerifyUser({
     selfLines: '境界：斗者三星｜金币：120',
     npcLines: '云韵（在场，好感 +6）',
 });
-assert.match(user, /【最近正文】/);
+assert.match(user, /【本轮输入与正文】/);
 assert.match(user, /【玩家】我继续修炼/);
 assert.match(user, /\[11\] 青莲地心火/);
 assert.match(user, /【世界现状】/);
@@ -38,15 +38,16 @@ assert.match(user, /【纳戒现状】/);
 assert.match(user, /【人物现状】/);
 const emptyUser = buildVerifyUser({ floors: [], injectedText: '', worldLines: '', selfLines: '', npcLines: '' });
 assert.match(emptyUser, /三本台账都不可用/);
-const huge = buildVerifyUser({ floors: [{ role: '角色', text: '长'.repeat(9000) }], injectedText: '短', worldLines: '', selfLines: '', npcLines: '', maxChars: 300 });
-assert.ok(huge.length <= 300, '总量超限时截断');
+// 2026-11-18 用户口径：正文喂料整楼全喂不截断。
+const huge = buildVerifyUser({ floors: [{ role: '角色', text: '长'.repeat(9000) }], injectedText: '短', worldLines: '', selfLines: '', npcLines: '' });
+assert.ok(huge.includes('长'.repeat(9000)), '正文整楼全喂');
 
 // ---------- 重试材料 buildVerifyRetryUser ----------
 
 const retry = buildVerifyRetryUser({ user: '原始材料', raw: '{"cla', reason: 'JSON 解析失败' });
 assert.match(retry, /原始材料/);
 assert.match(retry, /重新只输出符合格式的 JSON/);
-assert.ok(buildVerifyRetryUser({ user: 'u', raw: 'r'.repeat(500), reason: 'x'.repeat(500), maxChars: 100 }).length <= 100);
+assert.ok(buildVerifyRetryUser({ user: 'u', raw: 'r'.repeat(500), reason: 'x'.repeat(500) }).includes('u'));
 
 // ---------- 解析 parseVerifyReply ----------
 
@@ -136,12 +137,13 @@ assert.equal(markEntryFalsePositive(marked.entries, { id: entries[0].id, expecte
 assert.equal(markEntryFalsePositive(marked.entries, { id: entries[0].id, expectedRevision: 2 }).reason, 'already_marked');
 assert.equal(markEntryFalsePositive(marked.entries, { id: 'nope', expectedRevision: 1 }).reason, 'unknown_entry');
 
-// FIFO 截断 + normalize 兜底
+// 台账不再截断（用户口径 2026-11-19）：新旧账全量保留 + normalize 兜底
 const stuffed = mergeVerifyEntries(
     Array.from({ length: VERIFY_ENTRIES_MAX }, (_, index) => ({ id: `old${index}`, kind: 'claim', floor: index, ts: '', status: 'open', revision: 1, subject: 'a', predicate: 'b', value: 'c', basisRef: 'none', text: `t${index}` })),
     entries, { floor: 42 },
 );
-assert.ok(stuffed.entries.length <= VERIFY_ENTRIES_MAX);
+assert.ok(stuffed.entries.length >= VERIFY_ENTRIES_MAX, '旧账全留');
+assert.ok(entries.every(entry => stuffed.entries.some(item => item.id === entry.id)), '新账也全收');
 const bad = normalizeVerifyLedger({ entries: 'x', exemptions: 5, seq: -3 });
 assert.deepEqual(bad.entries, []);
 assert.deepEqual(bad.exemptions, []);

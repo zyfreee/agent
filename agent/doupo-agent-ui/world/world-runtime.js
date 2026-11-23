@@ -90,8 +90,8 @@ const MAX_LABEL_TEXT = 60;
 const MAX_ADVANCE_DAYS = 365;
 const MAX_ADVANCE_MINUTES = 1439;
 const MINUTE_OF_DAY = 1440;
-const DEFAULT_MAX_EVENTS = 60;
-const DEFAULT_MAX_LOG = 40;
+const DEFAULT_MAX_EVENTS = 999999;
+const DEFAULT_MAX_LOG = 999999;
 const DEFAULT_MAX_OPS = 8;
 const Opid_MEMORY = 200;
 
@@ -314,8 +314,8 @@ function rankEvent(event) {
 }
 
 export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DEFAULT_MAX_LOG, maxOps = DEFAULT_MAX_OPS, now = () => new Date().toISOString() } = {}) {
-    maxEvents = clampInt(maxEvents, 10, 200, DEFAULT_MAX_EVENTS);
-    maxLog = clampInt(maxLog, 5, 200, DEFAULT_MAX_LOG);
+    maxEvents = clampInt(maxEvents, 1, 999999, DEFAULT_MAX_EVENTS);
+    maxLog = clampInt(maxLog, 1, 999999, DEFAULT_MAX_LOG);
     maxOps = clampInt(maxOps, 1, 32, DEFAULT_MAX_OPS);
     let state = initialState(now);
     let seq = 0;
@@ -362,6 +362,24 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
         const kept = list.filter(event => keep.has(event.id));
         if (scope === 'world') state.worldEvents = kept;
         else state.nearEvents = kept;
+    }
+
+    /** 已了结的事件与任务不占账（用户口径 2026-11-18）：resolveEvent 与到期自动了结之后，
+     *  把 done 的事件整条清出事件栏；completeTask 完成的任务同样整条清出任务栏——
+     *  账上只留还活着的。返回清掉的条数。 */
+    function purgeResolved() {
+        let purged = 0;
+        for (const scope of SCOPES) {
+            const list = eventsOf(scope);
+            const kept = list.filter(event => event.done !== true);
+            purged += list.length - kept.length;
+            if (scope === 'world') state.worldEvents = kept;
+            else state.nearEvents = kept;
+        }
+        const liveTasks = state.tasks.filter(task => task.status !== 'done');
+        purged += state.tasks.length - liveTasks.length;
+        state.tasks = liveTasks;
+        return purged;
     }
 
     function rememberOpId(opId) {
@@ -786,6 +804,9 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
             state.log.push({ at: now(), source, summaries: applied.map(item => item.summary).concat(warnings), rejected: rejected.length });
             state.log = state.log.slice(-maxLog);
         }
+        // 已了结的事件整条清出账（用户口径 2026-11-18）：撤销步骤里留有 _restoreEvent，
+        // 重 roll 回滚时事件若已被清走，恢复会记一条 not_found，其余步骤照常。
+        purgeResolved();
         return { status: rejected.length && !applied.length ? 'rejected' : applied.length ? 'applied' : 'noop', applied, rejected, duplicate, warnings, jumpGap };
     }
 
@@ -830,5 +851,5 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
         return { status: 'noted' };
     }
 
-    return Object.freeze({ apply, snapshot, status, restore, reset, note, formatClock: () => formatClock(state.clock), config: Object.freeze({ maxEvents, maxLog, maxOps }) });
+    return Object.freeze({ apply, snapshot, status, restore, reset, note, purgeResolved, formatClock: () => formatClock(state.clock), config: Object.freeze({ maxEvents, maxLog, maxOps }) });
 }

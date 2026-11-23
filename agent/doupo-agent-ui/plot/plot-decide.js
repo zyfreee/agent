@@ -12,8 +12,6 @@
 import { extractJson } from '../host/llm-client.js';
 import { buildPlotInjection } from './plot-ops.js';
 
-const MAX_FLOORS = 12;
-const FLOOR_CHARS = 800;
 
 /** 默认决定提示词（system）。改写时保持"只输出 JSON"与操作字段名不变，否则脚本解析不到。 */
 export const PLOT_DECIDE_PROMPT = [
@@ -68,11 +66,11 @@ export const PLOT_JSON_SCHEMA = Object.freeze({
 export function buildPlotDecideUser({ snapshot = {}, clockText = '', floors = [], settleLines = [] } = {}) {
     const ledgerBlock = buildPlotInjection(snapshot, { maxChars: 1200 });
     const settle = (Array.isArray(settleLines) ? settleLines : []).filter(line => typeof line === 'string' && line.trim());
+    // 正文后剧情决定只喂「用户输入＋正文」两楼，全文不截——用户口径 2026-11-18。
     const chat = (Array.isArray(floors) ? floors : [])
-        .slice(-MAX_FLOORS)
         .map(floor => {
             const role = floor?.role === '玩家' ? '玩家' : '角色';
-            const body = typeof floor?.text === 'string' ? floor.text.trim().slice(0, FLOOR_CHARS) : '';
+            const body = typeof floor?.text === 'string' ? floor.text.trim() : '';
             return body ? `[${role}] ${body}` : null;
         })
         .filter(Boolean);

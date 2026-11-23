@@ -22,8 +22,6 @@ const EXP_MAX = 120;
 const LOG_MAX = 60;
 const LEARNED_MAX = 6;
 const LEARNED_ITEM_MAX = 80;
-const HISTORY_TAIL = 12;
-const HISTORY_LINE_MAX = 500;
 
 export const NPC_CHAT_PROMPT = `你在为《斗破苍穹》同人小说扮演一个人物：此刻他正和主角（玩家）私下交谈。人物簿档案、关系、他知道的事、没兑现的承诺都给了你——说话必须全部从这些材料里来。
 
@@ -99,7 +97,7 @@ function relationLines(relations) {
             return relation ? `${other}（${relation}）` : other;
         })
         .filter(Boolean);
-    return [...new Set(lines)].slice(0, 8);
+    return [...new Set(lines)];
 }
 
 /** 记忆块拼装：档案 / 关系 / 知情 / 开环 / 时间。谁没料就写「（暂无）」，块永远在。 */
@@ -131,13 +129,13 @@ export function buildChatContext({ record, relations = [], knownFacts = [], loop
         who.privateAttitude ? `私下：${who.privateAttitude}` : '',
     ].filter(Boolean);
     const secrets = [];
-    if (who.secret?.what) secrets.push(`秘密：${String(who.secret.what).slice(0, 60)}`);
+    if (who.secret?.what) secrets.push(`秘密：${String(who.secret.what)}`);
     if (Array.isArray(who.moods) && who.moods.length) {
-        secrets.push(`近期情绪：${who.moods.slice(0, 3).map(mood => mood?.text).filter(Boolean).join('、')}`);
+        secrets.push(`近期情绪：${who.moods.map(mood => mood?.text).filter(Boolean).join('、')}`);
     }
-    const logTail = (Array.isArray(who.log) ? who.log.slice(-3) : [])
+    const logTail = (Array.isArray(who.log) ? who.log : [])
         .map(item => typeof item?.text === 'string' ? item.text : '').filter(Boolean);
-    const expTail = (Array.isArray(who.exp) ? who.exp.slice(-2) : [])
+    const expTail = (Array.isArray(who.exp) ? who.exp : [])
         .map(item => typeof item?.text === 'string' ? item.text : '').filter(Boolean);
     blocks.push([
         `【人物档案】${profile}`,
@@ -145,18 +143,19 @@ export function buildChatContext({ record, relations = [], knownFacts = [], loop
         attitudes.length ? attitudes.join('；') : `好感 ${Number(who.favor) || 0}`,
         secrets.length ? secrets.join('；') : '',
         expTail.length ? `最近经历：${expTail.join('；')}` : '',
+        typeof who.logSummary === 'string' && who.logSummary.trim() ? `往来概要：${who.logSummary.trim()}` : '',
         logTail.length ? `最近流水：${logTail.join('；')}` : '',
     ].filter(Boolean).join('\n'));
 
     const relationsBlock = relationLines(relations);
     blocks.push(`【他身边的人】${relationsBlock.length ? relationsBlock.join('、') : '（暂无已记录的关系）'}`);
 
-    const facts = (Array.isArray(knownFacts) ? knownFacts : []).slice(0, 10).map(item => text(item, 100)).filter(Boolean);
+    const facts = (Array.isArray(knownFacts) ? knownFacts : []).map(item => text(item)).filter(Boolean);
     blocks.push(`【他知道的事（知情范围）】\n${facts.length ? facts.join('\n') : '（没有额外的知情记录：只按档案与常识说话）'}`);
 
-    const loopLines = (Array.isArray(loops) ? loops : []).slice(0, 5)
+    const loopLines = (Array.isArray(loops) ? loops : [])
         .map(loop => {
-            const promise = text(loop?.promise, PROMISE_MAX);
+            const promise = typeof loop?.promise === 'string' ? loop.promise : '';
             if (!promise) return '';
             const due = Number.isFinite(Number(loop?.dueDay)) && Number(loop.dueDay) > 0 ? `（说好第 ${Number(loop.dueDay)} 天前）` : '';
             return `-${promise}${due}`;
@@ -173,18 +172,18 @@ export function buildChatContext({ record, relations = [], knownFacts = [], loop
 }
 
 /** 对话历史 + 本轮玩家的话。历史截尾，玩家最新一句放最后并加重。 */
-export function buildChatUser({ history = [], playerText = '', context = '', maxHistory = HISTORY_TAIL } = {}) {
+export function buildChatUser({ history = [], playerText = '', context = '', maxHistory = Infinity } = {}) {
     const tail = (Array.isArray(history) ? history : [])
         .slice(-Math.max(1, maxHistory))
         .map(item => {
             const who = item?.who === '玩家' ? '玩家' : '他';
-            const line = text(item?.text, HISTORY_LINE_MAX);
+            const line = typeof item?.text === 'string' ? item.text : '';
             return line ? `${who}：${line}` : '';
         })
         .filter(Boolean);
     const blocks = [context].filter(Boolean);
     blocks.push(`【最近的交谈】\n${tail.length ? tail.join('\n') : '（刚开始，还没有说过话）'}`);
-    const fresh = text(playerText, HISTORY_LINE_MAX);
+    const fresh = typeof playerText === 'string' ? playerText.trim() : '';
     blocks.push(fresh ? `【玩家这次说】\n玩家：${fresh}` : '【玩家这次说】\n（玩家没有说话，只是看着他——他按性格先开口或等待）');
     return blocks.join('\n\n');
 }
@@ -212,19 +211,19 @@ export function parseChatReply(raw, { favorStepMax = CHAT_FAVOR_STEP_MAX } = {})
 }
 
 /** 收尾回写的喂料：档案要点 + 这段对话的往来（截尾）。 */
-export function buildChatRecapUser({ record = null, history = [], channel = '面对面', maxHistory = 24, maxChars = 5000 } = {}) {
+export function buildChatRecapUser({ record = null, history = [], channel = '面对面', maxHistory = Infinity, maxChars = Infinity } = {}) {
     const who = record && typeof record === 'object' ? record : {};
     const head = [who.name || '（未知名）', who.identity || '', who.stage ? `关系阶段：${who.stage}` : '', `好感 ${Number(who.favor) || 0}`].filter(Boolean).join('｜');
     const lines = (Array.isArray(history) ? history : [])
         .slice(-Math.max(1, maxHistory))
         .map(item => {
             const role = item?.who === '玩家' ? '玩家' : '他';
-            const line = text(item?.text, HISTORY_LINE_MAX);
+            const line = typeof item?.text === 'string' ? item.text : '';
             return line ? `${role}：${line}` : '';
         })
         .filter(Boolean);
     const body = [`【这个人】${head}`, `【这段对话（${channel === '传讯' ? '传讯玉简' : '当面'}）】\n${lines.length ? lines.join('\n') : '（没有往来）'}`].join('\n\n');
-    return body.length > maxChars ? body.slice(0, maxChars) : body;
+    return body;
 }
 
 /** 收尾回写解析：log 必有（寻常寒暄也要有一句流水）；learned 收成界内数组。 */

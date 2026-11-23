@@ -88,6 +88,7 @@ test('OPT-023 settlement clips future sections through the shared volume trimmer
         agentFactsIndex: { stats: () => ({ total: 1 }), matchTokens: () => [{ uid: 1 }], get: () => ({ uid: 1, name: '药材', content: '当前可知\n〔卷04 增补〕\n未来秘密' }) },
         currentVolumeForWorld: () => 1, trimToVolume, buildSettleResultUser: value => JSON.stringify(value), readInjectedChannelTexts: () => [],
         SETTLE_CATEGORIES: [], settleScopeKey: () => 'A', currentSettings: () => ({}), worldDay: () => 1,
+        globalReadFloors: () => 4,
     });
     const collect = await run;
     const result = await collect([{ is_user: true, mes: '查看药材' }]); assert.match(result.user, /当前可知/); assert.doesNotMatch(result.user, /未来秘密/);
@@ -142,6 +143,25 @@ test('OPT-051 same-floor rerun replaces the recorded contribution through record
         npcLedgerSettings: () => ({ enabled: true, every: 1, floors: 2, connection: 'custom', prompt: '', overrides: {} }),
         advancedMode: () => true,
         cleanFloorEntries: async entries => (Array.isArray(entries) ? entries : []).map(({ role, text }) => ({ role, text })),
+        // 记账喂料现在是公共助手 collectReplyFloor（读「用户输入＋正文」两楼）：切片外依赖，桩按同款口径给。
+        collectReplyFloor: async source => {
+            const list = Array.isArray(source) ? source : [];
+            let replyIdx = -1;
+            for (let i = list.length - 1; i >= 0; i -= 1) {
+                const m = list[i];
+                if (m && typeof m.mes === 'string' && m.mes.trim() && m.is_user !== true && m.is_system !== true) { replyIdx = i; break; }
+            }
+            if (replyIdx < 0) return [];
+            let userIdx = -1;
+            for (let i = replyIdx - 1; i >= 0; i -= 1) {
+                const m = list[i];
+                if (m?.is_user === true && typeof m.mes === 'string' && m.mes.trim()) { userIdx = i; break; }
+            }
+            const raws = [];
+            if (userIdx >= 0) raws.push({ role: '玩家', text: list[userIdx].mes, isUser: true, depth: list.length - 1 - userIdx });
+            raws.push({ role: '角色', text: list[replyIdx].mes, isUser: false, depth: list.length - 1 - replyIdx });
+            return raws;
+        },
         npcRecordRunning: false, lastNpcLedgerFloor: floorMarker, lastNpcLedgerReplyIdentity: identityMarker,
         getHostContext: () => ({ chat }), lastReplyIndex: list => list.length - 1, captureAgentContinuation: () => ({ current: () => true }),
         agentLlmClient: { availableFor: () => true, complete: () => pending.promise },
@@ -176,6 +196,34 @@ test('OPT-029 scope-only message owner survives own writes but not chat changes'
     const owner = capture();
     chat.push({ mes: 'own message' }); chat[0].mes = 'own update'; assert.equal(owner.current(), true);
     scope = 'B'; assert.equal(owner.current(), false); scope = 'A'; epoch += 1; assert.equal(owner.current(), false);
+    const fresh = capture(); enabled = false; assert.equal(fresh.current(), false);
+});
+
+test('OPT-061B continuation identity is structural: ecosystem rewrites survive, swipe/floor changes do not', () => {
+    // 「标签补全」这类 TavernHelper 脚本会在凭据捕获后用 setChatMessages 改写最新 AI 楼的正文
+    // （2026-11-20 实跑三轮复现）：结构口径下不再误判成新回合；换 swipe / 加楼仍然要作废。
+    let scope = 'A', epoch = 0, enabled = true, chat = [{ is_user: true, mes: 'input' }, { mes: 'reply', swipe_id: 0 }];
+    const { captureAgentContinuation: capture } = createCaptureAgents({
+        getEpoch: () => epoch, settleScopeKey: () => scope, getContext: () => ({ chat }),
+        currentSettings: () => ({ enabled }), lastReplyIndex: list => list.length - 1,
+    });
+    const owner = capture();
+    // 生态脚本在捕获后改写正文（长度与内容都变了）：结构不变，凭据必须仍然有效。
+    chat[1].mes = 'reply' + '——标签补全追加的正文与状态栏标签'.repeat(3);
+    assert.equal(owner.current(), true, 'post-capture mes rewrite must not invalidate');
+    // 换 swipe：作废。
+    chat[1].swipe_id = 1; assert.equal(owner.current(), false, 'swipe change invalidates');
+    chat[1].swipe_id = 0;
+    // 加新楼：作废。
+    chat.push({ is_user: true, mes: 'next input' }); assert.equal(owner.current(), false, 'floor count change invalidates');
+    chat.pop();
+    // 楼层对象被整体替换（重 roll 场景）：作废；换回原对象引用才恢复。
+    const originalReply = chat[1];
+    chat[1] = { mes: 'new swipe body', swipe_id: 0 }; assert.equal(owner.current(), false, 'reply object replacement invalidates');
+    chat[1] = originalReply;
+    assert.equal(owner.current(), true, 'restored structure revalidates against the same chat');
+    scope = 'B'; assert.equal(owner.current(), false);
+    scope = 'A'; epoch += 1; assert.equal(owner.current(), false);
     const fresh = capture(); enabled = false; assert.equal(fresh.current(), false);
 });
 

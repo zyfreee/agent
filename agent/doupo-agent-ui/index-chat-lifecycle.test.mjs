@@ -49,13 +49,21 @@ try {
     switchChat(original);
     returning.call.resolve(empty);
     assert.equal((await returning.promise).status, 'stale', 'switching away and back invalidates by epoch');
-    for (const change of [chat => { chat.chat[0].mes += '（编辑）'; }, chat => { chat.chat[0].swipe_id += 1; }, chat => { chat.chat = []; }, chat => { chat.chatMetadata.branch_id = 'fork'; }]) {
+    // 内容改写（「标签补全」这类生态脚本在捕获后合法改写最新 AI 楼的正文）：结构口径下不算
+    // 新回合，请求照常完成（empty ops 落一份 decide 日志属正常）；换 swipe / 换聊天数组 /
+    // 换分支仍然立刻作废。
+    switchChat(context('edited-reply'));
+    const rewritten = await start(() => agent.memoryDecide({ source: 'manual' }));
+    active.chat[0].mes += '（标签补全追加）';
+    rewritten.call.resolve(empty);
+    assert.notEqual((await rewritten.promise).status, 'stale', 'post-capture mes rewrite must not discard the request');
+    for (const change of [chat => { chat.chat[0].swipe_id += 1; }, chat => { chat.chat = []; }, chat => { chat.chatMetadata.branch_id = 'fork'; }]) {
         switchChat(context('edited-reply'));
         const staleReply = await start(() => agent.memoryDecide({ source: 'manual' }));
         const before = snapshot();
         change(active);
         staleReply.call.resolve(empty);
-        assert.equal((await staleReply.promise).status, 'stale', 'edited/swiped/deleted/branched reply must be discarded');
+        assert.equal((await staleReply.promise).status, 'stale', 'swiped/deleted/branched reply must be discarded');
         assert.equal(snapshot(), before);
     }
 

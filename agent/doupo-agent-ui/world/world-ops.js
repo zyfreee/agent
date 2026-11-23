@@ -15,9 +15,8 @@ import { capWorldOp } from './world-runtime.js';
  * rising 档就是原来的固定值，calm 收紧、storm 放开。
  */
 export function injectionLimits(tension) {
-    if (tension === 'storm') return { near: 8, world: 8 };
-    if (tension === 'rising') return { near: 8, world: 6 };
-    return { near: 6, world: 4 };
+    // 注入条数不设上限（用户口径 2026-11-19）：台账里未了结的事件全量投放，节奏交给氛围排序。
+    return { near: Infinity, world: Infinity };
 }
 
 /** 斗气大陆历：360 天一年，90 天一季。纯推导值，不占状态。 */
@@ -28,7 +27,6 @@ export function seasonOf(day) {
     if (dayInYear <= 270) return '秋';
     return '冬';
 }
-const DEFAULT_MAX_CHARS = 900;
 const DEFAULT_MAX_OPS = 8;
 const FENCE_RE = /```world[^\S\n]*\n([\s\S]*?)```/g;
 const OP_LINE_RE = /^[ \t]*\{[ \t]*"op"[ \t]*:/;
@@ -43,10 +41,10 @@ export const OPS_GUIDE = [
     '{"op":"addEvent","scope":"world","title":"炼药师大会提前","text":"皇室宣布炼药师大会提前","basis":"上楼贵族宾客的谈话里放出风声","day":6,"weight":"major","days":10}',
     '```',
     '可用操作：advance(days≤365,minutes≤1439)；setClock(day,minute,label)；addTask(title必写≤20字短标题,detail≤300字完整内容,basis,days=时限≤90)；completeTask(id)；deleteTask(id)；updateTask(id,detail)；setFaction(name,stance:敌对hostile|警惕wary|中立neutral|友好friendly|同盟allied,type类型:宗门|家族|帝国|学院|佣兵团|商会|联盟,level实力档次,leader首领,elders高层阵容,members成员构成,location驻地,assets底蕴产业,relations势力关系,dynamics动向,basis；档案字段留空保留旧值，首次登记尽量写全)；deleteFaction(name)；setPerson(name,attitude态度,basis)；deletePerson(name)；addEvent(scope:near|world,title必写≤16字短标题（如“乌坦城集市风波”，一眼看懂）,text≤120字完整内容,basis≤80字,day,location=事发地点≤40字,weight:minor|major|rumor,days=有效天数≤90，到期自动了结,participants=点名到的人物或势力名（台账里已有的名字，≤3个）,cause=起因事件编号)；setTension(level:calm平静|rising升温|storm风波)；resolveEvent(id,outcome=了结结论≤80字)；updateEvent(id,title/text/weight/days：给已登记的事件推进阶段——大事酝酿到爆发、传闻升级实锤、时限延期都走它)；pinEvent(id)；setInfo(field:weather|location|era|reputation|wanted,text≤80字)。id 用上面事件列表里的编号。',
-    '任务规则：玩家承诺或接下的事、人物托付、剧情给出的明确目标才立任务（addTask），detail 写清目标、背景与现状；任务达成后及时 completeTask，作废用 deleteTask；进展变化用 updateTask 更新详情。不要把每件小事都立成任务。',
+    '任务规则：任务宁缺毋滥——每轮最多立 1 条，只记比较重要的目标：玩家郑重承诺或接下的事、人物郑重托付、剧情给出的明确主线/支线目标才立任务（addTask）；一次性的小事（买样东西、跑一趟腿、随口应承的琐事、顺手的采购）不立任务，正文里随手做完就让它过去。detail 写清目标、背景与现状；任务达成后及时 completeTask——完成的任务当场出账（台账里就不再有它了），别再引用它的编号；作废用 deleteTask；进展变化用 updateTask 更新详情。',
     '地点与氛围：事件必须符合所在地特征（魔兽山脉是兽袭与药草，帝都是权贵与阴谋），跨地发生的大事写明 location；setTension 管「世界氛围」——大事临近升 rising、风波不断升 storm、风波平息回落 calm，氛围决定这轮投放事件的频率和烈度。',
         '季节与日程：一年 360 天四季轮转（春/夏/秋/冬），环境描写、药草收成、衣着起居要跟季节对上；固定的大会、仪式、约期用 addEvent 带未来的 day 登记成预定事件，到日子再 resolveEvent。',
-        '事件取材规则：事件从最近剧情里有依据地长出来——正在发生的事、玩家行动引出的动静、所在地点此时合理的动态，内容不拘一格（市井琐事、势力动作、传闻都行），但 basis 必须一句话写清它从哪来（哪楼/谁/什么事引出的）；title 必写——4~16 字名词短语，一眼看懂是哪件事，缺标题或超长的条目会被脚本整条丢弃；没有依据的事不记，也不要把原著桥段照搬成事件，原著只在正文需要引用时用。rumor=传闻（未证实消息，正文不得当事实写；查证后 resolveEvent 带 outcome 写结论，真相或戳穿另记一条新事件并用 cause 关联原事件）；有时限的事（限期比武、悬赏、药效、期限任务）务必带上 days，注入列表会显示剩余天数，正文里的时间压力要和它对得上；addEvent 能点名就带 participants（台账「相关人物」「势力动向」里已有的名字），后台靠它知道这件事牵连到谁。机遇与危机（拍卖会、药草成熟、仇家寻上门、势力清洗）属于世界主动投放的大事，偶尔来一件、必须有依据，不要每轮都发；名声（reputation）与通缉度（wanted）只在剧情真有对应行为时更新。',
+        '事件取材规则：事件宁缺毋滥——每轮最多记 1 条（身边事件为主），只记玩家身边比较重要的事：能改变玩家处境、或值得正文再提的才记；琐碎的日常动静（开门打烊、例行运转、无变化的闲谈寒暄、纯过渡的过场）一律不记；也不必刻意为后续剧情埋线——世界影响另有账管这一层，这件事本身重要才记。事件从最近剧情里有依据地长出来，basis 必须一句话写清它从哪来（哪楼/谁/什么事引出的）；title 必写——4~16 字名词短语，一眼看懂是哪件事，缺标题或超长的条目会被脚本整条丢弃；没有依据的事不记，也不要把原著桥段照搬成事件，原著只在正文需要引用时用。rumor=传闻（未证实消息，正文不得当事实写；查证后 resolveEvent 带 outcome 写结论，真相或戳穿另记一条新事件并用 cause 关联原事件）；有时限的事（限期比武、悬赏、药效、期限任务）务必带上 days，注入列表会显示剩余天数，正文里的时间压力要和它对得上；addEvent 能点名就带 participants（台账「相关人物」「势力动向」里已有的名字），后台靠它知道这件事牵连到谁。机遇与危机（拍卖会、药草成熟、仇家寻上门、势力清洗）属于世界主动投放的大事，偶尔来一件、必须有依据，不要每轮都发；名声（reputation）与通缉度（wanted）只在剧情真有对应行为时更新。',
     '没有需要记下的变化就完全不要输出这个区块；正文照常写给玩家看，指令只是记账。',
 ].join('\n');
 
@@ -113,10 +111,10 @@ lines.push(`时钟：${formatClock(clock)}（${seasonOf(today2)}季）${textOr(c
     // 台账积累多了之后，整块推送会被一次预算裁剪全部挤掉，注入会静默退化成只剩时钟与现状。
     const stanceRank = { hostile: 0, wary: 1, allied: 2, friendly: 3, neutral: 4 };
     const factions = (Array.isArray(snapshot.factions) ? snapshot.factions : [])
-        .slice().sort((a, b) => (stanceRank[a.stance] ?? 2) - (stanceRank[b.stance] ?? 2) || (b.updatedDay ?? 0) - (a.updatedDay ?? 0)).slice(0, FACTION_LIMIT);
+        .slice().sort((a, b) => (stanceRank[a.stance] ?? 2) - (stanceRank[b.stance] ?? 2) || (b.updatedDay ?? 0) - (a.updatedDay ?? 0));
     const people = (Array.isArray(snapshot.people) ? snapshot.people : [])
-        .slice().sort((a, b) => (b.updatedDay ?? 0) - (a.updatedDay ?? 0)).slice(0, PEOPLE_LIMIT);
-    const tasks = (Array.isArray(snapshot.tasks) ? snapshot.tasks : []).filter(task => task?.status === 'active').slice(0, TASK_LIMIT);
+        .slice().sort((a, b) => (b.updatedDay ?? 0) - (a.updatedDay ?? 0));
+    const tasks = (Array.isArray(snapshot.tasks) ? snapshot.tasks : []).filter(task => task?.status === 'active');
     const sections = [
         near.length ? { header: '身边事件（未了结，可被剧情推进或 resolveEvent）：', rows: near.map(event => eventLine(event, today)) } : null,
         world.length ? { header: '世界大事（未了结）：', rows: world.map(event => eventLine(event, today)) } : null,
@@ -142,9 +140,6 @@ lines.push(`时钟：${formatClock(clock)}（${seasonOf(today2)}季）${textOr(c
     return joined();
 }
 
-const TASK_LIMIT = 8;
-const FACTION_LIMIT = 8;
-const PEOPLE_LIMIT = 10;
 
 /** 势力行：类型·驻地·档次做括号标签，首领/高层/成员/底蕴/关系逐段跟上；没填的整段跳过（老格式逐字不变）。 */
 function factionLine(faction) {

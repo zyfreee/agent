@@ -145,10 +145,11 @@ export function scoreEntries(snapshot = {}, { sceneText = '', currentDay = null,
  * 场景触发的候选条目（兜底注入与目录洪泛截断共用）：只有 triggered 的条目才算
  * "这一轮真的勾到了"，底分再高也不凑数；没有场景文本返回空。
  */
-export function topCandidates(snapshot = {}, options = {}, { limit = 12 } = {}) {
+export function topCandidates(snapshot = {}, options = {}, { limit = Infinity } = {}) {
     const scene = typeof options?.sceneText === 'string' ? options.sceneText : '';
     if (!scene) return [];
-    const cap = Number.isInteger(limit) && limit >= 1 && limit <= 40 ? limit : 12;
+    // limit 非法（NaN/负数）一律回退为不限；条数不设上限（用户口径 2026-11-19）。
+    const cap = Number.isFinite(limit) && limit >= 0 ? limit : Infinity;
     return scoreEntries(snapshot, options)
         .filter(item => item.triggered)
         .slice(0, cap)

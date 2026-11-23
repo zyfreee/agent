@@ -27,12 +27,14 @@ assert.ok(user.includes('世界影响库'));
 assert.ok(user.includes('共 2 条：未了结 1、已发酵 0、已收场 1'));
 assert.ok(user.includes('#i1'));
 assert.ok(user.includes('原著·改写'));
-assert.ok(!user.includes('floor-1 '), '太旧的楼层被截掉');
+// 2026-11-18 用户口径：正文后调用只读「用户输入＋正文」两楼、全文不截——组装层不再有楼数天花板。
+assert.ok(user.includes('floor-1 '), '给几楼喂几楼，最旧的也在');
 assert.ok(user.includes('floor-12'));
-assert.ok(!user.includes('长'.repeat(701)), '单楼正文被截到 700 字');
-assert.ok(!user.includes('entry-31'), '世界书条目最多 30 条');
-assert.ok(user.includes('entry-30'));
-assert.ok(user.includes('最近聊天记录（旧 → 新，共 10 楼）'));
+assert.ok(user.includes('长'.repeat(900)), '单楼正文全喂不截断');
+// 2026-11-19 用户口径：决定喂料无限制——原著资料有几条给几条。
+assert.ok(user.includes('entry-31'), '世界书条目不再截 30 条');
+assert.ok(user.includes('entry-35'), '第 35 条也在');
+assert.ok(user.includes('最近聊天记录（旧 → 新，共 12 楼）'));
 
 const empty = buildImpactDecideUser({ snapshot: { ...snapshot, records: [] }, floors: [] });
 assert.ok(empty.includes('本局还没有记录任何影响'));

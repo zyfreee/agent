@@ -328,7 +328,7 @@ export function presetToOverrides(preset) {
     const temperature = positive(normalized.temperature);
     if (temperature !== undefined) overrides.temperature = Math.min(2, temperature);
     const maxTokens = Number(normalized.maxTokens);
-    if (Number.isInteger(maxTokens) && maxTokens >= 64) overrides.maxTokens = Math.min(32768, maxTokens);
+    if (Number.isInteger(maxTokens) && maxTokens >= 64) overrides.maxTokens = maxTokens;
     const topP = positive(normalized.topP);
     if (topP !== undefined && topP <= 1) overrides.topP = topP;
     const presencePenalty = positive(normalized.presencePenalty);

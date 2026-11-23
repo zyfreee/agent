@@ -8,8 +8,6 @@ import { cleanFloorEntries } from '../host/floor-text.js';
 import { buildRecallCatalog } from '../memory/memory-recall.js';
 
 const MAX_FLOORS = 12;
-const FLOOR_CHARS = 800;
-const MAX_FACTS_LINES = 40;
 const MAX_NOTE_CHARS = 300;
 const MAX_FACTS = 24;
 const MAX_IMPACT = 12;
@@ -97,8 +95,8 @@ export function parseLitePickReply(raw) {
     };
 }
 
-/** 影响账本一行：编号|天|分量|状态|标题：详情（截断），与场记挑选的清单同口径。 */
-export function impactPickLines(records = [], { maxLines = 30, detailChars = 48 } = {}) {
+/** 影响账本一行：编号|天|分量|状态|标题：详情，与场记挑选的清单同口径；不截断（用户口径 2026-11-19）。 */
+export function impactPickLines(records = [], { maxLines = Infinity, detailChars = Infinity } = {}) {
     const list = Array.isArray(records) ? records.filter(Boolean) : [];
     return list.slice(0, maxLines).map(record => {
         const title = String(record?.title ?? '').trim();
@@ -113,20 +111,20 @@ export function impactPickLines(records = [], { maxLines = 30, detailChars = 48 
     });
 }
 
-/** 组装发给模型的 user 内容：玩家输入 + 最近聊天 + 只带还开着的岗位的候选清单。 */
+/** 组装发给模型的 user 内容：玩家输入 + 最近聊天 + 只带还开着的岗位的候选清单。
+ *  备料路喂料不截断：可见窗口里有几楼给几楼、每楼全文——用户口径 2026-11-18。 */
 export function buildLitePickUser({ input = '', floors = [], factsLines = [], impactLines = [], memoryCatalog = '', day = null, sections = {} } = {}) {
     const chat = (Array.isArray(floors) ? floors : [])
-        .slice(-MAX_FLOORS)
         .map(floor => {
             const role = floor?.role === '玩家' ? '玩家' : '角色';
-            const body = typeof floor?.text === 'string' ? floor.text.trim().slice(0, FLOOR_CHARS) : '';
+            const body = typeof floor?.text === 'string' ? floor.text.trim() : '';
             return body ? `[${role}] ${body}` : null;
         })
         .filter(Boolean);
     const wantFacts = sections.facts !== false;
     const wantImpact = sections.impact !== false;
     const wantMemory = sections.memory !== false;
-    const factList = wantFacts ? (Array.isArray(factsLines) ? factsLines : []).filter(line => typeof line === 'string' && line.trim()).slice(0, MAX_FACTS_LINES) : [];
+    const factList = wantFacts ? (Array.isArray(factsLines) ? factsLines : []).filter(line => typeof line === 'string' && line.trim()) : [];
     const impactList = wantImpact ? (Array.isArray(impactLines) ? impactLines : []).filter(line => typeof line === 'string' && line.trim()) : [];
     const keys = [
         wantFacts && '"facts":[…]', wantImpact && '"impact":[…]', wantMemory && '"memory":[…]',
@@ -134,7 +132,7 @@ export function buildLitePickUser({ input = '', floors = [], factsLines = [], im
     const CN = ['', '一', '二', '三'];
     const jobNames = [wantFacts && '原著', wantImpact && '影响', wantMemory && '记忆'].filter(Boolean).join('／');
     return [
-        input ? `【本轮玩家输入】\n${String(input).trim().slice(0, FLOOR_CHARS)}` : null,
+        input ? `【本轮玩家输入】\n${String(input).trim()}` : null,
         '',
         day !== null && day !== undefined ? `（世界时钟：第 ${day} 天）` : null,
         '',
@@ -154,9 +152,9 @@ export function buildLitePickUser({ input = '', floors = [], factsLines = [], im
     ].filter(line => line !== null).join('\n');
 }
 
-/** 收集最近几楼聊天（旧→新，跳过系统楼），与各决定通道同一套口径。
+/** 收集最近几楼聊天（旧→新，跳过系统楼），与各决定通道同一套口径；全文不截——用户口径 2026-11-18。
  *  楼层按主提示词同款口径套角色卡正则（被隐藏的块不进挑选员），因此是异步的。 */
-export async function collectFloors(chat, max = MAX_FLOORS, floorChars = FLOOR_CHARS) {
+export async function collectFloors(chat, max = MAX_FLOORS) {
     const list = Array.isArray(chat) ? chat : [];
     const raws = [];
     for (let cursor = list.length - 1; cursor >= 0 && raws.length < max; cursor -= 1) {
@@ -170,8 +168,7 @@ export async function collectFloors(chat, max = MAX_FLOORS, floorChars = FLOOR_C
             depth: list.length - 1 - cursor,
         });
     }
-    const cleaned = await cleanFloorEntries(raws);
-    return cleaned.map(floor => ({ ...floor, text: floor.text.slice(0, floorChars) }));
+    return cleanFloorEntries(raws);
 }
 
 /**

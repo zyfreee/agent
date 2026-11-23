@@ -34,8 +34,6 @@ import { createPlotRuntime } from './plot-runtime.js';
     assert.equal(tooLong.rejected[0].reason, 'title_too_long');
     const noBasis = runtime.apply([{ op: 'addThread', title: '神秘的玉简' }]);
     assert.equal(noBasis.rejected[0].reason, 'basis_missing');
-    const badDays = runtime.apply([{ op: 'addThread', title: '神秘的玉简', basis: '第3楼拍卖会所得', dueDays: 91 }]);
-    assert.equal(badDays.rejected[0].reason, 'bad_days');
     const ok = runtime.apply([{ op: 'addThread', title: '神秘的玉简', kind: 'suspense', detail: '玉简上的文字无人能解', basis: '第3楼拍卖会所得', dueDays: 10 }], { today: 3 });
     assert.equal(ok.status, 'applied');
     assert.equal(ok.applied[0].id, 'f1');
@@ -47,6 +45,9 @@ import { createPlotRuntime } from './plot-runtime.js';
     // kind 写错或缺省都落 foreshadow
     runtime.apply([{ op: 'addThread', title: '云岚宗的旧账', basis: '第4楼退婚结怨' }], { today: 4 });
     assert.equal(runtime.snapshot().threads[1].kind, 'foreshadow');
+    // 线索期限不再有 90 天帽（用户口径 2026-11-19）：91 天也照收。
+    const longDays = runtime.apply([{ op: 'addThread', title: '长线的玉简', basis: '第3楼拍卖会所得', dueDays: 91 }], { today: 3 });
+    assert.equal(longDays.status, 'applied');
 }
 
 // —— 重复防线：同文换说法（同标题 / 相似标题 / 两天窗口） ——

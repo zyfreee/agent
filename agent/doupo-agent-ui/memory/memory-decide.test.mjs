@@ -50,13 +50,13 @@ assert.ok(MEMORY_DECIDE_PROMPT.includes('importance 可选'), '提示词要说�
     assert.ok(!MEMORY_DECIDE_PROMPT.includes('不必重要才记'), '旧的多记导向要移除');
 }
 
-// 楼层截断：最多 12 楼
+// 2026-11-18 用户口径：正文后调用只读「用户输入＋正文」两楼、全文不截——组装层不再有楼数天花板。
 {
     const floors = Array.from({ length: 20 }, (_, i) => ({ role: '角色', text: `楼${i}。` }));
     const user = buildDecideUser({ snapshot: {}, floors, worldbookLines: [] });
-    assert.ok(user.includes('共 12 楼'));
+    assert.ok(user.includes('共 20 楼'));
     assert.ok(user.includes('楼19。'), '最后一楼保留');
-    assert.ok(!user.includes('[角色] 楼7。'), '只取最近 12 楼，更早的楼层不进输入');
+    assert.ok(user.includes('[角色] 楼0。'), '最旧的一楼也在（给几楼喂几楼）');
 }
 
 // 3. parseDecision：JSON 抽取、坏输出、条目过滤、上限

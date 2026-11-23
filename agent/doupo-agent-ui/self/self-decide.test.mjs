@@ -27,26 +27,24 @@ assert.ok(user.includes('【纳戒现状'), user.slice(0, 80));
 assert.ok(user.includes('境界：斗之气三段'));
 assert.ok(user.includes('金币：3200'));
 assert.ok(user.includes('123|物品|青莲地心火|异火榜第十九'));
-assert.ok(user.includes('【最近聊天记录（旧 → 新，共 12 楼）】'), '楼数上限 12，最新的留下');
-assert.ok(user.includes('第13楼的内容') && user.includes('第2楼的内容'), '保留最新的 12 楼');
-assert.ok(!user.includes('第1楼的内容') && !user.includes('第0楼的内容'), '最旧的两楼被裁掉');
+// 2026-11-18 用户口径：正文后调用只读「用户输入＋正文」两楼、全文不截——组装层不再有楼数天花板，
+// 也不再单楼截断（喂几楼由调用方定）。
+assert.ok(user.includes('【最近聊天记录（旧 → 新，共 14 楼）】'), '给几楼喂几楼');
+assert.ok(user.includes('第13楼的内容') && user.includes('第0楼的内容'), '最旧最新的楼都在');
 
-// 最新楼是决定的正文靶子，字数窗口放宽到 6000，旧楼维持 800——验药、擦装备这类细节
-// 段落都在正文的中后段，一刀 800 字账房就看不见了（2026-11-17 实跑：凝气固脉没进 effect）。
 {
     const longTail = '甲'.repeat(7000) + '乙'.repeat(3000);
     const headUser = buildSelfDecideUser({
         snapshot,
         floors: [{ role: '玩家', text: '旧楼的短输入' }, { role: '角色', text: longTail }],
     });
-    assert.ok(headUser.includes('甲'.repeat(6000)), '最新楼带满 6000 字窗口');
-    assert.ok(!headUser.includes('甲'.repeat(6001)), '最新楼不超出 6000 字窗口');
+    assert.ok(headUser.includes(longTail), '正文整楼全喂，中后段细节不丢');
     assert.ok(headUser.includes('旧楼的短输入'), '旧楼照常保留');
     const oldCapped = buildSelfDecideUser({
         snapshot,
         floors: [{ role: '玩家', text: '丙'.repeat(900) }, { role: '角色', text: '新楼' }],
     });
-    assert.ok(!oldCapped.includes('丙'.repeat(801)), '旧楼维持 800 字截断');
+    assert.ok(oldCapped.includes('丙'.repeat(900)), '旧楼也不截断');
 }
 
 // 空输入也有可读结构

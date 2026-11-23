@@ -1,5 +1,5 @@
-const DEFAULT_MAX_NPCS = 8;
-const DEFAULT_MAX_FACTS = 12;
+const DEFAULT_MAX_NPCS = 999999;
+const DEFAULT_MAX_FACTS = 999999;
 
 function requiredText(value, name) {
     if (typeof value !== 'string' || !value.trim()) throw new TypeError(`${name} 必须是非空文本`);
@@ -14,8 +14,8 @@ function boundedTextList(value, name, max) {
 
 /** Selects relevant NPC decision requests from a bounded world event; it never executes or commits a decision. */
 export function createNpcAutonomyPlanner({ maxNpcs = DEFAULT_MAX_NPCS, maxFacts = DEFAULT_MAX_FACTS } = {}) {
-    if (!Number.isInteger(maxNpcs) || maxNpcs < 1 || maxNpcs > 100) throw new RangeError('maxNpcs 必须为 1 到 100');
-    if (!Number.isInteger(maxFacts) || maxFacts < 1 || maxFacts > 100) throw new RangeError('maxFacts 必须为 1 到 100');
+    if (!Number.isInteger(maxNpcs) || maxNpcs < 1) throw new RangeError('maxNpcs 必须为正整数');
+    if (!Number.isInteger(maxFacts) || maxFacts < 1) throw new RangeError('maxFacts 必须为正整数');
     const planned = new Set();
     const decisions = new Map();
     const plans = new Map();

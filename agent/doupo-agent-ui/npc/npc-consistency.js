@@ -6,8 +6,6 @@
  * （防 OOC）。结果进审计流水与人物簿面板，供人工复查；模型惯性跑偏时这里最先看见。
  */
 
-const PROFILE_TEXT_MAX = 400;
-const FLOOR_TEXT_MAX = 900;
 
 export const CONSISTENCY_PROMPT = `你是这部小说的「人物体检员」。给你几个人物的档案和最近正文，你只做一件事：找出正文描写与档案相违反的地方。不改档案、不评价文笔、不重写正文。
 
@@ -33,7 +31,7 @@ export const CONSISTENCY_PROMPT = `你是这部小说的「人物体检员」。
  * 拼体检材料：每个人物挑体检用得上的字段拼成短档案 + 最近正文。
  * 档案只给「性格组 + 对玩家组 + 身体硬信息」，不给资产流水——体检不关心那些。
  */
-export function buildConsistencyUser({ profiles = [], floors = [], day = null, maxChars = 6000 } = {}) {
+export function buildConsistencyUser({ profiles = [], floors = [], day = null } = {}) {
     const blocks = [];
     const profileLines = (Array.isArray(profiles) ? profiles : []).map(profile => {
         const record = profile?.record ?? {};
@@ -51,13 +49,12 @@ export function buildConsistencyUser({ profiles = [], floors = [], day = null, m
     }).filter(Boolean);
     blocks.push(profileLines.length ? `【人物档案】\n${profileLines.join('\n\n')}` : '【人物档案】\n（空的，输出 {"检查":[]}）');
     const chatLines = (Array.isArray(floors) ? floors : []).map(floor => {
-        const text = typeof floor?.text === 'string' ? floor.text.slice(0, FLOOR_TEXT_MAX) : '';
+        const text = typeof floor?.text === 'string' ? floor.text.trim() : '';
         return text ? `【${floor.role === '玩家' ? '玩家' : '角色'}】${text}` : '';
     }).filter(Boolean);
-    blocks.push(chatLines.length ? `【最近正文】\n${chatLines.join('\n')}` : '【最近正文】\n（空的，输出 {"检查":[]}）');
+    blocks.push(chatLines.length ? `【本轮输入与正文】\n${chatLines.join('\n')}` : '【本轮输入与正文】\n（空的，输出 {"检查":[]}）');
     if (Number.isFinite(Number(day))) blocks.push(`【世界时间】第 ${Number(day)} 天`);
-    const body = blocks.join('\n\n');
-    return body.length > maxChars ? body.slice(0, maxChars) : body;
+    return blocks.join('\n\n');
 }
 
 function stripFence(raw) {
@@ -105,4 +102,3 @@ export function parseConsistencyReply(raw) {
     return { status: 'ok', results, raw: json };
 }
 
-export { PROFILE_TEXT_MAX, FLOOR_TEXT_MAX };

@@ -101,10 +101,10 @@ const trimmed = parseImpactSelect(JSON.stringify({ picks: [{ ref: 'i1', text: lo
 assert.equal(trimmed.picks[0].text.length, 120, '超长旁白裁到 120');
 assert.equal(parseImpactSelect(JSON.stringify({ note: 'n'.repeat(300), picks: [{ ref: 'i1', text: '短句' }] }), { records }).note.length, 160, 'note 裁到 160');
 
-// 挑选条数是注入窗口（结构性，非内容截断）：每轮最多挑 8 条进正文。
+// 挑选条数不再设上限（用户口径 2026-11-19）：模型挑几条进几条。
 const many = Array.from({ length: 10 }, (_, index) => record({ id: `m${index}`, title: `第 ${index} 件`, target: `对象${index}` }));
 const capped = parseImpactSelect(JSON.stringify({ picks: many.map(item => ({ ref: item.id, text: `第 ${item.id} 件的事` })) }), { records: many });
-assert.equal(capped.picks.length, 8);
+assert.equal(capped.picks.length, 10);
 
 // 拼正文注入：抬头 + 每条一行；世界级带 ★、传闻带 ？；未到期写“还没发作”。
 const injection = buildImpactInjectionFromPicks(records, [

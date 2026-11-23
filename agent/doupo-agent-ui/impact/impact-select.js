@@ -13,12 +13,8 @@ import { buildWorldInjection } from '../world/world-ops.js';
 import { buildImpactLedgerLines, IMPACT_HEADER, impactMark } from './impact-ops.js';
 import { extractJson } from '../host/llm-client.js';
 
-const MAX_PICKS = 8;
 const MAX_LINE_CHARS = 120;
 const MAX_NOTE_CHARS = 160;
-const MAX_FLOORS = 8;
-const FLOOR_CHARS = 400;
-const DRAFT_CHARS = 600;
 
 export const IMPACT_INJECT_PROMPT = [
     '你是《斗破苍穹》同人长篇的"场记"。你不上台、不写剧情，只做一件事：每一幕开场前，从《世界线账本》里挑出这一幕真正用得上的那几条世界变化，交给说书人。',
@@ -35,7 +31,7 @@ export const IMPACT_INJECT_PROMPT = [
     '2. 与玩家这句话里提到的人、物、地点、事件直接相关的；',
     '3. 正在发酵或刚刚发酵、这一幕应该被世人看见的；',
     '4. 原著主线节点被牵动的（退婚、药老、云岚宗、沙漠、宗门之战……），且这一幕正好压在节点上；',
-    '5. 虽然还没到期，但说书人若不知道就会写错的"尚未发作"安排——最多挑一条作提醒。',
+    '5. 虽然还没到期，但说书人若不知道就会写错的"尚未发作"安排——可以挑一条作提醒。',
     '',
     '【不要挑】',
     '- 已了结、已修复的（账本状态写着"已了结/已修复"）；',
@@ -72,7 +68,6 @@ export const IMPACT_INJECT_SCHEMA = Object.freeze({
         note: { type: 'string' },
         picks: {
             type: 'array',
-            maxItems: MAX_PICKS,
             items: {
                 type: 'object',
                 properties: {
@@ -107,8 +102,8 @@ export function buildImpactInjectUser({ snapshot = {}, records = [], floors = []
         ripened: ledgerRecords.filter(record => record.state === 'ripened').length,
         closed: ledgerRecords.filter(record => record.state === 'closed' || record.state === 'reverted').length,
     };
-    const scene = [snapshot?.info?.location, text(draft).slice(0, DRAFT_CHARS),
-        ...(Array.isArray(floors) ? floors : []).slice(-MAX_FLOORS).map(floor => text(floor?.text).slice(0, FLOOR_CHARS))].join('\n');
+    const scene = [snapshot?.info?.location, text(draft),
+        ...(Array.isArray(floors) ? floors : []).map(floor => text(floor?.text))].join('\n');
     const relevant = record => [record.target, record.title].some(value => text(value) && scene.includes(text(value)));
     const pending = ledgerRecords.filter(record => record.state === 'active' && record.ripenDay !== null && record.ripenDay > today)
         .sort((a, b) => Number(relevant(b)) - Number(relevant(a)) || a.ripenDay - b.ripenDay || b.day - a.day);
@@ -125,10 +120,9 @@ export function buildImpactInjectUser({ snapshot = {}, records = [], floors = []
     const omitted = pending.length - pendingLines.length;
     if (omitted) pendingLines.push(`- （另省略 ${omitted} 条待发酵安排）`);
     const recent = (Array.isArray(floors) ? floors : [])
-        .slice(-MAX_FLOORS)
         .map(floor => {
             const role = floor?.role === '玩家' ? '玩家' : '角色';
-            const body = text(floor?.text).slice(0, FLOOR_CHARS);
+            const body = text(floor?.text);
             return body ? `[${role}] ${body}` : null;
         })
         .filter(Boolean);
@@ -148,7 +142,7 @@ export function buildImpactInjectUser({ snapshot = {}, records = [], floors = []
         recent.length ? recent.join('\n') : '- （还没有对话）',
         '',
         '【玩家这一轮说】',
-        text(draft).slice(0, DRAFT_CHARS) || '（玩家还没有输入）',
+        text(draft) || '（玩家还没有输入）',
         '',
         '请只从账本里挑这一幕用得上的影响，改写成一两句旁白，输出 JSON：{"note":"…","picks":[{"ref":"i3","text":"…"}]}。一条都用不上就输出 {"note":"这一轮用不上旧账","picks":[]}。',
     ].join('\n');
@@ -183,7 +177,6 @@ export function parseImpactSelect(raw, { records = [] } = {}) {
         if (record.state === 'closed' || record.state === 'reverted') { dropped += 1; continue; }
         seen.add(ref);
         picks.push({ ref, text: body });
-        if (picks.length >= MAX_PICKS) break;
     }
     return { status: picks.length ? 'ok' : 'empty', picks, note, dropped };
 }

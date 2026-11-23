@@ -11,11 +11,6 @@ import { extractJson } from '../host/llm-client.js';
 import { recallKeys, scoreEntries } from './memory-retrieve.js';
 import { TIER_LABELS } from './memory-runtime.js';
 
-const MAX_IDS = 25;
-const MAX_FLOORS = 12;
-const FLOOR_CHARS = 800;
-const MAX_BOOK_LINES = 40;
-const DEFAULT_CATALOG_CHARS = 4000;
 
 /** 默认召回提示词（system）。改写时保持"只输出 JSON"与 ids 字段名不变，否则脚本解析不到。 */
 export const MEMORY_RECALL_PROMPT = [
@@ -29,7 +24,7 @@ export const MEMORY_RECALL_PROMPT = [
     '3. 逐条自问："如果这条不进提示词，这一轮会不会写矛盾——认错人、用错称谓态度、忘了谁欠谁、重演已经变化的事、错过该回收的伏笔？"不会就丢掉。',
     '【不要召回】内容已在最近聊天里重新演过或明说过的（再注入是重复）；只是同地点/同时间但剧情无关的；纯氛围陪衬、漏了也不影响本轮任何一句话的；同一件事分几条记忆时只取最新的那条（旧阶段已被覆盖）。',
     '【优先带上】双方再登场的恩怨与立场；主角拿到的资源、得到的承诺与期限；埋了还没回收的伏笔；别人对主角的关键态度与禁忌（如"别亮出纳戒"这类一旦忘掉就穿帮的约束）。',
-    '数量纪律：最多 25 条，按与本轮剧情的相关度从高到低排；宁缺毋滥，无关的不要凑数——但恩怨与伏笔宁可多带一条，别让主角忘了谁欠谁、埋了什么。目录里挑不出相关的，就输出 {"note":"本轮没有需要召回的旧记忆","ids":[]}。',
+    '数量纪律：按与本轮剧情的相关度从高到低排；宁缺毋滥，无关的不要凑数——但恩怨与伏笔宁可多带一条，别让主角忘了谁欠谁、埋了什么。目录里挑不出相关的，就输出 {"note":"本轮没有需要召回的旧记忆","ids":[]}。',
     '只输出 JSON。',
 ].join('\n');
 
@@ -51,40 +46,36 @@ export const RECALL_JSON_SCHEMA = Object.freeze({
  * - candidates：调用方已算好的候选序（向量融合分数），直接采用，不再重复打分。
  * 已被软覆盖（supersededBy）的条目默认整条不可见。标题缺了拿 text 顶；只截描述，不截编号。
  */
-export function buildRecallCatalog(snapshot = {}, { maxChars = DEFAULT_CATALOG_CHARS, sceneText = '', currentDay = null, vectorSim = null, candidates = null, advanced = true } = {}) {
+export function buildRecallCatalog(snapshot = {}, { sceneText = '', currentDay = null, vectorSim = null, candidates = null, advanced = true } = {}) {
     const entries = (Array.isArray(snapshot?.entries) ? snapshot.entries : []).filter(entry => entry && !entry.supersededBy);
     if (!entries.length) return '（记忆库还是空的）';
-    const value = Number(maxChars);
-    // Infinity＝不限制（设置层把「0＝不限制」换算成 Infinity 传进来）；其余非法值回落默认预算。
-    const cap = value === Infinity ? Infinity : (Number.isSafeInteger(value) && value > 0 ? Math.max(200, value) : DEFAULT_CATALOG_CHARS);
+    // 目录不设任何字数预算、单行不截断（用户口径 2026-11-19：容量一点限制都没有）——
+    // 账本多大，召回员就看得到多大的目录；maxChars 参数保留只为兼容旧调用，一律忽略。
     const big = entries.filter(entry => entry.tier === 'big').sort((a, b) => b.day - a.day);
     const small = entries.filter(entry => entry.tier !== 'big').sort((a, b) => b.day - a.day);
-    const lineCap = big.length && small.length ? Math.floor((cap - 1) / 2) : cap;
     const scene = typeof sceneText === 'string' ? sceneText : '';
     const lines = new Map();
     for (const entry of [...big, ...small]) {
         const tier = TIER_LABELS[entry.tier] ?? '记忆';
         const keys = recallKeys(entry);
         const prefix = `- ${entry.id}|${tier}|`;
-        if (/[\r\n]/.test(prefix) || prefix.length >= lineCap) continue;
+        if (/[\r\n]/.test(prefix)) continue;
         const label = `${entry.title || entry.text || ''}${keys.length ? `（${keys.join('、')}）` : ''}`.replace(/[\r\n]+/g, ' ');
-        const room = lineCap - prefix.length;
-        lines.set(entry.id, prefix + (label.length > room ? `${label.slice(0, room - 1)}…` : label));
+        lines.set(entry.id, prefix + label);
     }
     const rankedIds = rankCatalog(entries, { scene, currentDay, vectorSim, candidates, big, small, advanced });
-    const complete = [...lines.values()].join('\n');
-    if (complete.length <= cap && !scene && !Array.isArray(candidates)) return complete;
-    const kept = [];
-    let used = 0;
+    if (!scene && !Array.isArray(candidates)) return [...lines.values()].join('\n');
+    // 有场景/外部候选时按混合分数序排，仍然全量：排前面的就是更可能要压场的。
+    const ordered = [];
+    const seen = new Set();
     for (const id of rankedIds) {
         const line = lines.get(id);
-        if (line === undefined) continue;
-        const cost = line.length + (kept.length ? 1 : 0);
-        if (used + cost > cap) continue;
-        kept.push(line);
-        used += cost;
+        if (line === undefined || seen.has(id)) continue;
+        seen.add(id);
+        ordered.push(line);
     }
-    return kept.join('\n');
+    for (const [id, line] of lines) if (!seen.has(id)) ordered.push(line);
+    return ordered.join('\n');
 }
 
 /** 目录条目排序：外部候选序 > 场景分数序 > 旧洪泛保护（大/小交替）。
@@ -118,16 +109,15 @@ function rankCatalog(entries, { scene, currentDay, vectorSim, candidates, big, s
 }
 
 /** 组装发给召回模型的 user 内容：记忆目录 + 最近聊天（旧→新，含最新玩家输入）+ 世界书命中。
+ *  楼层喂料不截断：可见窗口里有几楼给几楼、每楼全文——用户口径 2026-11-18。
  *  advanced=false（完整版/简略版口径）目录退回旧洪泛序，不走混合分数排序。 */
 export function buildRecallUser({ snapshot = {}, floors = [], worldbookLines = [], currentDay = null, vectorSim = null, catalogChars = null, advanced = true } = {}) {
     const bookLines = (Array.isArray(worldbookLines) ? worldbookLines : [])
-        .filter(line => typeof line === 'string' && line.trim())
-        .slice(0, MAX_BOOK_LINES);
+        .filter(line => typeof line === 'string' && line.trim());
     const chat = (Array.isArray(floors) ? floors : [])
-        .slice(-MAX_FLOORS)
         .map(floor => {
             const role = floor?.role === '玩家' ? '玩家' : '角色';
-            const body = typeof floor?.text === 'string' ? floor.text.trim().slice(0, FLOOR_CHARS) : '';
+            const body = typeof floor?.text === 'string' ? floor.text.trim() : '';
             return body ? `[${role}] ${body}` : null;
         })
         .filter(Boolean);
@@ -163,8 +153,8 @@ export function recallEntriesFromIds(snapshot = {}, ids = []) {
     return picked;
 }
 
-/** 解析召回决定：坏 JSON/非对象 → invalid；ids 只留字符串、去重、超量截断。 */
-export function parseRecallDecision(raw, { maxIds = MAX_IDS, snapshot } = {}) {
+/** 解析召回决定：坏 JSON/非对象 → invalid；ids 只留字符串、去重，条数不设上限（用户口径 2026-11-19）。 */
+export function parseRecallDecision(raw, { snapshot } = {}) {
     let object;
     try {
         object = extractJson(raw);
@@ -177,14 +167,13 @@ export function parseRecallDecision(raw, { maxIds = MAX_IDS, snapshot } = {}) {
     const MAX_NOTE_CHARS = 300;
     const note = typeof object.note === 'string' ? object.note.trim().slice(0, MAX_NOTE_CHARS) : '';
     if (!Array.isArray(object.ids)) return { status: 'invalid', ids: [], note, dropped: 0, error: '召回结果缺少 ids 数组' };
-    const cap = Number.isInteger(maxIds) && maxIds >= 1 && maxIds <= MAX_IDS ? maxIds : MAX_IDS;
     const known = snapshot === undefined ? null : new Set((Array.isArray(snapshot?.entries) ? snapshot.entries : []).map(entry => entry?.id));
     const seen = new Set();
     const ids = [];
     let dropped = 0;
     for (const item of object.ids) {
         const id = typeof item === 'string' ? item.trim() : '';
-        if (!id || seen.has(id) || ids.length >= cap || (known && !known.has(id))) { dropped += 1; continue; }
+        if (!id || seen.has(id) || (known && !known.has(id))) { dropped += 1; continue; }
         seen.add(id);
         ids.push(id);
     }

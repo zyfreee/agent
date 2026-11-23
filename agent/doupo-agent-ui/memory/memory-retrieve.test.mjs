@@ -103,7 +103,7 @@ assert.equal(textSimilarity('穆蛇在坊市', '云韵在后山'), 0, '完全不
     }));
     const scene = Array.from({ length: 20 }, (_, i) => `钥匙${i}在场上。`).join('');
     assert.equal(topCandidates({ entries }, { sceneText: scene }, { limit: 5 }).length, 5, 'limit 生效');
-    assert.equal(topCandidates({ entries }, { sceneText: scene }, { limit: NaN }).length, 12, '坏 limit 回默认 12');
+    assert.equal(topCandidates({ entries }, { sceneText: scene }, { limit: NaN }).length, 20, '坏 limit 回退为不限（全量）');
     assert.equal(topCandidates({ entries }, { sceneText: '' }).length, 0, '没场景就没有兜底候选');
     assert.equal(topCandidates({ entries: [] }, { sceneText: '钥匙0在场上' }).length, 0, '空库返回空');
 }

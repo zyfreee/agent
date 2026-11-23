@@ -32,7 +32,6 @@ export function capSelfOp(op) {
     return capped;
 }
 
-const DEFAULT_MAX_CHARS = 900;
 const FENCE_RE = /```self[^\S\n]*\n([\s\S]*?)```/g;
 const OP_LINE_RE = /^[ \t]*\{[ \t]*"op"[ \t]*:/;
 

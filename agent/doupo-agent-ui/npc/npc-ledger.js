@@ -147,6 +147,7 @@ const KEY_ALIASES = new Map([
     ['好感', 'favor'], ['好感度', 'favor'], ['favor', 'favor'],
     ['好感理由', 'favorReason'], ['理由', 'favorReason'], ['favorReason', 'favorReason'],
     ['流水', 'log'], ['经过', 'log'], ['事件', 'log'], ['log', 'log'],
+    ['往来概要', 'logSummary'], ['往来', 'logSummary'], ['概要', 'logSummary'], ['logSummary', 'logSummary'], ['logsummary', 'logSummary'],
     ['经历', 'exp'], ['重要经历', 'exp'], ['转变', 'exp'], ['心路', 'exp'], ['exp', 'exp'],
     ['设定', 'fields'], ['字段', 'fields'], ['档案', 'fields'], ['fields', 'fields'],
 ]);
@@ -339,7 +340,7 @@ export function createEmptyRecord(name, options = {}) {
         others: [], items: [], storage: '', money: '', property: '', debt: '',
         location: '', presence: options.presence === '在场' ? '在场' : '不在场', doing: '', reachable: '',
         secret: { hideFrom: '', what: '' },
-        log: [], favorLog: [], exp: [], moods: [],
+        log: [], logSummary: '', favorLog: [], exp: [], moods: [],
         importance: options.importance === '重要' ? '重要' : '不重要',
         source,
         firstFloor: floor,
@@ -392,6 +393,7 @@ export function normalizeRecord(raw) {
             ...(item && typeof item === 'object' && typeof item.src === 'string' && item.src.trim() ? { src: text(item.src) } : {}),
         })).filter(item => item.text);
     }
+    record.logSummary = text(raw.logSummary).slice(0, 200);
     if (Array.isArray(input.favorLog)) {
         record.favorLog = input.favorLog.map(item => ({
             floor: Number.isInteger(item?.floor) ? item.floor : null,
@@ -438,7 +440,7 @@ function patchList(payload) {
 export function normalizePatch(raw, context = {}) {
     const input = raw && typeof raw === 'object' ? raw : (typeof raw === 'string' ? { name: raw } : {});
     const result = {
-        name: '', fields: {}, favor: null, favorReason: '', basis: '', log: [], exp: [], moods: [], presence: null,
+        name: '', fields: {}, favor: null, favorReason: '', basis: '', log: [], exp: [], moods: [], presence: null, logSummary: '',
         importance: null, source: SOURCE_OPTIONS.includes(context.source) ? context.source : null, ignored: [],
     };
     const absorb = (key, value) => {
@@ -484,6 +486,7 @@ export function normalizePatch(raw, context = {}) {
             }
             return;
         }
+        if (target === 'logSummary') { const chunk = text(value); if (chunk) result.logSummary = chunk; return; }
         if (target === 'exp') {
             const entries = Array.isArray(value) ? value : [value];
             for (const entry of entries) {
@@ -698,6 +701,11 @@ export function createNpcLedger({ maxRecords = 200, now = () => new Date() } = {
             const logSrc = typeof context.logSrc === 'string' && context.logSrc.trim() ? text(context.logSrc) : null;
             if (!fillOnly) for (const line of patch.log) target.log.push(logSrc ? { floor, day, text: line, src: logSrc } : { floor, day, text: line });
             if (!fillOnly && patch.log.length) touched.push('流水');
+            const incomingSummary = text(patch.logSummary);
+            if (incomingSummary) {
+                target.logSummary = incomingSummary.slice(0, 200);
+                if (!touched.includes('往来概要')) touched.push('往来概要');
+            }
             if (!fillOnly) for (const entry of patch.exp) target.exp.push({ ...entry, floor: entry.floor ?? floor });
             if (!fillOnly && patch.exp.length) {
                 touched.push('经历');
@@ -989,12 +997,8 @@ export function createNpcLedger({ maxRecords = 200, now = () => new Date() } = {
         const eligible = [...fullTargets, ...rest];
         const full = fullTargets.slice(0, maxFull);
         const brief = [...fullTargets.slice(maxFull), ...rest].slice(0, maxBrief);
-        const line = record => {
-            const body = record.importance === '重要' ? describeBrief(record, { distant: record.presence !== '在场' }) : describeLine(record);
-            if (body.length <= 120) return body;
-            // Compact whole fields, never cut a rendered profile in the middle.
-            return [record.name, record.presence, record.location.slice(0, 24), record.identity.slice(0, 32), `好感 ${record.favor}`].filter(Boolean).join('｜');
-        };
+        // 简档不再压缩（用户口径 2026-11-19）：写多长注多长。
+        const line = record => (record.importance === '重要' ? describeBrief(record, { distant: record.presence !== '在场' }) : describeLine(record));
         const build = () => {
             const blocks = [...full.map(describeFull), ...brief.map(line)];
             return blocks.length ? `${header}\n${blocks.join('\n')}` : '';
@@ -1090,9 +1094,10 @@ function describeFull(record) {    const lines = [];
     const place = [record.location && `在${record.location}`, record.doing && `正在${doingText(record.doing)}`, record.reachable && `联系：${record.reachable}`].filter(Boolean).join('，');
     if (place) lines.push(`处境：${place}`);
     if (record.secret.what || record.secret.hideFrom) lines.push(`秘密：${record.secret.hideFrom ? `瞒着${record.secret.hideFrom}` : ''}${record.secret.hideFrom && record.secret.what ? '，' : ''}${record.secret.what}`);
-    const recent = record.log.slice(-1)[0];
-    if (recent) lines.push(`近事：${recent.text}`);
-    if (record.exp.length) lines.push(`经历：${record.exp.slice(-3).map(item => `${item.day !== null ? `第${item.day}天` : ''}${item.text}`).join('；')}`);
+    const summary = text(record.logSummary);
+    if (summary) lines.push(`往来：${summary}`);
+    else if (record.log.length) lines.push(`近事：${record.log.map(item => item?.text).filter(Boolean).join('；')}`);
+    if (record.exp.length) lines.push(`经历：${record.exp.map(item => `${item.day !== null ? `第${item.day}天` : ''}${item.text}`).join('；')}`);
     return lines.join('\n');
 }
 
@@ -1105,7 +1110,7 @@ function describeBrief(record, options = {}) {
     if (Array.isArray(record.moods) && record.moods.length) parts.push(`此刻${record.moods.map(mood => mood.label).join('、')}`);
     if (record.appellation) parts.push(`称呼你「${record.appellation}」`);
     if (record.doing) parts.push(`正在${doingText(record.doing)}`);
-    if (options.distant === false && record.log.length) parts.push(`近事：${record.log.slice(-1)[0].text}`);
+    if (options.distant === false && record.log.length) parts.push(`近事：${record.log.map(item => item?.text).filter(Boolean).join('；')}`);
     return parts.join('｜');
 }
 

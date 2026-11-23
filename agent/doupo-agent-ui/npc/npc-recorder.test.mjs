@@ -33,7 +33,7 @@ import { createNpcLedger } from './npc-ledger.js';
     assert.equal(ledgerLines([], { limit: 5 }).length, 0);
 }
 
-// 3) 交给记录员的内容：最近楼层 + 已经建过档的人 + 世界时间。
+// 3) 交给记录员的内容：「用户输入＋正文」两楼（全文不截）+ 已经建过档的人 + 世界时间。
 {
     const ledger = createNpcLedger();
     ledger.apply({ 人物: [{ 姓名: '萧战', 身份: '萧家族长', 在场: '在场', 重要: '重要' }] }, { floor: 1, day: 1 });
@@ -46,13 +46,12 @@ import { createNpcLedger } from './npc-ledger.js';
         playerName: '林三',
         day: 3,
     });
-    assert.ok(user.includes('【最近楼层】'));
+    assert.ok(user.includes('【本轮输入与正文】'));
     assert.ok(user.includes('【林三】我想见族长。'));
     assert.ok(user.includes('【角色】萧战端坐在主位上'));
     assert.ok(user.includes('【人物簿索引】'));
     assert.ok(user.includes('萧战'));
     assert.ok(user.includes('第 3 天'));
-    assert.ok(user.length <= 6000);
 }
 
 // 4) 空库时明确告诉记录员“这一轮的人都要新建”，不要让它以为库坏了。
@@ -61,12 +60,11 @@ import { createNpcLedger } from './npc-ledger.js';
     assert.ok(user.includes('还是空的'));
 }
 
-// 5) 超长楼层要被截，不把整段正文塞进小调用。
+// 5) 超长正文也整楼全喂（2026-11-18 用户口径：记账喂料不截断）。
 {
     const long = '斗'.repeat(4000);
-    const user = buildNpcRecordUser({ floors: [{ role: '角色', text: long }], records: [], maxChars: 800 });
-    assert.ok(user.length <= 800 + 200, '超长内容要压到上限附近');
-    assert.ok(user.includes('斗'));
+    const user = buildNpcRecordUser({ floors: [{ role: '角色', text: long }], records: [] });
+    assert.ok(user.includes(long), '整楼正文原样进材料');
 }
 
 // 6) 解析：能吃掉 ``` 围栏、前后废话、中文键。
@@ -185,3 +183,14 @@ import { createNpcLedger } from './npc-ledger.js';
 }
 
 console.log('npc-recorder 测试通过');
+
+// —— 往来概要：记录员补丁认这个键；人物簿索引行带旧概要供合并 ——
+{
+    const parsed = parseNpcRecordReply('{"人物":[{"姓名":"掌柜","流水":"又卖了一瓶凝血散","往来概要":"掌柜连着三天和玩家做药材生意，开始留意这个出手爽利的少年"}]}');
+    assert.equal(parsed.status, 'ok');
+    assert.equal(parsed.patches[0]['往来概要'], '掌柜连着三天和玩家做药材生意，开始留意这个出手爽利的少年', '解析层保留中文键，落账时再归一为 logSummary');
+    const lines = ledgerLines([{ name: '掌柜', presence: '在场', importance: '普通', favor: 3, identity: '药铺掌柜', logSummary: '连着三天做药材生意' }]);
+    assert.ok(lines[0].includes('往来：连着三天做药材生意'), lines[0]);
+    const noSummary = ledgerLines([{ name: '新人', presence: '在场', importance: '普通', favor: 0 }]);
+    assert.ok(!noSummary[0].includes('往来：'), '没有概要就不带往来行');
+}

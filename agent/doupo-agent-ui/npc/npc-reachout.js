@@ -57,15 +57,15 @@ export function buildReachoutUser({ record = null, motive = 'random', loops = []
     if (who.doing) bits.push(`正在做什么：${who.doing}`);
     bits.push(`好感 ${Number(who.favor) || 0}`);
     const blocks = [`${MOTIVE_LABELS[motive] ?? motive}｜${bits.filter(Boolean).join('｜')}`];
-    const loopLines = (Array.isArray(loops) ? loops : []).slice(0, 3)
+    const loopLines = (Array.isArray(loops) ? loops : [])
         .map(loop => {
-            const promise = typeof loop?.promise === 'string' ? loop.promise.trim().slice(0, 80) : '';
+            const promise = typeof loop?.promise === 'string' ? loop.promise.trim() : '';
             return promise ? `-「${promise}」${Number.isFinite(Number(loop?.dueDay)) && Number(loop.dueDay) > 0 ? `（说好第 ${Number(loop.dueDay)} 天前）` : ''}` : '';
         })
         .filter(Boolean);
     if (motive === 'loop') blocks.push(`【他没兑现的承诺】\n${loopLines.length ? loopLines.join('\n') : '（没有明确的旧约，按他性格找最像旧约的那件事提）'}`);
-    const rumorLines = (Array.isArray(rumors) ? rumors : []).slice(0, 3)
-        .map(rumor => typeof rumor === 'string' && rumor.trim() ? rumor.trim().slice(0, 160) : '')
+    const rumorLines = (Array.isArray(rumors) ? rumors : [])
+        .map(rumor => typeof rumor === 'string' && rumor.trim() ? rumor.trim() : '')
         .filter(Boolean);
     if (motive === 'gossip') blocks.push(`【他听说的风闻（未证实）】\n${rumorLines.length ? rumorLines.join('\n') : '（没有具体风闻，就说他憋不住想找人说话）'}`);
     blocks.push(`【此刻】第 ${Number.isFinite(Number(day)) && Number(day) > 0 ? Number(day) : '?'} 天 · ${channel === '传讯' ? '传讯玉简（远程联系）' : '当面来找'}`);
@@ -265,7 +265,7 @@ export function createNpcReachout({ maxPending = 6, now = () => new Date() } = {
 
     /** 每轮判断额度：两次正文生成之间的主动判断次数上限，失败也算数。 */
     function beginTurn(quota) {
-        turnQuota = Number.isInteger(quota) && quota > 0 ? Math.min(50, quota) : 0;
+        turnQuota = Number.isInteger(quota) && quota > 0 ? quota : 0;
         turnSpent = 0;
         return { quota: turnQuota };
     }

@@ -423,10 +423,8 @@ export function createLlmClient({ getSettings, getContext, fetchImpl, capture = 
     // 总控页与悬浮球据此显示"哪个功能调没调模型、成没成功"。只记元数据，
     // 提示词与回复正文一概不记，密钥永远不会出现在这里。
     const callLogEntries = [];
-    const CALL_LOG_MAX = 80;
     function recordCall(entry) {
         callLogEntries.push(entry);
-        if (callLogEntries.length > CALL_LOG_MAX) callLogEntries.splice(0, callLogEntries.length - CALL_LOG_MAX);
         try {
             if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
                 window.dispatchEvent(new CustomEvent('dai-calllog', { detail: entry }));

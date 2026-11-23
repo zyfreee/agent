@@ -409,11 +409,11 @@ assert.match(journal.lists[0].items[1].meta, /任务 task-1/);
 assert.match(journal.lists[0].items[2].meta, /进行中/);
 assert.match(buildJournalPanel({}).summary, /还没有运行流水/);
 
-// —— 回合流水：现行管线七个里程碑都翻成中文标签，兜底标记与行动数照显 ——
+// —— 回合流水：现行管线里程碑都翻成中文标签，行动数照显（纳戒决定沿用改名前槽位） ——
 {
     const turnJournal = buildJournalPanel({
         records: [
-            { taskId: 'turn', event: 'turn_mvu_arbitrate', stage: 'inline', outcome: 'applied·帧未动兜底', timestamp: Date.UTC(2026, 10, 5, 8, 0) },
+            { taskId: 'turn', event: 'turn_self_decide', stage: 'auto', outcome: 'empty', timestamp: Date.UTC(2026, 10, 5, 8, 0) },
             { taskId: 'turn', event: 'turn_memory_decide', outcome: 'ok', timestamp: Date.UTC(2026, 10, 5, 8, 1) },
             { taskId: 'turn', event: 'turn_settle_adjudicate', outcome: 'recorded·4项', timestamp: Date.UTC(2026, 10, 5, 8, 2) },
             { taskId: 'turn', event: 'turn_npc_record', outcome: 'not_due', timestamp: Date.UTC(2026, 10, 5, 8, 3) },
@@ -423,11 +423,11 @@ assert.match(buildJournalPanel({}).summary, /还没有运行流水/);
         ],
     });
     const heads = turnJournal.lists[0].all.map(item => item.head);
-    assert.deepEqual(heads, ['原著注入', '影响记录', '世界推进', '人物记账', '行动结算', '记忆总结', '纳戒仲裁'], '七个回合里程碑全翻中文，最新在最上');
+    assert.deepEqual(heads, ['原著注入', '影响记录', '世界推进', '人物记账', '行动结算', '记忆总结', '纳戒决定'], '回合里程碑全翻中文，最新在最上');
     assert.equal(turnJournal.lists[0].total, 7, '总数如实上报');
-    assert.match(turnJournal.lists[0].all[6].meta, /帧未动兜底/, '仲裁兜底标记照显');
+    assert.match(turnJournal.lists[0].all[6].meta, /empty/, '纳戒决定结果照显');
     assert.match(turnJournal.lists[0].all[4].meta, /recorded·4项/, '结算行动数照显');
-    assert.match(turnJournal.lists[0].all[6].meta, /inline/, '申报通道进 stage 位');
+    assert.match(turnJournal.lists[0].all[6].meta, /auto/, '决定来源进 stage 位');
 }
 
 // —— 总控：模块行照搬仪表盘视图；没跑过的旧管线「暂无记录」不再占位 ——

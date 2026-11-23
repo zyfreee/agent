@@ -21,10 +21,10 @@ log.record({ taskId: 'drift-fixture', sessionId: 's', branchId: 'b', stateVersio
 assert.equal(log.list().at(-1).event, 'setting_drift');
 assert.equal(Object.hasOwn(log.list().at(-1), 'narrative'), false);
 assert.equal(log.clear(), 2);
-// 回合流水事件：现行每轮管线的七个里程碑都在白名单里，一个不多一个不少。
+// 回合流水事件：现行每轮管线的里程碑都在白名单里（纳戒决定沿用的是改名前的 mvu_arbitrate 槽位）。
 const turnLog = createAuditLog();
 for (const [event, outcome] of [
-    ['turn_mvu_arbitrate', 'applied·帧未动兜底'],
+    ['turn_self_decide', 'empty'],
     ['turn_memory_decide', 'ok'],
     ['turn_npc_record', 'not_due'],
     ['turn_world_decision', 'ok'],
@@ -36,6 +36,6 @@ for (const [event, outcome] of [
 }
 turnLog.record({ taskId: 'turn-fixture', sessionId: 's', branchId: 'b', stateVersion: 'v1', event: 'turn_pregen_abort', outcome: '记忆召回：预设连接失败' });
 assert.equal(turnLog.list({ taskId: 'turn-fixture' }).length, 8, '备料中止事件入账');
-assert.equal(turnLog.list({ taskId: 'turn-fixture' })[0].outcome, 'applied·帧未动兜底', '兜底标记照原样入账');
+assert.equal(turnLog.list({ taskId: 'turn-fixture' })[0].outcome, 'empty', '纳戒决定结果照原样入账');
 assert.throws(() => turnLog.record({ taskId: 'x', sessionId: 's', branchId: 'b', stateVersion: 'v1', event: 'turn_bogus' }), /不允许/, '未登记的回合事件仍被拒');
 console.log('audit log tests passed');

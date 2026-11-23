@@ -154,19 +154,19 @@ assert.ok(OPS_GUIDE.includes('有依据地长出来'), '指南必须写明事件
 assert.ok(OPS_GUIDE.includes('不要把原著桥段照搬成事件'), '指南必须写明不照搬原著');
 assert.ok(WORLD_HEADER.startsWith('【世界现状】'));
 
-// —— A5 氛围决定注入条数：calm 收紧、rising 照旧、storm 放开 ——
-assert.deepEqual(injectionLimits('calm'), { near: 6, world: 4 });
-assert.deepEqual(injectionLimits('rising'), { near: 8, world: 6 });
-assert.deepEqual(injectionLimits('storm'), { near: 8, world: 8 });
-assert.deepEqual(injectionLimits(undefined), { near: 6, world: 4 }, '缺氛围按平静算');
+// —— A5 注入条数不设上限（用户口径 2026-11-19）：任何氛围都全量投放，排序只定先后 ——
+assert.deepEqual(injectionLimits('calm'), { near: Infinity, world: Infinity });
+assert.deepEqual(injectionLimits('rising'), { near: Infinity, world: Infinity });
+assert.deepEqual(injectionLimits('storm'), { near: Infinity, world: Infinity });
+assert.deepEqual(injectionLimits(undefined), { near: Infinity, world: Infinity }, '缺氛围同样全量');
 {
-    // 同一批事件，storm 下全列，calm 下只留前 4 条世界大事（置顶/重大优先）。
+    // 同一批事件，calm/storm 下都全列（置顶/重大优先的排序不变）。
     const busy = { clock: { day: 5 }, nearEvents: [], worldEvents: [], tension: 'calm' };
     for (let index = 1; index <= 6; index += 1) {
         busy.worldEvents.push({ id: `w${index}`, day: index, text: `世界大事${index}号`, weight: 'minor', done: false });
     }
     const calmText = buildWorldInjection(busy);
-    assert.equal(busy.worldEvents.filter(event => calmText.includes(event.id)).length, 4, 'calm 只注入 4 条世界大事');
+    assert.equal(busy.worldEvents.every(event => calmText.includes(event.id)), true, 'calm 也全量注入');
     busy.tension = 'storm';
     const stormText = buildWorldInjection(busy);
     assert.equal(busy.worldEvents.every(event => stormText.includes(event.id)), true, 'storm 全部注入');
