@@ -17,7 +17,7 @@ const MODEL_TEXT_CAPS = Object.freeze({
 const MODEL_PROFILE_TEXT_CAP = 60;
 const MODEL_APPEARANCE_CAP = 160;
 const MODEL_ATTRIBUTE_CAP = 12;
-export const SELF_MODEL_OPS_MAX = 12;
+export const SELF_MODEL_OPS_MAX = 200;
 
 /** 模型输出的单条操作：逐字段按上限截断（超长裁短而不是整条作废）。 */
 export function capSelfOp(op) {
@@ -152,7 +152,7 @@ export function extractOpsBlock(reply) {
 /** 逐行解析指令块：好行进 ops，坏行进 parseErrors，不因一行坏账整块作废。
  *  条数不设上限（用户口径 2026-11-17）：模型给多少条合法操作就收多少条。 */
 export function parseOps(raw, { maxOps = SELF_MODEL_OPS_MAX } = {}) {
-    const cap = maxOps === undefined ? SELF_MODEL_OPS_MAX : clampInt(maxOps, 1, 128, SELF_MODEL_OPS_MAX);
+    const cap = maxOps === undefined ? SELF_MODEL_OPS_MAX : clampInt(maxOps, 1, 500, SELF_MODEL_OPS_MAX);
     const lines = typeof raw === 'string' ? raw.split('\n') : [];
     const ops = [];
     const parseErrors = [];

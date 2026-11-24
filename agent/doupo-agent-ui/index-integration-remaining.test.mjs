@@ -305,7 +305,7 @@ test('OPT-110 snapshot lifecycle: captured on injected write, kept through gener
     // 第三批记忆功能：写入查重、重要度评分、相关记忆跳转的接线必须真实存在。
     const runtimeSource = readFileSync(new URL('./memory/memory-runtime.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
     assert.match(runtimeSource, /import \{ DEDUP_SIMILARITY, recallKeys, textSimilarity \} from '\.\/memory-retrieve\.js'/, 'runtime 引检索纯函数做写入查重');
-    assert.match(runtimeSource, /duplicate_of_\$\{entry\.id\}/, '查重拒绝带旧账编号');
+    assert.match(runtimeSource, /记忆并入 \$\{entry\.id\}（与旧账几乎同文/, '查重不再整条拒收，改为并入旧账并点名编号');
     assert.match(source, /重要度 \$\{Number\.isFinite\(Number\(entry\.importance\)\)/, '列表 meta 带重要度');
     assert.match(source, /相关记忆（共钥匙）/, '详情弹窗有相关记忆节');
     assert.match(source, /links: \[\{ label, onPick \}\]/, '详情弹窗支持可点击 links 行');

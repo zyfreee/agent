@@ -27,7 +27,7 @@ export function seasonOf(day) {
     if (dayInYear <= 270) return '秋';
     return '冬';
 }
-const DEFAULT_MAX_OPS = 8;
+const DEFAULT_MAX_OPS = 24;
 const FENCE_RE = /```world[^\S\n]*\n([\s\S]*?)```/g;
 const OP_LINE_RE = /^[ \t]*\{[ \t]*"op"[ \t]*:/;
 
@@ -40,11 +40,12 @@ export const OPS_GUIDE = [
     '{"op":"addEvent","scope":"near","title":"城东连环失窃","text":"城东连着三家铺子夜里失窃","basis":"最近几楼提到的失窃传闻，主角今早又看见巡卫盘查"}',
     '{"op":"addEvent","scope":"world","title":"炼药师大会提前","text":"皇室宣布炼药师大会提前","basis":"上楼贵族宾客的谈话里放出风声","day":6,"weight":"major","days":10}',
     '```',
-    '可用操作：advance(days≤365,minutes≤1439)；setClock(day,minute,label)；addTask(title必写≤20字短标题,detail≤300字完整内容,basis,days=时限≤90)；completeTask(id)；deleteTask(id)；updateTask(id,detail)；setFaction(name,stance:敌对hostile|警惕wary|中立neutral|友好friendly|同盟allied,type类型:宗门|家族|帝国|学院|佣兵团|商会|联盟,level实力档次,leader首领,elders高层阵容,members成员构成,location驻地,assets底蕴产业,relations势力关系,dynamics动向,basis；档案字段留空保留旧值，首次登记尽量写全)；deleteFaction(name)；setPerson(name,attitude态度,basis)；deletePerson(name)；addEvent(scope:near|world,title必写≤16字短标题（如“乌坦城集市风波”，一眼看懂）,text≤120字完整内容,basis≤80字,day,location=事发地点≤40字,weight:minor|major|rumor,days=有效天数≤90，到期自动了结,participants=点名到的人物或势力名（台账里已有的名字，≤3个）,cause=起因事件编号)；setTension(level:calm平静|rising升温|storm风波)；resolveEvent(id,outcome=了结结论≤80字)；updateEvent(id,title/text/weight/days：给已登记的事件推进阶段——大事酝酿到爆发、传闻升级实锤、时限延期都走它)；pinEvent(id)；setInfo(field:weather|location|era|reputation|wanted,text≤80字)。id 用上面事件列表里的编号。',
+    '可用操作：advance(days≤365,minutes≤1439)；setClock(day,minute,label)；addTask(title必写≤40字短标题,detail≤300字完整内容,basis,days=时限≤90)；completeTask(id)；deleteTask(id)；updateTask(id,detail)；setFaction(name,stance:敌对hostile|警惕wary|中立neutral|友好friendly|同盟allied,type类型:宗门|家族|帝国|学院|佣兵团|商会|联盟,level实力档次,leader首领,elders高层阵容,members成员构成,location驻地,assets底蕴产业,relations势力关系,dynamics动向,basis；档案字段留空保留旧值，首次登记尽量写全)；deleteFaction(name)；setPerson(name,attitude态度,basis)；deletePerson(name)；addEvent(scope:near|world,title≤30字短标题（如“乌坦城集市风波”，一眼看懂）,text≤300字完整内容,basis≤80字,day,location=事发地点≤40字,weight:minor|major|rumor,days=有效天数≤90，到期自动了结,participants=点名到的人物或势力名（台账里已有的名字，≤3个）,cause=起因事件编号)；setTension(level:calm平静|rising升温|storm风波)；resolveEvent(id,outcome=了结结论≤80字)；updateEvent(id,title/text/weight/days：给已登记的事件推进阶段——大事酝酿到爆发、传闻升级实锤、时限延期都走它)；pinEvent(id)；setInfo(field:weather|location|era|reputation|wanted,text≤80字)。',
+    '编号怎么引用（重要）：id 只能照抄下面台账里**已经出现过**的编号——事件列表里的 e12、任务列表里的 t3、势力名单里的名字。台账里没有的编号一律视为编造，那条操作会被整条丢弃（就是之前 record_not_found / parent_not_found 的来源）。要记新东西就用 addEvent / addTask / setFaction，不要自己编一个编号去 update。',
     '任务规则：任务宁缺毋滥——每轮最多立 1 条，只记比较重要的目标：玩家郑重承诺或接下的事、人物郑重托付、剧情给出的明确主线/支线目标才立任务（addTask）；一次性的小事（买样东西、跑一趟腿、随口应承的琐事、顺手的采购）不立任务，正文里随手做完就让它过去。detail 写清目标、背景与现状；任务达成后及时 completeTask——完成的任务当场出账（台账里就不再有它了），别再引用它的编号；作废用 deleteTask；进展变化用 updateTask 更新详情。',
     '地点与氛围：事件必须符合所在地特征（魔兽山脉是兽袭与药草，帝都是权贵与阴谋），跨地发生的大事写明 location；setTension 管「世界氛围」——大事临近升 rising、风波不断升 storm、风波平息回落 calm，氛围决定这轮投放事件的频率和烈度。',
         '季节与日程：一年 360 天四季轮转（春/夏/秋/冬），环境描写、药草收成、衣着起居要跟季节对上；固定的大会、仪式、约期用 addEvent 带未来的 day 登记成预定事件，到日子再 resolveEvent。',
-        '事件取材规则：事件宁缺毋滥——每轮最多记 1 条（身边事件为主），只记玩家身边比较重要的事：能改变玩家处境、或值得正文再提的才记；琐碎的日常动静（开门打烊、例行运转、无变化的闲谈寒暄、纯过渡的过场）一律不记；也不必刻意为后续剧情埋线——世界影响另有账管这一层，这件事本身重要才记。事件从最近剧情里有依据地长出来，basis 必须一句话写清它从哪来（哪楼/谁/什么事引出的）；title 必写——4~16 字名词短语，一眼看懂是哪件事，缺标题或超长的条目会被脚本整条丢弃；没有依据的事不记，也不要把原著桥段照搬成事件，原著只在正文需要引用时用。rumor=传闻（未证实消息，正文不得当事实写；查证后 resolveEvent 带 outcome 写结论，真相或戳穿另记一条新事件并用 cause 关联原事件）；有时限的事（限期比武、悬赏、药效、期限任务）务必带上 days，注入列表会显示剩余天数，正文里的时间压力要和它对得上；addEvent 能点名就带 participants（台账「相关人物」「势力动向」里已有的名字），后台靠它知道这件事牵连到谁。机遇与危机（拍卖会、药草成熟、仇家寻上门、势力清洗）属于世界主动投放的大事，偶尔来一件、必须有依据，不要每轮都发；名声（reputation）与通缉度（wanted）只在剧情真有对应行为时更新。',
+        '事件取材规则：宁缺毋滥是第一位的。每轮上限 5 条只是封顶，不是配额——大多数轮次只该有 0~1 条，真出大事（多方势力同时动手、灾祸、追杀、机缘现世）才允许写到 3~5 条。三条硬标准，缺一条就不记：①能改变玩家处境或值得后文再提；②有自己的因果，不是别的事的回声；③写清楚谁、在哪、要往哪走。同一件事不许拆成两条（拆分的合并成一条写全）；同一轮里同类的只留最要紧那一条；已经记过的事只是程度加深的，改那条（事件更新），别再新开一条。琐碎动静（开门打烊、例行运转、无变化的闲谈、纯过渡过场）一律不记；也不必为埋线硬凑——世界影响另有账管这一层，这件事本身重要才记。事件从最近剧情里有依据地长出来，basis 必须一句话写清它从哪来（哪楼/谁/什么事引出的）；title 要写——4~30 字名词短语，一眼看懂是哪件事，实在没写脚本会按正文首句替你补一个；没有依据的事不记，也不要把原著桥段照搬成事件，原著只在正文需要引用时用。rumor=传闻（未证实消息，正文不得当事实写；查证后 resolveEvent 带 outcome 写结论，真相或戳穿另记一条新事件并用 cause 关联原事件）；有时限的事（限期比武、悬赏、药效、期限任务）务必带上 days，注入列表会显示剩余天数，正文里的时间压力要和它对得上；addEvent 能点名就带 participants（台账「相关人物」「势力动向」里已有的名字），后台靠它知道这件事牵连到谁。机遇与危机（拍卖会、药草成熟、仇家寻上门、势力清洗）属于世界主动投放的大事，偶尔来一件、必须有依据，不要每轮都发；名声（reputation）与通缉度（wanted）只在剧情真有对应行为时更新。',
     '没有需要记下的变化就完全不要输出这个区块；正文照常写给玩家看，指令只是记账。',
 ].join('\n');
 

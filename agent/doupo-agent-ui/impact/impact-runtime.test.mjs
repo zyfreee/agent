@@ -40,7 +40,10 @@ assert.equal(child.status, 'applied');
 assert.equal(child.applied[0].record.depth, 1);
 assert.equal(child.applied[0].record.parent, 'i1');
 const orphan = runtime.apply([{ op: 'record', title: '无源之果', detail: 'd', target: 't', parent: 'i99' }], { day: 13, floor: 14 });
-assert.equal(orphan.rejected[0].reason, 'parent_not_found');
+assert.equal(orphan.status, 'applied', '父编号抄错不该整条丢掉，影响本身是好的');
+assert.equal(orphan.applied[0].record.parent, '', '接不上的父节点要去掉');
+assert.equal(orphan.applied[0].record.depth, 0);
+assert.match(orphan.applied[0].summary, /父影响 i99 不存在/, '摘要要说清为什么没接上');
 const deep = runtime.apply([{ op: 'record', title: '第三代', detail: 'd', target: 't', parent: child.applied[0].record.id }], { day: 13, floor: 15 });
 assert.equal(deep.rejected[0].reason, 'chain_too_deep');
 
@@ -370,3 +373,26 @@ for (const keepActive of [false, true]) {
 }
 
 console.log('impact runtime tests passed');
+
+// —— 刷新后重 roll：重放基线跟着存档回来，恢复后仍能撤销上一版 ——
+{
+    const r = createImpactRuntime({ now });
+    r.apply([{ op: 'record', title: '刷新前影响', detail: '旧后果', target: '乌坦城' }], { source: 'decide', floor: 6, day: 1 });
+    const saved = r.snapshotWithReplay();
+    assert.equal(saved._runtime.version, 1, '存档要带上重放基线');
+    assert.equal(saved._runtime.lastFloor.floor, 6);
+
+    const back = createImpactRuntime({ now });
+    back.restore(JSON.parse(JSON.stringify(saved)));
+    assert.equal(back.snapshot().records.some(record => record.title === '刷新前影响'), true, '刷新后业务状态照旧');
+    back.apply([{ op: 'record', title: '刷新后影响', detail: '新后果', target: '乌坦城' }], { source: 'decide', floor: 6, day: 1 });
+    const snap = back.snapshot();
+    assert.equal(snap.records.some(record => record.title === '刷新前影响'), false, '刷新后同楼重 roll 要撤销旧影响');
+    assert.equal(snap.records.some(record => record.title === '刷新后影响'), true, '新正文的影响生效');
+
+    // 旧档没有 _runtime：照旧恢复、只是不能撤销
+    const legacy = createImpactRuntime({ now });
+    legacy.restore(r.snapshot());
+    legacy.apply([{ op: 'record', title: '再来一条', detail: '又一条', target: '乌坦城' }], { source: 'decide', floor: 6, day: 1 });
+    assert.equal(legacy.snapshot().records.some(record => record.title === '刷新前影响'), true, '旧档没有基线就不撤销');
+}

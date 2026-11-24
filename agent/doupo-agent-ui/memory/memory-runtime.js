@@ -19,6 +19,7 @@
 
 // 写入查重与钥匙计算借用检索模块的纯函数（retrieve 不回依赖 runtime，无环）。
 import { DEDUP_SIMILARITY, recallKeys, textSimilarity } from './memory-retrieve.js';
+import { readFloorReplay, writeFloorReplay } from '../core/floor-replay.js';
 
 const TIERS = Object.freeze(['small', 'big']);
 export const TIER_LABELS = Object.freeze({ small: '小记忆', big: '大记忆' });
@@ -232,14 +233,17 @@ export function createMemoryRuntime({ maxOps, now = () => new Date().toISOString
             const tier = kind === 'remember' ? 'small' : 'big';
             const body = text(op.text);
             if (!body) return { ok: false, reason: 'text_missing' };
-            // title 是列表主页面的短标题，必填：没给标题的条目不收；字数不限。
-            const title = text(op.title);
+            // title 是列表主页面的短标题：模型漏写就按正文首个分句补，不再整条丢弃——
+            // 丢一条记忆等于这件事以后永远召不回来，代价比标题糙一点大得多。
+            const titleGiven = text(op.title);
+            const title = titleGiven || body.split(/[，。；：！？、,.!?;:（(\s]/)[0].trim().slice(0, 20) || body.slice(0, 20);
+            const titleDerived = !titleGiven && Boolean(title);
             const related = (Array.isArray(op.related) ? op.related : [])
                 .map(item => text(item))
                 .filter(Boolean);
-            // related 是日后"按需召回"的钥匙：没有关联的记忆永远召不回来；数量不限。
-            if (!related.length) return { ok: false, reason: 'related_missing' };
-            if (!title) return { ok: false, reason: 'title_missing' };
+            // related 是日后"按需召回"的钥匙：模型漏给就用标题兜底，至少留一条召回路径，
+            // 不再整条拒收（旧行为 related_missing 直接丢，玩家看到的就是「说了的事没记住」）。
+            const derivedKeys = related.length ? related : [title].filter(Boolean);
             const day = op.day === undefined ? stateDay() : intIn(op.day, 1, MAX_DAY);
             if (day === null) return { ok: false, reason: 'bad_day' };
             const tag = TAG_LABELS[op.tag] ? op.tag : '';
@@ -248,14 +252,30 @@ export function createMemoryRuntime({ maxOps, now = () => new Date().toISOString
                 .map(item => text(item))
                 .filter(Boolean);
               // 同层同文的条目不重记，防止模型一轮里反复登记同一件事。
-              if (state.entries.some(entry => entry.tier === tier && entry.text === body)) {
-                  return { ok: false, reason: 'duplicate_text' };
+              // 但也不当拒收：并进旧条目（补空字段），返回 merged，玩家不会看到红色「没记成」。
+              const sameText = state.entries.find(entry => entry.tier === tier && entry.text === body);
+              if (sameText) {
+                  const before = structuredClone(sameText);
+                  const filled = [];
+                  if (!text(sameText.title) && title) { sameText.title = title; filled.push('标题'); }
+                  if (!text(sameText.note) && text(op.note)) { sameText.note = text(op.note); filled.push('备注'); }
+                  if (!text(sameText.basis) && text(op.basis)) { sameText.basis = text(op.basis); filled.push('依据'); }
+                  const unionKeys = [...sameText.related];
+                  for (const key of derivedKeys) if (!unionKeys.includes(key)) unionKeys.push(key);
+                  if (unionKeys.length !== sameText.related.length) { sameText.related = unionKeys; filled.push('关联'); }
+                  return {
+                      ok: true,
+                      id: sameText.id,
+                      merged: true,
+                      summary: `记忆并入 ${sameText.id}（同文重记${filled.length ? `：补上${filled.join('、')}` : '，内容未变'}）`,
+                      undo: { op: '_setEntryRaw', entry: before },
+                  };
               }
               // 写入查重（MemPalace check_duplicate，进阶版）：与共享钥匙的**同层**在用旧账词面几乎相同
-              // （≥DEDUP_SIMILARITY）的新条目视为复述，落账前直接拒绝——近似重复从"事后体检"变
+              // （≥DEDUP_SIMILARITY）的新条目视为复述，落账前直接并进旧条目——近似重复从"事后体检"变
               // "写入时拦住"。跨层不查：大记忆同文小记忆是合法的升级路径（分层去重语义不变）。
               // 完整版/简略版（advancedMode()=false）跳过近似查重，只保留上面的同层同文精确查重（旧行为）。
-              const newKeys = advancedMode() ? new Set(recallKeys({ related, aliases })) : null;
+              const newKeys = advancedMode() ? new Set(recallKeys({ related: derivedKeys, aliases })) : null;
               if (newKeys && newKeys.size) {
                   const fingerprint = `${title}${body}`.replace(/\s+/g, '');
                   for (const entry of state.entries) {
@@ -264,7 +284,17 @@ export function createMemoryRuntime({ maxOps, now = () => new Date().toISOString
                       if (!recallKeys(entry).some(key => newKeys.has(key))) continue;
                       const oldFingerprint = `${text(entry.title)}${text(entry.text)}`.replace(/\s+/g, '');
                       if (textSimilarity(fingerprint, oldFingerprint) >= DEDUP_SIMILARITY) {
-                          return { ok: false, reason: `duplicate_of_${entry.id}` };
+                          const before = structuredClone(entry);
+                          const unionKeys = [...entry.related];
+                          for (const key of derivedKeys) if (!unionKeys.includes(key)) unionKeys.push(key);
+                          if (unionKeys.length !== entry.related.length) entry.related = unionKeys;
+                          return {
+                              ok: true,
+                              id: entry.id,
+                              merged: true,
+                              summary: `记忆并入 ${entry.id}（与旧账几乎同文，已合并关联钥匙）`,
+                              undo: { op: '_setEntryRaw', entry: before },
+                          };
                       }
                   }
               }
@@ -276,7 +306,7 @@ export function createMemoryRuntime({ maxOps, now = () => new Date().toISOString
                   title,
                   quote,
                   basis: text(op.basis),
-                  related,
+                  related: derivedKeys,
                   aliases,
                   weight,
                   // 重要度 1-10（Generative Agents 检索三因子之一）：没写按分量推默认（关键 7 / 一般 5 中性）。
@@ -287,8 +317,9 @@ export function createMemoryRuntime({ maxOps, now = () => new Date().toISOString
                   floor: Number.isInteger(floorKey) && floorKey >= 0 ? floorKey : null,
               };
             state.entries.push(entry);
-            const relatedNote = `（关联：${related.join('、')}）`;
-            return { ok: true, id: entry.id, summary: `${TIER_LABELS[tier]} +${entry.id}（第 ${day} 天）：${body}${relatedNote}`, undo: { op: '_removeMemory', id: entry.id } };
+            const relatedNote = `（关联：${derivedKeys.join('、')}）`;
+            const derivedNote = titleDerived || !related.length ? '（模型漏给标题/关联，已按正文补齐）' : '';
+            return { ok: true, id: entry.id, summary: `${TIER_LABELS[tier]} +${entry.id}（第 ${day} 天）：${body}${relatedNote}`, warning: derivedNote || null, undo: { op: '_removeMemory', id: entry.id } };
         }
         if (kind === 'promote') {
             const entry = findEntry(text(op.id));
@@ -369,6 +400,19 @@ export function createMemoryRuntime({ maxOps, now = () => new Date().toISOString
             if (!entry) return { ok: false, reason: 'entry_not_found' };
             entry.weight = WEIGHTS.includes(op.weight) ? op.weight : entry.weight;
             return { ok: true, summary: `恢复 ${entry.id} 分量` };
+        }
+        if (kind === '_setEntryRaw') {
+            // 并入式落账（重复条目并进旧账）的撤销：条目还在账上，只把字段改回原样。
+            // 不能用 _restoreEntry——它发现同号已存在会换新号，反而多出一条重复记忆。
+            const raw = op.entry;
+            const target = findEntry(text(raw?.id));
+            if (!target) return { ok: false, reason: 'entry_not_found' };
+            const restored = normalizeOneEntry(raw);
+            if (!restored) return { ok: false, reason: 'entry_not_found' };
+            for (const key of Object.keys(target)) if (!(key in restored)) delete target[key];
+            Object.assign(target, restored);
+            if (target.supersededBy && !findEntry(target.supersededBy)) target.supersededBy = '';
+            return { ok: true, summary: `还原记忆 ${target.id}` };
         }
         if (kind === '_restoreEntry') {
             const restored = normalizeOneEntry(op.entry);
@@ -560,6 +604,11 @@ export function createMemoryRuntime({ maxOps, now = () => new Date().toISOString
         return structuredClone(state);
     }
 
+    /** 存档用快照：业务状态 + 撤销上一版所需的重放基线，让刷新后重 roll 也能回滚。 */
+    function snapshotWithReplay() {
+        return { ...structuredClone(state), _runtime: writeFloorReplay({ opIds: opIdMemory, lastFloor }) };
+    }
+
     function status() {
         const byTier = {};
         for (const tier of TIERS) {
@@ -575,8 +624,10 @@ export function createMemoryRuntime({ maxOps, now = () => new Date().toISOString
         catch (error) { return { status: 'rejected', reason: String(error?.message ?? error) }; }
         state = restored;
         seq = identityHighWater([...state.entries.map(entry => entry.id), ...state.retiredIds, ...state.retiredSeqRanges.map(pair => `m${pair[1]}`)]);
-        opIdMemory = [];
-        lastFloor = null;
+        // 重放基线跟着存档回来：没有（旧档/被手改）就当不能撤销，与本条之前的旧行为一致。
+        const replay = readFloorReplay(raw?._runtime);
+        opIdMemory = replay?.opIds ?? [];
+        lastFloor = replay?.lastFloor ?? null;
         return { status: 'restored', ...status() };
     }
 
@@ -617,5 +668,5 @@ export function createMemoryRuntime({ maxOps, now = () => new Date().toISOString
         return { status: 'applied', removed: removedEntries.length, shifted: shiftedEntries.length };
     }
 
-    return Object.freeze({ apply, consolidate, dropFloor, snapshot, status, manualVersion: () => state.manualVersion, restore, reset, note, isRetired, tiers: TIERS, tierLabels: TIER_LABELS, tagLabels: TAG_LABELS, config: Object.freeze({ maxLog: null, maxOps }) });
+    return Object.freeze({ apply, consolidate, dropFloor, snapshot, snapshotWithReplay, status, manualVersion: () => state.manualVersion, restore, reset, note, isRetired, tiers: TIERS, tierLabels: TIER_LABELS, tagLabels: TAG_LABELS, config: Object.freeze({ maxLog: null, maxOps }) });
 }

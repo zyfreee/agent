@@ -236,9 +236,17 @@ export function buildVerifyEntries(claims, { floor = null, kind = 'claim' } = {}
     });
 }
 
-/** 归并：豁免命中不记；同楼同断言不重记；FIFO 截断。 */
-export function mergeVerifyEntries(entries, additions, { exemptions = [], max = Infinity, floor = null } = {}) {
-    const merged = [...(Array.isArray(entries) ? entries : [])];
+/**
+ * 归并：豁免命中不记；同楼同断言不重记；FIFO 截断。
+ * replaceFloor=true 时先把该楼旧条目整批清掉再合并——重 roll 换正文后，
+ * 上一版正文得出的断言不再成立，留着会让核验台账同时挂着新旧两套结论。
+ * 误报知识不靠条目本身延续（exemptions 是独立的豁免键），所以整批清掉不丢东西。
+ */
+export function mergeVerifyEntries(entries, additions, { exemptions = [], max = Infinity, floor = null, replaceFloor = false } = {}) {
+    const source = Array.isArray(entries) ? entries : [];
+    const replace = replaceFloor && floor !== null;
+    const merged = replace ? source.filter(item => item?.floor !== floor) : [...source];
+    const removed = source.length - merged.length;
     const floorKey = new Set(merged.filter(item => floor === null || item.floor === floor).map(item => `${item.floor}|${exemptKeyOf(item)}|${item.text}`));
     let added = 0;
     for (const item of Array.isArray(additions) ? additions : []) {
@@ -249,7 +257,7 @@ export function mergeVerifyEntries(entries, additions, { exemptions = [], max = 
         merged.push(item);
         added += 1;
     }
-    return { entries: merged.slice(-max), added };
+    return { entries: merged.slice(-max), added, removed };
 }
 
 /** 误报标记：乐观锁（revision 对不上拒绝），只有 open 能翻成 false_positive。 */

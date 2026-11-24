@@ -27,19 +27,30 @@ assert.deepEqual(Object.values(TAG_LABELS), ['恩怨', '情报', '伏笔', '大�
     const longTitle = rt.apply([{ op: 'remember', title: '一二三四五六七八九十甲乙丙丁戊', text: '标题超长的记忆', related: ['药老'] }], { source: 'panel', day: 6 });
     assert.equal(longTitle.status, 'applied', '标题不限字数，原样入库');
     assert.equal(rt.snapshot().entries.at(-1).title, '一二三四五六七八九十甲乙丙丁戊');
+    // 缺标题不再整条拒绝：按正文首个分句补一个，条目照样落账（丢记忆的代价比标题糙更大）
     const noTitle = rt.apply([{ op: 'remember', text: '没有标题的记忆', related: ['药老'] }], { source: 'panel', day: 6 });
-    assert.equal(noTitle.rejected[0].reason, 'title_missing', '没给 title 的记忆整条拒绝');
+    assert.equal(noTitle.status, 'applied', '没给 title 也照记');
+    assert.equal(rt.snapshot().entries.at(-1).title, '没有标题的记忆', '标题从正文补齐');
+    assert.ok(String(noTitle.applied[0].warning).includes('漏给标题'), JSON.stringify(noTitle.applied[0].warning));
     const big = rt.apply([{ op: 'memorize', title: '欠药老一条命', text: '欠药老一条命', basis: '第 3 楼', related: ['药老'], weight: 'major', tag: 'grudge' }], { source: 'panel', day: 3 });
     assert.equal(big.status, 'applied');
     const bigEntry = rt.snapshot().entries.find(item => item.text === '欠药老一条命');
     assert.equal(bigEntry.tier, 'big');
     assert.equal(bigEntry.tag, 'grudge');
-    // related 缺失 → 拒绝（没有钥匙的记忆召不回来）；别名救不了空的 related
-    assert.equal(rt.apply([{ op: 'remember', text: '没有关联' }]).rejected[0].reason, 'related_missing');
-    assert.equal(rt.apply([{ op: 'remember', text: '也没有', aliases: ['别名'] }]).rejected[0].reason, 'related_missing');
-    // 同层同文未了结 → 拒绝
+    // related 缺失不再拒绝：用标题兜底当召回钥匙（没有钥匙的记忆召不回来，但直接丢更糟）
+    const noKeys = rt.apply([{ op: 'remember', text: '没有关联' }]);
+    assert.equal(noKeys.status, 'applied', '没给 related 也照记');
+    assert.deepEqual(rt.snapshot().entries.at(-1).related, ['没有关联'], '用标题兜底当钥匙');
+    const aliasOnly = rt.apply([{ op: 'remember', text: '也没有', aliases: ['别名'] }]);
+    assert.equal(aliasOnly.status, 'applied', '别名存在也照记');
+    assert.deepEqual(rt.snapshot().entries.at(-1).related, ['也没有'], 'related 缺失时仍用标题兜底');
+    // 同层同文 → 并入旧条目（不整条拒绝，也不新增一条）
+    const before = rt.snapshot().entries.length;
     const dup = rt.apply([{ op: 'remember', title: '坊市穆蛇被打跑', text: '穆蛇在坊市被打跑', basis: '又来', related: ['穆蛇'] }], { source: 'panel', day: 7 });
-    assert.equal(dup.rejected[0].reason, 'duplicate_text');
+    assert.equal(dup.applied.length, 1, '同文重记改为并入');
+    assert.equal(dup.applied[0].merged, true);
+    assert.ok(dup.applied[0].summary.includes('同文重记'), dup.applied[0].summary);
+    assert.equal(rt.snapshot().entries.length, before, '并入不新增条目');
     // 大记忆里同文不受小记忆影响（分层去重）
     const crossTier = rt.apply([{ op: 'memorize', title: '坊市穆蛇被打跑', text: '穆蛇在坊市被打跑', basis: '升级记', related: ['穆蛇'] }], { source: 'panel', day: 7 });
     assert.equal(crossTier.status, 'applied');
@@ -486,16 +497,34 @@ for (const source of ['llm', 'decide']) {
 }
 
 
-// —— 写入查重（MemPalace check_duplicate）：共钥匙且 ≥0.85 相似的新账直接拒绝 ——
+// —— 写入查重（MemPalace check_duplicate）：共钥匙且 ≥0.85 相似的新账并进旧条目（不再整条丢） ——
 {
     const rt = createMemoryRuntime({ now: NOW });
     rt.apply([{ op: 'remember', title: '药铺问价', text: '萧炎在百草药铺问过凝血草的价钱，掂量钱袋后没买。', related: ['凝血草', '百草药铺'] }]);
-    const dup = rt.apply([{ op: 'remember', title: '药铺问价', text: '萧炎在百草药铺问过凝血草的价钱，掂量钱袋后没有买。', related: ['凝血草'] }]);
-    assert.equal(dup.status, 'rejected');
-    assert.equal(dup.rejected[0].reason, 'duplicate_of_m1', '近似复述被写入时拦住并指向旧账');
-    assert.equal(rt.snapshot().entries.length, 1, '被拒绝的操作不落账');
-    const other = rt.apply([{ op: 'remember', title: '坊市闲逛', text: '萧炎在乌坦城坊市闲逛了一下午。', related: ['乌坦城'] }]);
+    const dup = rt.apply([{ op: 'remember', title: '药铺问价', text: '萧炎在百草药铺问过凝血草的价钱，掂量钱袋后没有买。', related: ['凝血草', '乌坦城'] }]);
+    assert.equal(dup.applied.length, 1, '近似复述改为并入旧账');
+    assert.equal(dup.applied[0].merged, true);
+    assert.ok(dup.applied[0].summary.includes('几乎同文'), dup.applied[0].summary);
+    assert.equal(rt.snapshot().entries.length, 1, '并入不新增条目');
+    assert.ok(rt.snapshot().entries[0].related.includes('乌坦城'), '并入时合并关联钥匙');
+    const other = rt.apply([{ op: 'remember', title: '坊市闲逛', text: '萧炎在乌坦城坊市闲逛了一下午。', related: ['坊市'] }]);
     assert.equal(other.status, 'applied', '钥匙不相交则查重不介入');
+}
+
+// —— 并入式落账的撤销：同楼重 roll 必须把旧条目还原，不能多出一条重复记忆 ——
+{
+    const rt = createMemoryRuntime({ now: NOW });
+    rt.apply([{ op: 'remember', title: '药铺问价', text: '萧炎在百草药铺问过凝血草的价钱。', related: ['凝血草'] }], { source: 'decide', floor: 2 });
+    const before = structuredClone(rt.snapshot().entries[0]);
+    rt.apply([{ op: 'remember', title: '药铺问价', text: '萧炎在百草药铺问过凝血草的价钱。', related: ['乌坦城'] }], { source: 'decide', floor: 3 });
+    assert.equal(rt.snapshot().entries.length, 1, '并入不新增条目');
+    assert.ok(rt.snapshot().entries[0].related.includes('乌坦城'), '并入时合并关联钥匙');
+    // 同楼重 roll：先撤销上一版（把旧条目改回原样），再按新版并入。
+    rt.apply([{ op: 'remember', title: '药铺问价', text: '萧炎在百草药铺问过凝血草的价钱。', related: ['乌坦城'] }], { source: 'decide', floor: 3 });
+    const restored = rt.snapshot().entries.find(entry => entry.id === before.id);
+    assert.ok(restored, '并入的旧条目还在账上');
+    assert.equal(restored.related.includes('凝血草'), true, '原有钥匙不被撤销弄丢');
+    assert.equal(rt.snapshot().entries.filter(entry => entry.text === before.text).length, 1, '撤销不制造重复条目');
 }
 
 // —— 重要度：显式 1-10 落账；缺省按分量推默认（关键 7 / 一般 5）；越界回退默认 ——
@@ -535,6 +564,32 @@ console.log('memory runtime tests passed');
     const dup = rt.apply([{ op: 'remember', title: '药铺问价', text: '萧炎在百草药铺问过凝血草的价钱，掂量钱袋后没有买。', related: ['凝血草'] }]);
     assert.equal(dup.status, 'applied', '非进阶版不做近似查重（近似复述照旧落账）');
     const exact = rt.apply([{ op: 'remember', title: '药铺问价', text: '萧炎在百草药铺问过凝血草的价钱，掂量钱袋后没买。', related: ['凝血草'] }]);
-    assert.equal(exact.status, 'rejected', '同层同文的精确查重保留（旧行为）');
-    assert.equal(exact.rejected[0].reason, 'duplicate_text');
+    assert.equal(exact.applied.length, 1, '同层同文仍识别为重复（旧行为）');
+    assert.equal(exact.applied[0].merged, true, '重复一律并入，不再整条拒绝');
+    assert.ok(exact.applied[0].summary.includes('同文重记'), exact.applied[0].summary);
+    assert.equal(rt.snapshot().entries.length, 2, '并入不新增条目');
+}
+
+// —— 刷新后重 roll：重放基线跟着存档回来，恢复后仍能撤销上一版 ——
+{
+    const rt = createMemoryRuntime({ now: NOW });
+    rt.apply([{ op: 'remember', title: '刷新前', text: '刷新前记下的旧事。', related: ['旧'] }], { source: 'decide', floor: 7 });
+    const saved = rt.snapshotWithReplay();
+    assert.equal(saved._runtime.version, 1, '存档要带上重放基线');
+    assert.equal(saved._runtime.lastFloor.floor, 7);
+
+    const back = createMemoryRuntime({ now: NOW });
+    back.restore(JSON.parse(JSON.stringify(saved)));
+    assert.equal(back.snapshot().entries.some(entry => entry.title === '刷新前'), true, '刷新后业务状态照旧');
+    back.apply([{ op: 'remember', title: '刷新后', text: '刷新后写的新事。', related: ['新'] }], { source: 'decide', floor: 7 });
+    const snap = back.snapshot();
+    assert.equal(snap.entries.some(entry => entry.title === '刷新前'), false, '刷新后同楼重 roll 要撤销旧记忆');
+    assert.equal(snap.entries.some(entry => entry.title === '刷新后'), true, '新正文的记忆生效');
+    assert.ok(snap.log.some(entry => entry.source === 'revert'), '撤销要留流水');
+
+    // 旧档没有 _runtime：照旧恢复、只是不能撤销
+    const legacy = createMemoryRuntime({ now: NOW });
+    legacy.restore(rt.snapshot());
+    legacy.apply([{ op: 'remember', title: '再来', text: '再记一条。', related: [] }], { source: 'decide', floor: 7 });
+    assert.equal(legacy.snapshot().entries.some(entry => entry.title === '刷新前'), true, '旧档没有基线就不撤销');
 }

@@ -8,6 +8,7 @@
  */
 
 import { titleSimilarity, SIMILAR_WINDOW_DAYS, SIMILAR_SCORE } from '../core/text-similarity.js';
+import { readFloorReplay, writeFloorReplay } from '../core/floor-replay.js';
 
 const SCOPES = Object.freeze(['near', 'world']);
 const WEIGHTS = Object.freeze(['minor', 'major', 'rumor']);
@@ -15,9 +16,9 @@ const INFO_FIELDS = Object.freeze(['weather', 'location', 'era', 'reputation', '
 const STANCES = Object.freeze(['hostile', 'wary', 'neutral', 'friendly', 'allied']);
 export const STANCE_LABELS = Object.freeze({ hostile: '敌对', wary: '警惕', neutral: '中立', friendly: '友好', allied: '同盟' });
 const MAX_EVENT_TEXT = 300;
-const MAX_EVENT_TITLE = 16;
+const MAX_EVENT_TITLE = 30;
 /** 新立任务的短标题上限；老存档可能存着更长的标题，恢复走 RESTORE_TASK_TITLE 不硬截。 */
-const MAX_TASK_TITLE = 20;
+const MAX_TASK_TITLE = 40;
 const RESTORE_TASK_TITLE = 60;
 /** 事件标题的第一个分句就够当短标题了，遇到这些标点就断。 */
 const TITLE_BREAK_RE = /[，。；：！？、,.!?;:（(]/;
@@ -43,7 +44,7 @@ const MAX_ATTITUDE_TEXT = 80;
 // —— 模型输出的字段字数上限（用户口径 2026-11-17：API 输出要有限制，手动面板不设限）。
 // 这些常量原本直接在 apply/normalize 里截断，现在只给解析层（world-decide / world-ops 的
 // capWorldOp）用；运行时与手动路径一律原样保存。
-export const WORLD_MODEL_OPS_MAX = 12;
+export const WORLD_MODEL_OPS_MAX = 24;
 let WORLD_TEXT_CAPS = null;
 const worldTextCaps = () => {
     if (!WORLD_TEXT_CAPS) WORLD_TEXT_CAPS = Object.freeze({
@@ -92,7 +93,7 @@ const MAX_ADVANCE_MINUTES = 1439;
 const MINUTE_OF_DAY = 1440;
 const DEFAULT_MAX_EVENTS = 999999;
 const DEFAULT_MAX_LOG = 999999;
-const DEFAULT_MAX_OPS = 8;
+const DEFAULT_MAX_OPS = 24;
 const Opid_MEMORY = 200;
 
 function text(value) {
@@ -316,7 +317,7 @@ function rankEvent(event) {
 export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DEFAULT_MAX_LOG, maxOps = DEFAULT_MAX_OPS, now = () => new Date().toISOString() } = {}) {
     maxEvents = clampInt(maxEvents, 1, 999999, DEFAULT_MAX_EVENTS);
     maxLog = clampInt(maxLog, 1, 999999, DEFAULT_MAX_LOG);
-    maxOps = clampInt(maxOps, 1, 32, DEFAULT_MAX_OPS);
+    maxOps = clampInt(maxOps, 1, 64, DEFAULT_MAX_OPS);
     let state = initialState(now);
     let seq = 0;
     let taskSeq = 0;
@@ -328,8 +329,12 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
     }
 
     function findEvent(id) {
+        // 模型有时会把编号写成「e5」以外的样子（带 #、带空格、带括号），统一剥掉前缀再比对：
+        // 编造编号该丢，抄对了却因为多了个符号被丢就很冤。
+        const key = String(id ?? '').trim().replace(/^[#＃\s(（]+|[)）\s]+$/g, '');
+        if (!key) return null;
         for (const scope of SCOPES) {
-            const hit = eventsOf(scope).find(event => event.id === id);
+            const hit = eventsOf(scope).find(event => event.id === key);
             if (hit) return hit;
         }
         return null;
@@ -396,10 +401,11 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
             for (const event of eventsOf(scope)) {
                 if (event.done || event.endDay === null || event.endDay === undefined) continue;
                 if (state.clock.day <= event.endDay) continue;
+                const before = structuredClone(event); // 到期了结同样会被清账，撤销要凭原样事件放回
                 event.done = true;
                 event.resolvedDay = state.clock.day;
                 expired.push(event);
-                restored.push({ op: '_restoreEvent', id: event.id, done: false, resolvedDay: null });
+                restored.push({ op: '_restoreEvent', id: event.id, scope: event.scope, event: before, done: false, resolvedDay: null });
             }
         }
         return { expired, restored };
@@ -449,15 +455,48 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
                 if (span === null) return { ok: false, reason: 'bad_days' };
                 endDay = day + span - 1;
             }
-            // title 必填，与世界影响同一套规矩：缺标题或超长整条拒绝，不再拿正文硬截。
-            const title = text(op.title);
-            if (!title) return { ok: false, reason: 'title_missing' };
-            // 三道重复防线（都只看同栏未了结的事件）：同文最直白；同标题是换内容的重复；
-            // 换说法的近似重复靠标题相似度挡——与世界影响同参（几天内、bigram 重合度过线）。
+            // title 必填，但不再整条丢弃：模型漏写标题时从正文首个分句推一个，
+            // 宁可标题糙一点，也不让这件事凭空消失（旧行为是整条 rejected，玩家永远看不到）。
+            const titleGiven = text(op.title);
+            const title = titleGiven || deriveEventTitle(body);
+            const titleDerived = !titleGiven && Boolean(title);
+            // 重复不再整条拒绝，改成并进那条旧事件：模型把同一件事重写一遍是常态，
+            // 丢掉等于这一轮白记。并账时补空字段、按新内容更新，并返回 _setEventRaw 撤销步骤。
             const active = eventsOf(scope).filter(event => !event.done);
-            if (active.some(event => event.text === body)) return { ok: false, reason: 'duplicate_text' };
-            if (active.some(event => event.title === title)) return { ok: false, reason: 'duplicate_title' };
-            if (active.some(event => Math.abs(event.day - day) <= SIMILAR_WINDOW_DAYS && titleSimilarity(event.title, title) >= SIMILAR_SCORE)) return { ok: false, reason: 'duplicate_similar' };
+            const sameText = active.find(event => event.text === body);
+            const sameTitle = active.find(event => event.title === title);
+            const similar = active.find(event => Math.abs(event.day - day) <= SIMILAR_WINDOW_DAYS && titleSimilarity(event.title, title) >= SIMILAR_SCORE);
+            const twin = sameText || sameTitle || similar;
+            if (twin) {
+                const before = structuredClone(twin);
+                const merged = [];
+                if (body && body !== twin.text && sameText !== twin) { twin.text = body; merged.push('正文'); }
+                if (title && title !== twin.title) { twin.title = title; merged.push('标题'); }
+                const basis = text(op.basis);
+                if (basis && basis !== twin.basis) { twin.basis = basis; merged.push('依据'); }
+                const location = text(op.location);
+                if (location && location !== twin.location) { twin.location = location; merged.push('地点'); }
+                const participants = cleanParticipants(op.participants);
+                if (participants.length) {
+                    const union = [...twin.participants];
+                    for (const name of participants) if (!union.includes(name)) union.push(name);
+                    if (union.length !== twin.participants.length) { twin.participants = union; merged.push('涉及'); }
+                }
+                if (endDay !== null && endDay !== twin.endDay) { twin.endDay = endDay; merged.push('有效期'); }
+                if (WEIGHTS.includes(op.weight) && op.weight !== twin.weight) { twin.weight = op.weight; merged.push('分量'); }
+                const causeRef = text(op.cause);
+                const cause = causeRef && findEvent(causeRef) ? causeRef : null;
+                if (cause && cause !== twin.cause) { twin.cause = cause; merged.push('起因'); }
+                const why = sameText ? '同文重记' : sameTitle ? '同标题' : '高度近似';
+                return {
+                    ok: true,
+                    id: twin.id,
+                    day: twin.day,
+                    merged: true,
+                    summary: `事件并入 ${twin.id}「${twin.title}」（${why}${merged.length ? `：更新${merged.join('、')}` : '，内容未变'}）`,
+                    undo: { op: '_setEventRaw', event: before },
+                };
+            }
             // 因果链：cause 指到台账里已有的事件才存，写错的剥离字段、不整条拒绝。
             const causeRef = text(op.cause);
             const cause = causeRef && findEvent(causeRef) ? causeRef : null;
@@ -471,7 +510,10 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
             const locationNote = location ? `，地点：${location}` : '';
             const causeNote = cause ? `，起因：${cause}` : '';
             const participantsNote = participants.length ? `，涉及：${participants.join('、')}` : '';
-            const warning = causeRef && !cause ? `事件的起因编号（${causeRef}）在台账里找不到，已忽略` : null;
+            const notes = [];
+            if (causeRef && !cause) notes.push(`事件的起因编号（${causeRef}）在台账里找不到，已忽略`);
+            if (titleDerived) notes.push('模型没给标题，已按正文首句自动补上');
+            const warning = notes.length ? notes.join('；') : null;
             return { ok: true, id: event.id, day, summary: `${scope === 'world' ? '世界大事' : '身边事件'} +${event.id}（第 ${day} 天）「${event.title}」：${body}${basis ? `（依据：${basis}）` : ''}${locationNote}${expiryNote}${causeNote}${participantsNote}`, warning, undo: { op: '_removeEvent', id: event.id } };
         }
         if (kind === 'resolveEvent') {
@@ -480,11 +522,14 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
             const beforeDone = event.done;
             const beforeResolvedDay = event.resolvedDay;
             const beforeResolvedNote = event.resolvedNote;
+            // 了结后事件会被 purgeResolved() 整条清出账，撤销时光靠 id 查不回来；
+            // 撤销步骤里带上原样事件，重 roll 回滚时才能把这条事件放回原栏。
+            const before = structuredClone(event);
             const outcome = text(op.outcome);
             event.done = true;
             event.resolvedDay = state.clock.day;
             if (outcome) event.resolvedNote = outcome;
-            return { ok: true, id: event.id, summary: `事件了结 ${event.id}：${event.text}${outcome ? `（结论：${outcome}）` : ''}`, undo: { op: '_restoreEvent', id: event.id, done: beforeDone, resolvedDay: beforeResolvedDay, resolvedNote: beforeResolvedNote } };
+            return { ok: true, id: event.id, summary: `事件了结 ${event.id}：${event.text}${outcome ? `（结论：${outcome}）` : ''}`, undo: { op: '_restoreEvent', id: event.id, scope: event.scope, event: before, done: beforeDone, resolvedDay: beforeResolvedDay, resolvedNote: beforeResolvedNote } };
         }
         // 事件进度：大事的酝酿→爆发、传闻的升级实锤都走它，只动已存在事件的四个字段。
         if (kind === 'updateEvent') {
@@ -740,8 +785,36 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
             return { ok: true, summary: `恢复事件 ${event.id}` };
         }
         if (kind === '_restoreEvent') {
-            const event = findEvent(text(op.id));
-            if (!event) return { ok: false, reason: 'event_not_found' };
+            const id = text(op.id);
+            const event = findEvent(id);
+            if (!event) {
+                // 了结即清账：事件被 purgeResolved() 整条删掉后查表查不到。
+                // 撤销步骤里带着原样事件（scope + event）就凭它放回去；没带（旧档的撤销步骤）就照旧记 not_found。
+                const scope = text(op.scope);
+                const raw = op.event;
+                const body = raw && typeof raw === 'object' ? text(raw.text) : '';
+                if (!SCOPES.includes(scope) || !body || text(raw.id) !== id) return { ok: false, reason: 'event_not_found' };
+                const revived = {
+                    id,
+                    scope,
+                    day: intIn(raw.day, 1, 99999) ?? 1,
+                    title: text(raw.title) || deriveEventTitle(body),
+                    text: body,
+                    location: text(raw.location),
+                    basis: text(raw.basis),
+                    participants: cleanParticipants(raw.participants),
+                    cause: text(raw.cause) || null,
+                    endDay: intIn(raw.endDay, 1, 99999),
+                    weight: WEIGHTS.includes(raw.weight) ? raw.weight : 'minor',
+                    pinned: raw.pinned === true,
+                    done: op.done === true,
+                    resolvedDay: op.resolvedDay === null || op.resolvedDay === undefined ? null : intIn(op.resolvedDay, 1, 99999),
+                    resolvedNote: text(raw.resolvedNote),
+                };
+                eventsOf(scope).push(revived);
+                prune(scope);
+                return { ok: true, summary: `恢复已了结 ${id}「${revived.title}」` };
+            }
             event.done = op.done === true;
             event.resolvedDay = op.resolvedDay === null || op.resolvedDay === undefined ? null : intIn(op.resolvedDay, 1, 99999);
             if (op.resolvedNote !== undefined) event.resolvedNote = text(op.resolvedNote);
@@ -799,19 +872,32 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
             warnings.push(`时间从第 ${dayBefore} 天一次推进到第 ${dayAfter} 天，期间没有登记任何动向事件——世界不该原地等你`);
         }
         if (fromModel && floorKey !== null) lastFloor = { floor: floorKey, undo: undoSteps, opIds };
+        // 纯拒收的一轮不写流水（OPT-067：被拒的操作不许留下任何痕迹），只在有落账时顺带记下拒收原因——
+        // 旧写法只记条数，事后根本查不出是被哪条规则挡的，这次排查就卡在这。
         if (applied.length) {
             state.updatedAt = now();
-            state.log.push({ at: now(), source, summaries: applied.map(item => item.summary).concat(warnings), rejected: rejected.length });
+            state.log.push({
+                at: now(),
+                source,
+                summaries: applied.map(item => item.summary).concat(warnings),
+                rejected: rejected.length,
+                rejectedReasons: rejected.length ? [...new Set(rejected.map(item => String(item.reason ?? 'unknown')))] : [],
+            });
             state.log = state.log.slice(-maxLog);
         }
-        // 已了结的事件整条清出账（用户口径 2026-11-18）：撤销步骤里留有 _restoreEvent，
-        // 重 roll 回滚时事件若已被清走，恢复会记一条 not_found，其余步骤照常。
+        // 已了结的事件整条清出账（用户口径 2026-11-18）：撤销步骤里带着原样事件（scope + event），
+        // 重 roll 回滚时事件虽已被清走，也能凭撤销步骤原样放回，不会因为清账丢掉。
         purgeResolved();
         return { status: rejected.length && !applied.length ? 'rejected' : applied.length ? 'applied' : 'noop', applied, rejected, duplicate, warnings, jumpGap };
     }
 
     function snapshot() {
         return structuredClone(state);
+    }
+
+    /** 存档用快照：业务状态 + 撤销上一版所需的重放基线，让刷新后重 roll 也能回滚。 */
+    function snapshotWithReplay() {
+        return { ...structuredClone(state), _runtime: writeFloorReplay({ opIds: opIdMemory, lastFloor }) };
     }
 
     function status() {
@@ -831,8 +917,10 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
         state = normalizeState(raw, now);
         seq = Math.max(0, ...[...state.nearEvents, ...state.worldEvents].map(event => Number(String(event.id).replace(/\D/g, '')) || 0));
         taskSeq = Math.max(0, ...state.tasks.map(task => Number(String(task.id).replace(/\D/g, '')) || 0));
-        opIdMemory = [];
-        lastFloor = null;
+        // 重放基线跟着存档回来：没有（旧档/被手改）就当不能撤销，与本条之前的旧行为一致。
+        const replay = readFloorReplay(raw?._runtime);
+        opIdMemory = replay?.opIds ?? [];
+        lastFloor = replay?.lastFloor ?? null;
         return { status: 'restored', ...status() };
     }
 
@@ -851,5 +939,5 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
         return { status: 'noted' };
     }
 
-    return Object.freeze({ apply, snapshot, status, restore, reset, note, purgeResolved, formatClock: () => formatClock(state.clock), config: Object.freeze({ maxEvents, maxLog, maxOps }) });
+    return Object.freeze({ apply, snapshot, snapshotWithReplay, status, restore, reset, note, purgeResolved, formatClock: () => formatClock(state.clock), config: Object.freeze({ maxEvents, maxLog, maxOps }) });
 }

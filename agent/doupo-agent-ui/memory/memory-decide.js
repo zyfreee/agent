@@ -16,14 +16,14 @@ export const MEMORY_DECIDE_PROMPT = [
     '只输出一个 JSON 对象：{"note":"一句话说明总结依据","ops":[…]}。不要输出解释、标题或代码块以外的文字。',
     '- ops 里恰好 1 条 remember：把最后一楼正文（结合玩家的本轮输入理解）总结成一句简明记忆——谁/在哪/干了什么、结果如何。本轮正文确实是纯过场、没有任何新信息时才允许空 ops。',
     '- 只总结本轮正文里实际发生的事；现有记忆清单里已有的近事绝不再写（哪怕换个措辞）——多余的小记忆会被脚本直接丢弃。',
-    '- title 必写：1~14 字短标题（名词短语，概括这条记忆，如「加列家中街设卡」「洗骨草扣货待沽」）。记忆列表主页面只显示标题；缺标题的条目会被脚本整条拒绝，不要拿正文原句硬凑。',
-    '- text≤60字写一句简明记忆；更多细节写进 note≤200字；basis 必写（本轮正文里哪里来的）；related 必写（本轮出现的人名/地名/物名，作为日后召回的钥匙，数量不限、按重要度排）；related 为空的操作会被脚本拒绝。',
+    '- title 必写：1~30 字短标题（名词短语，概括这条记忆，如「加列家中街设卡」「洗骨草扣货待沽」）。记忆列表主页面只显示标题；漏写脚本会拿正文首句替你补一个，但补出来的标题通常不如你写的好认，请自己写。',
+    '- text≤60字写一句简明记忆；更多细节写进 note≤200字；basis 必写（本轮正文里哪里来的）；related 必写（本轮出现的人名/地名/物名，作为日后召回的钥匙，数量不限、按重要度排）；related 漏写时脚本会用标题兜底，但那样日后很难按人名地名召回，请自己写全。',
     '- quote 可选：本轮里最有味道的一句原话（≤60字）；只准摘聊天里真实出现过的对白，没有就空着。',
     '- importance 可选：这条记忆的重要度 1~10——影响主角命运、长期恩怨、伏笔/大转折打 7-10，普通进展打 5-6，日常琐碎打 2-4。不写就按分量给默认（关键 7 / 一般 4）；它决定日后召回排序里这条账排多前。',
     '- forgetMemory(id)：仅在既有记忆与本轮正文事实明显冲突时使用；记忆永久保存，没有"了结"状态。',
     '- supersede(id, by)：本轮正文明确续写/覆盖了某条旧记忆时使用——id=被覆盖的旧记忆编号，by=本轮新记下的记忆编号；被覆盖的旧账不再进召回但永久保存，恢复由玩家做。只是旧事重提、没有实质变化就不要用。',
     '- 大记忆不用你管：小记忆攒够后脚本会自动总结成大记忆，你没有 memorize/promote 这类操作。',
-    '- 例外：当输入里有【待整合小记忆】时，额外输出 consolidate 字段（一次调用两件事）——{"ids":[待整合条目的编号],"title":"≤14字大记忆短标题","text":"≤300字把这批小记忆整批总结成一条长期大事","related":[挑重点的召回钥匙，数量不限、按重要度排],"aliases":[其余召回钥匙]}。ids 必须来自待整合清单；没有这个输入段就不输出该字段。',
+    '- 例外：当输入里有【待整合小记忆】时，额外输出 consolidate 字段（一次调用两件事）——{"ids":[待整合条目的编号],"title":"≤30字大记忆短标题","text":"≤300字把这批小记忆整批总结成一条长期大事","related":[挑重点的召回钥匙，数量不限、按重要度排],"aliases":[其余召回钥匙]}。ids 必须来自待整合清单；没有这个输入段就不输出该字段。',
     '口吻：记忆是中性的记事，写清"谁/在哪/发生了什么"，不要写成"我"的第一人称日记。',
     '所有权边界：主角的目标约定、境界物品归纳戒管；玩家接的任务归世界任务；正在发生的市井/势力动态归世界事件；NPC 的档案与好感归人物簿。你只收本轮正文的叙事总结。',
     '只输出 JSON。',
@@ -53,7 +53,7 @@ export const MEMORY_JSON_SCHEMA = Object.freeze({
                 // 只对 remember（新记）强制非空短标题；forgetMemory/supersede 按编号引用不强制。
                 anyOf: [
                     {
-                        properties: { op: { enum: ['remember'] }, title: { type: 'string', minLength: 1, maxLength: 14, pattern: '\\S' } },
+                        properties: { op: { enum: ['remember'] }, title: { type: 'string', minLength: 1, maxLength: 30, pattern: '\\S' } },
                         required: ['op', 'title'],
                     },
                     {
@@ -68,7 +68,7 @@ export const MEMORY_JSON_SCHEMA = Object.freeze({
             type: 'object',
             properties: {
                 ids: { type: 'array', items: { type: 'string' } },
-                title: { type: 'string', minLength: 1, maxLength: 14, pattern: '\\S' },
+                title: { type: 'string', minLength: 1, maxLength: 30, pattern: '\\S' },
                 text: { type: 'string' },
                 related: { type: 'array', items: { type: 'string' } },
                 aliases: { type: 'array', items: { type: 'string' } },

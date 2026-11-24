@@ -118,6 +118,20 @@ const merged = mergeVerifyEntries([], entries, { floor: 42 });
 assert.equal(merged.added, 2);
 assert.equal(mergeVerifyEntries(merged.entries, entries, { floor: 42 }).added, 0, '同楼同断言不重记');
 
+// 重 roll 换正文：同楼旧断言整批替换，别的楼层不动
+const floor41 = buildVerifyEntries([{ text: '上一楼的事', subject: '别处', predicate: '在', value: '是', verdict: 'supported', basis: 'none' }], { floor: 41 }, ledger);
+const withTwoFloors = mergeVerifyEntries([], [...floor41, ...entries], { floor: null });
+const newVersion = buildVerifyEntries([{ text: '萧炎只用了八极崩', subject: '萧炎', predicate: '招式', value: '八极崩', verdict: 'supported', basis: 'ledger:self' }], { floor: 42 }, ledger);
+const replaced = mergeVerifyEntries(withTwoFloors.entries, newVersion, { floor: 42, replaceFloor: true });
+assert.equal(replaced.entries.filter(item => item.floor === 42).length, 1, '同楼只留新版断言');
+assert.equal(replaced.entries.some(item => item.floor === 42 && item.text === '萧炎当前境界为斗者三星'), false, '旧版断言被清掉');
+assert.equal(replaced.entries.some(item => item.floor === 41 && item.text === '上一楼的事'), true, '别的楼层不受影响');
+assert.equal(replaced.removed, 2, '报告清掉了几条');
+const cleared = mergeVerifyEntries(withTwoFloors.entries, [], { floor: 42, replaceFloor: true });
+assert.equal(cleared.entries.some(item => item.floor === 42), false, '这版一条都没得记也要清旧版');
+assert.equal(cleared.removed, 2);
+assert.equal(mergeVerifyEntries(withTwoFloors.entries, newVersion, { floor: 42 }).entries.filter(item => item.floor === 42).length, 3, '不开 replaceFloor 时保持只增不删');
+
 // 豁免：命中不记
 const exempt = addExemption([], entries[0], {});
 assert.equal(exempt.accepted, true);

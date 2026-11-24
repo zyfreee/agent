@@ -11,7 +11,7 @@ import { extractJson } from '../host/llm-client.js';
 import { capWorldOp } from './world-runtime.js';
 
 const MAX_NOTE_CHARS = 300;
-const MAX_OPS = 12;
+const MAX_OPS = 24;
 
 /** 默认决定提示词（system）。改写时保持"只输出 JSON"与操作字段名不变，否则脚本解析不到。 */
 export const WORLD_DECIDE_PROMPT = [
@@ -20,7 +20,7 @@ export const WORLD_DECIDE_PROMPT = [
     '可用操作（脚本逐条校验，写错字段或越界的条目会被丢弃，不影响其他条目）：',
     '- {"op":"advance","days":1} 或 {"op":"advance","minutes":30}：时间流逝。剧情里明确过了多久就推多少，不要每轮硬推。',
     '- {"op":"setClock","day":3,"minute":480,"label":"三年之约前夕"}：直接设定时钟（少用）。',
-    '- {"op":"addEvent","scope":"near或world","title":"必写：不超过16字短标题，一眼看懂（如“乌坦城集市风波”）","text":"完整内容不超过120字","basis":"从哪来：哪楼/谁/什么事引出","location":"事发地点≤40字（跨地事件必填）","weight":"minor或major或rumor","days":有效天数≤90,"participants":["事件点名到的人物或势力，最多3个，用台账里已有的名字"],"cause":"起因事件编号（如 e5，台账里已有才生效）"}：登记事件。title 必写，text 写完整内容，两者不要重复；缺 title 或超过16字的条目会被脚本整条拒绝。',
+    '- {"op":"addEvent","scope":"near或world","title":"必写：不超过30字短标题，一眼看懂（如“乌坦城集市风波”）","text":"完整内容不超过300字","basis":"从哪来：哪楼/谁/什么事引出","location":"事发地点≤40字（跨地事件必填）","weight":"minor或major或rumor","days":有效天数≤90,"participants":["事件点名到的人物或势力，最多3个，用台账里已有的名字"],"cause":"起因事件编号（如 e5，台账里已有才生效）"}：登记事件。title 必写，text 写完整内容，两者不要重复。',
     '- {"op":"resolveEvent","id":"e5","outcome":"≤80字了结结论"}：了结事件，id 只能用台账里已有的编号；outcome 建议写清结论（真相、戳穿、自然平息），流水和面板会显示。',
     '- {"op":"updateEvent","id":"e5","text":"最新进展","weight":"major"}：给已登记的事件推进阶段——大事从酝酿到爆发、传闻升级实锤、时限延期（days）都走它；id 必须是台账里已有的事件。',
     '- {"op":"pinEvent","id":"e5","pinned":false}：置顶或取消置顶。',
@@ -28,14 +28,15 @@ export const WORLD_DECIDE_PROMPT = [
     '- {"op":"setFaction","name":"势力名","type":"宗门|家族|帝国|学院|佣兵团|商会|联盟|其他","level":"实力档次，如 加玛帝国一流/中州顶尖","stance":"hostile敌对|wary警惕|neutral中立|friendly友好|allied同盟","leader":"首领：名字+称谓境界，如 云韵（宗主·斗王）","elders":"高层阵容≤120字：太上长老/大长老/长老/护法/客卿","members":"成员构成≤120字：规模与强者数量","location":"驻地/地盘≤40字","assets":"底蕴与产业≤160字：传承功法/异火/拍卖行/附属势力","relations":"与其他势力的关系≤160字：世仇/依附/同盟","dynamics":"不超过200字：势力现状与动向","basis":"从哪来：哪楼/什么事改变关系"}：登记或更新势力。档案字段（type/level/leader/elders/members/location/assets/relations）留空保留旧值，不会清掉。',
     '- {"op":"setPerson","name":"人物名","attitude":"不超过80字：此人对主角的态度","basis":"从哪来"}：登记或更新人物态度。',
     '- {"op":"setTension","level":"calm平静|rising升温|storm风波"}：调整世界氛围。大事临近升 rising、风波不断升 storm、风波平息回落 calm。',
-    '- {"op":"addTask","title":"必写：不超过20字短标题","detail":"不超过300字：目标/背景/现状","basis":"任务从哪来：谁托付/剧情要求","days":时限≤90}：立任务。title 必写，只写短标题，内容全放 detail。',
+    '- {"op":"addTask","title":"必写：不超过40字短标题","detail":"不超过300字：目标/背景/现状","basis":"任务从哪来：谁托付/剧情要求","days":时限≤90}：立任务。title 必写，只写短标题，内容全放 detail。',
     '- {"op":"completeTask","id":"t2"}：任务达成；{"op":"deleteTask","id":"t2"}：任务作废；{"op":"updateTask","id":"t2","detail":"最新进展"}：更新详情。',
     '事件取材规则：事件从聊天记录里有依据地长出来——正在发生的事、玩家行动引出的动静、所在地点此时合理的动态；题材不拘（市井琐事、势力动作、传闻都行），basis 必须一句话写清从哪来。没有依据的事不记，也不要把世界书里的原著桥段照搬成事件——世界书只是资料，剧情真的触到它时才用。',
-    '事件标题规则：addEvent 的 title 必写，4~16 字名词短语，一眼看懂是哪件事（如“城东连环失窃”“炼药师大会提前”）；不要拿正文原句硬凑，也不要超过16字——缺标题或超长的条目会被脚本整条丢弃。',
-    '任务标题规则：addTask 的 title 必写，不超过 20 字短标题，完整内容全放 detail；缺标题或超过 20 字的条目会被脚本整条丢弃。',
+    '事件标题规则：addEvent 的 title 必写，4~30 字名词短语，一眼看懂是哪件事（如“城东连环失窃”“炼药师大会提前”）；不要拿正文原句硬凑。漏写脚本会按正文首句替你补一个，但自己写更准。',
+    '编号规则：updateEvent/resolveEvent/pinEvent/completeTask/deleteTask 的 id，只能逐字照抄台账里已经出现过的编号（事件 e5、任务 t3）。台账里没有的编号就是编造，那条操作会被整条丢弃。要记新东西用 addEvent/addTask，不要凭空造编号。',
+    '任务标题规则：addTask 的 title 必写，不超过 40 字短标题，完整内容全放 detail；缺标题或超过 40 字的条目会被脚本整条丢弃。',
     'weight 用法：rumor=传闻（未证实的消息，正文不得当事实写；玩家查证后用 resolveEvent 了结它并写 outcome 结论，真相或戳穿另记一条新事件并用 cause 关联原事件）；major=大事（影响走向，打星注入）；minor=普通。机缘与危机（拍卖会开锣、药草成熟、仇家寻上门、势力清洗）属于世界主动投放的 major 事件：偶尔来一件、必须有依据，不要每轮都发。',
     '名声（reputation）与通缉度（wanted）：玩家行侠仗义、立功扬名则名声上涨；作恶、树敌、招惹官府势力则通缉上涨。只在剧情真有对应行为时更新，写法自由（如"乌坦城小有名气""被迦南学院记恨"）。',
-    '- 一次最多 12 条操作，写不下就留到下一轮。',
+    '- 一轮不限条数：正文与台账里真有的变化有几条写几条，别为凑数硬编，也别自己砍掉真变化。',
     '地点与氛围：事件必须符合所在地的特征——魔兽山脉是兽袭与药草，帝都是权贵与阴谋；不在当前所在地发生的大事要在 location 写明地点。氛围（setTension）跟着剧情走：大战将临升 rising，连番变故升 storm，尘埃落定回 calm，这轮投放事件的多少和轻重要跟氛围匹配。',
     '季节与时间跳跃：一年 360 天四季轮转（见注入的时钟行），advance 跨季时在 note 里提一句换季；advance 一次跨 7 天以上（闭关、赶路、养伤）时，必须补 1-3 条"这期间的动向"事件（addEvent 的 day 落在跳跃区间内，basis 写"时间跳跃期间的动向"），出关归来时世界不是原地等你——没补的话脚本会记一条空窗提醒，下轮要补上。',
     '任务规则：玩家承诺或接下的事、人物托付、剧情给出的明确短期目标才立任务；任务列表会注入给正文模型，完成后及时 completeTask、作废用 deleteTask、进展用 updateTask 更新详情。不要把每件小事都立成任务，也不要替玩家立他没答应的事。',
@@ -73,11 +74,11 @@ export const DECIDE_JSON_SCHEMA = Object.freeze({
                 // 按操作类型收紧：新增事件/任务必须带非空短标题，其余操作（了结/删除/更新等）不强制。
                 anyOf: [
                     {
-                        properties: { op: { enum: ['addEvent'] }, title: { type: 'string', minLength: 1, maxLength: 16, pattern: '\\S' } },
+                        properties: { op: { enum: ['addEvent'] }, title: { type: 'string', minLength: 1, maxLength: 30, pattern: '\\S' } },
                         required: ['op', 'title'],
                     },
                     {
-                        properties: { op: { enum: ['addTask'] }, title: { type: 'string', minLength: 1, maxLength: 20, pattern: '\\S' } },
+                        properties: { op: { enum: ['addTask'] }, title: { type: 'string', minLength: 1, maxLength: 40, pattern: '\\S' } },
                         required: ['op', 'title'],
                     },
                     {

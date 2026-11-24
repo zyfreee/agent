@@ -62,7 +62,7 @@ assert.equal(parseDecision('["数组"]', ).status, 'invalid');
 assert.equal(parseDecision('{"ops":[]}').status, 'empty');
 
 const overflow = parseDecision(JSON.stringify({ note: 'x', ops: Array.from({ length: 20 }, () => ({ op: 'advance', days: 1 })) }));
-assert.equal(overflow.ops.length, 12, '操作上限 12 条');
+assert.equal(overflow.ops.length, 20, '操作上限提到 24，20 条不再被截');
 
 const mixed = parseDecision(JSON.stringify({ note: 'n', ops: [{ op: 'advance', days: 1 }, 'junk', { nope: 1 }, { op: 'addEvent', scope: 'near', text: '好条目' }] }));
 assert.equal(mixed.ops.length, 2, '坏条目过滤、好条目保留');

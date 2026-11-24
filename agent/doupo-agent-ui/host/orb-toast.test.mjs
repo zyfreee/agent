@@ -50,7 +50,7 @@ test('消息弹窗：nextExpiry 报最近到期时刻，push 返回入列数', (
     assert.equal(toasts.nextExpiry(), 1_000_000 + 7000);
 });
 
-test('人物簿结果 → 弹窗：同人合并、好感定色、建档打头、好感标签去重', () => {
+test('人物簿结果 → 弹窗：同人合并、语气看记成没记成、建档打头、好感标签去重', () => {
     const result = {
         status: 'applied',
         applied: [
@@ -64,8 +64,10 @@ test('人物簿结果 → 弹窗：同人合并、好感定色、建档打头、
     const toasts = npcLedgerResultToToasts(result, { source: '正文' });
     assert.equal(toasts.length, 4);
     assert.deepEqual(toasts[0], { icon: 'person', title: '云香', text: '好感 +4 · 流水 · 经历', tone: 'good', detail: '正文' }, '两次补丁合并，好感标签不重复');
-    assert.equal(toasts[1].tone, 'bad');
+    // 掉好感是记成功的一次更新，不是记录失败：不许染成红色（实测玩家会把红色理解成「没记上」）。
+    assert.equal(toasts[1].tone, 'info', '老档案掉好感走中性，不报错色');
     assert.equal(toasts[2].icon, 'plus', '建档换加号图标');
+    assert.equal(toasts[2].tone, 'good', '新建档一律绿色');
     assert.equal(toasts[2].text, '新档案 · 好感 +2 · 流水 · 经历');
     assert.equal(toasts[3].tone, 'info', '只有字段变化没有好感＝中性');
 });

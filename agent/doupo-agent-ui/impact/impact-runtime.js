@@ -10,6 +10,7 @@
  */
 
 import { titleSimilarity, SIMILAR_WINDOW_DAYS, SIMILAR_SCORE } from '../core/text-similarity.js';
+import { readFloorReplay, writeFloorReplay } from '../core/floor-replay.js';
 
 const KINDS = Object.freeze(['direct', 'ripple', 'butterfly']);
 const WEIGHTS = Object.freeze(['minor', 'major', 'world']);
@@ -143,7 +144,9 @@ export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchi
     let lastFloor = null; // 最近一次由模型回复落账的楼层：{ floor, undo }，同楼重 roll 时用来回滚
 
     function find(id) {
-        const key = text(id);
+        // 台账行以「#i3」开头，模型很容易连着井号一起抄回来——去掉前缀再比对，
+        // 否则一条本来正确的引用会被判成 record_not_found 整条丢掉。
+        const key = text(id).replace(/^[#＃\s]+/, '');
         if (!key) return null;
         return state.records.find(record => record.id === key) || null;
     }
@@ -217,13 +220,21 @@ export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchi
             const evidence = text(op.evidence);
             const canon = text(op.canon);
             const eventId = text(op.eventId);
-            const parent = text(op.parent);
+            const parentGiven = text(op.parent);
+            let parent = parentGiven;
             let depth = 0;
-            if (parent) {
-                const upstream = find(parent);
-                if (!upstream) return { ok: false, reason: 'parent_not_found' };
-                depth = upstream.depth + 1;
-                if (depth > maxChainDepth) return { ok: false, reason: 'chain_too_deep' };
+            let parentNote = '';
+            if (parentGiven) {
+                const upstream = find(parentGiven);
+                if (upstream) {
+                    depth = upstream.depth + 1;
+                    if (depth > maxChainDepth) return { ok: false, reason: 'chain_too_deep' };
+                } else {
+                    // 模型抄了一个台账里没有的编号：这条影响本身是好的，别整条丢掉，
+                    // 只把接不上的父节点去掉，并在摘要里说明，方便事后核对。
+                    parent = '';
+                    parentNote = `（父影响 ${parentGiven} 不存在，已按无来源记下）`;
+                }
             }
             // 同一楼里反复登记同一件事只算一次；没楼号时退回"同一天同一对象同标题"。
             const duplicated = state.records.some(record => record.title === title
@@ -270,7 +281,7 @@ export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchi
             const archived = prune();
             const ripenNote = ripenDay !== null ? `，第 ${ripenDay} 天起发酵` : '';
             const archiveNote = archived.length ? `；已归档 ${archived.join('、')}` : '';
-            return { ok: true, id: record.id, record, summary: `${summaryOf(record)}${ripenNote}${archiveNote}`, undo: { op: '_removeRecord', id: record.id } };
+            return { ok: true, id: record.id, record, summary: `${summaryOf(record)}${ripenNote}${archiveNote}${parentNote}`, undo: { op: '_removeRecord', id: record.id } };
         }
 
         if (kind === 'ripen' || kind === 'close' || kind === 'revert') {
@@ -587,6 +598,11 @@ export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchi
         return structuredClone(state);
     }
 
+    /** 存档用快照：业务状态 + 撤销上一版所需的重放基线，让刷新后重 roll 也能回滚。 */
+    function snapshotWithReplay() {
+        return { ...structuredClone(state), _runtime: writeFloorReplay({ opIds: opIdMemory, lastFloor }) };
+    }
+
     /** 档案：容量清出与被手动删除的都在这里，面板可只读展示并挑回来。 */
     function archived(limit = 0) {
         const rows = [...state.archive].sort((left, right) => (right.day - left.day) || String(left.id).localeCompare(String(right.id)));
@@ -658,8 +674,10 @@ export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchi
         if (new Set(all.map(record => record.id)).size !== all.length) return { status: 'rejected', reason: 'duplicate_id' };
         state = next;
         seq = all.reduce((max, record) => Math.max(max, Number(String(record.id).replace(/\D/g, '')) || 0), 0);
-        opIdMemory = [];
-        lastFloor = null;
+        // 重放基线跟着存档回来：没有（旧档/被手改）就当不能撤销，与本条之前的旧行为一致。
+        const replay = readFloorReplay(raw?._runtime);
+        opIdMemory = replay?.opIds ?? [];
+        lastFloor = replay?.lastFloor ?? null;
         if (sweepDue(state.day, []).length) {
             state.version += 1;
             state.updatedAt = now();
@@ -702,6 +720,7 @@ export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchi
         archived,
         pendingRipen,
         snapshot,
+        snapshotWithReplay,
         status,
         manualVersion: () => state.manualVersion,
         dropFloor,

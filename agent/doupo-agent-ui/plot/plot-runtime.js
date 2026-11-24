@@ -11,12 +11,13 @@
  */
 
 import { titleSimilarity, SIMILAR_WINDOW_DAYS, SIMILAR_SCORE } from '../core/text-similarity.js';
+import { readFloorReplay, writeFloorReplay } from '../core/floor-replay.js';
 
 const KINDS = Object.freeze(['foreshadow', 'suspense', 'conflict']);
 export const KIND_LABELS = Object.freeze({ foreshadow: '伏笔', suspense: '悬念', conflict: '恩怨' });
 const THREAD_STATUSES = Object.freeze(['open', 'resolved', 'dropped']);
 
-const MAX_THREAD_TITLE = 16;
+const MAX_THREAD_TITLE = 30;
 const MAX_THREAD_DETAIL = 200;
 const MAX_BASIS_TEXT = 80;
 const MAX_OUTCOME_TEXT = 80;
@@ -280,6 +281,11 @@ export function createPlotRuntime({ maxThreads = DEFAULT_MAX_THREADS, maxLog = D
         return structuredClone(state);
     }
 
+    /** 存档用快照：业务状态 + 撤销上一版所需的重放基线，让刷新后重 roll 也能回滚。 */
+    function snapshotWithReplay() {
+        return { ...structuredClone(state), _runtime: writeFloorReplay({ opIds: [], lastFloor }) };
+    }
+
     function status() {
         const open = openThreads();
         const today = state.day ?? 1;
@@ -294,7 +300,8 @@ export function createPlotRuntime({ maxThreads = DEFAULT_MAX_THREADS, maxLog = D
     function restore(raw) {
         state = normalizeState(raw, now);
         seq = Math.max(0, ...state.threads.map(thread => Number(String(thread.id).replace(/\D/g, '')) || 0));
-        lastFloor = null;
+        // 重放基线跟着存档回来：没有（旧档/被手改）就当不能撤销，与本条之前的旧行为一致。
+        lastFloor = readFloorReplay(raw?._runtime)?.lastFloor ?? null;
         return { status: 'restored', ...status() };
     }
 
@@ -312,5 +319,5 @@ export function createPlotRuntime({ maxThreads = DEFAULT_MAX_THREADS, maxLog = D
         return { status: 'noted' };
     }
 
-    return Object.freeze({ apply, snapshot, status, restore, reset, note, config: Object.freeze({ maxThreads, maxLog, maxOps }) });
+    return Object.freeze({ apply, snapshot, snapshotWithReplay, status, restore, reset, note, config: Object.freeze({ maxThreads, maxLog, maxOps }) });
 }

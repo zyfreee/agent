@@ -1055,6 +1055,27 @@ svg.dai-svg { width: 1em; height: 1em; flex: none; display: inline-block; vertic
     display: none;
 }
 
+/* ---- 楼层美化下的翻页箭头与「1/1」计数 ----
+   #chat.doupo-dress 把消息底换成米纸（--dpd-paper），但酒馆自带的 swipe 箭头、计数
+   仍用主题的浅色字（深色主题下是 --SmartThemeBodyColor 的浅灰），压在纸底上几乎看不见。
+   这里改成本套墨色，并给 hover 一点反馈。没启用美化时（#chat 上没有 .doupo-dress）
+   这条完全不生效，其他卡不受影响。 */
+#chat.doupo-dress .mes .swipe_left,
+#chat.doupo-dress .mes .swipe_right,
+#chat.doupo-dress .mes .swipes-counter {
+    color: var(--dpd-muted, #8a7458);
+    text-shadow: none;
+}
+#chat.doupo-dress .mes .swipe_right,
+#chat.doupo-dress .mes .swipes-counter { opacity: 0.9; }
+#chat.doupo-dress .mes .swipe_left { opacity: 0.55; }
+#chat.doupo-dress .mes .swipe_left:hover,
+#chat.doupo-dress .mes .swipe_right:hover,
+#chat.doupo-dress .mes .swipes-counter:hover {
+    color: var(--dpd-accent, #b4452f);
+    opacity: 1;
+}
+
 /* ---- 纳戒·制作台画面：炼丹锅 + 炼器台 ----
    纯 CSS 画的两台小场景，摆在制作台两张卡片的标题下面，纯装饰（aria-hidden）。
    配色走 --dai- 主题：暗底金描边，火光用暖橙；动画都是 2 秒级小循环，

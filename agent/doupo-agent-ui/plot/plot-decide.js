@@ -19,7 +19,7 @@ export const PLOT_DECIDE_PROMPT = [
     '只输出一个 JSON 对象：{"note":"一句话说明这轮剧情判断","ops":[…]}。不要输出解释、标题或代码块以外的文字。',
     '可用操作（脚本逐条校验，写错字段或越界的条目会被丢弃，不影响其他条目）：',
     '- {"op":"setPlan","goal":"本幕目标≤60字：当前这段剧情要把什么事推向什么结果","next":"下一步走向≤120字：下一两轮正文该往哪写"}：滚动计划。计划要从当前剧情自然长出来，不要凭空另起炉灶；目标没变就只更新 next，两个都写也行。',
-    '- {"op":"addThread","title":"必写：不超过16字短标题，一眼看懂是哪条线","kind":"foreshadow伏笔|suspense悬念|conflict恩怨","detail":"不超过200字：线索内容——埋了什么、等什么来收","basis":"必写：从哪来（哪楼/谁/什么事埋下的）","dueDays":预期回收窗口≤90}：登记线索。伏笔=已经埋下等回收的钩子（信物、来历、一句意味深长的话）；悬念=玩家正等答案的谜（幕后黑手、玉简内容）；恩怨=人物间没了的账（仇家记恨、亏欠人情）。没有依据不记，正文随口一提的小事不记。',
+    '- {"op":"addThread","title":"必写：不超过30字短标题，一眼看懂是哪条线","kind":"foreshadow伏笔|suspense悬念|conflict恩怨","detail":"不超过200字：线索内容——埋了什么、等什么来收","basis":"必写：从哪来（哪楼/谁/什么事埋下的）","dueDays":预期回收窗口≤90}：登记线索。伏笔=已经埋下等回收的钩子（信物、来历、一句意味深长的话）；悬念=玩家正等答案的谜（幕后黑手、玉简内容）；恩怨=人物间没了的账（仇家记恨、亏欠人情）。没有依据不记，正文随口一提的小事不记。',
     '- {"op":"updateThread","id":"f3","detail":"最新进展"}：给已登记的线索推进阶段——传闻升级、恩怨发酵都走它；id 必须是台账里已有的线索。',
     '- {"op":"resolveThread","id":"f3","outcome":"≤80字怎么回收的"}：线索回收——伏笔揭晓、悬念揭底、恩怨了结时用；id 只能用台账里已有的编号。',
     '- {"op":"dropThread","id":"f3","outcome":"≤80字为什么放弃"}：线索作废——剧情明确绕开了这条线、或它已随剧情自然失效时用，不硬凑回收。',
@@ -48,7 +48,7 @@ export const PLOT_JSON_SCHEMA = Object.freeze({
                 required: ['op'],
                 anyOf: [
                     {
-                        properties: { op: { enum: ['addThread'] }, title: { type: 'string', minLength: 1, maxLength: 16, pattern: '\\S' }, basis: { type: 'string', minLength: 1 } },
+                        properties: { op: { enum: ['addThread'] }, title: { type: 'string', minLength: 1, maxLength: 30, pattern: '\\S' }, basis: { type: 'string', minLength: 1 } },
                         required: ['op', 'title', 'basis'],
                     },
                     {

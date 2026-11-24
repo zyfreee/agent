@@ -59,8 +59,8 @@
     const helper = hostWindow.TavernHelper ?? window.TavernHelper ?? null;
     const getContext = () => hostWindow.SillyTavern?.getContext?.() ?? {};
     // 版本戳：控制台敲 __DPD_VERSION__ 就能确认页面跑的是哪一版
-    hostWindow.__DPD_VERSION__ = 'v6.14';
-    try { console.info('[斗破美化] v6.14 已加载（弹窗撤内部流水；观世牌只留「全」印）'); } catch { /* 忽略 */ }
+    hostWindow.__DPD_VERSION__ = 'v6.16';
+    try { console.info('[斗破美化] v6.16 已加载（三类牌都能收起成一行，点牌头任意处即可收放）'); } catch { /* 忽略 */ }
 
     const THEME_NAMES = new Set(['gilt', 'graphite', 'parchment']);
     const normalizeTheme = value => (THEME_NAMES.has(value) ? value : 'gilt');
@@ -421,6 +421,26 @@
 #chat .dpd-world-card .dpd-strip-head-btn[aria-expanded="true"] .dpd-strip-chev { transform: rotate(180deg); color: var(--dpd-accent); }
 #chat .dpd-world-detail { margin: 0.6rem 0 0; padding: 0.55rem 0.1rem 0.1rem; border-top: 1px dashed var(--dpd-line); color: var(--dpd-ink); font-size: 0.78rem; }
 #chat .dpd-world-detail[hidden] { display: none; }
+/* 卡头折叠（v6.15 / v6.16）：三类牌都能收起成一行，按类记忆，切楼层一致；点牌头任意处即可收放 */
+#chat .dpd-fold-btn { margin-left: auto; flex: none; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; line-height: 1; cursor: pointer; }
+#chat .dpd-fold-head { cursor: pointer; }
+#chat .dpd-fold-head:hover .dpd-fold-btn .dpd-strip-chev { color: var(--dpd-accent); border-color: var(--dpd-accent); }
+#chat .dpd-fold-btn .dpd-strip-chev { width: 1.45rem; height: 1.45rem; font-size: 0.85rem; transition: transform 0.18s ease, color 0.15s ease, border-color 0.15s ease; }
+#chat .dpd-fold-btn:hover .dpd-strip-chev,
+#chat .dpd-fold-btn:focus-visible .dpd-strip-chev { color: var(--dpd-accent); border-color: var(--dpd-accent); }
+#chat .dpd-fold-btn[aria-expanded="false"] .dpd-strip-chev { transform: rotate(-90deg); color: var(--dpd-accent); }
+#chat .dpd-fold-summary { display: none; margin-left: 0.55rem; min-width: 0; max-width: 60%; font-size: 0.72rem; letter-spacing: 0.04em; color: var(--dpd-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#chat .dpd-world-card .dpd-strip-head { padding-right: 2.6rem; }
+#chat .dpd-world-card.is-folded .dpd-strip-chips { display: none; }
+#chat .dpd-world-card.is-folded .dpd-strip-title small,
+#chat .dpd-pre-card.is-folded .dpd-pre-head small { display: none; }
+#chat .dpd-world-card.is-folded .dpd-fold-summary,
+#chat .dpd-pre-card.is-folded .dpd-fold-summary { display: inline-block; }
+#chat .dpd-pre-card.is-folded .dpd-pre-tabs,
+#chat .dpd-pre-card.is-folded .dpd-pre-view { display: none; }
+#chat .dpd-pre-card.is-folded .dpd-pre-head { margin-bottom: 0; }
+#chat .dpd-world-card.is-folded,
+#chat .dpd-pre-card.is-folded { padding-bottom: 0.7rem; }
 /* 明细行：竹简一样的短行 */
 #chat .dpd-pre-detail { padding: 0 0.05rem 0.1rem; display: grid; gap: 0.3rem; }
 #chat .dpd-pre-detail[hidden] { display: none; }
@@ -610,6 +630,77 @@ body.doupo-blaze #chat::-webkit-scrollbar-thumb { background: linear-gradient(18
         floorEl?.querySelectorAll(':scope .dpd-floor-strip, :scope .dpd-world-card, :scope .dpd-floor-strip-detail').forEach(el => el.remove());
     }
 
+    // —— 卡头折叠（v6.15）：观世牌 / 开炉·备料 / 收炉·落账 三类牌都能收起成一行 ——
+    // 收起状态按「类」记而不是按楼层记：收一次，整段聊天里同一类牌都收着，切楼层、刷新都一致。
+    const FOLD_STORE_KEY = 'doupo-dress-fold';
+    const FOLD_KINDS = ['world', 'pre', 'post'];
+    // 牌头里这些元素自己有点击语义（开全账弹窗、切签），点它们的时候不要顺手把牌收了。
+    const POPUP_TRIGGER_SELECTOR = '.dpd-fold-btn, .dpd-full-btn, .dpd-full-btn-float, [data-popup-key], .dpd-pre-summary, .dpd-pre-tab, a, button, input, select, textarea';
+    const foldState = (() => {
+        const base = { world: false, pre: false, post: false };
+        try {
+            const saved = JSON.parse(hostWindow.localStorage?.getItem(FOLD_STORE_KEY) || 'null');
+            for (const kind of FOLD_KINDS) if (typeof saved?.[kind] === 'boolean') base[kind] = saved[kind];
+        } catch { /* 读不到就全展开 */ }
+        return base;
+    })();
+    function saveFoldState() {
+        try { hostWindow.localStorage?.setItem(FOLD_STORE_KEY, JSON.stringify(foldState)); } catch { /* 忽略 */ }
+    }
+    function applyFold(card, button, kind) {
+        if (!card) return;
+        const folded = !!foldState[kind];
+        card.classList.toggle('is-folded', folded);
+        if (button) {
+            button.setAttribute('aria-expanded', String(!folded));
+            button.title = folded ? '展开这张牌' : '收起这张牌';
+            button.setAttribute('aria-label', button.title);
+        }
+    }
+    function refreshFoldKind(kind) {
+        for (const button of doc.querySelectorAll(`#chat .dpd-fold-btn[data-fold-kind="${kind}"]`)) {
+            applyFold(button.closest('.dpd-world-card, .dpd-pre-card'), button, kind);
+        }
+    }
+    /** 卡头右侧挂一枚折叠箭头；summaryText 是收起后那行要显示的摘要（展开时藏起来）。 */
+    function attachFold(card, head, kind, summaryText) {
+        if (!card || !head) return;
+        card.dataset.foldKind = kind;
+        const summary = doc.createElement('span');
+        summary.className = 'dpd-fold-summary';
+        summary.textContent = summaryText || '';
+        summary.title = summaryText || '';
+        const button = doc.createElement('button');
+        button.type = 'button';
+        button.className = 'dpd-fold-btn';
+        button.dataset.foldKind = kind;
+        const chev = doc.createElement('span');
+        chev.className = 'dpd-strip-chev';
+        chev.setAttribute('aria-hidden', 'true');
+        chev.textContent = '▾';
+        button.append(chev);
+        const toggle = () => {
+            foldState[kind] = !foldState[kind];
+            saveFoldState();
+            refreshFoldKind(kind);
+        };
+        button.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            toggle();
+        });
+        // 整条牌头也能点：除了「全」印、签的摘要这些自己有点击语义的地方，其余位置一律当作收放开关。
+        head.classList.add('dpd-fold-head');
+        head.addEventListener('click', event => {
+            const hit = event.target instanceof Element ? event.target.closest(POPUP_TRIGGER_SELECTOR) : null;
+            if (hit) return;
+            event.preventDefault();
+            toggle();
+        });
+        head.append(summary, button);
+        applyFold(card, button, kind);
+    }
+
     /** 观世牌：世界运转的当下面貌，挂在正文上方；一张整卡，明细在卡肚里展开。 */
     function ensureWorldCard(floorEl, spec) {
         if (!floorEl) return;
@@ -658,6 +749,7 @@ body.doupo-blaze #chat::-webkit-scrollbar-thumb { background: linear-gradient(18
         title.append(name, caption);
         head.append(seal, title);
         card.append(head);
+        attachFold(card, head, 'world', spec.chips.slice(0, 2).map(field => String(field.value).split(/[，,]/)[0].trim()).join(' · '));
         const chips = doc.createElement('span');
         chips.className = 'dpd-strip-chips';
         for (const field of spec.chips) {
@@ -784,7 +876,7 @@ body.doupo-blaze #chat::-webkit-scrollbar-thumb { background: linear-gradient(18
 
     /** 楼层切换签面板（生成前 / 正文后共用）：三枚签，点签换内容。 */
     let panelSeq = 0;
-    function ensureTabsPanel(floorEl, sections, header) {
+    function ensureTabsPanel(floorEl, sections, header, foldKind) {
         if (!floorEl) return;
         const anchor = floorEl.querySelector('.mes_text');
         if (!anchor) return;
@@ -813,6 +905,8 @@ body.doupo-blaze #chat::-webkit-scrollbar-thumb { background: linear-gradient(18
         caption.textContent = header.caption;
         head.append(seal, title, caption);
         card.append(head);
+        const foldText = sections.map(section => section.label).join(' · ') + (sections.every(section => section.summary.startsWith('✓')) ? ' ✓' : '');
+        attachFold(card, head, foldKind || (header === POST_HEADER ? 'post' : 'pre'), foldText);
         const tablist = doc.createElement('div');
         tablist.className = 'dpd-pre-tabs';
         tablist.setAttribute('role', 'tablist');
@@ -1852,7 +1946,7 @@ body.doupo-blaze #chat::-webkit-scrollbar-thumb { background: linear-gradient(18
                 || (anchorFloor && !anchorFloor.querySelector(':scope .dpd-pre-card'))) {
                 const previous = state.settleFloor;
                 if (previous && previous !== anchorFloor) clearPre(previous);
-                ensureTabsPanel(anchorFloor, sections, PRE_HEADER);
+                ensureTabsPanel(anchorFloor, sections, PRE_HEADER, 'pre');
                 state.settleFloor = anchorFloor;
                 state.settleSig = settleSig;
             }
@@ -1886,7 +1980,7 @@ body.doupo-blaze #chat::-webkit-scrollbar-thumb { background: linear-gradient(18
                 || !lastFloor.querySelector(':scope .dpd-pre-card')) {
                 const previous = state.postFloor;
                 if (previous && previous !== lastFloor) clearPre(previous);
-                ensureTabsPanel(lastFloor, sections, POST_HEADER);
+                ensureTabsPanel(lastFloor, sections, POST_HEADER, 'post');
                 state.postFloor = lastFloor;
                 state.postSig = postSig;
             }

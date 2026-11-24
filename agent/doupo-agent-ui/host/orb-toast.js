@@ -137,7 +137,9 @@ export function npcLedgerResultToToasts(result, { source = '' } = {}) {
             icon: merged.created ? 'plus' : 'person',
             title: merged.name,
             text: parts.join(' · '),
-            tone: merged.favor > 0 ? 'good' : merged.favor < 0 ? 'bad' : 'info',
+            // 语气看「记成没记成」，不看好感正负：好感 -2 是一次成功的建档，
+            // 染成红色会被误读成记录失败（实测玩家就是这么理解的）。
+            tone: merged.created || merged.favor > 0 ? 'good' : 'info',
             detail: source,
         });
     }
@@ -167,4 +169,58 @@ export function selfResultToToasts(result, { source = '' } = {}) {
         toasts.push({ icon: rule.icon, title: '', text: summary, tone: rule.tone, detail: source });
     }
     return toasts;
+}
+
+/** 非纳戒/人物簿账本的落账风格：世界运转、剧情、记忆、世界影响各有一套图标与主语。 */
+const APPLY_TOAST_STYLES = Object.freeze({
+    world: Object.freeze({ icon: 'ledger', tone: 'info', label: '世界运转' }),
+    plot: Object.freeze({ icon: 'arrow', tone: 'info', label: '剧情' }),
+    memory: Object.freeze({ icon: 'letter', tone: 'good', label: '记忆' }),
+    impact: Object.freeze({ icon: 'flame', tone: 'info', label: '世界影响' }),
+});
+
+/** 摘要只留主干：切到第一个分隔符之前，再截到 22 字——合并成一条时用来点名。 */
+function summaryHead(summary) {
+    // 半角冒号只在不是「12:20」这种钟点时才算分隔符，否则时钟推进会被切成「时间推进 12」。
+    const head = String(summary).split(/[：「（(]|:(?!\d)/)[0].trim();
+    return head.length > 22 ? `${head.slice(0, 21)}…` : head;
+}
+
+/**
+ * 世界运转/剧情/记忆/世界影响 apply 结果 → 弹窗条目。
+ * 默认一条落账摘要一条胶囊（与纳戒同款）；merge=true 时整轮合成一条，
+ * 用「N 项 · 时钟推进 · 事件更新 e65 …」点名——世界运转一轮记 6 条时不再刷屏。
+ */
+export function applyResultToToasts(result, { kind = '', source = '', merge = false } = {}) {
+    const style = APPLY_TOAST_STYLES[kind] ?? Object.freeze({ icon: 'ring', tone: 'info', label: '' });
+    const applied = Array.isArray(result?.applied) ? result.applied : [];
+    const summaries = applied
+        .map(item => (typeof item?.summary === 'string' ? item.summary.trim() : ''))
+        .filter(Boolean);
+    if (!summaries.length) return [];
+    if (!merge) {
+        return summaries.map(summary => ({ icon: style.icon, title: style.label, text: summary, tone: style.tone, detail: source }));
+    }
+    const heads = [];
+    for (const summary of summaries) {
+        const head = summaryHead(summary);
+        if (head && !heads.includes(head)) heads.push(head);
+    }
+    const text = summaries.length === 1 ? summaries[0] : `${summaries.length} 项 · ${heads.join(' · ')}`;
+    return [{ icon: style.icon, title: style.label, text, tone: style.tone, detail: source }];
+}
+
+/** 被校验拒收的条目 → 一条红色感叹号胶囊；没有拒收返回 null。 */
+export function rejectionToToast(result, { kind = '', source = '' } = {}) {
+    const rejected = Array.isArray(result?.rejected) ? result.rejected : [];
+    if (!rejected.length) return null;
+    const style = APPLY_TOAST_STYLES[kind] ?? Object.freeze({ label: '' });
+    const reasons = [...new Set(rejected.map(item => String(item?.reason ?? 'unknown')))].slice(0, 3);
+    return Object.freeze({
+        icon: 'warn',
+        title: style.label || '记录',
+        text: `${rejected.length} 条没记成（${reasons.join('、')}）`,
+        tone: 'bad',
+        detail: source,
+    });
 }

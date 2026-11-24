@@ -44,7 +44,7 @@ import { probeHostCapabilities } from './host/capability-preflight.js';
 import { createHostStorage } from './host/host-storage.js';
 import { buildControlDashboard, normalizeTheme } from './host/control-dashboard.js';
 import { ORB_ITEMS, buildOrbPanels, createOrbState } from './host/orb-hud.js';
-import { createOrbToasts, npcLedgerResultToToasts, selfResultToToasts } from './host/orb-toast.js';
+import { createOrbToasts, npcLedgerResultToToasts, selfResultToToasts, applyResultToToasts, rejectionToToast } from './host/orb-toast.js';
 import { createTurnStages } from './core/turn-stages.js';
 import { createLitePick } from './lite/lite-pick.js';
 import { createLiteSettle } from './lite/lite-settle.js';
@@ -135,6 +135,12 @@ function getHostContext() {
 
 let agentContinuationEpoch = 0;
 let hostQuietIdleUnsubscribe;
+// 本轮记账链里出过的失败（哪一环、为什么）：轮末提示要看它定语气。
+// 只看数量差是不够的——三条链全挂时账本一条没变，差值为 0，会错报成「这一轮没有要改的账」。
+let roundFailureLabels = [];
+// 本轮实际落账的条数（含「更新」这类不改数量的操作）：只比条目多少会把
+// 「时间推进 + 两条事件更新」算成「没有要改的账」，实测就是这么撒谎的。
+let roundApplyCount = 0;
 
 // A chat id alone cannot distinguish leaving and returning to the same chat.
 // Keep reply identity too: an edit/swipe/delete must not commit an older reading.
@@ -333,6 +339,121 @@ function bindHostLifecycle() {
         turn.launched = true;
         resumeGenerationEnd?.();
     };
+    // 正文后的记账链排队：同一时刻只跑一条链，上一轮没做完，下一轮就排在后面等它做完。
+    // 静默请求还占着时也不丢回合——先把这一轮记下来，等闲下来补跑（旧逻辑直接 return，整轮白丢）。
+    // 整轮记账结束时用悬浮球弹一条提示，让玩家知道正文后的请求已经跑完。
+    let accountingQueue = Promise.resolve();
+    let accountingBusy = false;
+    let pendingEndRetry = null;
+    const settleWithin = (work, ms = 240000) => {
+        let timer = null;
+        const guard = new Promise(resolve => { timer = setTimeout(resolve, ms); timer?.unref?.(); });
+        return Promise.race([Promise.resolve(work).catch(() => {}), guard]).finally(() => { try { clearTimeout(timer); } catch { /* 忽略 */ } });
+    };
+    const roundTally = () => {
+        const pick = read => { try { const value = Number(read()); return Number.isFinite(value) ? value : 0; } catch { return 0; } };
+        let ring = 0;
+        try {
+            const snap = agentSelfRuntime.snapshot?.() ?? {};
+            const count = key => (Array.isArray(snap[key]) ? snap[key].length : 0);
+            ring = ['items', 'techniques', 'equipment', 'skills', 'treasures', 'recipes', 'crafts'].reduce((sum, key) => sum + count(key), 0);
+        } catch { /* 读不到就当 0 */ }
+        return {
+            near: pick(() => agentWorldRuntime.status().near),
+            world: pick(() => agentWorldRuntime.status().world),
+            factions: pick(() => agentWorldRuntime.status().factions),
+            impact: pick(() => agentImpactRuntime.status().total),
+            memory: pick(() => agentMemoryRuntime.status().total),
+            plot: pick(() => (agentPlotRuntime.snapshot?.().threads ?? []).length),
+            ring,
+        };
+    };
+    const roundToast = (floor, before) => {
+        try {
+            // 每轮结束顺手给「想找你」胶囊记一次数：两轮（4 楼）没人理就下掉，别一直占着球边。
+            try { expireReachoutCapsules(); } catch { /* 胶囊过期失败不影响记账提示 */ }
+            const after = roundTally();
+            try { if (globalThis.__doupoRoundQueue) globalThis.__doupoRoundQueue.toasted += 1; } catch { /* 统计失败忽略 */ }
+            const labels = [['near', '身边事件'], ['world', '世界事件'], ['factions', '势力'], ['impact', '世界影响'], ['memory', '记忆'], ['plot', '剧情线'], ['ring', '纳戒条目']];
+            const parts = [];
+            for (const [key, name] of labels) {
+                const delta = Number(after[key] ?? 0) - Number(before[key] ?? 0);
+                if (!delta) continue;
+                parts.push(`${name} ${delta > 0 ? '+' : ''}${delta}`);
+            }
+            const key = `round-${floor}`;
+            // 本轮有链挂了就以失败为准：账本没变不代表「没什么要改」，而是「压根没记成」。
+            const failures = roundFailureLabels.slice();
+            roundFailureLabels = [];
+            // 「有落账」不只等于「条目变多」：时间推进、事件更新、势力改写都不改数量，
+            // 只比数量就会把有动作的一轮报成「这一轮没有要改的账」。
+            const touched = Number(roundApplyCount) || 0;
+            roundApplyCount = 0;
+            if (failures.length) {
+                const unique = [...new Set(failures)];
+                emitOrbToasts({
+                    key,
+                    sticky: true,
+                    icon: 'warn',
+                    title: `第 ${floor + 1} 楼没记完`,
+                    text: `${unique.join('、')} 出错了${parts.length ? `（已记下：${parts.join(' · ')}）` : '，这一轮没记成'}`.slice(0, 90),
+                    tone: 'bad',
+                });
+                const failTimer = setTimeout(() => {
+                    try { agentOrbToasts.dismissKey(key); renderOrbToasts(); } catch { /* 收不掉就等下次重画 */ }
+                }, 20000);
+                failTimer?.unref?.();
+                return;
+            }
+            // 默认胶囊只活 8 秒，玩家常错过；「记录完成」挂 20 秒再自动收，期间点球上的别的东西也不挤它。
+            emitOrbToasts({
+                key,
+                sticky: true,
+                icon: 'ring',
+                title: `第 ${floor + 1} 楼记录完成`,
+                text: parts.length ? parts.join(' · ') : (touched ? `更新了 ${touched} 处，条目数没变` : '这一轮没有要改的账。'),
+                tone: 'good',
+            });
+            const timer = setTimeout(() => {
+                try { agentOrbToasts.dismissKey(key); renderOrbToasts(); } catch { /* 收不掉就等下次重画 */ }
+            }, 20000);
+            timer?.unref?.();
+        } catch { /* 提示失败不影响记账 */ }
+    };
+    // 排障钩子：卡上「记账完成」没弹出来时，可在控制台直接 __doupoRoundToast(楼号, 空账) 自检渲染链。
+    try { if (typeof globalThis !== 'undefined') globalThis.__doupoRoundToast = roundToast; } catch { /* 钩子失败忽略 */ }
+    const enqueueAccountingRound = task => {
+        const stats = (globalThis.__doupoRoundQueue ??= { enqueued: 0, started: 0, finished: 0, retried: 0, toasted: 0 });
+        stats.enqueued += 1;
+        const run = () => Promise.resolve()
+            .then(() => { accountingBusy = true; stats.started += 1; return task(); })
+            .catch(error => { notifyFailure('正文后记录', error?.message ?? error); })
+            .finally(() => { accountingBusy = false; stats.finished += 1; });
+        accountingQueue = accountingQueue.then(run, run);
+        return accountingQueue;
+    };
+    const retryGenerationEndLater = () => {
+        if (pendingEndRetry) return;
+        let tries = 0;
+        const attempt = () => {
+            pendingEndRetry = null;
+            if (currentSettings().enabled === false) return;
+            const quietBusy = typeof agentLlmClient?.isQuietBusy === 'function' && agentLlmClient.isQuietBusy();
+            if (quietBusy) {
+                tries += 1;
+                if (tries >= 60) {
+                    notifyFailure('正文后记录', '后台请求一直占着，等了 5 分钟还没轮到，这一轮没记。可以点「重记这一楼」。');
+                    return;
+                }
+                pendingEndRetry = setTimeout(attempt, 5000);
+                pendingEndRetry?.unref?.();
+                return;
+            }
+            try { resumeGenerationEnd?.(); } catch { /* 补记失败不影响生成 */ }
+        };
+        pendingEndRetry = setTimeout(attempt, 1500);
+        pendingEndRetry?.unref?.();
+    };
     if (waitForRender) {
         hostQuietIdleUnsubscribe = agentLlmClient.onQuietIdle(() => { quietLifecycle = false; queueMicrotask(finishGeneration); });
         const started = (type, options, dryRun) => {
@@ -389,8 +510,17 @@ function bindHostLifecycle() {
                 finishGeneration();
                 return;
             }
-            if (!shouldClearSettleOnGenerationEnd({ quietBusy: quietInFlight, eventType: name === 'GENERATION_ENDED' ? 'ended' : 'stopped' })) return;
-            if (name === 'GENERATION_ENDED' && !quietInFlight && currentSettings().enabled !== false) {
+            if (!shouldClearSettleOnGenerationEnd({ quietBusy: quietInFlight, eventType: name === 'GENERATION_ENDED' ? 'ended' : 'stopped' })) {
+                // 静默请求还占着就先把这一轮记下来，等它闲下来补跑——旧写法直接 return，一整轮记账永久丢失。
+                if (name === 'GENERATION_ENDED' && quietInFlight) retryGenerationEndLater();
+                return;
+            }
+            if (name === 'GENERATION_ENDED' && currentSettings().enabled !== false) {
+                const roundFloor = lastReplyIndex(Array.isArray(getHostContext()?.chat) ? getHostContext().chat : []);
+                const tallyBefore = roundTally();
+                roundFailureLabels = [];
+                roundApplyCount = 0;
+                void enqueueAccountingRound(() => {
                 if (currentSettings().apiMode === 'lite') {
                     // 简略版：五条记账链并成一次总结算；判定没跑成退回正文指令块降级，
                     // 不再发起任何单路调用。开局纳戒初始化的放行口径与完整版一致。
@@ -405,6 +535,7 @@ function bindHostLifecycle() {
                     }).catch(() => {});
                     // 正文事实核验排在总结算之后：台账没落地就开核，会把“本轮刚发生的变化”误判成矛盾。
                     scheduleFactCheckAfter([liteChain]);
+                    return settleWithin(liteChain);
                 } else {
                 const decide = worldDecideSettings();
                 // 影响库要读“这一轮之后”的世界台账，所以排在决定/执行之后，串行跑。
@@ -474,7 +605,9 @@ function bindHostLifecycle() {
                 scheduleFactCheckAfter([accountingChain, npcChain]);
                 // 剧情账本同样排在记账链之后：世界账落定才有可信的时钟，计划与线索才不会写成空中楼阁。
                 schedulePlotDecideAfter([accountingChain]);
+                return settleWithin(Promise.allSettled([accountingChain, npcChain].filter(Boolean)));
                 }
+                }).then(() => roundToast(roundFloor, tallyBefore));
             }
             try { agentPromptInjection.clear(); } catch { /* 清空失败不影响生成 */ }
             persistFactsLastInjection();
@@ -817,7 +950,7 @@ function restoreWorldFromChat() {
 }
 
 function persistWorld() {
-    const snapshot = agentWorldRuntime.snapshot();
+    const snapshot = agentWorldRuntime.snapshotWithReplay();
     return Promise.resolve(hostStorage?.saveWorldState?.(snapshot) ?? { status: 'unavailable' })
         .catch(error => ({ status: 'failed', reason: String(error?.message ?? error) }));
 }
@@ -829,7 +962,7 @@ function restorePlotFromChat() {
 }
 
 function persistPlot() {
-    const snapshot = agentPlotRuntime.snapshot();
+    const snapshot = agentPlotRuntime.snapshotWithReplay();
     return Promise.resolve(hostStorage?.savePlotState?.(snapshot) ?? { status: 'unavailable' })
         .catch(error => ({ status: 'failed', reason: String(error?.message ?? error) }));
 }
@@ -1053,7 +1186,7 @@ async function adoptMemoryFromDb() {
 }
 
 function persistMemory() {
-    const snapshot = agentMemoryRuntime.snapshot();
+    const snapshot = agentMemoryRuntime.snapshotWithReplay();
     const result = Promise.resolve(hostStorage?.saveMemoryState?.(snapshot) ?? { status: 'unavailable' })
         .catch(error => ({ status: 'failed', reason: String(error?.message ?? error) }));
     void agentDbBridge.mirrorMemory(snapshot).catch(() => { /* 镜像失败记在桥状态里，不阻断记账 */ });
@@ -2164,7 +2297,7 @@ function worldDay() {
 
 
 function persistImpact() {
-    const result = hostStorage?.saveImpactState?.(agentImpactRuntime.snapshot());
+    const result = hostStorage?.saveImpactState?.(agentImpactRuntime.snapshotWithReplay());
     if (result && typeof result.catch === 'function') result.catch(() => { /* 保存失败由下次操作重试 */ });
     return result;
 }
@@ -5562,6 +5695,9 @@ globalThis.doupoFactsInterceptor = async function doupoFactsInterceptor(chat, co
         const detail = pregenFailures.map(item => `${item.channel}：${item.reason}`).join('；');
         try { recordAgentAudit({ event: 'turn_pregen_abort', outcome: detail.slice(0, 400) }); } catch { /* 审计失败不影响终止 */ }
         try { console.warn(`[${EXTENSION_ID}] 备料失败，已终止本次正文调用：${detail}`); } catch { /* 记录失败不影响终止 */ }
+        // 正文直接被掐了，玩家看到的是「点了发送什么都没发生」——必须弹出来说明是哪一环、为什么。
+        // 这条不走 notifyFailure：它不属于正文后的记账轮，混进去会把下一轮的轮末汇总染成失败色。
+        emitOrbToasts({ key: 'pregen-fail', icon: 'warn', title: '备料失败', text: `正文没生成：${detail}`.slice(0, 120), tone: 'bad', detail: '生成前准备' });
         pregenFailures = [];
         abort(true);
         return;
@@ -5669,6 +5805,7 @@ const DAI_ICON_PATHS = Object.freeze({
     arrow: '<path d="M4 12h14.5"/><path d="M13.5 6.5 19 12l-5.5 5.5"/>',
     reroll: '<path d="M20.2 12a8.2 8.2 0 1 1-2.6-6"/><path d="M20.2 3.4V8h-4.6"/>',
     plus: '<path d="M12 5.5v13M5.5 12h13"/>',
+    warn: '<path d="M12 4.3 21 19.7H3z"/><path d="M12 9.7v4.3"/><circle cx="12" cy="16.9" r=".95"/>',
 });
 const DAI_ORB_ICON_NAMES = Object.freeze({
     overview: 'ding', world: 'mountain', self: 'ring', memory: 'slip', npc: 'person', npcledger: 'ledger',
@@ -6188,6 +6325,7 @@ async function runWorldDecision({ source = 'auto', note = '' } = {}) {
         worldDecidedFloor = { floor: worldReplyFloor, identity: worldReplyIdentity, continuation };
         if (!result.applied.length) agentWorldRuntime.note(decision.note || '模型判断本轮世界无变化。', { source: 'decide' });
         persistWorld();
+        notifyApply('world', result, { source: '正文后' });
         renderWorldDecisionResult(decision, result);
         setWorldDecideStatus(source === 'auto' ? '生成后自动决定完成。' : '决定完成。');
         refreshWorldPage();
@@ -6195,6 +6333,7 @@ async function runWorldDecision({ source = 'auto', note = '' } = {}) {
     } catch (error) {
         if (!continuation.current()) return { status: 'stale' };
         setWorldDecideStatus(`决定失败：${error?.message ?? error}`);
+        notifyFailure('世界运转', error?.message ?? error);
         return { status: 'failed', reason: String(error?.message ?? error) };
     } finally {
         if (worldDecideRunning === continuation) worldDecideRunning = false;
@@ -6354,6 +6493,7 @@ async function runPlotDecision({ source = 'auto', note = '' } = {}) {
         plotDecidedFloor = { floor: plotReplyFloor, identity: plotReplyIdentity, continuation };
         if (!result.applied.length) agentPlotRuntime.note(decision.note || '模型判断本轮剧情线无变化。', { source: 'decide' });
         persistPlot();
+        notifyApply('plot', result, { source: '正文后' });
         renderPlotDecisionResult(decision, result);
         setPlotDecideStatus(source === 'auto' ? '生成后自动剧情决定完成。' : '剧情决定完成。');
         refreshPlotPanel();
@@ -6361,6 +6501,7 @@ async function runPlotDecision({ source = 'auto', note = '' } = {}) {
     } catch (error) {
         if (!continuation.current()) return { status: 'stale' };
         setPlotDecideStatus(`剧情决定失败：${error?.message ?? error}`);
+        notifyFailure('剧情', error?.message ?? error);
         return { status: 'failed', reason: String(error?.message ?? error) };
     } finally {
         if (plotDecideRunning === continuation) plotDecideRunning = false;
@@ -6621,8 +6762,9 @@ async function runFactCheck({ source = 'auto' } = {}) {
         })), { floor: replyFloor, kind: 'unapproved_setting_use' }, verifyLedger);
         verifyLedger.seq = (Number.isInteger(verifyLedger.seq) ? verifyLedger.seq : 0) + nameEntries.length;
         const additions = [...claimEntries, ...nameEntries];
-        if (additions.length) {
-            const result = mergeVerifyEntries(verifyLedger.entries, additions, { exemptions: verifyLedger.exemptions, floor: replyFloor });
+        // 重 roll 换正文后这一楼的旧断言不再成立：整批替换（即使这版一条都没得记，也要清掉旧版）。
+        {
+            const result = mergeVerifyEntries(verifyLedger.entries, additions, { exemptions: verifyLedger.exemptions, floor: replyFloor, replaceFloor: true });
             verifyLedger.entries = result.entries;
         }
         lastRun.status = 'ok';
@@ -6773,6 +6915,7 @@ async function runMemoryDecision({ source = 'auto', note = '' } = {}) {
         memoryDecidedFloor = { floor: memoryReplyFloor, identity: memoryReplyIdentity, continuation };
         if (!result.applied.length) agentMemoryRuntime.note(decision.note || '模型判断本轮无新记忆。', { source: 'decide' });
         persistMemory();
+        notifyApply('memory', result, { source: '正文后' });
         renderMemoryDecisionResult(decision, result);
         setMemoryDecideStatus(source === 'auto' ? '生成后自动决定完成。' : '决定完成。');
         refreshMemoryPage();
@@ -6781,6 +6924,7 @@ async function runMemoryDecision({ source = 'auto', note = '' } = {}) {
     } catch (error) {
         if (!continuation.current()) return { status: 'stale' };
         setMemoryDecideStatus(`决定失败：${error?.message ?? error}`);
+        notifyFailure('记忆', error?.message ?? error);
         return { status: 'failed', reason: String(error?.message ?? error) };
     } finally {
         if (memoryDecideRunning === continuation) memoryDecideRunning = false;
@@ -7008,6 +7152,7 @@ async function runImpactDecision({ source = 'auto', note = '' } = {}) {
         const result = agentImpactRuntime.apply(decision.ops, { source: 'decide', floor: lastReplyIndex(chat), day: worldDay() });
         if (!result.applied.length) agentImpactRuntime.note(decision.note || '世界线没有偏移。', { source: 'decide' });
         persistImpact();
+        notifyApply('impact', result, { source: '正文后' });
         lastImpactResult = {
             at: new Date().toISOString(),
             source,
@@ -7029,6 +7174,7 @@ async function runImpactDecision({ source = 'auto', note = '' } = {}) {
             ? '记录员设成了“自定义模型”，但接口地址或模型名还没填全（填在“世界影响 → 记录员与场记的模型”里，或改回跟随酒馆）。'
             : `世界记录失败：${error?.message ?? error}`;
         setImpactStatus(message);
+        notifyFailure('世界影响', message);
         return { status: 'failed', reason: String(message) };
     } finally {
         if (impactDecideRunning === continuation) impactDecideRunning = false;
@@ -7612,9 +7758,11 @@ function ensureOrbToastHost() {
             renderOrbToasts();
             if (toastKey) markNpcCapsuleHandled(toastKey);
             if (action === 'reachout') {
-                // key 是 reachout:<队列条目id>：走与「去聊」按钮同一条 accept 链——出队、记回应、带开场白开聊窗。
-                const id = toastKey.startsWith('reachout:') ? toastKey.slice('reachout:'.length) : '';
-                const opened = id ? acceptNpcReachout(id) : { status: 'invalid' };
+                // key 是 reachout:<人物名>（同一个人只挂一条）：先按人物找到队列里那条的 id，
+                // 再走与「去聊」按钮同一条 accept 链——出队、记回应、带开场白开聊窗。
+                const who = toastKey.startsWith('reachout:') ? toastKey.slice('reachout:'.length) : '';
+                const entry = who ? (agentNpcReachout.pendingList?.() ?? []).find(item => (item.npcId ?? item.id) === who) : null;
+                const opened = entry ? acceptNpcReachout(entry.id) : { status: 'invalid' };
                 // NPC 对话功能没开时聊天窗开不出来：引到「NPC 决策」页去开开关。
                 if (opened?.status === 'disabled') openAgentPage('npc');
             } else if (action === 'cold') openAgentPage('npcledger', 'npc-cold-bench');
@@ -7674,9 +7822,33 @@ function emitOrbToasts(entries) {
     try { renderOrbToasts(); } catch { /* 渲染失败不碍记账 */ }
 }
 
+/** 一次落账的弹窗：每条成功摘要一条胶囊；有被拒收的再补一条红色感叹号。kind = world|plot|memory|impact。
+ *  world 一轮常记 5~6 条（时钟/信息/事件/势力各一条），逐条弹会刷屏——世界运转合成一条点名。 */
+function notifyApply(kind, result, { source = '' } = {}) {
+    // 记下这一轮到底有没有落账：时间推进/事件更新这类操作不改条目数，
+    // 轮末提示不能只靠数量差判断「有没有要改的账」。
+    try {
+        const recorded = Array.isArray(result?.applied) ? result.applied.length : 0;
+        const warned = Array.isArray(result?.warnings) ? result.warnings.length : 0;
+        roundApplyCount += recorded + warned;
+    } catch { /* 统计失败不影响弹窗 */ }
+    const applied = applyResultToToasts(result, { kind, source, merge: kind === 'world' });
+    const rejected = rejectionToToast(result, { kind, source });
+    const batch = rejected ? [...applied, rejected] : applied;
+    if (!batch.length) return;
+    emitOrbToasts(batch);
+}
+
+/** 请求失败/中断：红色感叹号胶囊，写明哪一环、什么原因。同标签复用时替换而不是堆叠。 */
+function notifyFailure(label, reason) {
+    // 记下这一环挂了：轮末汇总要看它，否则「三条链全失败」会被报成「这一轮没有要改的账」。
+    try { roundFailureLabels.push(String(label)); } catch { /* 统计失败不影响弹窗 */ }
+    const text = String(reason ?? '').trim() || '没有给出原因';
+    emitOrbToasts({ key: `fail-${label}`, icon: 'warn', title: label, text: `没跑完：${text}`.slice(0, 90), tone: 'bad', detail: '生成后请求' });
+}
+
 /** 换聊天/停用时整列作废：旧聊天里的改动对下一局没有意义。 */
-function clearOrbToasts() {
-    agentOrbToasts.clear();
+function clearOrbToasts() {    agentOrbToasts.clear();
     if (orbToastTimer) { clearTimeout(orbToastTimer); orbToastTimer = 0; }
     try { renderOrbToasts(); } catch { /* 球不在就作罢 */ }
 }
@@ -7696,6 +7868,8 @@ function openAgentPage(page, modalOpen = '') {
 // 球边一直挂着，玩家点了或把事办了才消失；多了就沿球边往下排。 ——
 let knownReachoutCapsules = new Set();
 let dismissedReachoutCapsules = new Set();
+/** 每条主动联系胶囊已经挂过几轮（按 key 计）；两轮没人理就自动下掉。 */
+let reachoutCapsuleRounds = new Map();
 let coldCapsuleSeenCount = null;
 
 /** 玩家点了常驻胶囊：记下「这条我已经看见过」，刷新时不再弹回来，直到队列里换新的。 */
@@ -7706,14 +7880,17 @@ function markNpcCapsuleHandled(toastKey) {
     }
 }
 
-/** 角色主动找你 → 常驻胶囊：队列里还有谁没处理就挂谁（一人一条，key 按队列条目 id）；
- *  已被玩家点掉的不弹回来，除非队列里换了新的一条。 */
+/** 角色主动找你 → 常驻胶囊：队列里还有谁没处理就挂谁。
+ *  同一个人只挂一条（key 按人物名，不按队列条目 id——条目 id 每次排队都会变，
+ *  用它当 key 会让同一个人一遍遍叠上去）；玩家点掉的不弹回来，
+ *  且最多挂两轮（4 楼）没反应就自动下掉，不长期占着球边。 */
 function refreshReachoutCapsules() {
     try {
         const pending = agentNpcReachout.pendingList?.() ?? [];
         const wanted = new Set();
         for (const item of pending) {
-            const key = `reachout:${item.id ?? item.npcId}`;
+            const key = `reachout:${item.npcId ?? item.id}`;
+            if (wanted.has(key)) continue; // 同一人多条只留一条
             wanted.add(key);
             if (dismissedReachoutCapsules.has(key)) continue;
             const record = agentNpcLedger.get(item.npcId);
@@ -7721,6 +7898,7 @@ function refreshReachoutCapsules() {
             const reason = (typeof item.reason === 'string' ? item.reason.trim() : '').split(/[，。；！？]/)[0] || '';
             const text = `想找你${reason ? `：${reason.slice(0, 12)}` : ''}`;
             agentOrbToasts.push({ key, sticky: true, action: 'reachout', icon: 'letter', title: name, tone: 'info', text, detail: '角色主动联系 · 点开直接和他聊（带开场白）' });
+            if (!reachoutCapsuleRounds.has(key)) reachoutCapsuleRounds.set(key, 0);
         }
         for (const key of [...knownReachoutCapsules]) {
             if (!wanted.has(key)) {
@@ -7729,6 +7907,34 @@ function refreshReachoutCapsules() {
             }
         }
         knownReachoutCapsules = wanted;
+        renderOrbToasts();
+    } catch { /* 队列读不到就维持现状 */ }
+}
+
+/** 记账轮结束时清一次主动联系胶囊：连续两轮（4 楼）没人理就下掉，别一直挂着。
+ *  玩家这一轮点过（dismissedReachoutCapsules 里有）的也在这里一并清账。 */
+const REACHOUT_CAPSULE_MAX_ROUNDS = 2;
+function expireReachoutCapsules() {
+    try {
+        const pending = agentNpcReachout.pendingList?.() ?? [];
+        const alive = new Set(pending.map(item => `reachout:${item.npcId ?? item.id}`));
+        for (const [key, rounds] of [...reachoutCapsuleRounds]) {
+            if (!alive.has(key)) { reachoutCapsuleRounds.delete(key); continue; }
+            // 第 1 轮结束记 1 次；第 2 轮结束到点，下掉。
+            const next = rounds + 1;
+            if (next >= REACHOUT_CAPSULE_MAX_ROUNDS) {
+                // 两轮没人理：胶囊下掉，同时把人从队列里撤掉（不然刷新又会弹回来）。
+                const id = key.startsWith('reachout:') ? key.slice('reachout:'.length) : '';
+                const item = pending.find(entry => (entry.npcId ?? entry.id) === id);
+                if (item) { agentNpcReachout.markIgnored(item.npcId); agentNpcReachout.dequeue(item.id); persistNpcReachout(); }
+                agentOrbToasts.dismissKey(key);
+                dismissedReachoutCapsules.delete(key);
+                reachoutCapsuleRounds.delete(key);
+            } else {
+                reachoutCapsuleRounds.set(key, rounds + 1);
+            }
+        }
+        for (const key of alive) if (!reachoutCapsuleRounds.has(key)) reachoutCapsuleRounds.set(key, 0);
         renderOrbToasts();
     } catch { /* 队列读不到就维持现状 */ }
 }

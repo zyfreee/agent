@@ -39,7 +39,7 @@ export const IMPACT_DECIDE_PROMPT = [
     '7. 最后才写 detail：写"可观察的后果"，不写"玩家很生气""气氛紧张"这类没有后果的话。',
     '',
     '【可用操作，脚本逐条验票，坏条目单独丢弃，不连累其他条目】',
-    '- {"op":"record","title":"必写：≤20字短标题，一眼看懂世界哪块变了","detail":"≤240字，具体变化与可观察后果","target":"被影响的地方/势力/规矩","kind":"direct|ripple|butterfly","weight":"minor|major|world","certainty":"certain|rumor","evidence":"依据哪一楼、哪句话","canon":"牵动的原著节点，没牵动留空","shift":"none|accelerate|delay|avoid|alter","ripen":"仅当正文明确写了日子或倒计时才填（1-365 天），按写明的天数算；没写就留空","eventId":"若与世界台账里某条事件是同一件事，抄它的编号（如 e2），否则留空","parent":"由哪条旧影响引出，可空"}：登记一条新影响。title 必写，只写短标题，具体内容全放 detail。',
+    '- {"op":"record","title":"必写：≤30字短标题，一眼看懂世界哪块变了","detail":"≤240字，具体变化与可观察后果","target":"被影响的地方/势力/规矩","kind":"direct|ripple|butterfly","weight":"minor|major|world","certainty":"certain|rumor","evidence":"依据哪一楼、哪句话","canon":"牵动的原著节点，没牵动留空","shift":"none|accelerate|delay|avoid|alter","ripen":"仅当正文明确写了日子或倒计时才填（1-365 天），按写明的天数算；没写就留空","eventId":"若与世界台账里某条事件是同一件事，抄它的编号（如 e2），否则留空","parent":"由哪条旧影响引出，可空"}：登记一条新影响。title 必写，只写短标题，具体内容全放 detail。',
     '- {"op":"adjust","ref":"i3","days":-3,"detail":"玩家怎么推动或拖延的"}：改一件旧影响的发酵时间。days 写负数=提前几天、正数=延后几天；提前到当天或更早就当场应验；已经应验或已收场的不许调。',
     '- {"op":"ripen","ref":"i3","detail":"世界怎么应验了"}：旧影响开始发酵、被世人看见。',
     '- {"op":"close","ref":"i3","detail":"怎么收的场"}：这件事已经消化完，以后不再提。',
@@ -51,6 +51,7 @@ export const IMPACT_DECIDE_PROMPT = [
     '- canon 只在真牵动原著节点时填（退婚、药老现身、沙漠之行、宗门之战这类），并写清是哪件事；没牵动就留空，shift 用 none。shift 只在有 canon 时有意义：accelerate=提前，delay=推后，avoid=被躲开，alter=改写成别的样子。',
     '- parent 只在"这件事确实是旧影响引出的"时填旧编号；最多接 4 层，接不上就留空，不要硬接。',
     '- 世界台账里的事件都带编号（形如 e2）。只有当你记的这条和台账里某条确实是同一件事，才把它抄进 eventId；不是同一件事就留空，不要乱对号。',
+    '- 编号只能抄，不能编：ref / eventId / parent 里出现的编号，必须是「世界影响库」清单里以 # 开头的编号、或「世界台账」里以 e 开头的编号，逐字照抄。清单里没有的编号，ref 会被判成 record_not_found 整条丢掉；parent 接不上会降级成"无来源"照记，但那条影响的因果链就断了——要记新事就 record，不要凭空造一个 ref 去改。',
     '- 玩家推动旧影响用 adjust：主动去找、提前挑开用负数；故意拖着、绕开、压着用正数。一次只调最该动的那一条，不要把整本账都改时间。',
     '- 同一件事换个说法又记一遍会被脚本挡掉：同一个对象、同一种原著偏移、两天内标题太像，就算重复。真隔了几天又出新后果，才另记一条。',
     '- 行尾写着“已修改”的条目，以改后的文字为准；改过的条目不要当新事再记。手动登记的条目也一样算数，不许删、不许改编号，只能追加状态。',
@@ -90,7 +91,7 @@ export const IMPACT_JSON_SCHEMA = Object.freeze({
                 // 只对 record（新记影响）强制非空短标题；adjust/ripen/close/revert 按编号操作不强制。
                 anyOf: [
                     {
-                        properties: { op: { enum: ['record'] }, title: { type: 'string', minLength: 1, maxLength: 20, pattern: '\\S' } },
+                        properties: { op: { enum: ['record'] }, title: { type: 'string', minLength: 1, maxLength: 30, pattern: '\\S' } },
                         required: ['op', 'title'],
                     },
                     {
@@ -138,6 +139,9 @@ export function buildImpactDecideUser({ snapshot = {}, floors = [], worldbookLin
         '',
         `【世界影响库（玩家已经改出的世界线，共 ${records.length} 条：未了结 ${counts.active}、已发酵 ${counts.ripened}、已收场 ${counts.closed}）】`,
         ledger.length ? ledger.map(line => `- ${line}`).join('\n') : '- （本局还没有记录任何影响，这是世界线第一次偏移的机会）',
+        records.length
+            ? `- 可用编号（ref 只能从这几个里逐字照抄，别的编号一律算编造）：${records.map(record => record.id).join('、')}`
+            : '- 可用编号：暂无（这一轮只能用 record 记新影响，不要写 adjust/ripen/close/revert）',
         '',
         ...(settle.length ? ['【本轮行动结算（生成前已判定，影响库只记与判定一致的世界变化）】', ...settle, ''] : []),
         '【原著资料（本轮已注入的原著条目）】',

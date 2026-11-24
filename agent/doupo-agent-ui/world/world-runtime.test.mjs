@@ -228,8 +228,10 @@ assert.equal(result.applied.length, 1);
 assert.ok(result.applied[0].summary.includes('「城东连环失窃」'), result.applied[0].summary);
 assert.equal(runtime.snapshot().nearEvents.find(event => event.text === '城东连着三家铺子夜里失窃，巡卫已经封了街口').text, '城东连着三家铺子夜里失窃，巡卫已经封了街口', '正文不受标题影响');
 result = runtime.apply([{ op: 'addEvent', scope: 'near', text: '加列家中街设卡盘查，过往行商都要交验货单' }]);
-assert.equal(result.rejected.length, 1);
-assert.equal(result.rejected[0].reason, 'title_missing', '没给 title 的 addEvent 整条拒绝');
+assert.equal(result.applied.length, 1, '没给 title 也照记，不再整条丢弃');
+assert.equal(result.applied[0].summary.includes('「加列家中街设卡盘查」'), true, '标题从正文首个分句自动补');
+assert.ok(String(result.applied[0].warning).includes('没给标题'), JSON.stringify(result.applied[0].warning));
+assert.equal(runtime.snapshot().nearEvents.find(event => event.text === '加列家中街设卡盘查，过往行商都要交验货单').title, '加列家中街设卡盘查', '补出来的标题要落账');
 // 运行时不再拒长标题（上限移到模型解析层）：18 字标题照收且原样保留
 result = runtime.apply([{ op: 'addEvent', scope: 'near', title: '标题'.repeat(9), text: '超长标题的事件' }]);
 assert.equal(result.applied.length, 1, '运行时内容不设上限');
@@ -239,7 +241,7 @@ assert.equal(result.applied.length, 1);
 const titled = runtime.snapshot().nearEvents.find(event => event.text.startsWith('加列家中街'));
 assert.equal(titled.title, '加列家中街设卡', '模型给的标题原样保留');
 assert.equal(deriveEventTitle(''), '', '空正文不给标题');
-assert.equal(deriveEventTitle('没有标点的一长串内容'.repeat(4)).length, 16, '老存档兜底标题也守 16 字上限');
+assert.equal(deriveEventTitle('没有标点的一长串内容'.repeat(4)).length, 30, '老存档兜底标题也守 30 字上限');
 assert.equal(eventIntro('城东连环失窃', '城东连着三家铺子夜里失窃'), '城东连着三家铺子夜里失窃', '标题与正文不同就整段当简介');
 assert.equal(eventIntro('坊市开张', '坊市开张，人挤得走不动'), '人挤得走不动', '标题正好是正文首句时简介只留后半句');
 assert.equal(eventIntro('迦南学院招生', '迦南学院招生队进了乌坦城，当街考校少年斗气'), '迦南学院招生队进了乌坦城，当街考校少年斗气', '标题只是开头几个字，不能从词中间切开');
@@ -298,7 +300,7 @@ const coldCase = runtime.snapshot().nearEvents.find(event => event.text === '将
 runtime.apply([{ op: 'advance', days: 5 }], { source: 'llm', floor: 30 });
 assert.equal(runtime.snapshot().nearEvents.some(event => event.id === coldCase.id), false, '到期了结即出账（用户口径 2026-11-18）');
 runtime.apply([{ op: 'advance', days: 1 }], { source: 'llm', floor: 30 });
-assert.equal(runtime.snapshot().nearEvents.some(event => event.id === coldCase.id), false, '被清走的了结事件不随回滚复活');
+assert.equal(runtime.snapshot().nearEvents.some(event => event.id === coldCase.id), true, '回滚撤销到期了结：撤销步骤里带着原样事件，要放回');
 
 // —— 同楼重 roll：先撤销上一版指令，再执行新指令，不重复记账 ——
 const clockBeforeSwipe = { ...runtime.snapshot().clock };
@@ -454,19 +456,43 @@ for (const days of [undefined, 2]) {
     assert.equal(r.apply([{ op: 'updateEvent', id, weight: 'secret' }]).rejected[0].reason, 'bad_weight');
 }
 
-// —— A4 重复登记防线：同标题 / 近似标题（几天内相似度过线）/ 同文，已了结的不参与 ——
+// —— A4 重复登记防线：同标题 / 近似标题（几天内相似度过线）/ 同文，一律并进旧事件（不再整条丢） ——
 {
     const r = createWorldRuntime();
     r.apply([{ op: 'addEvent', scope: 'near', title: '城东连环失窃', text: '三家铺子夜里失窃', day: 5 }]);
-    assert.equal(r.apply([{ op: 'addEvent', scope: 'near', title: '城东连环失窃', text: '换了说法', day: 6 }]).rejected[0].reason, 'duplicate_title');
-    assert.equal(r.apply([{ op: 'addEvent', scope: 'near', title: '城东连环失窃案', text: '又换了说法', day: 6 }]).rejected[0].reason, 'duplicate_similar');
-    assert.equal(r.apply([{ op: 'addEvent', scope: 'near', title: '完全不同的事', text: '三家铺子夜里失窃', day: 6 }]).rejected[0].reason, 'duplicate_text');
+    const sameTitle = r.apply([{ op: 'addEvent', scope: 'near', title: '城东连环失窃', text: '换了说法', day: 6 }]);
+    assert.equal(sameTitle.applied.length, 1, '同标题改为并入，不整条拒绝');
+    assert.equal(sameTitle.applied[0].merged, true);
+    assert.ok(sameTitle.applied[0].summary.includes('同标题'), sameTitle.applied[0].summary);
+    assert.equal(r.snapshot().nearEvents.length, 1, '并入不新增条目');
+    assert.equal(r.snapshot().nearEvents[0].text, '换了说法', '并入时按新内容更新正文');
+    const similar = r.apply([{ op: 'addEvent', scope: 'near', title: '城东连环失窃案', text: '又换了说法', day: 6 }]);
+    assert.equal(similar.applied[0].merged, true, '近似标题同样并入');
+    assert.ok(similar.applied[0].summary.includes('高度近似'), similar.applied[0].summary);
+    const sameText = r.apply([{ op: 'addEvent', scope: 'near', title: '完全不同的事', text: '又换了说法', day: 6 }]);
+    assert.equal(sameText.applied[0].merged, true, '同文同样并入');
+    assert.ok(sameText.applied[0].summary.includes('同文重记'), sameText.applied[0].summary);
+    assert.equal(r.snapshot().nearEvents[0].title, '完全不同的事', '同文并入时标题按新的走');
     const later = r.apply([{ op: 'addEvent', scope: 'near', title: '城东连环失窃案', text: '巡卫破了案', day: 9 }]);
-    assert.equal(later.applied.length, 1, '过了相似窗口的相似标题放行');
+    assert.equal(later.applied.length, 1, '过了相似窗口的相似标题另开一条');
+    assert.notEqual(later.applied[0].merged, true);
     const r2 = createWorldRuntime();
     r2.apply([{ op: 'addEvent', scope: 'near', title: '旧闻', text: '旧闻内容' }]);
     r2.apply([{ op: 'resolveEvent', id: r2.snapshot().nearEvents[0].id }]);
-    assert.equal(r2.apply([{ op: 'addEvent', scope: 'near', title: '旧闻', text: '旧闻内容' }]).applied.length, 1, '已了结事件不再参与去重');
+    const revived = r2.apply([{ op: 'addEvent', scope: 'near', title: '旧闻', text: '旧闻内容' }]);
+    assert.equal(revived.applied.length, 1, '已了结事件不再参与去重');
+    assert.notEqual(revived.applied[0].merged, true, '已了结的旧事同标题另开一条');
+    // 同楼重 roll：并入式落账必须能原样撤回，旧事件的正文/时限都要还原。
+    const r3 = createWorldRuntime();
+    r3.apply([{ op: 'addEvent', scope: 'near', title: '城东连环失窃', text: '三家铺子夜里失窃', day: 5 }], { source: 'decide', floor: 7 });
+    const pristine = structuredClone(r3.snapshot().nearEvents[0]);
+    r3.apply([{ op: 'addEvent', scope: 'near', title: '城东连环失窃', text: '换了说法', day: 8 }], { source: 'decide', floor: 8 });
+    assert.equal(r3.snapshot().nearEvents.length, 1, '并入不新增条目');
+    assert.equal(r3.snapshot().nearEvents[0].text, '换了说法', '并入时正文按新的走');
+    // 第 8 楼重 roll：先撤销上一版（并账），再执行新版指令。
+    r3.apply([{ op: 'addTask', title: '重 roll 后的新指令', days: 3 }], { source: 'decide', floor: 8 });
+    assert.deepEqual(r3.snapshot().nearEvents[0], pristine, '重 roll 把被并入的旧事件还原成原样');
+    assert.equal(r3.snapshot().tasks.length, 1, '撤销后新指令照常落账');
 }
 
 // —— A6 跳跃空窗审计：一次跨太多天又没补动向事件就提醒，补了不提醒 ——
@@ -524,3 +550,70 @@ const taskPurgeStatus = taskPurgeRuntime.status();
 assert.equal(taskPurgeStatus.tasks.active, 1, '完成的任务要整条清出任务栏');
 assert.equal(taskPurgeStatus.tasks.done, 0, 'done 任务不留账');
 assert.equal(taskPurgeStatus.tasks.total, 1, '任务栏只剩还开着的');
+
+// —— 刷新后重 roll：重放基线跟着存档回来，恢复后仍能撤销上一版 ——
+{
+    const beforeReload = createWorldRuntime({ now: () => 't3' });
+    beforeReload.apply([
+        { op: 'advance', days: 3 },
+        { op: 'addEvent', scope: 'near', title: '刷新前事件', text: '刷新前事件' },
+    ], { source: 'decide', floor: 9 });
+    const baseDay = beforeReload.snapshot().clock.day;
+    const saved = beforeReload.snapshotWithReplay();
+    assert.equal(saved._runtime.version, 1, '存档要带上重放基线');
+    assert.equal(saved._runtime.lastFloor.floor, 9);
+    assert.equal(saved.nearEvents.length, beforeReload.snapshot().nearEvents.length, '业务状态与普通快照一致');
+
+    const reloaded = createWorldRuntime({ now: () => 't4' });
+    reloaded.restore(JSON.parse(JSON.stringify(saved)));
+    assert.equal(reloaded.snapshot().clock.day, baseDay, '刷新后业务状态照旧');
+    reloaded.apply([{ op: 'addEvent', scope: 'world', title: '新版本大事', text: '新版本大事' }], { source: 'decide', floor: 9 });
+    const afterReloadSwipe = reloaded.snapshot();
+    assert.equal(afterReloadSwipe.nearEvents.some(event => event.text === '刷新前事件'), false, '刷新后同楼重 roll 也要撤销旧版');
+    assert.equal(afterReloadSwipe.clock.day, baseDay - 3, '旧版推进的 3 天一并撤回');
+    assert.equal(afterReloadSwipe.worldEvents.some(event => event.text === '新版本大事'), true, '新正文的指令生效');
+    assert.ok(afterReloadSwipe.log.some(entry => entry.source === 'revert'), '撤销要留流水');
+
+    // 旧档没有 _runtime：照旧恢复、只是不能撤销，行为与改动前一致
+    const legacy = createWorldRuntime({ now: () => 't5' });
+    legacy.restore(beforeReload.snapshot());
+    legacy.apply([{ op: 'addEvent', scope: 'world', title: '再来一条', text: '再来一条' }], { source: 'decide', floor: 9 });
+    assert.equal(legacy.snapshot().nearEvents.some(event => event.text === '刷新前事件'), true, '旧档没有基线就不撤销');
+
+    // 坏基线一律当没有，不拦恢复
+    for (const broken of [{ version: 2 }, { version: 1, lastFloor: { floor: -1 } }, { version: 1, lastFloor: 'x' }, null]) {
+        const rt = createWorldRuntime({ now: () => 't6' });
+        const raw = { ...beforeReload.snapshot(), _runtime: broken };
+        assert.equal(rt.restore(raw).status, 'restored', '坏基线不影响恢复');
+        assert.equal(rt.snapshot().nearEvents.some(event => event.text === '刷新前事件'), true);
+    }
+}
+
+// —— 重 roll 撤销"了结事件"不能把事件弄丢（了结即清账，撤销要凭撤销步骤里的原样事件放回）——
+{
+    const rt = createWorldRuntime({ now: () => 't7' });
+    rt.apply([
+        { op: 'addEvent', scope: 'near', title: '码头点名候工', text: '卯初码头点名候工' },
+        { op: 'addEvent', scope: 'near', title: '巡夜查引', text: '巡夜队提前封街查引' },
+    ], { source: 'llm' });
+    // 这一版正文把两条都了结：清账后事件栏清空
+    rt.apply([{ op: 'resolveEvent', id: 'e1' }, { op: 'resolveEvent', id: 'e2' }], { source: 'decide', floor: 11 });
+    assert.equal(rt.snapshot().nearEvents.length, 0, '了结即清账');
+    // 同楼重 roll：先撤销上一版的两条了结，再落新指令
+    rt.apply([{ op: 'addEvent', scope: 'near', title: '新版本事件', text: '新版本事件' }], { source: 'decide', floor: 11 });
+    const texts = rt.snapshot().nearEvents.map(event => event.text);
+    assert.equal(texts.includes('卯初码头点名候工'), true, '撤销了结要把事件放回');
+    assert.equal(texts.includes('巡夜队提前封街查引'), true, '两条都要放回');
+    assert.equal(texts.includes('新版本事件'), true, '新正文的指令照常生效');
+    assert.equal(texts.length, 3, '不多不少');
+    assert.equal(rt.snapshot().nearEvents.every(event => event.done !== true), true, '放回的事件不能带着 done');
+
+    // 到期自动了结同理：时钟过线就清账，回滚要能放回
+    const expiry = createWorldRuntime({ now: () => 't8' });
+    expiry.apply([{ op: 'addEvent', scope: 'near', title: '三日后散场', text: '三日后散场', days: 3 }], { source: 'llm' });
+    expiry.apply([{ op: 'advance', days: 5 }], { source: 'decide', floor: 13 });
+    assert.equal(expiry.snapshot().nearEvents.length, 0, '过期事件清账');
+    expiry.apply([{ op: 'addEvent', scope: 'world', title: '新版大事', text: '新版大事' }], { source: 'decide', floor: 13 });
+    assert.equal(expiry.snapshot().nearEvents.some(event => event.text === '三日后散场'), true, '过期事件回滚也要放回');
+    assert.equal(expiry.snapshot().clock.day, 1, '时间一并回滚');
+}

@@ -81,7 +81,7 @@ export function parseConsolidation(raw) {
     const text = typeof object.text === 'string' ? object.text.trim() : '';
     if (!text) return { status: 'invalid', error: '总结缺少 text' };
     // 模型输出字段上限（用户口径 2026-11-17）：title ≤14、text ≤300、basis ≤80、quote ≤60
-    const title = typeof object.title === 'string' ? object.title.trim().slice(0, 14) : '';
+    const title = typeof object.title === 'string' ? object.title.trim().slice(0, 30) : '';
     if (!title) return { status: 'invalid', error: '总结缺少 title' };
     const pickNames = value => (Array.isArray(value) ? value : [])
         .filter(item => typeof item === 'string' && item.trim())

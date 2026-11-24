@@ -30,7 +30,7 @@ import { createPlotRuntime } from './plot-runtime.js';
     const runtime = createPlotRuntime();
     const missing = runtime.apply([{ op: 'addThread', detail: '没有标题', basis: '第3楼' }]);
     assert.equal(missing.rejected[0].reason, 'title_missing');
-    const tooLong = runtime.apply([{ op: 'addThread', title: '长'.repeat(17), basis: '依据' }]);
+    const tooLong = runtime.apply([{ op: 'addThread', title: '长'.repeat(31), basis: '依据' }]);
     assert.equal(tooLong.rejected[0].reason, 'title_too_long');
     const noBasis = runtime.apply([{ op: 'addThread', title: '神秘的玉简' }]);
     assert.equal(noBasis.rejected[0].reason, 'basis_missing');
@@ -162,4 +162,27 @@ import { createPlotRuntime } from './plot-runtime.js';
     assert.equal(result.rejected.length, 0, '被上限截掉的条目不算被拒');
     const bad = runtime.apply([null, { op: 'unknownThing' }]);
     assert.equal(bad.rejected.length, 2, '坏形状逐条带原因拒绝');
+}
+
+// —— 刷新后重 roll：重放基线跟着存档回来，恢复后仍能撤销上一版 ——
+{
+    const runtime = createPlotRuntime();
+    runtime.apply([{ op: 'addThread', title: '刷新前线索', basis: '第6楼' }], { source: 'decide', floor: 6, today: 3 });
+    const saved = runtime.snapshotWithReplay();
+    assert.equal(saved._runtime.version, 1, '存档要带上重放基线');
+    assert.equal(saved._runtime.lastFloor.floor, 6);
+
+    const back = createPlotRuntime();
+    back.restore(JSON.parse(JSON.stringify(saved)));
+    assert.equal(back.snapshot().threads.some(thread => thread.title === '刷新前线索'), true, '刷新后业务状态照旧');
+    back.apply([{ op: 'addThread', title: '刷新后线索', basis: '第6楼' }], { source: 'decide', floor: 6, today: 3 });
+    const snap = back.snapshot();
+    assert.equal(snap.threads.some(thread => thread.title === '刷新前线索'), false, '刷新后同楼重 roll 要撤销旧线索');
+    assert.equal(snap.threads.some(thread => thread.title === '刷新后线索'), true, '新正文的线索生效');
+
+    // 旧档没有 _runtime：照旧恢复、只是不能撤销
+    const legacy = createPlotRuntime();
+    legacy.restore(runtime.snapshot());
+    legacy.apply([{ op: 'addThread', title: '再来一条', basis: '第6楼' }], { source: 'decide', floor: 6, today: 3 });
+    assert.equal(legacy.snapshot().threads.some(thread => thread.title === '刷新前线索'), true, '旧档没有基线就不撤销');
 }

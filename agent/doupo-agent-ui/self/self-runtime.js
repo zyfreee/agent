@@ -35,7 +35,7 @@ const DEFAULT_MAX_CRAFTS = 999999;
 const DEFAULT_MAX_GOALS = 999999;
 const DEFAULT_MAX_TITLES = 999999;
 const DEFAULT_MAX_LOG = 999999;
-const DEFAULT_MAX_OPS = 12;
+const DEFAULT_MAX_OPS = 200;
 const OPID_MEMORY = 200;
 const MAX_OPID_TEXT = 1024;
 
@@ -171,7 +171,7 @@ export function createSelfRuntime({
     maxGoals = clampInt(maxGoals, 1, 999999, DEFAULT_MAX_GOALS);
     maxTitles = clampInt(maxTitles, 1, 999999, DEFAULT_MAX_TITLES);
     maxLog = clampInt(maxLog, 1, 999999, DEFAULT_MAX_LOG);
-    maxOps = clampInt(maxOps, 1, 32, DEFAULT_MAX_OPS);
+    maxOps = clampInt(maxOps, 1, 500, DEFAULT_MAX_OPS);
     let state = initialState(now);
     const seq = { t: 0, s: 0, b: 0, e: 0, z: 0, r: 0, c: 0, g: 0 };
     let opIdMemory = [];
@@ -190,6 +190,7 @@ export function createSelfRuntime({
     });
     const ID_PREFIX_OF_KIND = Object.freeze({ addTechnique: 't', addSkill: 's', addEquipment: 'e', addTreasure: 'z', addItem: 'b', addRecipe: 'r', startCraft: 'c', addGoal: 'g' });
     const ENTRY_LABELS = Object.freeze({ techniques: '功法', skills: '斗技', equipment: '装备', treasures: '天材地宝', items: '行囊', recipes: '丹方', crafts: '炼器', goals: '目标' });
+const FIELD_LABELS = Object.freeze({ grade: '品阶', type: '类型', craft: '工艺', progress: '进度', source: '来源', note: '备注', effect: '效果', materials: '材料', category: '类别' });
 
     function listKeyOf(kind) {
         return LIST_OF_KIND[kind] ?? null;
@@ -319,7 +320,25 @@ export function createSelfRuntime({
                     twin.count = Math.min(MAX_COUNT, before + add);
                     return { ok: true, id: twin.id, summary: `行囊 ${twin.name}×${before} → ${twin.count}`, undo: { op: 'updateItem', id: twin.id, count: before } };
                 }
-                return { ok: false, reason: 'duplicate' };
+                // 同名条目不再整条丢（用户口径 2026-11-24）：正文第二次提到同一件东西时，
+                // 模型常发 add 而不是 update，「正文出现五种功法只记了三种」有一半折在这里。
+                // 改成按字段并账：空字段补上，品阶/进度这类「会变」的字段允许更新，
+                // 与现状完全一致才算 duplicate。撤销按改动过的字段回滚。
+                const undoUpdateOf = { addTechnique: 'updateTechnique', addSkill: 'updateSkill', addEquipment: 'updateEquipment', addTreasure: 'updateTreasure', addItem: 'updateItem' }[kind];
+                if (!undoUpdateOf) return { ok: false, reason: 'duplicate' };
+                const undoPatch = {};
+                const filled = [];
+                for (const field of ['grade', 'type', 'craft', 'progress', 'source', 'note', 'effect', 'materials', 'category']) {
+                    const incoming = text(op[field]);
+                    if (!incoming || incoming === twin[field]) continue;
+                    const mutable = field === 'grade' || field === 'progress';
+                    if (text(twin[field]) && !mutable) continue;
+                    undoPatch[field] = twin[field] ?? '';
+                    twin[field] = incoming;
+                    filled.push(FIELD_LABELS[field] || field);
+                }
+                if (!filled.length) return { ok: false, reason: 'duplicate' };
+                return { ok: true, id: twin.id, summary: `${ENTRY_LABELS[key]} 并账 ${twin.id}「${twin.name}」：补全 ${filled.join('、')}`, undo: { op: undoUpdateOf, id: twin.id, ...undoPatch } };
             }
             // 详情纪律（与目标缺标题整条拒绝同款）：光杆名字不入账——但 grade/source/progress
             // 这些有据可查的字段也算细节，有就收。2026-11-16 实跑教训：一刀切到 note/effect，

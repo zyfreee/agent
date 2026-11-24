@@ -364,9 +364,15 @@ result = runtime.apply([
     { op: 'addSkill', name: '八极崩', grade: '黄阶高级', type: '攻击', effect: '贴身爆发' },
     { op: 'addSkill', name: '' },
 ], { source: 'llm', floor: 3, day: 4 });
-assert.equal(result.applied.length, 2);
-assert.equal(result.rejected[0].reason, 'duplicate', '同名功法不重录');
-assert.equal(result.rejected[1].reason, 'name_missing');
+assert.equal(result.applied.length, 3, JSON.stringify(result));
+assert.equal(result.rejected[0].reason, 'name_missing');
+// 同名并账（用户口径 2026-11-24）：同名 add 不再整条丢弃，进度/品阶这类「会变」的字段要更新，
+// 空字段要补上；只有与现状完全一致才算 duplicate。
+assert.equal(runtime.snapshot().techniques[0].progress, '第四层', '同名 add 按字段并账，进度更新');
+result = runtime.apply([
+    { op: 'addTechnique', name: '焚决', grade: '黄阶低级', type: '修炼功法', progress: '第四层', source: '药老所赠', effect: '吞噬异火进化' },
+], { source: 'llm', floor: 9, day: 4 });
+assert.equal(result.rejected[0].reason, 'duplicate', '字段与现状完全相同才算重复');
 const techniqueId = runtime.snapshot().techniques[0].id;
 result = runtime.apply([
     { op: 'updateTechnique', id: techniqueId, progress: '第四层', grade: '玄阶' },

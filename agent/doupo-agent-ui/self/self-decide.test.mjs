@@ -86,9 +86,9 @@ assert.ok(invalid.error);
 const notObject = parseSelfDecision('[{"op":"addGold","amount":1}]');
 assert.equal(notObject.status, 'empty', '数组输入会被对象抽取器截取，落到空决定');
 
-// 模型单次最多 12 条（手动面板不受限）
+// 单次条数上限 200 只是防跑飞（用户口径 2026-11-24：纳戒不限条数）
 const truncated = parseSelfDecision(JSON.stringify({ note: 'n', ops: Array.from({ length: 20 }, (_, index) => ({ op: 'addGold', amount: index })) }));
-assert.equal(truncated.ops.length, 12, '一次最多 12 条');
+assert.equal(truncated.ops.length, 20, '单次条数不再卡 12（上限 200 只是防跑飞）');
 
 const filtered = parseSelfDecision('{"note":"n","ops":[{"op":"addGold","amount":1},"garbage",{"no_op":true}]}');
 assert.equal(filtered.ops.length, 1);
