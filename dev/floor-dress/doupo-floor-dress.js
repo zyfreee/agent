@@ -1,8 +1,10 @@
-/**
+﻿/**
  * 斗破 · 楼层美化（酒馆助手脚本版 v3 · 古卷装·沉浸版）
  *
  * 做什么：只往楼层里“添”装饰，不写任何聊天数据——
- *   ① 观世牌：最新回复正文上方一张古卷整卡（时辰 / 所在 / 天气 / 大势，点开看世界风云）；
+ *   ① 观世牌：最新回复正文上方一张古卷整卡——天时一行常显（时辰 / 所在 / 天气 / 大势），
+ *      下面直接铺开任务 / 事件 / 势力 / 人物见闻四个分区，各分区自己可折；
+ *      点「全」看世界全账（全字段原文）；
  *   ② 开炉·备料：玩家输入楼下的签面板（拾卷 / 翻忆 / 过秤）——正文动笔前的所有准备；
  *   ③ 收炉·落账：正文下方的签面板（纳戒 / 记人 / 归档 / 留痕）——正文写完后的所有账目；
  *   ④ 楼缝：玩家楼与回复楼之间一道鎏金细线，接缝处一粒会呼吸的异火；
@@ -59,8 +61,8 @@
     const helper = hostWindow.TavernHelper ?? window.TavernHelper ?? null;
     const getContext = () => hostWindow.SillyTavern?.getContext?.() ?? {};
     // 版本戳：控制台敲 __DPD_VERSION__ 就能确认页面跑的是哪一版
-    hostWindow.__DPD_VERSION__ = 'v6.16';
-    try { console.info('[斗破美化] v6.16 已加载（三类牌都能收起成一行，点牌头任意处即可收放）'); } catch { /* 忽略 */ }
+    hostWindow.__DPD_VERSION__ = 'v6.19';
+    try { console.info('[斗破美化] v6.19 已加载（观世牌：天时一行常显 + 任务/事件/势力/人物横排签页；输入条压回案台色，不再悬空）'); } catch { /* 忽略 */ }
 
     const THEME_NAMES = new Set(['gilt', 'graphite', 'parchment']);
     const normalizeTheme = value => (THEME_NAMES.has(value) ? value : 'gilt');
@@ -313,7 +315,8 @@
         return section;
     }
 
-    const TENSION_TEXT = { rising: '暗流渐起', falling: '风浪渐息', calm: '表面平静' };
+    // 与 agent 的 world-runtime.js TENSIONS 对齐：calm / rising / storm（旧的 falling 已不再产出，留着兼容老存档）
+    const TENSION_TEXT = { calm: '表面平静', rising: '暗流渐起', storm: '风波骤起', falling: '风浪渐息' };
 
     /** 观世节：世界运转的当下面貌（时刻、所在、天气、大势、世界事件）。 */
     function buildWorldSection(worldMeta) {
@@ -431,7 +434,34 @@
 #chat .dpd-fold-btn[aria-expanded="false"] .dpd-strip-chev { transform: rotate(-90deg); color: var(--dpd-accent); }
 #chat .dpd-fold-summary { display: none; margin-left: 0.55rem; min-width: 0; max-width: 60%; font-size: 0.72rem; letter-spacing: 0.04em; color: var(--dpd-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #chat .dpd-world-card .dpd-strip-head { padding-right: 2.6rem; }
-#chat .dpd-world-card.is-folded .dpd-strip-chips { display: none; }
+/* 天时一行（v6.17）：时辰 / 所在 / 天气 / 大势 并成一行，常显不折叠 */
+#chat .dpd-world-now { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.2rem 0.55rem; margin: 0.5rem 0 0; padding: 0.34rem 0.6rem; border-radius: 0.42rem; background: linear-gradient(90deg, var(--dpd-soft), transparent 88%); border-left: 2px solid var(--dpd-line); font-size: 0.78rem; line-height: 1.6; }
+#chat .dpd-now-item { display: inline-flex; align-items: baseline; gap: 0.3rem; min-width: 0; }
+#chat .dpd-now-item small { flex: none; color: var(--dpd-muted); font-size: 0.64rem; letter-spacing: 0.12em; }
+#chat .dpd-now-item b { font-weight: 600; color: var(--dpd-ink); letter-spacing: 0.01em; }
+#chat .dpd-now-item + .dpd-now-item::before { content: '·'; color: var(--dpd-muted); opacity: 0.7; margin-right: 0.25rem; }
+/* 横排签页（v6.18）：任务 / 事件 / 势力 / 人物见闻，点哪个签看哪一页，和收炉·落账一个手感 */
+#chat .dpd-world-tabs { display: flex; flex-wrap: wrap; gap: 0.15rem; margin: 0.55rem 0 0; border-bottom: 1px solid var(--dpd-line); }
+#chat .dpd-world-tab { appearance: none; border: 0; background: transparent; color: var(--dpd-muted); font: 600 0.8rem/1 "Noto Serif SC", "STZhongsong", serif; letter-spacing: 0.14em; padding: 0.5rem 0.9rem 0.55rem; cursor: pointer; position: relative; transition: color 0.15s ease; }
+#chat .dpd-world-tab:hover { color: var(--dpd-ink); }
+#chat .dpd-world-tab::after { content: ''; position: absolute; left: 18%; right: 18%; bottom: -1px; height: 2px; background: linear-gradient(90deg, transparent, var(--dpd-accent), transparent); opacity: 0; transition: opacity 0.18s ease; }
+#chat .dpd-world-tab[aria-selected="true"] { color: var(--dpd-accent); text-shadow: 0 0 10px var(--dpd-soft); }
+#chat .dpd-world-tab[aria-selected="true"]::after { opacity: 1; box-shadow: 0 0 8px var(--dpd-soft); }
+#chat .dpd-world-tab small { margin-left: 0.3rem; font: 700 0.6rem/1 system-ui, sans-serif; color: var(--dpd-muted); }
+#chat .dpd-world-tab[aria-selected="true"] small { color: var(--dpd-accent); }
+#chat .dpd-wsec-view { padding: 0.45rem 0.15rem 0.3rem; }
+#chat .dpd-wsec-view[hidden] { display: none; }
+#chat .dpd-wsec-body { display: grid; gap: 0.24rem; padding: 0.1rem 0.05rem 0; }
+#chat .dpd-wrow { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.2rem 0.42rem; padding: 0.24rem 0.42rem; border-radius: 0.34rem; font-size: 0.76rem; line-height: 1.55; background: linear-gradient(90deg, var(--dpd-soft), transparent 85%); }
+#chat .dpd-wrow b { flex: none; font-weight: 600; color: var(--dpd-ink); }
+/* 副行跟着主行排，不单独占一行：一页条目多一点时牌面才不会高到把正文顶出屏外 */
+#chat .dpd-wrow-sub { flex: 0 1 auto; min-width: 0; color: var(--dpd-muted); font-size: 0.68rem; line-height: 1.5; }
+#chat .dpd-wsec-empty { color: var(--dpd-muted); font-size: 0.74rem; padding: 0.16rem 0.2rem; }
+#chat .dpd-wsec-more { color: var(--dpd-muted); font-size: 0.66rem; letter-spacing: 0.04em; padding: 0.1rem 0.2rem 0; }
+#chat .dpd-world-card.is-folded .dpd-strip-chips,
+#chat .dpd-world-card.is-folded .dpd-world-now,
+#chat .dpd-world-card.is-folded .dpd-world-tabs,
+#chat .dpd-world-card.is-folded .dpd-wsec-view { display: none; }
 #chat .dpd-world-card.is-folded .dpd-strip-title small,
 #chat .dpd-pre-card.is-folded .dpd-pre-head small { display: none; }
 #chat .dpd-world-card.is-folded .dpd-fold-summary,
@@ -506,6 +536,9 @@ body.doupo-dress-page.doupo-window { background: radial-gradient(130% 100% at 50
 /* 顶栏与输入区给一层实底案台色（原先是透明——别人导入后输入框、发送键和左下角功能键
    全都悬空飘在背景上；实底随主题变色，既留换装观感又落回桌面） */
 body.doupo-dress-page.doupo-window #top-bar, body.doupo-dress-page.doupo-window #form_sheld { background: var(--dpd-desk) !important; }
+/* 输入条本体也压回案台色：酒馆原版给 #send_form 的是 --SmartThemeBlurTintColor（默认偏紫的
+   半透明底），套上案台窗景后它就是块浮在桌面上的紫板，跟「不悬空」自相矛盾。边框同步换主题线。 */
+body.doupo-dress-page.doupo-window #send_form { background-color: var(--dpd-desk) !important; border-color: var(--dpd-line) !important; backdrop-filter: none !important; }
 body.doupo-dress-page.doupo-window #sheld { background: linear-gradient(180deg, var(--dpd-paper), var(--dpd-paper2)) !important; box-shadow: inset 2px 0 0 var(--dpd-scroll-line), inset -2px 0 0 var(--dpd-scroll-line), 0 0 44px rgba(0, 0, 0, 0.45); }
 body.doupo-dress-page.doupo-window #chat { background: transparent !important; }
 body.doupo-dress-page.doupo-window #chat > .mes { background: transparent !important; }
@@ -701,7 +734,7 @@ body.doupo-blaze #chat::-webkit-scrollbar-thumb { background: linear-gradient(18
         applyFold(card, button, kind);
     }
 
-    /** 观世牌：世界运转的当下面貌，挂在正文上方；一张整卡，明细在卡肚里展开。 */
+    /** 观世牌：世界运转的当下面貌，挂在正文上方；天时一行常显，四个分区各自可折。 */
     function ensureWorldCard(floorEl, spec) {
         if (!floorEl) return;
         const anchor = floorEl.querySelector('.mes_text');
@@ -745,29 +778,120 @@ body.doupo-blaze #chat::-webkit-scrollbar-thumb { background: linear-gradient(18
         const name = doc.createElement('b');
         name.textContent = '观世';
         const caption = doc.createElement('small');
-        caption.textContent = '天时 · 所在 · 风云——点「全」看世界全账';
+        caption.textContent = '天时 · 风云 · 任务 · 势力 · 人物';
         title.append(name, caption);
         head.append(seal, title);
         card.append(head);
-        attachFold(card, head, 'world', spec.chips.slice(0, 2).map(field => String(field.value).split(/[，,]/)[0].trim()).join(' · '));
-        const chips = doc.createElement('span');
-        chips.className = 'dpd-strip-chips';
-        for (const field of spec.chips) {
-            const chip = doc.createElement('span');
-            chip.className = 'dpd-chip';
+        // 天时：时辰 / 所在 / 天气 / 大势 合成一行常显，不收不放（v6.17 用户口径）
+        const now = doc.createElement('div');
+        now.className = 'dpd-world-now';
+        for (const field of spec.now) {
+            const item = doc.createElement('span');
+            item.className = 'dpd-now-item';
             const label = doc.createElement('small');
             label.textContent = field.label;
-            chip.append(label);
             const value = doc.createElement('b');
             value.textContent = field.value;
-            chip.append(value);
-            chips.append(chip);
+            item.append(label, value);
+            now.append(item);
         }
-        card.append(chips);
+        card.append(now);
+        // 任务 / 事件 / 势力 / 人物见闻：横排签页，点哪个签就看哪一页（v6.18 用户口径）
+        worldTabs(card, spec.sections);
         parent.insertBefore(card, anchor);
     }
 
-    /** 世界账本 → 观世牌的料：时辰/所在/天气/大势 四签，外加世界事件明细。 */
+    /** 观世牌的横排签页：签条 + 一次只显示一页的分区视图。 */
+    let worldSeq = 0;
+    function worldTabs(card, sections) {
+        if (!Array.isArray(sections) || !sections.length) return;
+        worldSeq += 1;
+        const uid = `dpd-w${worldSeq}`;
+        const tablist = doc.createElement('div');
+        tablist.className = 'dpd-world-tabs';
+        tablist.setAttribute('role', 'tablist');
+        tablist.setAttribute('aria-label', '观世');
+        const views = [];
+        sections.forEach((section, index) => {
+            const tab = doc.createElement('button');
+            tab.type = 'button';
+            tab.className = 'dpd-world-tab';
+            tab.setAttribute('role', 'tab');
+            tab.id = `${uid}-tab-${index}`;
+            tab.setAttribute('aria-controls', `${uid}-view-${index}`);
+            tab.dataset.wtab = section.key;
+            tab.append(doc.createTextNode(section.label));
+            if (section.badge) {
+                const mark = doc.createElement('small');
+                mark.textContent = section.badge;
+                mark.setAttribute('aria-hidden', 'true');
+                tab.append(mark);
+            }
+            const view = worldSectionView(section, uid, index);
+            views.push({ key: section.key, tab, view });
+            tablist.append(tab);
+        });
+        const stored = worldTabState;
+        let defaultIndex = views.findIndex(item => item.key === stored);
+        if (defaultIndex < 0) defaultIndex = 0;
+        const select = index => {
+            views.forEach((item, i) => {
+                item.tab.setAttribute('aria-selected', i === index ? 'true' : 'false');
+                item.tab.tabIndex = i === index ? 0 : -1;
+                item.view.hidden = i !== index;
+            });
+            worldTabState = views[index].key;
+            saveWorldTabState(worldTabState);
+        };
+        views.forEach((item, index) => {
+            item.tab.addEventListener('click', event => {
+                event.stopPropagation();
+                select(index);
+            });
+        });
+        card.append(tablist);
+        views.forEach(item => card.append(item.view));
+        select(Math.min(defaultIndex, views.length - 1));
+    }
+
+    // 观世牌当前选中哪个签：按聊天记，切楼 / 刷新一致（v6.18）
+    const WORLD_TAB_STORE_KEY = 'doupo-dress-world-tab';
+    const WORLD_TAB_KEYS = ['tasks', 'events', 'factions', 'people'];
+    let worldTabState = (() => {
+        try {
+            const saved = hostWindow.localStorage?.getItem(WORLD_TAB_STORE_KEY);
+            if (WORLD_TAB_KEYS.includes(saved)) return saved;
+        } catch { /* 读不到就按默认 */ }
+        return 'tasks';
+    })();
+    function saveWorldTabState(key) {
+        try { hostWindow.localStorage?.setItem(WORLD_TAB_STORE_KEY, String(key)); } catch { /* 忽略 */ }
+    }
+
+    /** 观世牌里的一页：一个分区的条目，牌面上就能看见，不必点「全」。 */
+    function worldSectionView(section, uid, index) {
+        const view = doc.createElement('div');
+        view.className = 'dpd-wsec-view';
+        view.setAttribute('role', 'tabpanel');
+        view.id = `${uid}-view-${index}`;
+        view.setAttribute('aria-labelledby', `${uid}-tab-${index}`);
+        view.dataset.wview = section.key;
+        const body = ppEl('div', 'dpd-wsec-body');
+        if (!section.items.length) body.append(ppEl('div', 'dpd-wsec-empty', section.empty || '（暂无）'));
+        for (const item of section.items) {
+            const row = ppEl('div', 'dpd-wrow');
+            row.append(ppEl('b', '', item.title));
+            for (const badge of item.badges || []) row.append(ppEl('i', 'dpd-badge is-' + (badge.kind || 'dim'), badge.text));
+            if (item.sub) row.append(ppEl('small', 'dpd-wrow-sub', item.sub));
+            body.append(row);
+        }
+        if (section.more) body.append(ppEl('div', 'dpd-wsec-more', section.more));
+        view.append(body);
+        return view;
+    }
+
+    /** 世界账本 → 观世牌的料：天时一行 + 任务 / 事件 / 势力 / 人物见闻 四个分区。 */
+    const WORLD_CARD_ITEMS = 4;
     function buildWorldCardFields(worldMeta) {
         if (!worldMeta || typeof worldMeta !== 'object') return null;
         const clock = worldMeta.clock ?? {};
@@ -777,22 +901,114 @@ body.doupo-blaze #chat::-webkit-scrollbar-thumb { background: linear-gradient(18
         const time = Number.isFinite(day) && Number.isFinite(minute) && minute >= 0
             ? `第 ${day} 天 ${Math.floor(minute / 60)}:${String(minute % 60).padStart(2, '0')}`
             : (Number.isFinite(day) ? `第 ${day} 天` : '');
-        const chips = [];
-        if (time) chips.push({ label: '时辰', value: time });
+        const now = [];
+        if (time) now.push({ label: '时辰', value: time });
         const where = String(info.location ?? '').replace(/（[^）]*）\s*$/, '').trim();
-        if (where) chips.push({ label: '所在', value: where.slice(0, 20) });
-        const weather = String(info.weather ?? '').trim();
-        if (weather) chips.push({ label: '天气', value: weather.slice(0, 14) });
+        if (where) now.push({ label: '所在', value: where.slice(0, 22) });
+        // 天气只取第一小句：一整句塞进一行会把这行撑成两行
+        const weather = String(info.weather ?? '').trim().split(/[，,。；;]/)[0].trim();
+        if (weather) now.push({ label: '天气', value: weather.slice(0, 16) });
         const tension = TENSION_TEXT[String(worldMeta.tension ?? '').trim()] || String(worldMeta.tension ?? '').trim();
-        if (tension) chips.push({ label: '大势', value: tension.slice(0, 10) });
-        if (!chips.length) return null;
-        const rows = [];
-        const events = Array.isArray(worldMeta.worldEvents) ? worldMeta.worldEvents.slice(0, 4) : [];
-        for (const event of events) {
-            const title = String(event?.title ?? '').trim();
-            if (title) rows.push({ label: '', status: '', detail: `${title}（第 ${Number(event?.day) || '?'} 天起）` });
-        }
-        return { chips, rows };
+        if (tension) now.push({ label: '大势', value: tension.slice(0, 10) });
+        if (!now.length) return null;
+        const sections = [];
+
+        // 任务：先进行中/未启动，再按期限近的在前
+        const allTasks = Array.isArray(worldMeta.tasks) ? worldMeta.tasks.slice() : [];
+        const liveTasks = allTasks.filter(task => ['active', 'pending'].includes(String(task?.status ?? '').trim()));
+        const orderedTasks = (liveTasks.length ? liveTasks : allTasks).sort((a, b) => {
+            const endA = Number(a?.endDay);
+            const endB = Number(b?.endDay);
+            const safeA = Number.isFinite(endA) ? endA : Number.MAX_SAFE_INTEGER;
+            const safeB = Number.isFinite(endB) ? endB : Number.MAX_SAFE_INTEGER;
+            return safeA - safeB;
+        });
+        sections.push({
+            key: 'tasks',
+            label: '任务',
+            badge: allTasks.length ? String(allTasks.length) : '',
+            count: allTasks.length ? `${allTasks.length} 笔${liveTasks.length && liveTasks.length !== allTasks.length ? `（${liveTasks.length} 在办）` : ''}` : '',
+            empty: '任务簿还是空的。',
+            items: orderedTasks.slice(0, WORLD_CARD_ITEMS).map(task => {
+                const statusKey = String(task?.status ?? '').trim();
+                const badges = [{ text: TASK_STATUS_TEXT[statusKey] || statusKey || '未知', kind: TASK_STATUS_KIND[statusKey] || 'dim' }];
+                const endDay = Number(task?.endDay);
+                let sub = '';
+                if (task?.endDay !== null && task?.endDay !== undefined && task?.endDay !== '' && Number.isFinite(endDay)) {
+                    sub = Number.isFinite(day) && day > endDay ? `第 ${endDay} 天到期（已逾期）` : `第 ${endDay} 天到期`;
+                }
+                return { title: ppText(task?.title) || '（无题）', badges, sub };
+            }),
+            more: orderedTasks.length > WORLD_CARD_ITEMS ? `还有 ${orderedTasks.length - WORLD_CARD_ITEMS} 笔，点「全」看全账` : '',
+        });
+
+        // 事件：未了结的，新的在前（世界与身边合在一起）
+        const pairs = [];
+        for (const event of (Array.isArray(worldMeta.nearEvents) ? worldMeta.nearEvents : [])) pairs.push({ event, scope: 'near' });
+        for (const event of (Array.isArray(worldMeta.worldEvents) ? worldMeta.worldEvents : [])) pairs.push({ event, scope: 'world' });
+        const liveEvents = pairs
+            .filter(pair => pair.event?.done !== true && pair.event?.resolvedDay == null)
+            .sort((a, b) => (Number(b?.event?.day) || 0) - (Number(a?.event?.day) || 0));
+        sections.push({
+            key: 'events',
+            label: '事件',
+            badge: liveEvents.length ? String(liveEvents.length) : '',
+            count: pairs.length ? `${liveEvents.length} 件未了 / 共 ${pairs.length}` : '',
+            empty: '还没有记下事件。',
+            items: liveEvents.slice(0, WORLD_CARD_ITEMS).map(pair => {
+                const event = pair.event;
+                const startDay = Number(event?.day);
+                return {
+                    title: ppText(event?.title) || '（无题）',
+                    badges: [{ text: pair.scope === 'world' ? '世界' : '近地', kind: pair.scope === 'world' ? 'warn' : 'dim' }],
+                    sub: Number.isFinite(startDay) ? `第 ${startDay} 天起${ppText(event?.location) ? ' · ' + ppText(event.location).slice(0, 18) : ''}` : ppText(event?.location).slice(0, 18),
+                };
+            }),
+            more: liveEvents.length > WORLD_CARD_ITEMS ? `还有 ${liveEvents.length - WORLD_CARD_ITEMS} 件，点「全」看全账` : '',
+        });
+
+        // 势力：最近动过的在前
+        const factions = (Array.isArray(worldMeta.factions) ? worldMeta.factions.slice() : [])
+            .sort((a, b) => (Number(b?.updatedDay ?? b?.day) || 0) - (Number(a?.updatedDay ?? a?.day) || 0));
+        sections.push({
+            key: 'factions',
+            label: '势力',
+            badge: factions.length ? String(factions.length) : '',
+            count: factions.length ? `${factions.length} 家` : '',
+            empty: '还没有记下势力。',
+            items: factions.slice(0, WORLD_CARD_ITEMS).map(faction => {
+                const stanceKey = String(faction?.stance ?? '').trim();
+                const stance = STANCE_TEXT[stanceKey] || stanceKey;
+                return {
+                    title: ppText(faction?.name) || '（无名）',
+                    badges: stance ? [{ text: stance, kind: 'dim' }] : [],
+                    sub: [ppText(faction?.type), ppText(faction?.leader)].filter(Boolean).join(' · ').slice(0, 40),
+                };
+            }),
+            more: factions.length > WORLD_CARD_ITEMS ? `还有 ${factions.length - WORLD_CARD_ITEMS} 家，点「全」看全账` : '',
+        });
+
+        // 人物见闻：最近记的在前
+        const people = (Array.isArray(worldMeta.people) ? worldMeta.people.slice() : [])
+            .sort((a, b) => (Number(b?.updatedDay ?? b?.day) || 0) - (Number(a?.updatedDay ?? a?.day) || 0));
+        sections.push({
+            key: 'people',
+            label: '人物见闻',
+            badge: people.length ? String(people.length) : '',
+            count: people.length ? `${people.length} 条` : '',
+            empty: '还没有记下人物见闻。',
+            items: people.slice(0, WORLD_CARD_ITEMS).map(person => {
+                const seenDay = Number(person?.updatedDay ?? person?.day);
+                return {
+                    title: ppText(person?.name) || '（无名）',
+                    badges: Number.isFinite(seenDay) ? [{ text: `第 ${seenDay} 天`, kind: 'dim' }] : [],
+                    sub: ppText(person?.attitude).slice(0, 42),
+                };
+            }),
+            more: people.length > WORLD_CARD_ITEMS ? `还有 ${people.length - WORLD_CARD_ITEMS} 条，点「全」看全账` : '',
+        });
+
+        return { now, sections };
     }
 
     function clearPre(floorEl) {
@@ -1879,7 +2095,7 @@ body.doupo-blaze #chat::-webkit-scrollbar-thumb { background: linear-gradient(18
             if (state.stripFloor !== lastFloor || state.stripSig !== stripSig
                 || (lastFloor && !lastFloor.querySelector(':scope .dpd-world-card'))) {
                 if (state.stripFloor && state.stripFloor !== lastFloor) clearStrip(state.stripFloor);
-                worldCard.full = openWorldPopup;
+                if (worldCard) worldCard.full = openWorldPopup;
                 ensureWorldCard(lastFloor, worldCard);
                 state.stripFloor = lastFloor;
                 state.stripSig = stripSig;

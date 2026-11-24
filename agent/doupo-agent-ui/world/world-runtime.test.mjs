@@ -302,6 +302,31 @@ assert.equal(runtime.snapshot().nearEvents.some(event => event.id === coldCase.i
 runtime.apply([{ op: 'advance', days: 1 }], { source: 'llm', floor: 30 });
 assert.equal(runtime.snapshot().nearEvents.some(event => event.id === coldCase.id), true, '回滚撤销到期了结：撤销步骤里带着原样事件，要放回');
 
+// —— 时限任务：到点自动出账，不再永远挂着「已逾期」（用户口径 2026-11-24） ——
+let sweepTick = 0;
+const taskSweep = createWorldRuntime({ now: () => `task-sweep-${++sweepTick}` });
+taskSweep.apply([{ op: 'addTask', title: '限期三天的差事', detail: '过期就该清', days: 3 }]);
+const dueTask = taskSweep.snapshot().tasks.find(task => task.title === '限期三天的差事');
+assert.equal(dueTask.endDay, taskSweep.status().clock.day + 2, '任务时限同样当天算第 1 天');
+taskSweep.apply([{ op: 'advance', days: dueTask.endDay - taskSweep.status().clock.day }]);
+assert.equal(taskSweep.snapshot().tasks.some(task => task.id === dueTask.id), true, '有效期内任务不许提前出账');
+const taskSweepResult = taskSweep.apply([{ op: 'advance', days: 1 }]);
+assert.deepEqual(taskSweepResult.applied[0].expiredTasks, [dueTask.id], '过线即自动了结');
+assert.ok(taskSweepResult.applied[0].summary.includes('到期了结 1 条任务'), taskSweepResult.applied[0].summary);
+assert.equal(taskSweep.snapshot().tasks.some(task => task.id === dueTask.id), false, '到期任务当场出账');
+// 没时限的任务不受影响；重 roll 撤销推进时，被它清掉的任务要凭原样放回
+taskSweep.apply([{ op: 'addTask', title: '没时限的长期目标', detail: '一直在' }]);
+taskSweep.apply([{ op: 'addTask', title: '马上到期的活', days: 2 }]);
+const shortTask = taskSweep.snapshot().tasks.find(task => task.title === '马上到期的活');
+taskSweep.apply([{ op: 'advance', days: 10 }], { source: 'llm', floor: 41 });
+assert.equal(taskSweep.snapshot().tasks.some(task => task.id === shortTask.id), false, '跳钟后限时任务出账');
+assert.equal(taskSweep.snapshot().tasks.some(task => task.title === '没时限的长期目标'), true, '没时限的任务不受清扫影响');
+taskSweep.apply([{ op: 'advance', days: 1 }], { source: 'llm', floor: 41 });
+const revivedTask = taskSweep.snapshot().tasks.find(task => task.id === shortTask.id);
+assert.ok(revivedTask, '回滚撤销到期了结：任务要放回');
+assert.equal(revivedTask.status, 'active', '放回的任务必须回到 active');
+assert.equal(revivedTask.doneDay, null, '放回的任务不留完成日');
+
 // —— 同楼重 roll：先撤销上一版指令，再执行新指令，不重复记账 ——
 const clockBeforeSwipe = { ...runtime.snapshot().clock };
 runtime.apply([

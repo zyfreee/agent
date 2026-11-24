@@ -588,7 +588,8 @@ export function createMemoryRuntime({ maxOps, now = () => new Date().toISOString
             importance: clampInt(Math.max(7, ...consumed.map(item => Number(item?.importance) || 0)), 1, 10, 7),
             tag: TAG_LABELS[big?.tag] ? big.tag : '',
             day: dayKey,
-            note: '',
+            // 模型给大记忆的 note 要收：以前这里写死 ''，总结时模型写的细节全被丢了。
+            note: text(big?.note),
         };
         state.entries = state.entries.filter(item => !idList.includes(item.id));
         for (const id of idList) clearSupersedeRefs(id);

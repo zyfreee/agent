@@ -393,10 +393,13 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
         if (opIdMemory.length > Opid_MEMORY) opIdMemory = opIdMemory.slice(-Opid_MEMORY);
     }
 
-    /** 时钟一动就扫一遍：带时限的事件过线自动了结，返回撤销用的恢复步骤。 */
+    /** 时钟一动就扫一遍：带时限的事件与任务过线自动了结，返回撤销用的恢复步骤。
+     *  任务以前只靠 completeTask/deleteTask 离场，过期了永远挂在「（已逾期）」上占位——
+     *  用户口径 2026-11-24：到期的任务同样要清理，账上只留还活着的。 */
     function sweepExpired() {
         const restored = [];
         const expired = [];
+        const tasksExpired = [];
         for (const scope of SCOPES) {
             for (const event of eventsOf(scope)) {
                 if (event.done || event.endDay === null || event.endDay === undefined) continue;
@@ -408,7 +411,25 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
                 restored.push({ op: '_restoreEvent', id: event.id, scope: event.scope, event: before, done: false, resolvedDay: null });
             }
         }
-        return { expired, restored };
+        for (const task of state.tasks) {
+            if (task.status !== 'active') continue;
+            if (task.endDay === null || task.endDay === undefined) continue;
+            if (state.clock.day <= task.endDay) continue;
+            const before = structuredClone(task); // 任务到点即出账，撤销同样要凭原样任务放回（_restoreTask 认 id）
+            task.status = 'done';
+            task.doneDay = state.clock.day;
+            tasksExpired.push(task);
+            restored.push({ op: '_restoreTask', task: before });
+        }
+        return { expired, tasksExpired, restored };
+    }
+
+    /** 到期清扫的附注：事件与任务分开写，免得混成一句看不清到底清了什么。 */
+    function expiryNoteOf(swept) {
+        const parts = [];
+        if (swept.expired.length) parts.push(`${swept.expired.length} 件事（${swept.expired.map(event => event.id).join('、')}）`);
+        if (swept.tasksExpired.length) parts.push(`${swept.tasksExpired.length} 条任务（${swept.tasksExpired.map(task => task.id).join('、')}）`);
+        return parts.length ? `；到期了结 ${parts.join('、')}` : '';
     }
 
     /** 单条操作校验 + 执行；返回结果对象，绝不抛出。undo 是它的反向操作（可为数组），供同楼重 roll 时撤销。 */
@@ -427,8 +448,8 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
             state.clock.day += addedDays;
             state.clock.minute = total % MINUTE_OF_DAY;
             const swept = sweepExpired();
-            const expiryNote = swept.expired.length ? `；到期了结 ${swept.expired.length} 件事（${swept.expired.map(event => event.id).join('、')}）` : '';
-            return { ok: true, summary: `时间推进：${formatClock(before)} → ${formatClock(state.clock)}${expiryNote}`, expired: swept.expired.map(event => event.id), undo: [...swept.restored, { op: 'setClock', day: before.day, minute: before.minute, label: before.label }] };
+            const expiryNote = expiryNoteOf(swept);
+            return { ok: true, summary: `时间推进：${formatClock(before)} → ${formatClock(state.clock)}${expiryNote}`, expired: swept.expired.map(event => event.id), expiredTasks: swept.tasksExpired.map(task => task.id), undo: [...swept.restored, { op: 'setClock', day: before.day, minute: before.minute, label: before.label }] };
         }
         if (kind === 'setClock') {
             const day = op.day === undefined ? state.clock.day : intIn(op.day, 1, 99999);
@@ -439,8 +460,8 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
             const before = { ...state.clock };
             state.clock = { day, minute, label };
             const swept = sweepExpired();
-            const expiryNote = swept.expired.length ? `；到期了结 ${swept.expired.length} 件事（${swept.expired.map(event => event.id).join('、')}）` : '';
-            return { ok: true, summary: `时钟设置：${formatClock(before)} → ${formatClock(state.clock)}${label ? `（${label}）` : ''}${expiryNote}`, undo: [...swept.restored, { op: 'setClock', day: before.day, minute: before.minute, label: before.label }] };
+            const expiryNote = expiryNoteOf(swept);
+            return { ok: true, summary: `时钟设置：${formatClock(before)} → ${formatClock(state.clock)}${label ? `（${label}）` : ''}${expiryNote}`, expired: swept.expired.map(event => event.id), expiredTasks: swept.tasksExpired.map(task => task.id), undo: [...swept.restored, { op: 'setClock', day: before.day, minute: before.minute, label: before.label }] };
         }
         if (kind === 'addEvent') {
             const scope = text(op.scope) || 'near';
