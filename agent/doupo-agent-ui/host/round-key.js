@@ -1,9 +1,9 @@
-// 一轮身份与缓存键：重 roll 复用备料结果的identity基础。
+﻿// 一轮身份与缓存键：重 roll 复用备料结果的identity基础。
 // 从 index.js 摘成纯模块——roundKeyOf/settleRoundKeyOf 是纯函数，召回键工厂把
 // 作用域、设置、账本手改序号作为依赖注入，测试可以直接喂数据。
 
 /** 一轮身份：楼层数 + 最新玩家输入。重 roll 换的只是 AI 楼层内容，这两样不变——
- *  召回缓存与场记挑选签名靠它做到「重 roll 复用备料结果，不重复调用」；玩家改口、
+ *  召回缓存与判定官签名靠它做到「重 roll 复用备料结果，不重复调用」；玩家改口、
  *  楼层增删、换聊天都会换键，照常重新备料。 */
 export function roundKeyOf(chat) {
     const list = Array.isArray(chat) ? chat : [];

@@ -256,9 +256,10 @@ export function normalizeApiPreset(raw) {
     return {
         id,
         name: cleanText(raw.name, PRESET_NAME_MAX),
-        // 通道：tavern = 这个方案代表「走酒馆通道」，绑定它的功能经由酒馆当前的 API 发出，
-        // 地址/密钥/采样参数都用不上；false = 按方案自己的接口直连（原有行为）。
-        tavern: raw.tavern === true,
+        // 通道只有一个入口：功能卡上「不绑方案」＝走酒馆，绑了方案＝按方案直连。
+        // 方案自己不再带通道开关（旧版那个「走酒馆通道」复选框既和下拉重复，又会让
+        // 下面填的地址/密钥/模型全部作废，是纯歧义，已删除；旧档里的 tavern 字段在
+        // host-storage 的 schemaVersion 16 迁移里清掉）。
         provider: raw.provider === 'anthropic' || raw.provider === 'openai' ? raw.provider : '',
         baseUrl: cleanText(raw.baseUrl, 300),
         apiKey: cleanText(raw.apiKey, 200),
@@ -306,10 +307,8 @@ export function normalizeApiPresets(list) {
 export function presetToOverrides(preset) {
     const normalized = preset && typeof preset === 'object' ? preset : null;
     if (!normalized) return null;
-    // 走酒馆通道的方案：只带通道标记——绑定它的功能跟着走酒馆当前的 API，
-    // 方案里填的地址/密钥/采样参数一概用不上。必须在 baseUrl 检查之前判断，
-    // 不然“没填地址的酒馆方案”会被误判成不可用。
-    if (normalized.tavern === true) return { connection: 'tavern' };
+    // 没有接口地址＝方案不可用（返回 null，调用方回落「跟随酒馆主连接」并在设置页标出来）。
+    // 旧版这里先判 tavern 标记、命中就只回 { connection: 'tavern' }，那个分支已随开关一起删掉。
     if (!String(normalized.baseUrl ?? '').trim()) return null;
     const positive = value => {
         const num = Number(value);

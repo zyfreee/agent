@@ -14,6 +14,8 @@ import { STANCE_LABELS, TENSION_LABELS, eventIntro } from '../world/world-runtim
 import { seasonOf } from '../world/world-ops.js';
 import { TAG_LABELS } from '../memory/memory-runtime.js';
 import { SETTLE_CATEGORY_LABELS, SETTLE_FIELD_LABELS } from '../settle/settle-adjudicate.js';
+import { KIND_LABELS } from '../plot/plot-runtime.js';
+import { impactMarkHits } from '../impact/impact-executor.js';
 
 /** 长条上从上到下的图标（球帽下面第一格就是第一项）。 */
 export const ORB_ITEMS = Object.freeze([
@@ -25,6 +27,7 @@ export const ORB_ITEMS = Object.freeze([
     Object.freeze({ id: 'npc', icon: '☯', title: 'NPC 决策', hint: '自由对话与主动联系' }),
     Object.freeze({ id: 'cold', icon: '❄', title: '冷藏推进', hint: '后台人物的推进记录' }),
     Object.freeze({ id: 'impact', icon: '⌁', title: '世界影响', hint: '世界被改成了什么样' }),
+    Object.freeze({ id: 'plot', icon: '◇', title: '剧情线', hint: '埋着的钩子与还剩几步' }),
     Object.freeze({ id: 'facts', icon: '▤', title: '原著资料', hint: '设定库与注入通道' }),
     Object.freeze({ id: 'settle', icon: '⚖', title: '行动结算', hint: '本轮行动的判定与注入' }),
     Object.freeze({ id: 'mirror', icon: '⇄', title: '数据镜像', hint: '数据库桥接与 MVU 同步' }),
@@ -80,8 +83,8 @@ function row(label, value, tone) {
     return { label, value: text(value) || EMPTY, ...(tone ? { tone } : {}) };
 }
 
-function entry(head, meta, detail, ref) {
-    return { head: text(head), ...(text(meta) ? { meta: text(meta) } : {}), ...(text(detail) ? { detail: text(detail) } : {}), ...(ref ? { ref } : {}) };
+function entry(head, meta, detail, ref, extra) {
+    return { head: text(head), ...(text(meta) ? { meta: text(meta) } : {}), ...(text(detail) ? { detail: text(detail) } : {}), ...(ref ? { ref } : {}), ...(extra ?? {}) };
 }
 
 /** 条目引用：详情小卡按它回运行时里找活数据；拿不到 id 的条目不给引用（不可点）。 */
@@ -312,17 +315,62 @@ function favorLabel(value) {
     return number === 0 ? '冷淡' : '';
 }
 
-/** 人物簿：档案计数、主动联系队列与人物一览，只读。 */
+/** 好感的呈现面：数值、档位、最近一次增减与此刻情绪——球上只看这四样，明细留在小卡里。 */
+function favorFace(record) {
+    const value = Math.max(-100, Math.min(100, Math.round(Number(record?.favor) || 0)));
+    const log = Array.isArray(record?.favorLog) ? record.favorLog : [];
+    const lastDelta = Number(log.at(-1)?.delta);
+    const mood = (Array.isArray(record?.moods) ? record.moods : [])
+        .map(item => text(item?.label))
+        .filter(Boolean)
+        .slice(0, 2)
+        .join('、');
+    return {
+        value,
+        label: favorLabel(value) || '未定',
+        delta: Number.isFinite(lastDelta) ? Math.round(lastDelta) : 0,
+        ...(mood ? { mood } : {}),
+    };
+}
+
+/** 人物簿：档案计数、亲近/生分两人、主动联系队列与人物一览，只读。 */
 export function buildNpcPanel({ status, records, reachout = [] } = {}) {
     // 人物簿的 list() 已经把“重要 / 最近活动”排前面，主窗取前几条就是最该看的几个人。
     const people = [...(records ?? [])];
     const pending = Array.isArray(reachout) ? reachout : [];
+    // 好感排行只在这里算一次：谁最亲近、谁最生分，是玩家最想知道的两头。
+    const ranked = people
+        .map(record => ({ name: text(record?.name), favor: Math.round(Number(record?.favor) || 0) }))
+        .filter(item => item.name)
+        .sort((left, right) => right.favor - left.favor);
+    const closest = ranked[0];
+    const coldest = ranked.length > 1 ? ranked[ranked.length - 1] : null;
     const rows = capRows([
         row('档案总数', status?.total !== undefined ? `${status.total} 人` : ''),
         row('在场', status?.present !== undefined ? `${status.present} 人` : ''),
         row('重要', status?.important !== undefined ? `${status.important} 人` : ''),
         row('想找你', pending.length ? `${pending.length} 人` : '—', pending.length ? '有人排队等着来找你' : ''),
-    ]);
+        closest ? row('最亲近', `${closest.name} ${closest.favor > 0 ? '+' : ''}${closest.favor}`) : null,
+        coldest ? row('最生分', `${coldest.name} ${coldest.favor > 0 ? '+' : ''}${coldest.favor}`) : null,
+    ].filter(Boolean));
+    // 最近谁变了：把各人 favorLog 的最后一笔并起来按世界天倒排——好感是累计值，
+    // 只有这种“谁刚对你怎么改了看法”的横切面才能看出这局的关系在往哪走。
+    const moves = people
+        .map(record => {
+            const last = Array.isArray(record?.favorLog) ? record.favorLog.at(-1) : null;
+            const delta = Math.round(Number(last?.delta) || 0);
+            if (!last || !delta) return null;
+            return { name: text(record?.name), delta, day: Number(last.day), reason: text(last.reason) };
+        })
+        .filter(Boolean)
+        .sort((left, right) => (Number.isFinite(right.day) ? right.day : -1) - (Number.isFinite(left.day) ? left.day : -1))
+        .slice(0, 6)
+        .map(item => entry(
+            item.name,
+            `${item.delta > 0 ? '+' : ''}${item.delta}${item.reason ? ` · ${item.reason}` : ''}`,
+            Number.isFinite(item.day) ? `第 ${item.day} 天` : '',
+            ref('npc', item.name),
+        ));
     // 主动联系队列：条目带 { kind: 'reachout' } 引用，点击应约在 index.js 的条目卡点击里特判。
     const reachoutEntries = pending.map(item => entry(
         item?.npcId ?? '（未知名）',
@@ -336,11 +384,14 @@ export function buildNpcPanel({ status, records, reachout = [] } = {}) {
         rows,
         lists: [
             ...(reachoutEntries.length ? [list('待他来找你', '', reachoutEntries)] : []),
+            // 最近谁改了对你的看法：好感是慢变量，这里只给最近几笔增减，看的是方向。
+            ...(moves.length ? [list('最近的态度', '', moves)] : []),
             list('人物一览', '还没有人物档案。正文里出现的人会记在这里。', people.map(record => entry(
                 record.name,
-                [`${favorLabel(record.favor)}（${Number(record.favor) || 0}）`, record.presence, record.importance].filter(Boolean).join(' · '),
+                [record.presence, record.importance, record.location ? `@${record.location}` : ''].filter(Boolean).join(' · '),
                 record.identity,
                 ref('npc', record?.name),
+                { favor: favorFace(record) },
             ))),
         ],
     };
@@ -390,27 +441,300 @@ export function buildColdPanel({ status, records, lastFloor } = {}) {
 
 const IMPACT_WEIGHT = Object.freeze({ world: '世界级', major: '大事', minor: '小事' });
 
-/** 世界影响：账本计数与进行中的影响，只读。 */
-export function buildImpactPanel({ status, records } = {}) {
+/** 证据链驳回的理由：给玩家看的是“为什么没站住”，不是机器码。键与 impact-select 的 judgeImpactHits 对齐。 */
+const DROP_REASON = Object.freeze({
+    no_such_record: '账本里没这条',
+    duplicate: '同一条报了两遍',
+    not_sunk: '已经不是埋着的了',
+    no_seed_or_trigger: '没写因或没写等什么',
+    why_incomplete: '理由没同时说到因和场面',
+    evidence_not_found: '原文里找不到这句',
+});
+
+/**
+ * 回响：一条影响落成之后，它在世界上留下的所有痕迹。
+ *
+ * 五个来源分开算、合成一张单子，因为它们是五种不同的“留下了什么”：
+ * - 余波：落成时派生出来的子影响（「余波：X」），parent 指回这条；
+ * - 世界事件：世界台账里 basis 带「影响#编号」的那条；
+ * - 剧情线：落成时推进的线索（结构化存在 record.echoes 里，不再靠读 detail 反推）；
+ * - 人物：人物簿里 impactRefs 含这条编号的人；
+ * - 正文：这条影响被写进过提示词（注入历史里有）。
+ * 一条影响还没落成时也有回响可看：被谁记着、有没有真进过正文。
+ * 纯函数，不碰运行时，数据由调用方灌进来（测试直接喂）。
+ */
+export function buildImpactEchoes({ record = null, records = [], events = [], threads = [], npcs = [], injected = [], history = [] } = {}) {
+    const id = text(record?.id);
+    if (!id) return { count: 0, rows: [], items: [] };
+    const marked = String(id).replace(/^#/, '');
+    // 编号比对走带边界的统一匹配器（impact-executor 导出）：裸 includes 会让 i1 认领
+    // i12/i100 的痕迹（'影响#i12'.includes('影响#i1') 为真），一局超过 10 条影响后回响虚报。
+    const sameImpact = value => impactMarkHits(value, marked) || impactMarkHits(value, id);
+    const items = [];
+    // 1) 余波子影响：只在直接子代，孙辈算在那条余波自己头上，免得一棵树全挂在祖宗下。
+    const ripples = (Array.isArray(records) ? records : [])
+        .filter(item => String(item?.parent ?? '') === id && item?.id !== id)
+        .map(item => ({ kind: 'ripple', id: item.id, title: item.title || item.id, day: item.day, note: item.materialized ? '已落成' : '还没落成' }));
+    // 2) 世界事件：basis 上的短标记是脚本写死的，认它比认标题可靠。
+    const eventHits = (Array.isArray(events) ? events : [])
+        .filter(item => sameImpact(item?.basis))
+        .map(item => ({ kind: 'event', id: item.id, title: item.title || item.id, day: item.day, note: item.done ? '已了结' : '还在演' }));
+    // 3) 剧情线：优先读落成时存下的结构化痕迹；读不到就退回扫描 detail 里的「受「标题」推动」。
+    const stored = Array.isArray(record?.echoes) ? record.echoes : [];
+    const threadEchoes = stored.filter(item => item?.kind === 'thread').map(item => ({
+        kind: 'thread', id: item.id || '', title: item.title || item.id || '剧情线', day: item.day, note: item.note || '',
+    }));
+    if (!threadEchoes.length && record?.title) {
+        const needle = `受「${text(record.title)}」推动`;
+        for (const thread of Array.isArray(threads) ? threads : []) {
+            if (String(thread?.detail ?? '').includes(needle)) {
+                threadEchoes.push({ kind: 'thread', id: thread.id || '', title: thread.title || thread.id || '剧情线', day: thread.day, note: '被这条推动过' });
+            }
+        }
+    }
+    // 4) 人物：落成时波及的 + 人物簿里自己记下被这条影响动过的（两边都收，去重）。
+    const npcEchoes = [];
+    for (const item of stored.filter(row => row?.kind === 'npc')) {
+        if (item?.id || item?.title) npcEchoes.push({ kind: 'npc', id: item.id || item.title, title: item.title || item.id, day: item.day, note: item.note || '' });
+    }
+    for (const person of Array.isArray(npcs) ? npcs : []) {
+        const refs = Array.isArray(person?.impactRefs) ? person.impactRefs : [];
+        const hit = refs.find(ref => String(ref?.id ?? '').replace(/^#/, '') === marked);
+        if (!hit) continue;
+        const name = person?.name || hit.name || '某人';
+        if (npcEchoes.some(item => item.id === name)) continue;
+        npcEchoes.push({ kind: 'npc', id: name, title: name, day: hit.day, note: hit.note || '被这条影响动过' });
+    }
+    // 5) 正文：注入历史里有编号就算“真进过正文”，只有最近一轮时也算。
+    const injectedNow = (Array.isArray(injected) ? injected : []).some(value => String(value ?? '').replace(/^#/, '') === marked);
+    const rounds = (Array.isArray(history) ? history : []).filter(round => (round?.ids ?? []).some(value => String(value ?? '').replace(/^#/, '') === marked)).length;
+    items.push(...ripples, ...eventHits, ...threadEchoes, ...npcEchoes);
+    const rows = [];
+    if (ripples.length) rows.push(row('余波', `${ripples.length} 条`));
+    if (eventHits.length) rows.push(row('世界事件', eventHits.map(item => item.id).join('、')));
+    if (threadEchoes.length) rows.push(row('剧情线', threadEchoes.map(item => (item.note ? `${item.title}（${item.note}）` : item.title)).join('、')));
+    if (npcEchoes.length) rows.push(row('人物', npcEchoes.map(item => (item.note && item.note !== '被这条影响动过' ? `${item.title}（${item.note}）` : item.title)).join('、')));
+    rows.push(row('正文', injectedNow ? '这一轮写进去了' : rounds ? `写过 ${rounds} 轮` : '还没写过'));
+    return {
+        count: items.length,
+        // 悬浮球清单行用的短标签：「回响 3」之外再给一句人话，说明动静落在哪。
+        summary: [
+            eventHits.length ? `世界 ${eventHits.length}` : '',
+            threadEchoes.length ? `剧情线 ${threadEchoes.length}` : '',
+            npcEchoes.length ? `人物 ${npcEchoes.length}` : '',
+            ripples.length ? `余波 ${ripples.length}` : '',
+        ].filter(Boolean).join(' · '),
+        rows,
+        items,
+    };
+}
+
+/** 世界影响：账本计数、进行中、待发酵与已落成的后果，只读；数据都来自影响页同一套运行时。 */
+/**
+ * 落成之后到底落在哪儿：有世界事件就报事件号；没有世界事件的影响（只动了人/身家的那些）
+ * 要说清落在人物簿还是纳戒，别一律写成「世界事件」——玩家会去世界台账里找一个不存在的号。
+ */
+function impactSeat(record) {
+    const types = new Set((Array.isArray(record?.effects) ? record.effects : []).map(effect => effect?.type));
+    if (types.has('self') && types.has('npc')) return '人物簿与纳戒';
+    if (types.has('self')) return '纳戒';
+    if (types.has('npc')) return '人物簿';
+    return '世界事件';
+}
+
+export function buildImpactPanel({ status, records, pending = [], materialized = [], last = null, injection = null, materialize = null, all = [], answers = null, echoSource = null, dropped = [] } = {}) {
     const active = [...(records ?? [])];
+    // 回响：每条影响落成后留下的痕迹，按编号现算；没有 echoSource 时退回空表（老调用方不受影响）。
+    const echoOf = (record) => {
+        if (!echoSource || !record) return null;
+        try {
+            return buildImpactEchoes({ ...echoSource, record });
+        } catch { return null; }
+    };
+    const echoMeta = (record) => {
+        const echoes = echoOf(record);
+        if (!echoes || !echoes.items.length) return '';
+        return `回响 ${echoes.count}${echoes.summary ? `（${echoes.summary}）` : ''}`;
+    };
+    // 传闻口径的单子单独露一行：哪些事只是风声、落成时不会点名，玩家要能一眼看出来。
+    const rumorsAll = (Array.isArray(all) ? all : []).filter(record => record?.certainty === 'rumor');
+    const pendingRows = Array.isArray(pending) ? pending : [];
+    const doneRows = Array.isArray(materialized) ? materialized : [];
+    const today = Number(status?.day) || 0;
+    const lastValue = last
+        ? `第 ${last.day} 天 · 记 ${last.applied?.length ?? 0} 条${last.rejected?.length ? ` · 拒 ${last.rejected.length} 条` : ''}${last.materializeError ? ' · 落成失败' : ''}`
+        : '还没跑过';
+    const materializeValue = materialize?.error
+        ? `失败：${brief(materialize.error, 18)}`
+        : materialize
+            ? `落成 ${(materialize.rows ?? []).filter(item => item.status === 'materialized').length} 条${materialize.threads?.length ? ` · 剧情线 ${materialize.threads.length} 条` : ''}${materialize.chain?.length ? ` · 余波 ${materialize.chain.length} 条` : ''}`
+            : '还没跑过';
+    // 从存档读回来的注入一定已经随生成结束清空了，别再说「已写进去」——加一句「已随生成清空」。
+    const injectionValue = injection
+        ? (injection.status === 'injected'
+            ? `已写 ${injection.usedIds?.length ?? 0} 条（${injection.via === 'llm' ? '模型挑选' : '按分量'}）${injection.cleared ? ' · 已随生成清空' : ''}`
+            : injection.status === 'skipped' ? '这一幕用不上旧账' : '没有可写的影响')
+        : '还没挑过';
+    // 埋着的因在 pendingRows 里已经有自己那一栏，这里把它从「进行中」的计数里摘出去，
+    // 否则同一批记录在两行里重复计数，玩家会以为记了两笔。
+    const actingRows = active.filter(record => record.state !== 'sunk');
+    const rumorRows = (rumorsAll.length ? rumorsAll : [...active, ...pendingRows]).filter(record => record.certainty === 'rumor');
+    // 被驳回的命中：只留最近几条，且必须真带编号（没有编号的行说不出是哪一条）。
+    const droppedRows = (Array.isArray(dropped) ? dropped : [])
+        .filter(item => item && item.ref)
+        .slice(0, 6);
+    // 三问是每条影响自己的属性：悬浮球列表里的每一行也带「对原著 / 以后」两截，
+    // 玩家不点详情就能看到“这条动了原著没有、以后什么时候发作”。
+    const answerOf = (record) => {
+        if (!answers || typeof answers !== 'object') return { canon: '', future: '' };
+        const item = answers[record?.id];
+        return item && typeof item === 'object' ? item : { canon: '', future: '' };
+    };
+    const canonLine = (record) => {
+        const answer = answerOf(record);
+        if (!answer.canon) return '';
+        return `原著：${brief(answer.canon, 40)}`;
+    };
+    const futureLine = (record) => {
+        const answer = answerOf(record);
+        return answer.future ? `以后：${brief(answer.future, 60)}` : '';
+    };
+    // 回响总账：所有影响留下的痕迹条数之和（同一条影响只算一次）。只为给玩家一个“这局到底动没动世界”的量。
+    const echoTotal = echoSource
+        ? [...new Map([...active, ...doneRows].map(record => [record?.id ?? record?.title, record])).values()]
+            .reduce((sum, record) => sum + (echoOf(record)?.count ?? 0), 0)
+        : 0;
     const rows = capRows([
         row('记账日', status?.day !== undefined ? `第 ${status.day} 天` : ''),
         row('已对账到', status?.decidedFloor !== undefined ? `第 ${status.decidedFloor} 楼` : ''),
-        row('进行中', status?.active !== undefined ? `${status.active} 条` : ''),
-        row('待到期', status?.due !== undefined ? `${status.due} 条` : ''),
+        row('进行中', `${actingRows.length} 条`),
+        row('埋着的因', `${pendingRows.length} 条`, pendingRows.length ? 'warn' : undefined),
+        row('已落成', `${doneRows.length} 条`),
+        // 回响总账：这局所有影响在世界里留下的痕迹加起来有多少，静悄悄的一局这个数就是 0。
+        ...(echoTotal ? [row('回响', `${echoTotal} 处`)] : []),
+        row('传闻', rumorRows.length ? `${rumorRows.length} 条（落成不点名）` : ''),
+        row('上次记录', lastValue),
+        row('落成', materializeValue),
+        row('本幕注入', injectionValue),
         row('已了结', status?.closed !== undefined ? `${status.closed} 条` : ''),
         row('档案', status?.archived !== undefined ? `${status.archived} 条` : ''),
     ]);
     return {
         title: '世界影响', icon: '⌁',
-        summary: status?.total ? `账上 ${status.total} 条，进行中 ${status.active} 条。` : '影响账本是空的。',
+        summary: `第 ${status?.day ?? 1} 天 · 进行中 ${actingRows.length} · 埋着 ${pendingRows.length}${doneRows.length ? ` · 已落成 ${doneRows.length}` : ''}${materialize?.error ? ' · 落成失败' : ''}`,
         rows,
-        lists: [list('进行中的影响', '没有进行中的影响。', active.map(record => entry(
-            brief(record.title, 24),
-            [`第 ${record.day} 天`, IMPACT_WEIGHT[record.weight] ?? '小事', record.target].filter(Boolean).join(' · '),
-            '',
-            ref('impact', record?.id ?? record?.title),
-        )))],
+        lists: [
+            // 埋着的因在下面「待发酵」单独有一栏，这里只列明面上已经在演的那些，
+            // 否则同一条会同时出现在两栏里，玩家会以为记了两笔。
+            list('进行中的影响', '没有进行中的影响。', active.filter(record => record.state !== 'sunk').map(record => entry(
+                brief(record.title, 24),
+                [`第 ${record.day} 天`, IMPACT_WEIGHT[record.weight] ?? '小事', record.target, record.materialized ? `已落成 ${record.outcomeEventId || '世界事件'}` : '', echoMeta(record)].filter(Boolean).join(' · '),
+                [canonLine(record), futureLine(record)].filter(Boolean).join('\n') || '',
+                ref('impact', record?.id ?? record?.title),
+            ))),
+            // 待发酵按天数排，最近的先露出来；点行进详情小卡可以看全文。
+            // 埋着的因没有排期（时间不再驱动它），所以第一格写「埋着等场面」而不是「第 null 天」。
+            // 埋着的因：时间不再驱动它们，所以标题不再叫「待发酵」，只说“埋着、等场面”。
+            // 埋着的因不再有排期：时间不驱动它，所以第一格只写「埋着等场面」，不写天数也不用「随时」。
+            list('埋着的因（等着撞上场面）', '没有埋着的因。', pendingRows
+                .slice()
+                .sort((a, b) => (Number(a.ripenDay) || 0) - (Number(b.ripenDay) || 0))
+                .map(record => entry(
+                    brief(record.title, 24),
+                    ['埋着等场面', IMPACT_WEIGHT[record.weight] ?? '小事', record.target].filter(Boolean).join(' · '),
+                    [canonLine(record), futureLine(record)].filter(Boolean).join('\n') || '',
+                    ref('impact', record?.id ?? record?.title),
+                ))),
+            list('传闻（落成不点名）', '没有压成传闻的影响。', rumorRows.map(record => entry(
+                brief(record.title, 24),
+                [`第 ${record.ripenDay ?? record.day} 天`, record.state === 'ripened' ? '已应验' : '未应验', IMPACT_WEIGHT[record.weight] ?? '小事'].filter(Boolean).join(' · '),
+                [canonLine(record), futureLine(record), record.detail || ''].filter(Boolean).join('\n'),
+                ref('impact', record?.id ?? record?.title),
+            ))),
+            list('已落成的后果', '还没有落成世界事件的影响。', doneRows.map(record => entry(
+                brief(record.title, 24),
+                // 只动人和身家的影响不落世界事件，别把它写成「→ 世界事件」骗人。
+                [`→ ${record.outcomeEventId || impactSeat(record)}`, `第 ${record.materializedDay ?? record.day} 天`, echoMeta(record)].filter(Boolean).join(' · '),
+                [canonLine(record), record.resolution || ''].filter(Boolean).join('\n'),
+                ref('impact', record?.id ?? record?.title),
+            ))),
+            // 判定官报了、证据链没让过的：留在这儿是为了让玩家看见“模型想认领哪条、凭什么没认”。
+            // 不写这一栏，玩家只会看到“这一轮什么都没发生”，根本不知道判定官试过。
+            ...(droppedRows.length ? [list('判定官报了、证据链没让过', '', droppedRows.map(item => entry(
+                brief(item.title, 24),
+                [`#${item.ref}`, DROP_REASON[item.reason] ?? brief(item.reason, 12)].filter(Boolean).join(' · '),
+                '',
+                undefined,
+            )))] : []),
+        ],
+    };
+}
+
+/** 剧情线：本幕要往哪走 + 每条还开着的线埋了什么、被什么推着、还剩几天、有没有被世界影响动过。 */
+export function buildPlotPanel({ status, snapshot } = {}) {
+    const threads = Array.isArray(snapshot?.threads) ? snapshot.threads : [];
+    const today = Number(status?.day) || Number(snapshot?.day) || 0;
+    const open = threads.filter(thread => thread?.status === 'open');
+    // 超期没回收的排最前：这些才是“该给个交代了”的线，玩家比谁都该先看见。
+    const hungDays = thread => {
+        const day = Number(thread?.day);
+        return Number.isFinite(day) && today > day ? today - day : 0;
+    };
+    const overdue = thread => thread?.dueDay !== null && thread?.dueDay !== undefined && Number(thread.dueDay) < today;
+    const sorted = open.slice().sort((left, right) => {
+        const gap = Number(overdue(right)) - Number(overdue(left));
+        if (gap) return gap;
+        return hungDays(right) - hungDays(left);
+    });
+    // 「还剩几步」：有到期日的算天数，没排期的就明说“看场合，不按日子”——和 /impact why 同一口径。
+    const remainText = thread => {
+        if (thread?.dueDay === null || thread?.dueDay === undefined) return '没排期，看场合';
+        const due = Number(thread.dueDay);
+        if (!Number.isFinite(due)) return '';
+        if (due < today) return `已超 ${today - due} 天`;
+        return `还剩 ${due - today} 天`;
+    };
+    const touchedCount = open.filter(thread => text(thread?.fromImpact)).length;
+    const rows = capRows([
+        row('开放线索', `${open.length} 条`),
+        row('超期未收', status?.overdue !== undefined ? `${status.overdue} 条` : ''),
+        row('本幕目标', brief(status?.plan?.goal, 18)),
+        row('下一步', brief(status?.plan?.next, 18)),
+        row('被影响推动', touchedCount ? `${touchedCount} 条` : ''),
+        row('已回收', status?.threads?.resolved !== undefined ? `${status.threads.resolved} 条` : ''),
+    ]);
+    const main = list('还开着的线', '没有开着的线索。正文里埋的钩子、没解开的谜、没算完的恩怨会记在这里。', sorted.map(thread => {
+        const kind = KIND_LABELS[thread?.kind] ?? '';
+        const pushed = text(thread?.fromImpact) ? '影响推动' : '';
+        const hung = hungDays(thread) > 0 ? `已悬 ${hungDays(thread)} 天` : '';
+        return entry(
+            `${thread?.id ?? ''}「${brief(thread?.title, 20)}」`.trim(),
+            [kind, remainText(thread), pushed, hung].filter(Boolean).join(' · '),
+            brief(thread?.detail || thread?.basis, 60),
+            ref('plot', thread?.id, { title: thread?.title }),
+            // 走了多少天／有没有到期日单独带出去：小卡里要写清楚“为什么是这个天数”。
+            { plotDue: thread?.dueDay ?? null, plotDay: thread?.day ?? null },
+        );
+    }));
+    // 第二栏只放被世界影响推过的线：这是“世界影响真的动了故事线”的直证，别的窗看不到。
+    const pushedAll = open.filter(thread => text(thread?.fromImpact));
+    const lists = [main];
+    if (pushedAll.length) {
+        lists.push(list('被世界影响推动过', '', pushedAll.map(thread => entry(
+            brief(thread?.title, 20),
+            [`影响 ${String(thread.fromImpact).trim()}`, remainText(thread)].filter(Boolean).join(' · '),
+            brief(thread?.detail, 60),
+            ref('plot', thread?.id, { title: thread?.title }),
+            { plotDue: thread?.dueDay ?? null, plotDay: thread?.day ?? null },
+        ))));
+    }
+    return {
+        title: '剧情线', icon: '◇',
+        summary: open.length
+            ? `${open.length} 条还没收${status?.overdue ? `，其中 ${status.overdue} 条已超期` : ''}${touchedCount ? `；${touchedCount} 条被世界影响推过` : ''}。`
+            : '这一局还没埋下没回收的线。',
+        rows,
+        lists,
     };
 }
 
@@ -612,7 +936,7 @@ export function buildSandboxPanel({ enabled, read } = {}) {
  *  自己的渠道标记上，一行两路请求就有两枚箭头，点了算哪路一目了然。 */
 const MODULE_CHANNELS = Object.freeze({
     // 原著设定每轮的真实调用是选条员，登记标签是「事实检索」（facts-select 调 complete 时不报标签，
-    // 由 index.js 兜底命名）；「场记挑选」其实是世界影响的注入挑选员，挂在影响行。
+    // 由 index.js 兜底命名）；「世界判定官」是世界影响生成前那次判定，挂在影响行。
     facts: [{ key: '事实检索', short: '选条', reroll: { id: 'factsselect', hint: '重roll 选条' } }, { key: '正文核验', short: '核验', advanced: true, reroll: { id: 'facts', hint: '重roll 核验' } }],
     action: [{ key: '行动结算', short: '判定', reroll: { id: 'action', hint: '重roll 判定（预览，不注入）' } }],
     memory: [{ key: '记忆召回', short: '召回', reroll: { id: 'recall', hint: '重roll 召回' } }, { key: '记忆决定', short: '决定', reroll: { id: 'memory', hint: '重roll 决定' } }],
@@ -620,7 +944,7 @@ const MODULE_CHANNELS = Object.freeze({
     plot: [{ key: '剧情决定', short: '决定', advanced: true, reroll: { id: 'plot', hint: '重roll 决定' } }],
     npc: [{ key: '人物记录', short: '记录', reroll: { id: 'npc', hint: '重记这一楼' } }],
     self: [{ key: '纳戒决定', short: '决定', reroll: { id: 'self', hint: '重roll 决定' } }],
-    impact: [{ key: '场记挑选', short: '挑选', reroll: { id: 'impactpick', hint: '重roll 挑选' } }, { key: '影响决定', short: '决定', reroll: { id: 'impact', hint: '重记这一楼' } }],
+    impact: [{ key: '世界判定官', short: '判定', reroll: { id: 'impactpick', hint: '重roll 判定（这一轮撞没撞上埋下的因）' } }, { key: '影响决定', short: '决定', reroll: { id: 'impact', hint: '重记这一楼' } }],
 });
 
 /** 简略版总控不按模块拼行：直接铺两条合并调用；行内说明随各功能开关动态增减分路。 */
@@ -953,7 +1277,7 @@ export function buildNpcDecisionPanel({ reachout = [], reachoutStatus = null, ch
     };
 }
 
-/** 一次折好十三个信息窗；输入缺哪块，哪个窗就是“暂无”状态。每个功能各吃各的输入包，互不撞字段。 */
+/** 一次折好十四个信息窗；输入缺哪块，哪个窗就是“暂无”状态。每个功能各吃各的输入包，互不撞字段。 */
 export function buildOrbPanels(input = {}) {
     return {
         overview: buildOverviewPanel(input),
@@ -964,6 +1288,7 @@ export function buildOrbPanels(input = {}) {
         npcledger: buildNpcPanel(input.npcledger),
         cold: buildColdPanel(input.cold),
         impact: buildImpactPanel(input.impact),
+        plot: buildPlotPanel(input.plot),
         facts: buildFactsPanel(input.facts),
         settle: buildSettlePanel(input.settle),
         mirror: buildMirrorPanel(input.mirror),

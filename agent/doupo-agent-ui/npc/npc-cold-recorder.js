@@ -6,17 +6,18 @@ export const NPC_COLD_PROMPT = `你是酒馆里的「冷藏人物推进员」。
 1. 只处理材料里明写、确实和这个人有关的事件；没有依据就输出 {"人物":[]}。
 2. 不许改变世界时间，不许替玩家做决定，不许替其他人物写档。
 3. 只能写这个人的变化：位置、在做什么、伤势、修为、资产、秘密、态度、好感增减、流水等；没变化的字段不要写。
-4. 好感只写这段期间的增减，单次最多 ±10；没有明确依据不要动好感。
+4. 好感只写这段期间的增减，单次最多 ±15；没有明确依据不要动好感。
 5. 流水只写这一段期间确实发生的事；不要编造精确对话、地点或战斗结果。
 6. 这是“预览草稿”，不要假装已经写入人物簿。只输出 JSON，不要解释、不要 Markdown。
 7. 「上次冷藏推进留痕」只用来衔接：上次确认过的变化已经在档案里，不要复读；标着“草稿被放弃”的不要原样重写，按新事件重新推演。
+8. 事件依据里标着「风闻」的，是坊间传闻：这个人只能“听到有人这么说”，不能当成已经证实的事实去改身份、秘密、资产；最多改态度、戒备或动向。
 
 【输出格式】
 {"人物":[{"姓名":"萧战","位置":"乌坦城","正在做什么":"处理族中事务","流水":["得知萧炎离城后派人打听消息"]}]}
 
 没有足够依据时：{"人物":[]}`;
 
-export function buildNpcColdUser({ record = null, fromDay = 1, toDay = 1, events = [], floors = [], lastNote = '' } = {}) {
+export function buildNpcColdUser({ record = null, fromDay = 1, toDay = 1, events = [], floors = [], lastNote = '', rumors = [], impactAnswers = [] } = {}) {
     const name = typeof record?.name === 'string' ? record.name.trim() : '';
     const lines = [`【目标人物】\n${name || '（未知人物）'}`];
     if (record && typeof record === 'object') {
@@ -38,6 +39,25 @@ export function buildNpcColdUser({ record = null, fromDay = 1, toDay = 1, events
     }).filter(Boolean);
     // 事件全量装包不丢不截（用户口径 2026-11-19：喂料无限制）。
     lines.push(`【确实牵连到此人的新事件】\n${eventLines.length ? eventLines.join('\n') : '（没有新事件）'}`);
+    // 传闻单独列一段：让这个人“听见风声”，但提示词明确只能说听到，不能当成事实。
+    const rumorLines = (Array.isArray(rumors) ? rumors : [])
+        .map(rumor => `【第${rumor?.day || '?'}天｜${rumor?.kind || '风闻'}】${rumor?.text || ''}${rumor?.target ? `（相关：${rumor.target}）` : ''}`)
+        .filter(Boolean);
+    if (rumorLines.length) lines.push(`【他可能听到的风声】
+${rumorLines.join('\n')}`);
+    // 世界影响单独一段：玩家做过的事怎么改了这个人的处境、还会怎么改——三问原样搬进来，
+    // 让“不在场的人也感觉得到玩家的影响”，而不是只有世界事件栏里有记录。
+    const impactLines = (Array.isArray(impactAnswers) ? impactAnswers : [])
+        .map(item => {
+            const head = `${item?.done ? `做了什么：${item.done}` : ''}`;
+            const canon = item?.canon ? `；对原著：${item.canon}` : '';
+            const future = item?.future ? `；以后：${item.future}` : '';
+            const body = `${head}${canon}${future}`.replace(/^；/, '');
+            return body ? `【${item?.id || '影响'}】${body}` : '';
+        })
+        .filter(Boolean);
+    if (impactLines.length) lines.push(`【这局玩家做出、已经改到世界上的事（他可能受影响）】
+${impactLines.join('\n')}`);
     // 正文参考不截断：可见窗口里有几楼给几楼、每楼全文——用户口径 2026-11-18。
     const floorLines = (Array.isArray(floors) ? floors : [])
         .map(floor => (typeof floor?.text === 'string' && floor.text.trim() ? `【${floor?.role || '正文'}】${floor.text.trim()}` : ''))

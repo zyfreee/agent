@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
 /**
- * 活链路两轮回归：玩家说话 → 记录员记账 → 下一轮开始场记挑影响 → 写进正文提示词。
+ * 活链路两轮回归：玩家说话 → 记录员记账 → 下一轮开始判定官判“撞没撞上因” → 写进正文提示词。
  * 模型由测试假扮（generateQuietPrompt 返回固定 JSON），用来锁住：
  * ①验票会拦下坏条目；②同一轮不重复叫模型；③新的一轮必须重新挑；④手改账本后缓存作废。
  */
@@ -43,14 +43,15 @@ const recordRoundOne = {
         },
         {
             op: 'record',
-            title: '萧家长老要查纳戒的来历',
-            detail: '消息传到内院，长老们打算在族比后把人叫去问话。',
-            target: '萧家长老',
-            kind: 'direct',
+            title: '萧炎身上带着一枚旧护符',
+            detail: '这枚护符现在什么都不算，只有他真被逼到绝路时才可能救命。',
+            target: '萧炎',
+            kind: 'butterfly',
             weight: 'major',
             certainty: 'certain',
             evidence: '玩家当众亮出戒指',
-            ripen: 2,
+            seed: '玩家顺手塞给萧炎的旧护符',
+            trigger: '萧炎被逼到绝路、无路可退',
         },
         { op: 'record', title: '', detail: '故意缺标题，验证验票。', target: '乌坦城' },
     ],
@@ -72,9 +73,9 @@ const recordRoundTwo = {
             evidence: roundTwoUser,
             parent: 'i1',
         },
-        { op: 'ripen', ref: 'i3' },
-        // 玩家推动旧影响：这一轮把“纳戒归属”这条旧账往后压两天再看（新影响 → 用 adjust 排期）。
-        { op: 'adjust', ref: 'i1', days: 2, detail: '玩家刻意把戒指的事压了下去' },
+        { op: 'ripen', ref: 'i2', detail: '族比之后长老真的把人叫去问话', hit: '长老在议事厅里提起那枚戒指' },
+        // 玩家推动旧影响：这一轮把埋在萧炎身上的那颗种子翻出来重新摆明面（新影响 → 用 adjust 改沉浮）。
+        { op: 'adjust', ref: 'i3', state: 'active', detail: '玩家干脆当众说了护符的事' },
     ],
 };
 
@@ -103,18 +104,26 @@ const context = {
         }
         if (prompt.includes('【玩家这一轮说】')) {
             pickRound += 1;
-            calls.push(`场记#${pickRound}`);
+            calls.push(`判定官#${pickRound}`);
             const picks = pickRound === 1
                 ? [
                     { ref: 'i1', text: '你摊开手掌时，那枚黑色纳戒凉得反常——萧炎盯着它，眼神里全是陌生。' },
-                    { ref: '#i3', text: '内院已经递了话：族比之后，长老要亲自问这枚戒指的来历。' },
+                    { ref: '#i2', text: '内院已经递了话：族比之后，长老要亲自问这枚戒指的来历。' },
                     { ref: 'i99', text: '编出来的编号，验证过滤。' },
                 ]
                 : [
                     { ref: 'i4', text: '黑戒贴着你的掌心发烫，一个陌生又苍老的声音在骨头上响了一下。' },
-                    { ref: 'i3', text: '内院那边已经递了话：族比之后要问这枚戒指的来历。' },
+                    { ref: 'i2', text: '内院那边已经递了话：族比之后要问这枚戒指的来历。' },
                 ];
-            return JSON.stringify({ note: `第 ${pickRound} 次挑选`, picks });
+            const hits = pickRound === 2
+                ? [{
+                    ref: 'i3',
+                    why: '萧炎被萧宁带人堵在巷子里，退无可退，手里攥着玩家当年塞给他的那枚旧护符',
+                    evidence: roundTwoReply,
+                    text: '巷口的风忽然停了，萧炎掌心的旧护符烫得抖了一下。',
+                }]
+                : [];
+            return JSON.stringify({ note: `第 ${pickRound} 次判断`, hits, picks });
         }
         throw new Error(`意料之外的提示词：${prompt.slice(0, 40)}`);
     },
@@ -134,11 +143,12 @@ context.chat.push({ is_user: true, mes: roundTwoUser });
 const injectOne = await doupoAgent.impactInjection();
 assert.equal(injectOne.status, 'injected');
 assert.ok(injectOne.usedIds.includes('i1'));
-assert.ok(injectOne.usedIds.includes('i3'));
+assert.ok(injectOne.usedIds.includes('i2'));
 assert.deepEqual(doupoAgent.impactInjectedIds(), injectOne.usedIds);
 const textOne = injected.get('doupo_impact') ?? '';
 assert.match(textOne, /黑色纳戒凉得反常/);
-assert.match(textOne, /还没发作（第 3 天）/);
+assert.match(textOne, /内院已经递了话/);
+assert.doesNotMatch(textOne, /还没发作|第 \d+ 天/, '注入里不再有倒计时');
 assert.doesNotMatch(textOne, /i99/);
 
 const beforeCache = calls.length;
@@ -148,9 +158,9 @@ assert.equal(calls.length, beforeCache, '同一轮重复取注入不该再叫模
 context.chat.push({ is_user: false, mes: roundTwoReply });
 const decidedTwo = await doupoAgent.impactDecide({ source: 'manual' });
 assert.equal(doupoAgent.impactStatus().total, 4);
-assert.equal(doupoAgent.impactStatus().ripened, 1);
-const pushed = doupoAgent.impacts.list({ limit: 50 }).find(record => record.id === 'i1');
-assert.equal(pushed.ripenDay, 3, 'adjust 应该把旧账排到第 3 天');
+assert.equal(doupoAgent.impactStatus().ripened, 1, '只有记录员点名应验的那一条翻了牌');
+const pushed = doupoAgent.impacts.list({ limit: 50 }).find(record => record.id === 'i3');
+assert.equal(pushed.state, 'active', 'adjust 把一颗埋着的种子捞回明面');
 assert.equal(pushed.edited, true);
 assert.equal(doupoAgent.impactStatus().edited, 1);
 
@@ -159,7 +169,7 @@ const injectTwo = await doupoAgent.impactInjection();
 const textTwo = injected.get('doupo_impact') ?? '';
 assert.match(textTwo, /陌生又苍老的声音/);
 assert.match(textTwo, /族比之后要问这枚戒指的来历/);
-assert.deepEqual(calls, ['记录员#1', '场记#1', '记录员#2', '场记#2']);
+assert.deepEqual(calls, ['记录员#1', '判定官#1', '记录员#2', '判定官#2']);
 
 doupoAgent.impacts.apply([{ op: 'edit', ref: 'i2', title: '闲话变成当众追问', weight: 'major' }], { source: 'manual', day: 1 });
 const beforeEdit = calls.length;

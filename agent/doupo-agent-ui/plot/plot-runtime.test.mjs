@@ -186,3 +186,29 @@ import { createPlotRuntime } from './plot-runtime.js';
     legacy.apply([{ op: 'addThread', title: '再来一条', basis: '第6楼' }], { source: 'decide', floor: 6, today: 3 });
     assert.equal(legacy.snapshot().threads.some(thread => thread.title === '刷新前线索'), true, '旧档没有基线就不撤销');
 }
+
+// —— 世界影响推动线索（fromImpact 去重 + applyThread 提前/结案）：改版新增，防线必须留着 ——
+{
+    const rt = createPlotRuntime({ now: () => '2026-11-25T00:00:00.000Z' });
+    const linked = rt.apply([{ op: 'addThread', title: '加列家囤药', kind: 'conflict', basis: '坊市药价', detail: '药价翻倍', dueDays: 10, fromImpact: 'i7' }], { source: 'manual', today: 12 });
+    assert.equal(linked.status, 'applied');
+    const linkedId = linked.applied[0].id;
+    assert.equal(rt.snapshot().threads.find(item => item.id === linkedId).fromImpact, 'i7');
+    const dup = rt.apply([{ op: 'addThread', title: '加列家囤药', kind: 'conflict', basis: '坊市药价', detail: '药价翻倍', fromImpact: 'i7' }], { source: 'manual', today: 12 });
+    assert.equal(dup.status, 'rejected', '同一条影响不重复推同标题线索');
+    const advanced = rt.apply([{ op: 'applyThread', id: linkedId, spanDays: -3, detail: '加列家提前动手了' }], { source: 'manual', today: 12 });
+    assert.equal(advanced.status, 'applied');
+    const advancedThread = rt.snapshot().threads.find(item => item.id === linkedId);
+    assert.equal(advancedThread.dueDay, 18, '原到期第 21 天，提前 3 天');
+    assert.ok(advancedThread.detail.includes('提前动手了'));
+    const done = rt.apply([{ op: 'applyThread', id: linkedId, status: 'resolved', outcome: '加列家被戳穿' }], { source: 'manual', today: 13 });
+    assert.equal(done.status, 'applied');
+    assert.equal(rt.snapshot().threads.find(item => item.id === linkedId).status, 'resolved');
+    const noDue = rt.apply([{ op: 'addThread', title: '药老留下的线索', kind: 'suspense', basis: '药老' }], { source: 'manual', today: 13 });
+    const noDueId = noDue.applied[0].id;
+    const badSpan = rt.apply([{ op: 'applyThread', id: noDueId, spanDays: 2 }], { source: 'manual', today: 13 });
+    assert.equal(badSpan.status, 'rejected', '没有到期日的线索不能按天推');
+    assert.equal(badSpan.rejected[0].reason, 'thread_no_due');
+}
+
+console.log('plot runtime tests passed');

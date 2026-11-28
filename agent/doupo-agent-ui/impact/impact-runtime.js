@@ -16,8 +16,75 @@ const KINDS = Object.freeze(['direct', 'ripple', 'butterfly']);
 const WEIGHTS = Object.freeze(['minor', 'major', 'world']);
 const CERTAINTIES = Object.freeze(['certain', 'rumor']);
 const SHIFTS = Object.freeze(['none', 'accelerate', 'delay', 'avoid', 'alter']);
-const STATES = Object.freeze(['active', 'ripened', 'closed', 'reverted']);
+/**
+ * 一条影响的一生：
+ * active   —— 世界已经变了，这一轮就看得见；
+ * sunk     —— 埋进世界里了，本人此刻还不知道；等某个场合撞上才显形（蝴蝶效应的本体）；
+ * ripened  —— 已应验（世界台账里落了成）；
+ * closed / reverted —— 收场 / 修复。
+ * 没有“到第 N 天自动发作”：发不发、何时发，只看剧情撞没撞上。
+ */
+const STATES = Object.freeze(['active', 'sunk', 'ripened', 'closed', 'reverted']);
 const SOURCES = Object.freeze(['decide', 'reply', 'manual']);
+const MAX_SEED_CHARS = 40;
+const MAX_TRIGGER_CHARS = 60;
+const MAX_HIT_CHARS = 120;
+// 原著偏移的另外两段：具体改写什么（≤60 字）、凭正文哪句话改的（≤80 字）。
+// 节点名与怎么改（shift）另有两栏，四段合起来才说清「动了原著哪一处、往哪儿动、动了什么、凭什么」。
+const MAX_CANON_WHAT = 60;
+const MAX_CANON_BASIS = 80;
+/** 一条影响落成后最多挂多少条“回响”痕迹：够看出它一路推到了哪里，又不至于把账本撑大。 */
+const MAX_ECHOES = 12;
+/** 回响痕迹的种类：剧情线被推动 / 人物被波及 / 世界事件被牵出。 */
+export const ECHO_KINDS = Object.freeze(['thread', 'npc', 'event']);
+
+/**
+ * 回响：影响落成之后，它在世界上留下的后续痕迹。
+ * 只在落成那一刻由执行器写进来（谁被推到了、推到第几天），之后只读不改；
+ * 世界事件、余波子影响、人物簿里的痕迹在展示时反查，不重复存。
+ */
+function cleanEchoes(raw) {
+    if (!Array.isArray(raw)) return [];
+    const out = [];
+    for (const item of raw) {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+        const kind = ECHO_KINDS.includes(item.kind) ? item.kind : 'event';
+        const id = text(item.id);
+        if (!id) continue;
+        if (out.some(echo => echo.kind === kind && echo.id === id)) continue;
+        out.push({
+            kind,
+            id: id.slice(0, 40),
+            title: text(item.title).slice(0, 40),
+            day: clampInt(item.day, 1, 99999, null),
+            ...(text(item.note).trim() ? { note: text(item.note).slice(0, 80) } : {}),
+        });
+        if (out.length >= MAX_ECHOES) break;
+    }
+    return out;
+}
+
+/** 影响牵涉到的对象类型：势力/地方/人物/剧情线/原著节点/世界事件。 */
+export const LINK_TYPES = Object.freeze(['faction', 'place', 'person', 'thread', 'canon', 'event']);
+/** 后果补丁的类型：开一条世界事件、改世界信息（名声/通缉）、改势力立场、动某个人对你的态度、改玩家自己的账（钱/东西/境界）。 */
+export const EFFECT_TYPES = Object.freeze(['event', 'info', 'faction', 'npc', 'self']);
+/** 动玩家自己：金币增减、行囊一件东西的得失、境界功法推进。 */
+export const EFFECT_SELF_FIELDS = Object.freeze(['gold', 'item', 'realm']);
+const MAX_LINKS = 6;
+const MAX_LINK_NAME = 40;
+const MAX_EFFECTS = 3;
+const MAX_EFFECT_TEXT = 120;
+const MAX_EFFECT_PARTICIPANTS = 3;
+// 一次影响最多把一个人的好感推动 ±15：跟人物簿那道闸（FAVOR_STEP_MAX）同宽，
+// 不给“因为是世界影响”开后门；超出的部分直接钳到边上，不报错。
+const MAX_EFFECT_FAVOR = 15;
+// 一条影响最多动玩家 ±500 金币：够让“救了他一命得一笔谢礼”落地，
+// 又不至于一次把家底翻倍（纳戒自己有上限，这里只是第二道闸）。
+const MAX_EFFECT_GOLD = 500;
+const EFFECT_INFO_FIELDS = Object.freeze(['reputation', 'wanted']);
+const EFFECT_STANCES = Object.freeze(['hostile', 'wary', 'neutral', 'friendly', 'allied']);
+// 潜伏期那一套（按分量自动排 4/10/20 天）已经拿掉了：世界影响不再由时间驱动，
+// 埋下的因要不要显形，只由“这一轮剧情有没有撞上”判断。见 STATES 里的 sunk。
 
 const MAX_RIPEN_DAYS = 999999;
 // 判“疑似同一件事”的时间窗：同一个对象、同一种改写、这几天里换了说法又记一遍。
@@ -31,7 +98,7 @@ const DEFAULT_MAX_OPS = 6;
 const DEFAULT_MAX_CHAIN = 4;
 const OPID_MEMORY = 200;
 
-const STATE_RANK = Object.freeze({ active: 0, ripened: 1, closed: 2, reverted: 3 });
+const STATE_RANK = Object.freeze({ active: 0, sunk: 1, ripened: 2, closed: 3, reverted: 4 });
 const WEIGHT_RANK = Object.freeze({ world: 0, major: 1, minor: 2 });
 
 function text(value) {
@@ -58,19 +125,158 @@ function looksLikeSameEvent(records, candidate) {
         && titleSimilarity(record.title, candidate.title) >= SIMILAR_SCORE) || null;
 }
 
+/** 牵涉对象：{type,name}，最多 6 个，名称 ≤40 字；不认识的类型直接丢。 */
+function cleanLinks(raw) {
+    const rows = Array.isArray(raw) ? raw : [];
+    const seen = new Set();
+    const out = [];
+    for (const item of rows) {
+        if (out.length >= MAX_LINKS) break;
+        if (!item || typeof item !== 'object') continue;
+        const type = LINK_TYPES.includes(item.type) ? item.type : '';
+        const name = text(item.name);
+        if (!type || !name) continue;
+        const key = `${type}:${name}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({ type, name: name.slice(0, MAX_LINK_NAME) });
+    }
+    return out;
+}
+
+/** 后果补丁：只认白名单里的五种（世界事件/名声通缉/势力立场/人物态度/玩家身家），参数逐项夹紧；坏补丁丢弃，不影响整条记录。 */
+function cleanEffects(raw) {
+    const rows = Array.isArray(raw) ? raw : [];
+    const out = [];
+    for (const item of rows) {
+        if (out.length >= MAX_EFFECTS) break;
+        if (!item || typeof item !== 'object') continue;
+        if (item.type === 'event') {
+            const title = text(item.title);
+            const body = text(item.text);
+            if (!title && !body) continue;
+            out.push({
+                type: 'event',
+                title: (title || body).slice(0, 30),
+                text: body.slice(0, MAX_EFFECT_TEXT),
+                scope: item.scope === 'world' ? 'world' : 'near',
+                participants: cleanParticipants(item.participants),
+            });
+        } else if (item.type === 'info') {
+            const field = EFFECT_INFO_FIELDS.includes(item.field) ? item.field : '';
+            const value = text(item.value);
+            if (!field || !value) continue;
+            out.push({ type: 'info', field, value: value.slice(0, 60) });
+        } else if (item.type === 'npc') {
+            // 动一个人：看法四件套（好感/人前态度/私下态度/称呼）+ 处境五键（伤势/境界/位置/在场/正在做什么）。
+            // 处境键让"剧变"真能落到人身上——被囚、重伤、突破、死亡这些不再只能指望正文写到、记录员记到。
+            // 只认人物簿里已有的名字（执行器再核一次），好感幅度钳在 ±MAX_EFFECT_FAVOR，理由必填。
+            const name = text(item.name);
+            const note = text(item.note ?? item.reason);
+            if (!name || !note) continue;
+            const favor = clampInt(item.favor, -MAX_EFFECT_FAVOR, MAX_EFFECT_FAVOR, 0);
+            const attitude = text(item.attitude);
+            const privateAttitude = text(item.privateAttitude ?? item.private ?? '');
+            const appellation = text(item.appellation);
+            const injury = text(item.injury ?? item.伤势);
+            const realm = text(item.realm ?? item.境界);
+            const location = text(item.location ?? item.位置);
+            const doing = text(item.doing ?? item.正在做什么);
+            const presenceRaw = text(item.presence ?? item.在场);
+            const presence = presenceRaw === '在场' || presenceRaw === 'true' ? '在场'
+                : presenceRaw === '不在场' || presenceRaw === 'false' ? '不在场' : '';
+            if (!favor && !attitude && !privateAttitude && !appellation && !injury && !realm && !location && !doing && !presence) continue;
+            out.push({
+                type: 'npc',
+                name: name.slice(0, 20),
+                favor,
+                attitude: attitude.slice(0, 30),
+                privateAttitude: privateAttitude.slice(0, 30),
+                appellation: appellation.slice(0, 20),
+                // 处境类截短：这是"一眼看清他现在怎么样"的格子，不是叙事。
+                injury: injury.slice(0, 40),
+                realm: realm.slice(0, 30),
+                location: location.slice(0, 40),
+                doing: doing.slice(0, 40),
+                ...(presence ? { presence } : {}),
+                note: note.slice(0, 60),
+            });
+        } else if (item.type === 'self') {
+            // 动玩家自己的账：金币增减、行囊一件东西的得失、境界推进。
+            // 这三样是主角的身家，改动必须有理由（note 必填）——没有理由的钱物变动是烂账。
+            // 幅度在这里先钳死：金币 ±MAX_EFFECT_GOLD、物品数量 ±99、境界只收两段文本。
+            const field = EFFECT_SELF_FIELDS.includes(item.field) ? item.field : '';
+            const note = text(item.note ?? item.reason);
+            if (!field || !note) continue;
+            if (field === 'gold') {
+                // 超出上限的部分钳到边上，不整条丢：模型常常顺手写个大数，按 500 落地比“什么都没发生”合理。
+                const raw = clampInt(item.amount, -999999999, 999999999, 0);
+                const amount = Math.max(-MAX_EFFECT_GOLD, Math.min(MAX_EFFECT_GOLD, raw));
+                if (!amount) continue;
+                out.push({ type: 'self', field: 'gold', amount, note: note.slice(0, 60) });
+            } else if (field === 'item') {
+                const name = text(item.name);
+                const raw = clampInt(item.count, -999999999, 999999999, 0);
+                const count = Math.max(-99, Math.min(99, raw));
+                if (!name || !count) continue;
+                out.push({ type: 'self', field: 'item', name: name.slice(0, 30), count, note: note.slice(0, 60) });
+            } else {
+                const realm = text(item.realm);
+                if (!realm) continue;
+                out.push({ type: 'self', field: 'realm', realm: realm.slice(0, 20), stage: text(item.stage).slice(0, 12), note: note.slice(0, 60) });
+            }
+        } else if (item.type === 'faction') {
+            const name = text(item.name);
+            // 立场可以留空：执行器会沿用台账里现有的立场，只改动态描述。
+            // founded＝剧情里真的新出现了一个势力（执行器放行新建，没写就只认台账里已有的）；
+            // dissolved＝这个势力覆灭/被吞并（执行器改成台账里的存亡标记，名字保留）。
+            const stance = EFFECT_STANCES.includes(item.stance) ? item.stance : '';
+            if (!name) continue;
+            const founded = item.founded === true || item.新建 === true;
+            const dissolved = item.dissolved === true || item.覆灭 === true;
+            const note = text(item.note ?? item.reason);
+            out.push({
+                type: 'faction',
+                name: name.slice(0, 30),
+                stance,
+                dynamics: text(item.dynamics).slice(0, 60),
+                ...(founded ? { founded: true } : {}),
+                ...(dissolved ? { dissolved: true } : {}),
+                ...(note ? { note: note.slice(0, 60) } : {}),
+            });
+        }
+    }
+    return out;
+}
+
+function cleanParticipants(raw) {
+    const rows = Array.isArray(raw) ? raw : [];
+    const out = [];
+    for (const item of rows) {
+        if (out.length >= MAX_EFFECT_PARTICIPANTS) break;
+        const name = text(item);
+        if (name) out.push(name.slice(0, 12));
+    }
+    return out;
+}
+
 function initialState(now) {
     return {
         schemaVersion: 1,
         day: 1,
         version: 0,
         // 只数“手改”的序号：面板/手动 apply 才递增，模型落账（decide/reply）不算。
-        // 场记挑选的注入签名带它——重roll时模型落账不改它（复用挑选），手改立刻失效重挑。
+        // 判定官那一轮的注入签名带它——重roll时模型落账不改它（复用判定），手改立刻失效重判。
         manualVersion: 0,
         // 上次叫记录员时停在哪个楼层：记录节奏按它数“之后又生成了几楼”，没记到东西也算数过。
         decidedFloor: -1,
         records: [],
         archive: [],
         log: [],
+        // 曝光计数：{ 影响编号: 被摆到判定官面前的次数 }。
+        // 埋着的因不砍条数、改按分数排队，靠这个数做“曝光公平”——老没露面的往前排，
+        // 露过太多次还一次没撞上的往后挪，免得一条戏永远占着位置。
+        exposure: {},
         updatedAt: now(),
     };
 }
@@ -80,6 +286,16 @@ function cleanRecord(raw, index) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
     const title = text(raw.title);
     if (!title) return null;
+    const echoes = cleanEchoes(raw.echoes);
+    // 原著偏移拆成四段：节点（canon）/ 怎么改（shift）/ 具体改了什么（canonWhat）/ 凭什么（canonBasis）。
+    // 旧档把三段塞在一个 canon 字符串里（“三年之约｜accelerate｜玩家提前破关”），
+    // 读进来时就地拆开，面板与注入不用再各自猜。
+    const canonRaw = text(raw.canon);
+    const canonParts = canonRaw.split(/[｜|]/).map(part => part.trim()).filter(Boolean);
+    const canonNode = canonParts[0] ?? '';
+    const legacyShift = canonParts[1] && SHIFTS.includes(canonParts[1]) ? canonParts[1] : 'none';
+    const legacyWhat = canonParts[1] && !SHIFTS.includes(canonParts[1]) ? canonParts.slice(1).join('｜') : (canonParts[2] ?? '');
+    const shiftRaw = SHIFTS.includes(raw.shift) ? raw.shift : '';
     return {
         id: text(raw.id) || `i${index + 1}`,
         day: clampInt(raw.day, 1, 99999, 1),
@@ -91,11 +307,32 @@ function cleanRecord(raw, index) {
         weight: WEIGHTS.includes(raw.weight) ? raw.weight : 'minor',
         certainty: CERTAINTIES.includes(raw.certainty) ? raw.certainty : 'certain',
         evidence: text(raw.evidence),
-        canon: text(raw.canon),
+        canon: canonNode,
         // 与世界台账里的事件对上号时记事件编号（如 e2），面板/账本里能互相点过去。
         eventId: text(raw.eventId),
-        shift: SHIFTS.includes(raw.shift) ? raw.shift : 'none',
+        // 旧档里 shift 常常是 'none' 而偏移写在 canon 串里：新字段只在真写了偏移时才算数，
+        // 否则回落到串里那段，不然旧档的“加速/延后”会在读档时被抹成不牵动。
+        shift: canonNode ? (shiftRaw && shiftRaw !== 'none' ? shiftRaw : legacyShift) : 'none',
+        // 具体改了原著哪一处、凭正文哪句话改的：只在牵动了节点时才有意义，没牵动就留空。
+        canonWhat: canonNode ? text(raw.canonWhat).slice(0, MAX_CANON_WHAT) || legacyWhat.slice(0, MAX_CANON_WHAT) : '',
+        canonBasis: canonNode ? text(raw.canonBasis).slice(0, MAX_CANON_BASIS) : '',
+        // 牵涉对象与后果补丁：回答“改到了谁、以后会怎么发作”，也供世界台账消费。
+        links: cleanLinks(raw.links),
+        effects: cleanEffects(raw.effects),
+        // 蝴蝶效应的三件套：seed=埋下去的因（实物/人情/一句话），trigger=要等什么场合才显形，
+        // hit=真显形那一刻的凭证（谁在什么场合用上了它）。sunk 的记录全靠这三个字段活着。
+        seed: text(raw.seed).slice(0, MAX_SEED_CHARS),
+        trigger: text(raw.trigger).slice(0, MAX_TRIGGER_CHARS),
+        hit: text(raw.hit).slice(0, MAX_HIT_CHARS),
+        // 回响：落成那一刻推到了哪条剧情线、波及了谁。只在有货时出现，旧档读进来不会多出空数组。
+        ...(echoes.length ? { echoes } : {}),
+        // latent 是旧版“按分量自动排潜伏期”的标记，现在不再产生，只保留读旧档；materialized=后果已推进世界台账。
+        latent: raw.latent === true,
+        materialized: raw.materialized === true,
+        materializedDay: clampInt(raw.materializedDay, 1, 99999, null),
+        outcomeEventId: text(raw.outcomeEventId),
         state: STATES.includes(raw.state) ? raw.state : 'active',
+        // ripenDay 留作旧档兼容：新版不再排期、不再对外显示，也不参与任何判定。
         ripenDay: clampInt(raw.ripenDay, 1, 99999, null),
         ripenedDay: clampInt(raw.ripenedDay, 1, 99999, null),
         resolution: text(raw.resolution),
@@ -123,8 +360,25 @@ function normalizeState(raw, now) {
         records,
         archive: (Array.isArray(source.archive) ? source.archive : []).map(cleanRecord).filter(Boolean).slice(-DEFAULT_MAX_ARCHIVE),
         log: (Array.isArray(source.log) ? source.log : []).slice(-DEFAULT_MAX_LOG),
+        exposure: cleanExposure(source.exposure),
         updatedAt: text(source.updatedAt) || now(),
     };
+}
+
+/**
+ * 曝光计数只留还埋在土里的那些编号：兑现或收场之后这个数就没用了，
+ * 留着会让存档越积越脏。上限按账本容量给个宽松值，坏数据一律丢掉不报错。
+ */
+function cleanExposure(raw) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+    const out = {};
+    for (const [key, value] of Object.entries(raw)) {
+        const id = text(key);
+        const count = clampInt(value, 0, 9999, null);
+        if (!id || count === null) continue;
+        out[id] = count;
+    }
+    return out;
 }
 
 /** 留最该留的：没消化、分量重、新的；已了结、旧的先挪进档案。 */
@@ -132,7 +386,7 @@ function rankRecord(record) {
     return STATE_RANK[record.state] * 1e6 + WEIGHT_RANK[record.weight] * 1e5 - record.day * 10;
 }
 
-export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchive = DEFAULT_MAX_ARCHIVE, maxLog = DEFAULT_MAX_LOG, maxOps = DEFAULT_MAX_OPS, maxChainDepth = DEFAULT_MAX_CHAIN, now = () => new Date().toISOString() } = {}) {
+export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchive = DEFAULT_MAX_ARCHIVE, maxLog = DEFAULT_MAX_LOG, maxOps = DEFAULT_MAX_OPS, maxChainDepth = DEFAULT_MAX_CHAIN, autoLatent = false, now = () => new Date().toISOString() } = {}) {
     maxRecords = clampInt(maxRecords, 0, 100000, DEFAULT_MAX_RECORDS);
     maxArchive = clampInt(maxArchive, 0, 100000, DEFAULT_MAX_ARCHIVE);
     maxLog = clampInt(maxLog, 1, 999999, DEFAULT_MAX_LOG);
@@ -182,21 +436,24 @@ export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchi
 
     /** 到了发酵日就自动翻牌：模型定"几天后发作"，脚本到点执行，不需要人再点一次。 */
     function sweepDue(day, undoSteps) {
-        if (!Number.isInteger(day)) return [];
-        const ripened = [];
+        // 时间不再驱动世界影响：旧档里还挂着发酵日的记录，就地改成“埋着等场面”，
+        // 既不按日期翻牌，也不丢账。返回空数组，调用方无须处理。
+        void day;
+        void undoSteps;
         for (const record of state.records) {
-            if (record.state !== 'active' || record.ripenDay === null) continue;
-            if (record.ripenDay > day) continue;
-            undoSteps.push({ op: '_restoreRecord', id: record.id, state: record.state,
-                ripenedDay: record.ripenedDay, resolution: record.resolution, resolvedDay: record.resolvedDay });
-            record.state = 'ripened';
-            record.ripenedDay = record.ripenDay;
-            ripened.push(record);
+            if (record.ripenDay === null) continue;
+            if (record.state === 'active') {
+                record.state = 'sunk';
+                // 旧档是按天数排期的，没有 seed/trigger：直接沉底会变成判定官永远认不了的死账
+                // （no_seed_or_trigger 驳回），明面注入也不再出现——两头死。用标题/描述合成一对，
+                // 让它保住“能被场面认领”的资格；玩家嫌合成的不好，随时可以手动改写。
+                if (!record.seed) record.seed = text(record.title).slice(0, MAX_SEED_CHARS);
+                if (!record.trigger) record.trigger = text(record.detail || record.title).slice(0, MAX_TRIGGER_CHARS);
+            }
+            record.ripenDay = null;
+            record.latent = false;
         }
-        if (ripened.length) {
-            logEntry('sweep', ripened.map(record => `到期发酵 ${record.id}：${record.title}`));
-        }
-        return ripened.map(record => record.id);
+        return [];
     }
 
     function summaryOf(record) {
@@ -218,7 +475,13 @@ export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchi
             const target = text(op.target);
             if (!target) return { ok: false, reason: 'target_missing' };
             const evidence = text(op.evidence);
-            const canon = text(op.canon);
+            // canon 允许旧写法（“节点｜shift｜改了什么”一整串）：拆出节点、偏移、改了什么三段，
+            // 新写的四段（canon/shift/canonWhat/canonBasis）优先。
+            const canonRaw = text(op.canon);
+            const canonParts = canonRaw.split(/[｜|]/).map(part => part.trim()).filter(Boolean);
+            const canon = canonParts[0] ?? '';
+            const legacyShift = canonParts[1] && SHIFTS.includes(canonParts[1]) ? canonParts[1] : 'none';
+            const legacyWhat = canonParts[1] && !SHIFTS.includes(canonParts[1]) ? canonParts.slice(1).join('｜') : (canonParts[2] ?? '');
             const eventId = text(op.eventId);
             const parentGiven = text(op.parent);
             let parent = parentGiven;
@@ -241,12 +504,24 @@ export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchi
                 && (floorKey !== null ? record.floor === floorKey : record.day === gameDay && record.target === target));
             if (duplicated) return { ok: false, reason: 'duplicate_record' };
             let ripenDay = null;
+            let latent = false;
             if (op.ripen !== undefined && op.ripen !== null) {
-                const span = intIn(op.ripen, 1, MAX_RIPEN_DAYS);
-                if (span === null) return { ok: false, reason: 'bad_ripen' };
-                ripenDay = gameDay + span;
+                // 旧版“几天后发作”的写法：现在只剩兼容——天数照收但不排期，否则旧提示词会自动把时间又排回来。
+                if (intIn(op.ripen, 1, MAX_RIPEN_DAYS) === null) return { ok: false, reason: 'bad_ripen' };
             }
-            const shiftValue = canon && SHIFTS.includes(op.shift) ? op.shift : 'none';
+            const kindValue = KINDS.includes(op.kind) ? op.kind : 'direct';
+            const weightValue = WEIGHTS.includes(op.weight) ? op.weight : 'minor';
+            const seed = text(op.seed).slice(0, MAX_SEED_CHARS);
+            const trigger = text(op.trigger).slice(0, MAX_TRIGGER_CHARS);
+            const hit = text(op.hit).slice(0, MAX_HIT_CHARS);
+            // 埋线：既写了“因”又写了“等什么场面”，就是一颗埋进世界的种子，此刻谁也看不出它将来会怎样。
+            // 只有 seed 没 trigger（或反过来）的，按当场可见的普通影响记，别让它挂着一个永远等不到的条件。
+            const embed = op.state === 'sunk' || op.embed === true || (seed && trigger);
+            const stateValue = embed && seed && trigger ? 'sunk' : 'active';
+            const shiftValue = canon ? ((SHIFTS.includes(op.shift) && op.shift) || legacyShift) : 'none';
+            // 具体改了哪一处：新写的 canonWhat 优先，其次旧写法里的第三段。
+            const canonWhat = canon ? (text(op.canonWhat).slice(0, MAX_CANON_WHAT) || legacyWhat.slice(0, MAX_CANON_WHAT)) : '';
+            const canonBasis = canon ? text(op.canonBasis).slice(0, MAX_CANON_BASIS) : '';
             if (looksLikeSameEvent(state.records, { title, target, shift: shiftValue, day: gameDay })) {
                 return { ok: false, reason: 'duplicate_similar' };
             }
@@ -257,14 +532,25 @@ export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchi
                 title,
                 detail,
                 target,
-                kind: KINDS.includes(op.kind) ? op.kind : 'direct',
-                weight: WEIGHTS.includes(op.weight) ? op.weight : 'minor',
+                kind: kindValue,
+                weight: weightValue,
                 certainty: CERTAINTIES.includes(op.certainty) ? op.certainty : 'certain',
                 evidence,
                 canon,
                 eventId,
                 shift: shiftValue,
-                state: 'active',
+                canonWhat,
+                canonBasis,
+                links: cleanLinks(op.links),
+                effects: cleanEffects(op.effects),
+                seed,
+                trigger,
+                hit,
+                latent,
+                materialized: false,
+                materializedDay: null,
+                outcomeEventId: '',
+                state: stateValue,
                 ripenDay,
                 ripenedDay: null,
                 resolution: '',
@@ -279,7 +565,7 @@ export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchi
             };
             state.records.push(record);
             const archived = prune();
-            const ripenNote = ripenDay !== null ? `，第 ${ripenDay} 天起发酵` : '';
+            const ripenNote = stateValue === 'sunk' ? `，埋下（因：${seed}｜等：${trigger}）` : '';
             const archiveNote = archived.length ? `；已归档 ${archived.join('、')}` : '';
             return { ok: true, id: record.id, record, summary: `${summaryOf(record)}${ripenNote}${archiveNote}${parentNote}`, undo: { op: '_removeRecord', id: record.id } };
         }
@@ -296,26 +582,39 @@ export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchi
                 ripenedDay: record.ripenedDay,
                 resolution: record.resolution,
                 resolvedDay: record.resolvedDay,
+                hit: record.hit,
             };
             const note = text(op.detail) || record.resolution;
             if (kind === 'ripen') {
+                // 应验的那一条要带上“凭证”：哪个场合、什么动作把埋下的因认领了。
+                const hit = text(op.hit);
                 record.state = 'ripened';
                 record.ripenedDay = gameDay;
                 record.resolution = note;
+                if (hit) record.hit = hit.slice(0, MAX_HIT_CHARS);
             } else {
                 record.state = kind === 'close' ? 'closed' : 'reverted';
                 record.resolvedDay = gameDay;
                 record.resolution = note;
             }
-            const verb = kind === 'ripen' ? '发酵' : kind === 'close' ? '了结' : '修复';
+            const verb = kind === 'ripen' ? '应验' : kind === 'close' ? '了结' : '修复';
             return { ok: true, id: record.id, record, summary: `影响${verb} ${record.id}：${record.title}${note ? `（${note}）` : ''}`, undo: before };
         }
 
-        // 手动改一条已经记下的影响：只改内容与发酵安排，不改“是否收场”（那用 ripen/close/revert）。
+        // 手动改一条已经记下的影响：只改内容与埋线，不改“是否收场”（那用 ripen/close/revert）。
         if (kind === 'edit') {
             const record = find(text(op.ref));
             if (!record) return { ok: false, reason: 'record_not_found' };
             const next = { ...record };
+            if (op.seed !== undefined) next.seed = text(op.seed).slice(0, MAX_SEED_CHARS);
+            if (op.trigger !== undefined) next.trigger = text(op.trigger).slice(0, MAX_TRIGGER_CHARS);
+            if (op.hit !== undefined) next.hit = text(op.hit).slice(0, MAX_HIT_CHARS);
+            if (op.state !== undefined && STATES.includes(op.state)) {
+                next.state = op.state;
+            } else if ((next.seed && next.trigger) && (record.state === 'active' || record.state === 'sunk')) {
+                // 手改补上因与条件（或删掉其中一个），沉浮跟着变：成对就埋着，拆开就摆回明面。
+                next.state = next.seed && next.trigger ? 'sunk' : 'active';
+            }
             if (op.title !== undefined) {
                 const title = text(op.title);
                 if (!title) return { ok: false, reason: 'title_missing' };
@@ -336,9 +635,18 @@ export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchi
                 next.evidence = evidence;
             }
             if (op.canon !== undefined) {
-                const canon = text(op.canon);
-                next.canon = canon;
+                // 手改也认旧写法：一整串“节点｜shift｜改了什么”拆开存，别把三样挤在一个字段里。
+                const canonRaw = text(op.canon);
+                const canonParts = canonRaw.split(/[｜|]/).map(part => part.trim()).filter(Boolean);
+                next.canon = canonParts[0] ?? '';
+                if (canonParts[1] && SHIFTS.includes(canonParts[1])) next.shift = canonParts[1];
+                const what = canonParts[1] && !SHIFTS.includes(canonParts[1])
+                    ? canonParts.slice(1).join('｜')
+                    : (canonParts[2] ?? '');
+                if (what) next.canonWhat = what.slice(0, MAX_CANON_WHAT);
             }
+            if (op.canonWhat !== undefined) next.canonWhat = text(op.canonWhat).slice(0, MAX_CANON_WHAT);
+            if (op.canonBasis !== undefined) next.canonBasis = text(op.canonBasis).slice(0, MAX_CANON_BASIS);
             if (op.eventId !== undefined) {
                 const eventId = text(op.eventId);
                 next.eventId = eventId;
@@ -361,17 +669,13 @@ export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchi
             } else if (!next.canon) {
                 next.shift = 'none';
             }
-            if (op.ripen !== undefined) {
-                // 改写只动“什么时候发酵”，不动“有没有已经发酵过”：
-                // 已经应验的事改个错别字，不该被当成没发生。
-                if (op.ripen === null) {
-                    next.ripenDay = null;
-                } else {
-                    const span = intIn(op.ripen, 1, MAX_RIPEN_DAYS);
-                    if (span === null) return { ok: false, reason: 'bad_ripen' };
-                    next.ripenDay = gameDay + span;
-                }
+            if (op.links !== undefined) next.links = cleanLinks(op.links);
+            if (op.effects !== undefined) next.effects = cleanEffects(op.effects);
+            // ripen 字段（旧版“还有几天发酵”）已经不用了：写法上仍接受，但不再存、不再排期。
+            if (op.ripen !== undefined && op.ripen !== null && intIn(op.ripen, 1, MAX_RIPEN_DAYS) === null) {
+                return { ok: false, reason: 'bad_ripen' };
             }
+            next.ripenDay = null;
             const duplicated = state.records.some(other => other !== record
                 && other.title === next.title && other.target === next.target && other.day === record.day);
             if (duplicated) return { ok: false, reason: 'duplicate_record' };
@@ -386,15 +690,16 @@ export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchi
             return { ok: true, id: record.id, record, summary: `影响改写 ${record.id}：${record.title}`, undo: { op: '_restoreEdit', id: record.id, before } };
         }
 
-        // 玩家推动/拖延一件已经记下的影响：负数提前、正数往后推；提前到今天就算当场应验。
+        // 手动把一条影响挪一挪：沉下去（埋着等场面）或者捞上来（当场就让人看见）。
+        // 旧版是“提前/延后几天”，那套时间驱动已经退场，days 参数只为兼容旧调用而保留。
         if (kind === 'adjust') {
             const record = find(text(op.ref));
             if (!record) return { ok: false, reason: 'record_not_found' };
             if (record.state === 'closed' || record.state === 'reverted') return { ok: false, reason: 'record_inactive' };
             if (record.state === 'ripened') return { ok: false, reason: 'already_ripened' };
-            const days = intIn(op.days, -MAX_RIPEN_DAYS, MAX_RIPEN_DAYS);
-            if (days === null || days === 0) return { ok: false, reason: 'bad_days' };
-            if (record.ripenDay === null && days < 0) return { ok: false, reason: 'no_schedule' };
+            const wanted = op.state === 'sunk' || op.state === 'active'
+                ? op.state
+                : (Number(op.days) < 0 ? 'sunk' : 'active');
             const before = {
                 op: '_restoreRecord',
                 id: record.id,
@@ -406,27 +711,12 @@ export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchi
                 edited: record.edited,
                 editedDay: record.editedDay,
             };
-            let note;
-            if (record.ripenDay === null) {
-                record.ripenDay = gameDay + days;
-                note = `第 ${record.ripenDay} 天起才发作`;
-            } else {
-                const nextDay = record.ripenDay + days;
-                if (nextDay <= gameDay) {
-                    record.ripenDay = gameDay;
-                    record.state = 'ripened';
-                    record.ripenedDay = gameDay;
-                    record.resolution = text(op.detail) || '玩家把这件事提前了';
-                    note = '已经当场应验';
-                } else {
-                    record.ripenDay = Math.min(nextDay, gameDay + MAX_RIPEN_DAYS);
-                    note = `改到第 ${record.ripenDay} 天发作`;
-                }
-            }
+            record.state = wanted;
+            record.ripenDay = null;
             record.edited = true;
             record.editedDay = gameDay;
-            const word = days < 0 ? '提前' : '延后';
-            return { ok: true, id: record.id, record, summary: `影响${word} ${record.id}：${record.title}（${note}）`, undo: before };
+            const note = wanted === 'sunk' ? '改成埋着等场面' : '捞上来，当场可见';
+            return { ok: true, id: record.id, record, summary: `影响${wanted === 'sunk' ? '下沉' : '浮出'} ${record.id}：${record.title}（${note}）`, undo: before };
         }
 
         // 手动删除：不真删，挪进档案，后面还能找回来。
@@ -455,11 +745,99 @@ export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchi
             return { ok: true, id, record: cleaned, summary: `从档案恢复影响 ${id}：${cleaned.title}`, undo: { op: '_rearchive', id, index: at, reason: record.archivedReason || 'pruned' } };
         }
 
+        // 后果已推进世界台账：记下事件编号，避免同一件事被重复推演。
+        // 只由脚本在“发酵之后”调用，模型指南里不出现。
+        if (kind === 'materialize') {
+            const record = find(text(op.ref));
+            if (!record) return { ok: false, reason: 'record_not_found' };
+            if (record.materialized) return { ok: false, reason: 'already_materialized' };
+            if (record.state !== 'ripened') return { ok: false, reason: 'record_not_ripened' };
+            const before = {
+                op: '_restoreRecord',
+                id: record.id,
+                state: record.state,
+                ripenedDay: record.ripenedDay,
+                resolution: record.resolution,
+                resolvedDay: record.resolvedDay,
+                materialized: record.materialized,
+                materializedDay: record.materializedDay,
+                outcomeEventId: record.outcomeEventId,
+                hit: record.hit,
+                ...(record.echoes ? { echoes: structuredClone(record.echoes) } : {}),
+            };
+            record.materialized = true;
+            record.materializedDay = gameDay;
+            record.outcomeEventId = text(op.eventId);
+            // 回响随落成一次写定：这是“这条影响到底推到了哪里”的第一手证据，
+            // 之后看账本不用再靠读剧情线的 detail 字符串反推。
+            const echoes = cleanEchoes(op.echoes);
+            if (echoes.length) record.echoes = echoes;
+            const note = text(op.detail);
+            if (note) record.resolution = note;
+            else if (!record.resolution) record.resolution = `第 ${gameDay} 天应验`;
+            return { ok: true, id: record.id, record, summary: `影响应验 ${record.id}：${record.title}`, undo: before };
+        }
+
+        // 内部撤销：世界那边那条事件已经没了（玩家删事件/事件被并账），落成标记跟着退回。
+        // 只由脚本对账时调用，不写进模型指南。
+        // 掩盖/坐实：同一条影响在“确凿”与“传闻”之间来回换。掩盖过的以后再落成，世界里推的是传闻口径。
+        if (kind === 'rumorize') {
+            const record = find(text(op.ref));
+            if (!record) return { ok: false, reason: 'record_not_found' };
+            const next = op.certainty === undefined ? (record.certainty === 'rumor' ? 'certain' : 'rumor') : op.certainty;
+            if (!CERTAINTIES.includes(next)) return { ok: false, reason: 'bad_certainty' };
+            if (next === record.certainty) return { ok: false, reason: 'certainty_unchanged' };
+            const before = structuredClone(record);
+            record.certainty = next;
+            record.edited = true;
+            record.editedDay = gameDay;
+            return {
+                ok: true,
+                id: record.id,
+                record,
+                summary: next === 'rumor' ? `影响 ${record.id} 已压成传闻：${record.title}` : `影响 ${record.id} 已坐实：${record.title}`,
+                undo: { op: '_restoreEdit', id: record.id, before },
+            };
+        }
+
+        if (kind === 'unmaterialize') {
+            const record = find(text(op.ref));
+            if (!record) return { ok: false, reason: 'record_not_found' };
+            if (!record.materialized) return { ok: false, reason: 'already_unmaterialized' };
+            const before = {
+                op: '_restoreRecord',
+                id: record.id,
+                state: record.state,
+                ripenedDay: record.ripenedDay,
+                resolution: record.resolution,
+                resolvedDay: record.resolvedDay,
+                materialized: record.materialized,
+                materializedDay: record.materializedDay,
+                outcomeEventId: record.outcomeEventId,
+                hit: record.hit,
+                ...(record.echoes ? { echoes: structuredClone(record.echoes) } : {}),
+            };
+            record.materialized = false;
+            record.materializedDay = null;
+            record.outcomeEventId = '';
+            // 退回待落成时把回响一起摘掉：那是上一次落成的痕迹，留着会和“还没落成”自相矛盾。
+            delete record.echoes;
+            const note = text(op.detail);
+            if (note) record.resolution = note;
+            return { ok: true, id: record.id, record, summary: `影响退回待落成 ${record.id}：${record.title}`, undo: before };
+        }
+
         // 内部撤销操作：只由同楼重 roll 的回滚调用，不写进模型指南。
         if (kind === '_removeRecord') {
             const id = text(op.id);
             const at = state.records.findIndex(record => record.id === id);
             if (at < 0) return { ok: false, reason: 'record_not_found' };
+            // 已落成的影响不随同楼重 roll 删除：它的后果已经落进世界/人物簿/纳戒
+            // （好感、金币没有幂等闸，删了记录防重闸就认不出“这件事已经落过账”，
+            // 新版重记一条会再落一次——好感 +15 变 +30、金币 +500 变 +1000）。
+            // 保留原账：重记会被 duplicate_record / duplicate_similar 挡住；
+            // 玩家真不要了，用删除（forget）把世界事件一起撤。
+            if (state.records[at].materialized) return { ok: true, summary: `影响 ${id} 已落成，重 roll 保留原账` };
             state.records.splice(at, 1);
             return { ok: true, summary: `撤销影响 ${id}` };
         }
@@ -470,8 +848,18 @@ export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchi
             record.ripenedDay = clampInt(op.ripenedDay, 1, 99999, null);
             record.resolution = text(op.resolution);
             record.resolvedDay = clampInt(op.resolvedDay, 1, 99999, null);
-            // 调整时间也可能改 state/发酵日/改动标记，撤销时要一并还回去。
+            if (op.materialized !== undefined) record.materialized = op.materialized === true;
+            if (op.materializedDay !== undefined) record.materializedDay = clampInt(op.materializedDay, 1, 99999, null);
+            if (op.outcomeEventId !== undefined) record.outcomeEventId = text(op.outcomeEventId);
+            // 调整状态也可能改 state/改动标记，撤销时要一并还回去。
             if (op.ripenDay !== undefined) record.ripenDay = clampInt(op.ripenDay, 1, 99999, null);
+            if (op.hit !== undefined) record.hit = text(op.hit).slice(0, MAX_HIT_CHARS);
+            // 回响也得能跟着落成一起退回去，否则撤销落成后账本还挂着一条不存在的“推进”。
+            if (op.echoes !== undefined) {
+                const echoes = cleanEchoes(op.echoes);
+                if (echoes.length) record.echoes = echoes;
+                else delete record.echoes;
+            }
             if (op.edited !== undefined) record.edited = op.edited === true;
             if (op.editedDay !== undefined) record.editedDay = clampInt(op.editedDay, 1, 99999, null);
             return { ok: true, summary: `恢复影响 ${record.id}` };
@@ -588,10 +976,16 @@ export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchi
         return limit > 0 ? rows.slice(0, limit) : rows;
     }
 
-    /** 还没到发酵日的记录：决定模块用它提醒"这些事还没发作，可以留到以后"。 */
+    /** 还埋在世界里、没显形的记录：由“判定官”在每轮生成前扫一遍，判断这一轮有没有撞上。 */
     function pendingRipen(day = state.day) {
-        const key = intIn(day, 1, 99999) ?? state.day;
-        return state.records.filter(record => record.state === 'active' && record.ripenDay !== null && record.ripenDay > key);
+        // 名字沿用旧接口（注入与测试都在用），语义已改成“沉底未显形的埋线”。
+        void day;
+        return state.records.filter(record => record.state === 'sunk');
+    }
+
+    /** 沉底未应验的埋线（同 pendingRipen，另给一个语义清楚的名字）。 */
+    function sunkRecords() {
+        return state.records.filter(record => record.state === 'sunk');
     }
 
     function snapshot() {
@@ -618,13 +1012,50 @@ export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchi
             decidedFloor: state.decidedFloor,
             total: state.records.length,
             active: count('active'),
+            sunk: count('sunk'),
             ripened: count('ripened'),
             closed: count('closed'),
             reverted: count('reverted'),
             edited: state.records.filter(record => record.edited).length,
-            due: state.records.filter(record => record.state === 'active' && record.ripenDay !== null && record.ripenDay <= state.day).length,
+            // 兼容旧字段：现在没有“到期”这回事，恒为 0，免得旧调用方误读成有定时任务。
+            due: 0,
             archived: state.archive.length,
         };
+    }
+
+    /**
+     * 曝光计数：哪几条埋着的因被摆到判定官面前过、各几次。
+     * 只回埋着的——兑现/收场之后这个数没意义，查询时顺手过滤，省得调用方自己筛。
+     */
+    function exposureOf() {
+        const sunk = new Set(state.records.filter(record => record.state === 'sunk').map(record => record.id));
+        const out = {};
+        for (const [id, count] of Object.entries(state.exposure ?? {})) {
+            if (sunk.has(id)) out[id] = count;
+        }
+        return out;
+    }
+
+    /**
+     * 记一次曝光：这一轮把哪几条埋着的因摆给了判定官。
+     * 这不是“账本变化”，不进流水、不动 manualVersion——它只影响下一轮谁先被看到；
+     * 但版本号要动，否则面板显示会停在旧数字上。
+     */
+    function noteExposure(ids) {
+        const list = Array.isArray(ids) ? ids : [];
+        const sunk = new Set(state.records.filter(record => record.state === 'sunk').map(record => record.id));
+        let touched = 0;
+        for (const raw of list) {
+            const id = text(raw);
+            if (!id || !sunk.has(id)) continue;
+            state.exposure[id] = clampInt(state.exposure[id], 0, 9999, 0) + 1;
+            touched += 1;
+        }
+        if (touched) {
+            state.version += 1;
+            state.updatedAt = now();
+        }
+        return { status: touched ? 'noted' : 'noop', touched };
     }
 
     /**
@@ -707,11 +1138,13 @@ export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchi
         if (patch.maxLog !== undefined) maxLog = clampInt(patch.maxLog, 5, 200, maxLog);
         if (patch.maxOps !== undefined) maxOps = clampInt(patch.maxOps, 1, 24, maxOps);
         if (patch.maxChainDepth !== undefined) maxChainDepth = clampInt(patch.maxChainDepth, 0, 8, maxChainDepth);
+        // autoLatent 已经废掉：时间不再驱动世界影响。设置里仍可能传这个键，收下但不起作用，免得旧存档报错。
+        if (patch.autoLatent !== undefined) autoLatent = false;
         return { status: 'configured', config: config() };
     }
 
     function config() {
-        return { maxRecords, maxArchive, maxLog, maxOps, maxChainDepth };
+        return { maxRecords, maxArchive, maxLog, maxOps, maxChainDepth, autoLatent: false };
     }
 
     return Object.freeze({
@@ -719,9 +1152,12 @@ export function createImpactRuntime({ maxRecords = DEFAULT_MAX_RECORDS, maxArchi
         list,
         archived,
         pendingRipen,
+        sunkRecords,
         snapshot,
         snapshotWithReplay,
         status,
+        exposureOf,
+        noteExposure,
         manualVersion: () => state.manualVersion,
         dropFloor,
         restore,

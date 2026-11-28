@@ -68,5 +68,5 @@ export function buildGossipUser({ rumors = [], targets = [], day = null, maxChar
     return body.length > maxChars ? body.slice(0, maxChars) : body;
 }
 
-/** 传播员的幅度上限：入口在落账前把好感增减压回这个带内，比人物簿的 ±10 更紧。 */
+/** 传播员的幅度上限：入口在落账前把好感增减压回这个带内，比人物簿的 ±15 更紧。 */
 export const GOSSIP_FAVOR_STEP_MAX = 3;

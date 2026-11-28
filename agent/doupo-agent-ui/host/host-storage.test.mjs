@@ -213,7 +213,7 @@ assert.equal(memoryPreset.temperature, 0.2);
 assert.equal(legacyMigrated.world.decideApiPreset, legacyMigrated.memory.decideApiPreset, '相同配置去重共用一个方案');
 assert.notEqual(legacyMigrated.llm.apiPreset, legacyMigrated.memory.decideApiPreset);
 assert.equal(legacyMigrated.impact.decideApiPreset, legacyMigrated.api.presets.find(item => item.baseUrl === 'https://impact.example/v1').id);
-assert.equal(legacyMigrated.impact.injectApiPreset, '', 'modelMode=shared 时不给场记单独迁方案（场记跟记录员）');
+assert.equal(legacyMigrated.impact.injectApiPreset, '', 'modelMode=shared 时不给判定官单独迁方案（判定官跟记录员）');
 assert.equal(legacyMigrated.memory.decideMode, 'tavern', '搬完模式落回 tavern');
 assert.equal(legacyMigrated.memory.decideBaseUrl, 'https://api.deepseek.com/v1', '字段值保留（方案里是正本）');
 // 已绑了方案的组：以绑定为准，不重复造方案
@@ -349,4 +349,23 @@ assert.equal(v15Migrated.impact.injectMaxLines, 0, '影响条数上限旧默认�
 assert.equal(v15Migrated.npc.ledgerMaxBrief, 3, '玩家手调过的值原样保留');
 const v15Once = createHostStorage({ getContext: () => ({ extensionSettings: { doupo_agent_ui: { schemaVersion: 15, npc: { ledgerBudget: 900 } } } }) }).settings().value;
 assert.equal(v15Once.npc.ledgerBudget, 900, '版本门已过（schemaVersion=15）不再清值');
+// schemaVersion 16：方案自带的「走酒馆通道」开关退役——tavern 字段从老档里清掉，
+// 绑定、地址、密钥一概不动（曾经 tavern: true 又没填地址的方案会因没地址自动回落跟随酒馆）。
+const v15TavernContext = { extensionSettings: { doupo_agent_ui: {
+    schemaVersion: 15,
+    api: { presets: [
+        { id: 'p1', name: '旧酒馆方案', tavern: true, baseUrl: 'https://api.deepseek.com/v1', apiKey: 'sk-a', model: 'deepseek-flash' },
+        { id: 'p2', name: '直连方案', baseUrl: 'https://api.example.com/v1', model: 'm' },
+    ] },
+    impact: { decideApiPreset: 'p1' },
+} } };
+const v16Migrated = createHostStorage({ getContext: () => v15TavernContext }).settings().value;
+assert.equal(v16Migrated.schemaVersion, DEFAULT_SETTINGS.schemaVersion);
+assert.equal(Object.prototype.hasOwnProperty.call(v16Migrated.api.presets[0], 'tavern'), false, '老档的 tavern 字段被清掉');
+assert.equal(v16Migrated.api.presets[0].baseUrl, 'https://api.deepseek.com/v1', '地址不动');
+assert.equal(v16Migrated.api.presets[0].apiKey, 'sk-a', '密钥不动');
+assert.equal(v16Migrated.impact.decideApiPreset, 'p1', '绑定不动——旧 tavern 方案现在按地址直连');
+assert.equal(Object.prototype.hasOwnProperty.call(v16Migrated.api.presets[1], 'tavern'), false, '本来就没有 tavern 的方案不受影响');
+const v16Once = createHostStorage({ getContext: () => ({ extensionSettings: { doupo_agent_ui: { schemaVersion: 16, api: { presets: [{ id: 'p1', name: 'x', baseUrl: 'https://a/v1' }] } } } }) }).settings().value;
+assert.equal(Object.prototype.hasOwnProperty.call(v16Once.api.presets[0], 'tavern'), false);
 console.log('host storage tests passed');

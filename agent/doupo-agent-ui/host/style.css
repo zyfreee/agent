@@ -356,6 +356,8 @@ svg.dai-svg { width: 1em; height: 1em; flex: none; display: inline-block; vertic
 .dai-impact-item-head b { overflow-wrap: anywhere; flex: 1; }
 .dai-impact-mark { display: grid; min-width: 1.4rem; height: 1.4rem; place-items: center; padding: 0.28rem; border-radius: var(--dai-radius-field); color: var(--dai-accent); background: var(--dai-tint); font-size: var(--dai-fs-md); }
 .dai-impact-meta, .dai-impact-fate { color: var(--dai-muted); font-size: var(--dai-fs-sm); overflow-wrap: anywhere; }
+/* 回响：这条影响落成后，世界上到底哪几处被它动了。一行小字，颜色比正文淡、比 meta 深一点。 */
+.dai-impact-echo { color: var(--dai-accent); font-size: var(--dai-fs-sm); overflow-wrap: anywhere; }
 .dai-impact-detail { margin: 0; font-size: var(--dai-fs-md); overflow-wrap: anywhere; }
 .dai-impact-empty { padding: 0.9rem 0.2rem; color: var(--dai-muted); font-size: var(--dai-fs-md); }
 .dai-impact-edit { flex: none; padding: 0.1rem 0.5rem; border: 1px solid var(--dai-border); border-radius: var(--dai-radius-row); color: var(--dai-muted); background: transparent; font-size: var(--dai-fs-sm); cursor: pointer; }
@@ -791,6 +793,17 @@ svg.dai-svg { width: 1em; height: 1em; flex: none; display: inline-block; vertic
 .dai-orb-entry b { font-size: var(--dai-fs-md); font-weight: 600; line-height: 1.45; word-break: break-word; }
 .dai-orb-entry small { color: var(--dai-muted); font-size: var(--dai-fs-xs); line-height: 1.4; overflow-wrap: anywhere; }
 .dai-orb-entry p { margin: 0; font-size: var(--dai-fs-md); line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* 悬浮球里的好感一行：数值 + 档位 + 最近涨落 + 此刻情绪 + 刻度条，与设置页人物卡同刻度。 */
+.dai-orb-favor { display: flex; align-items: center; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.1rem; font-size: var(--dai-fs-xs); line-height: 1.3; }
+.dai-orb-favor-value { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--dai-muted); }
+.dai-orb-favor-value[data-tone="up"] { color: var(--dai-good); }
+.dai-orb-favor-value[data-tone="down"] { color: var(--dai-error); }
+.dai-orb-favor-label { font-style: normal; color: var(--dai-muted); }
+.dai-orb-favor-delta { font-style: normal; font-variant-numeric: tabular-nums; }
+.dai-orb-favor-delta.is-up { color: var(--dai-good); }
+.dai-orb-favor-delta.is-down { color: var(--dai-error); }
+.dai-orb-favor-mood { font-style: normal; padding: 0 0.3rem; border: 1px solid var(--dai-line); border-radius: 999px; color: var(--dai-warn); }
+.dai-orb-pop-favor { display: flex; margin: 0.15rem 0 0.35rem; }
 .dai-orb-empty { margin: 0; padding: 0.35rem 0.1rem; color: var(--dai-muted); font-size: var(--dai-fs-md); }
 /* 悬浮球人物小卡：点人物簿里的一行，贴在信息窗外侧弹出的只读小档案。 */
 .dai-orb-pop { position: fixed; z-index: 9998; display: flex; flex-direction: column; width: min(20rem, calc(100vw - 2rem)); max-height: min(30rem, calc(100dvh - 2rem)); overflow: auto; padding: 0.75rem 0.85rem 0.85rem; border: 1px solid var(--dai-accent-deep); border-radius: var(--dai-radius-dialog); background: linear-gradient(180deg, var(--dai-surface), var(--dai-bg) 200%); box-shadow: 0 0.6rem 1.6rem #0007, inset 0 1px 0 var(--dai-glow); font-size: var(--dai-fs-md); }

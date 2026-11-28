@@ -42,3 +42,16 @@ import { CONSISTENCY_PROMPT, buildConsistencyUser, parseConsistencyReply } from 
 }
 
 console.log('npc-consistency 测试通过');
+
+// —— 动向连续性：检查项进提示词，材料带处境/近况（过时动向不进材料）——
+{
+    assert.ok(CONSISTENCY_PROMPT.includes('动向连续性'), '检查项要有动向连续性');
+    const stale = { name: '青袍客', presence: '不在场', importance: '重要', doing: '打坐', location: '坊市', situationStamp: { floor: 20, day: 10 }, exp: [{ text: '被云岚宗锁拿下狱', day: 25, floor: 40 }] };
+    const fresh = { name: '萧战', presence: '在场', doing: '主持族会', location: '议事厅', situationStamp: { floor: 44, day: 30 }, favor: 3 };
+    const user = buildConsistencyUser({ profiles: [{ record: stale }, { record: fresh }], floors: [{ role: '角色', text: '正文' }], day: 30 });
+    const staleSection = user.split('\n\n').find(block => block.includes('【青袍客】'));
+    const freshSection = user.split('\n\n').find(block => block.includes('【萧战】'));
+    assert.ok(staleSection.includes('近况：第25天被云岚宗锁拿下狱'), '过时的人带近况进材料');
+    assert.equal(staleSection.includes('正在做什么'), false, '过时动向不进体检材料');
+    assert.ok(freshSection.includes('正在做什么：主持族会'), '新鲜动向进体检材料');
+}

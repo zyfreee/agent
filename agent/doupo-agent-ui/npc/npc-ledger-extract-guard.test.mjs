@@ -46,7 +46,7 @@ const adversarial = [
     const raw = createNpcLedger();
     raw.apply(adversarial.map(patch => ({ ...patch })), { floor: 1 });
     assert.ok(raw.find('B') || raw.find('C'), '对照组：错目标人物会被建出来');
-    assert.equal(raw.get('B')?.favor, 10, '对照组：英文 favor 会直接累加');
+    assert.equal(raw.get('B')?.favor, 15, '对照组：英文 favor 会直接累加（嵌套 fields 里的 99 被幅度闸压成 +15）');
     assert.equal(raw.get('B')?.presence, '在场', '对照组：在场会被改写');
 }
 

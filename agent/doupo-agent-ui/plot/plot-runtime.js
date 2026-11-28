@@ -78,6 +78,8 @@ function normalizeOneThread(raw) {
         status: THREAD_STATUSES.includes(raw.status) ? raw.status : 'open',
         resolvedDay: clampInt(raw.resolvedDay, 1, 99999, null),
         outcome: text(raw.outcome).slice(0, MAX_OUTCOME_TEXT),
+        // 由一条世界影响推出来的线索会带上影响编号，便于面板回指与去重。
+        fromImpact: text(raw.fromImpact).slice(0, MAX_ID_TEXT),
     };
 }
 
@@ -151,7 +153,10 @@ export function createPlotRuntime({ maxThreads = DEFAULT_MAX_THREADS, maxLog = D
             if (!basis) return { ok: false, reason: 'basis_missing' };
             if (basis.length > MAX_BASIS_TEXT) return { ok: false, reason: 'basis_too_long' };
             const kindValue = KINDS.includes(op.kind) ? op.kind : 'foreshadow';
+            // 由世界影响推出来的线索带影响编号：同一条影响重复落成不会把同一条线索推两遍。
+            const fromImpact = text(op.fromImpact).slice(0, MAX_ID_TEXT);
             const detail = text(op.detail).slice(0, MAX_THREAD_DETAIL);
+            if (fromImpact && state.threads.some(thread => thread.fromImpact === fromImpact && thread.title === title)) return { ok: false, reason: 'duplicate_title' };
             if (openThreads().some(thread => thread.title === title)) return { ok: false, reason: 'duplicate_title' };
             const today = state.day ?? 1;
             if (openThreads().some(thread => Math.abs((thread.day ?? today) - today) <= SIMILAR_WINDOW_DAYS
@@ -162,7 +167,7 @@ export function createPlotRuntime({ maxThreads = DEFAULT_MAX_THREADS, maxLog = D
                 if (span === null) return { ok: false, reason: 'bad_days' };
                 dueDay = today + span - 1;
             }
-            const thread = { id: nextId(), title, kind: kindValue, detail, basis, day: today, dueDay, status: 'open', resolvedDay: null, outcome: '' };
+            const thread = { id: nextId(), title, kind: kindValue, detail, basis, day: today, dueDay, status: 'open', resolvedDay: null, outcome: '', fromImpact };
             state.threads.push(thread);
             prune();
             const kindNote = KIND_LABELS[kindValue];
@@ -190,6 +195,32 @@ export function createPlotRuntime({ maxThreads = DEFAULT_MAX_THREADS, maxLog = D
             thread.resolvedDay = state.day ?? null;
             if (outcome) thread.outcome = outcome;
             return { ok: true, id: thread.id, summary: `线索作废 ${thread.id}「${thread.title}」${outcome ? `（${outcome}）` : ''}`, undo: { op: '_setThreadRaw', thread: before } };
+        }
+        if (kind === 'applyThread') {
+            const thread = findThread(text(op.id));
+            if (!thread) return { ok: false, reason: 'thread_not_found' };
+            const before = { ...thread };
+            if (op.status === 'resolved') {
+                if (thread.status !== 'open') return { ok: false, reason: 'thread_not_open' };
+                thread.status = 'resolved';
+                thread.resolvedDay = state.day ?? null;
+                const outcome = text(op.outcome).slice(0, MAX_OUTCOME_TEXT);
+                if (outcome) thread.outcome = outcome;
+                return { ok: true, id: thread.id, summary: `线索因世界影响推进 ${thread.id}「${thread.title}」${outcome ? `（${outcome}）` : ''}`, undo: { op: '_setThreadRaw', thread: before } };
+            }
+            // 默认是按影响推进到期窗口：正数延后、负数提前，到期日不小于今天。
+            const span = op.spanDays === undefined ? null : intIn(op.spanDays, -MAX_THREAD_DAYS, MAX_THREAD_DAYS);
+            if (op.spanDays !== undefined && (span === null || span === 0)) return { ok: false, reason: 'bad_days' };
+            const today = state.day ?? thread.day ?? 1;
+            const base = thread.dueDay ?? today;
+            if (span !== null) {
+                if (thread.dueDay === null) return { ok: false, reason: 'thread_no_due' };
+                thread.dueDay = Math.max(today, base + span);
+            }
+            const note = text(op.detail);
+            if (note) thread.detail = `${thread.detail ? `${thread.detail}；` : ''}${note}`.slice(0, MAX_THREAD_DETAIL);
+            if (thread.dueDay === before.dueDay && thread.detail === before.detail) return { ok: false, reason: 'thread_nothing_to_update' };
+            return { ok: true, id: thread.id, summary: `线索因世界影响推进 ${thread.id}「${thread.title}」${span !== null ? `：到期第 ${before.dueDay} 天 → ${thread.dueDay} 天` : ''}`, undo: { op: '_setThreadRaw', thread: before } };
         }
         if (kind === 'updateThread') {
             const thread = findThread(text(op.id));

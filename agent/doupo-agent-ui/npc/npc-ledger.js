@@ -7,7 +7,8 @@
  * 刻意的取舍：
  * - 不核依据、不拦“上帝视角”。用户要的是“模型怎么写就怎么记”，脚本只负责把任意输入
  *   折成同一形状，坏字段单独丢，不整批作废。
- * - 唯一一道幅度闸：单次好感最多 ±10（FAVOR_STEP_MAX），防止一句话把关系写飞。
+ * - 唯一一道幅度闸：单次好感最多 ±15（FAVOR_STEP_MAX），防止一句话把关系写飞；
+ *   世界影响要改好感也走这道闸，不给它开后门。
  * - 好感只记本次增减，累计值由脚本算，模型永远不写绝对值。
  * - 流水只追加不覆盖，档案字段才覆盖。
  * - 注入按“在场 × 重要”四象限分档，不按字数硬塞。
@@ -17,8 +18,8 @@
 export const NPC_LEDGER_VERSION = 1;
 export const FAVOR_MIN = -100;
 export const FAVOR_MAX = 100;
-/** 单次好感幅度上限：一次最多 ±10，防止模型一句话把关系写飞。 */
-export const FAVOR_STEP_MAX = 10;
+/** 单次好感幅度上限：一次最多 ±15，防止模型一句话把关系写飞（世界影响的后果也走这道闸）。 */
+export const FAVOR_STEP_MAX = 15;
 /** 大变动依据门槛：好感单次 |Δ|≥5 或写「经历」时要求一句话依据；缺失只记审计流水，不拦截落账。 */
 export const FAVOR_AUDIT_THRESHOLD = 5;
 /** 短期情绪：快变量，默认三天到期自动消散；好感是慢变量，两层分开记。 */
@@ -26,6 +27,8 @@ export const MOOD_TTL_DAYS = 3;
 
 const MAX_OTHERS = 12;
 const MAX_THINGS = 16;
+/** 一个人能挂的“世界影响”痕迹上限：够看出他被哪几件事改过，又不至于把档案撑爆。 */
+const MAX_IMPACT_REFS = 24;
 /** 经历只收“重大转变”，一条人物一生级别的转折不会太多；满了丢最旧的。 */
 
 export const PRESENCE_OPTIONS = Object.freeze(['在场', '不在场']);
@@ -100,6 +103,11 @@ export const NPC_FIELDS = Object.freeze([
 
 const FIELD_BY_KEY = new Map(NPC_FIELDS.map(field => [field.key, field]));
 
+/** 处境字段标签：这些任何一个被补丁改动，档案就盖 situationStamp（见 apply）——
+ *  动向/位置是“现在时”，不盖章就和带天数的经历分不出新旧，“20楼打坐、40楼被囚”
+ *  那类账就是这么烂掉的。 */
+const SITUATION_LABELS = new Set(['所在位置', '在场', '正在做什么', '远程联系']);
+
 /** 补丁里能认的键：格式里的中文名 + 常见顺嘴写法。认不出来的键原地忽略。 */
 const KEY_ALIASES = new Map([
     ['姓名', 'name'], ['名字', 'name'], ['人物', 'name'], ['name', 'name'], ['npc', 'name'],
@@ -149,6 +157,9 @@ const KEY_ALIASES = new Map([
     ['流水', 'log'], ['经过', 'log'], ['事件', 'log'], ['log', 'log'],
     ['往来概要', 'logSummary'], ['往来', 'logSummary'], ['概要', 'logSummary'], ['logSummary', 'logSummary'], ['logsummary', 'logSummary'],
     ['经历', 'exp'], ['重要经历', 'exp'], ['转变', 'exp'], ['心路', 'exp'], ['exp', 'exp'],
+    // 世界影响的回响：记录员把「影响#i12」写进这个键，落在档案上就是“这个人被那条影响动过”。
+    // 以前这张表里没有它，模型按提示词写了也会被当成不认识的键整条丢掉（回响断链的根因）。
+    ['世界影响', 'impactRefs'], ['影响', 'impactRefs'], ['影响编号', 'impactRefs'], ['impactRefs', 'impactRefs'], ['impactrefs', 'impactRefs'],
     ['设定', 'fields'], ['字段', 'fields'], ['档案', 'fields'], ['fields', 'fields'],
 ]);
 
@@ -326,6 +337,41 @@ function normalizeMoodEntry(item) {
     return { label: text(item), reason: '' };
 }
 
+/**
+ * 一条“被哪条世界影响动过”的痕迹：{ id, day, floor, note }。
+ * 模型写「影响#i12」「i12」「世界影响 i12」都收，统一折成编号 i12；
+ * 编号认不出来就丢掉这一条，不整批作废（和本模块“坏字段单独丢”的口径一致）。
+ * 这是「回响」在人物簿这一侧的唯一痕迹：只追加、不覆盖。
+ */
+function impactRefId(value) {
+    const raw = text(value);
+    if (!raw) return '';
+    const hit = /(?:影响\s*[#＃]?\s*)?(i\d+)/i.exec(raw);
+    if (hit) return hit[1].toLowerCase();
+    const digits = /(\d+)/.exec(raw);
+    return digits ? `i${digits[1]}` : '';
+}
+
+function normalizeImpactRefs(value, fallback = {}) {
+    if (value === null || value === undefined) return [];
+    const source = Array.isArray(value) ? value : [value];
+    const out = [];
+    for (const item of source) {
+        const row = item && typeof item === 'object' && !Array.isArray(item) ? item : { id: item };
+        const id = impactRefId(row.id ?? row.影响 ?? row.编号 ?? row.name ?? row.ref);
+        if (!id) continue;
+        if (out.some(ref => ref.id === id)) continue;
+        const day = normalizeDay(row.day !== undefined ? row.day : (row.天数 !== undefined ? row.天数 : fallback.day));
+        const floor = Number.isInteger(row.floor)
+            ? row.floor
+            : (Number.isInteger(row.楼层) ? row.楼层 : (Number.isInteger(fallback.floor) ? fallback.floor : null));
+        const note = text(row.note ?? row.说明 ?? row.事由 ?? row.reason).slice(0, 60);
+        out.push({ id, day, floor, ...(note ? { note } : {}) });
+        if (out.length >= MAX_IMPACT_REFS) break;
+    }
+    return out;
+}
+
 export function createEmptyRecord(name, options = {}) {
     const clean = normalizeName(name);
     const source = SOURCE_OPTIONS.includes(options.source) ? options.source : '正文';
@@ -384,6 +430,13 @@ export function normalizeRecord(raw) {
             at: text(input.coldTouch.at, 32),
         };
     }
+    // 处境盖章：动向新鲜度判断的依据，读旧档时不能丢；旧档没有就不写键。
+    if (input.situationStamp && typeof input.situationStamp === 'object') {
+        record.situationStamp = {
+            floor: Number.isInteger(input.situationStamp.floor) ? input.situationStamp.floor : null,
+            day: normalizeDay(input.situationStamp.day),
+        };
+    }
     if (Array.isArray(input.log)) {
         record.log = input.log.map(item => ({
             floor: Number.isInteger(item?.floor) ? item.floor : null,
@@ -419,6 +472,11 @@ export function normalizeRecord(raw) {
         }).filter(Boolean);
     }
     if (Number.isInteger(input.lastFloor)) record.lastFloor = input.lastFloor;
+    // 世界影响痕迹：读旧档时也要接上，否则刷新一次“回响”就整段丢掉。
+    // 只在有痕迹时写这个键——没有的旧档保持原样，validBook() 的指纹校验才不会因为
+    // 凭空多出一个空数组而整本存档被拒。
+    const refs = normalizeImpactRefs(input.impactRefs);
+    if (refs.length) record.impactRefs = refs;
     record.version = Math.max(1, clampNumber(input.version, 1, 1e9, 1));
     if (typeof input.createdAt === 'string') record.createdAt = input.createdAt;
     if (typeof input.updatedAt === 'string') record.updatedAt = input.updatedAt;
@@ -441,6 +499,7 @@ export function normalizePatch(raw, context = {}) {
     const input = raw && typeof raw === 'object' ? raw : (typeof raw === 'string' ? { name: raw } : {});
     const result = {
         name: '', fields: {}, favor: null, favorReason: '', basis: '', log: [], exp: [], moods: [], presence: null, logSummary: '',
+        impactRefs: [],
         importance: null, source: SOURCE_OPTIONS.includes(context.source) ? context.source : null, ignored: [],
     };
     const absorb = (key, value) => {
@@ -470,6 +529,12 @@ export function normalizePatch(raw, context = {}) {
         }
         if (target === 'favorReason') { result.favorReason = text(value); return; }
         if (target === 'basis') { result.basis = text(value); return; }
+        if (target === 'impactRefs') {
+            // 记录员按提示词写「世界影响：影响#i12」；收进来的是一条痕迹，不是字段覆盖。
+            const refs = normalizeImpactRefs(value, { day: context.day, floor: context.floor });
+            for (const ref of refs) if (!result.impactRefs.some(item => item.id === ref.id)) result.impactRefs.push(ref);
+            return;
+        }
         if (target === 'mood') {
             const entries = Array.isArray(value) ? value : [value];
             for (const entry of entries) {
@@ -673,6 +738,11 @@ export function createNpcLedger({ maxRecords = 200, now = () => new Date() } = {
             }
             if (patch.presence && target.presence !== patch.presence && (!fillOnly || target.presence === '不在场')) { target.presence = patch.presence; touched.push('在场'); }
             if (patch.importance && target.importance !== patch.importance && (!fillOnly || target.importance === '不重要')) { target.importance = patch.importance; touched.push('重要度'); }
+            // 处境盖章：位置/动向/联系/在场任何一个变了，就记下“这是第几楼第几天的事”。
+            // 注入时和最后一条经历比新旧——经历是重大转变，比章新就说明人挪了/动不了了而
+            // 动向没跟上，旧动向一律不许再吐给正文（见 doingFresh）。
+            // 旧档没有这个键就不写（和 impactRefs 同一规矩），validBook 指纹校验不受影响。
+            if (touched.some(label => SITUATION_LABELS.has(label))) target.situationStamp = { floor, day };
             // 「对他人」改过就交一份快照出去：全局关系图（npc-relations）拿它做有向边。
             if (!fillOnly && touched.includes('对他人') && Array.isArray(target.others) && target.others.length) {
                 result.relations.push({ from: target.name, triples: structuredClone(target.others), day, floor });
@@ -710,6 +780,17 @@ export function createNpcLedger({ maxRecords = 200, now = () => new Date() } = {
             if (!fillOnly && patch.exp.length) {
                 touched.push('经历');
                 if (!patch.basis) result.audits.push({ name: target.name, kind: 'exp', floor, day, reason: 'exp_no_basis' });
+            }
+            // 世界影响的回响：只追加不覆盖，同一个编号不重复记；编号是去重键，重复补丁不刷屏。
+            // 旧档没有这个字段（没被影响动过就不写这个键，免得指纹校验整本被拒），这里用到才补。
+            if (!fillOnly && patch.impactRefs.length) {
+                if (!Array.isArray(target.impactRefs)) target.impactRefs = [];
+                const fresh = patch.impactRefs.filter(ref => !target.impactRefs.some(item => item.id === ref.id));
+                if (fresh.length) {
+                    for (const ref of fresh) target.impactRefs.push({ ...ref, day: ref.day ?? day, floor: ref.floor ?? floor });
+                    if (target.impactRefs.length > MAX_IMPACT_REFS) target.impactRefs.splice(0, target.impactRefs.length - MAX_IMPACT_REFS);
+                    touched.push('世界影响');
+                }
             }
             target.lastFloor = floor ?? target.lastFloor;
             if (touched.length) {
@@ -832,8 +913,10 @@ export function createNpcLedger({ maxRecords = 200, now = () => new Date() } = {
         return { status: 'replaced', name: record.name, before, after: clean.length };
     }
 
-    /** 信息面板直接改档案：与补丁不同，空值也会写回去（玩家把一格清空就是真清空）。 */
-    function setFields(name, fields, { source = '手填' } = {}) {
+    /** 信息面板直接改档案：与补丁不同，空值也会写回去（玩家把一格清空就是真清空）。
+     *  手填动到处境字段同样要盖章（floor/day 由调用方给当前楼层与世界天数）：
+     *  玩家亲手改的动向是最新事实，不盖的话注入出口会把它当旧账丢掉。 */
+    function setFields(name, fields, { source = '手填', floor = null, day = null } = {}) {
         const key = findKey(name);
         if (!key) return { status: 'not_found' };
         const record = records.get(key);
@@ -853,6 +936,7 @@ export function createNpcLedger({ maxRecords = 200, now = () => new Date() } = {
             touched.push(field.label);
         }
         if (!touched.length) return { status: 'unchanged', name: record.name };
+        if (touched.some(label => SITUATION_LABELS.has(label))) record.situationStamp = { floor: Number.isInteger(floor) ? floor : null, day: normalizeDay(day) };
         record.version += 1;
         record.updatedAt = stamp();
         changes += 1;
@@ -1069,6 +1153,52 @@ function doingText(value) {
     return String(value ?? '').trim().replace(/^(正在|正|在)/, '').trim();
 }
 
+/** 近事只带最近几条流水，并补上天数戳：流水只增不减，全量倒进提示词会随聊天无限膨胀；
+ *  不带天数戳的话，模型也分不清这几件事谁先谁后——而“新旧顺序”恰恰是动向判断的命根子。 */
+const RECENT_LOG_LINES = 3;
+function recentLogLines(record) {
+    return (Array.isArray(record.log) ? record.log : [])
+        .slice(-RECENT_LOG_LINES)
+        .map(item => {
+            const body = typeof item?.text === 'string' ? item.text.trim() : '';
+            if (!body) return '';
+            return (item?.day !== null && item?.day !== undefined) ? `第${item.day}天${body}` : body;
+        })
+        .filter(Boolean)
+        .join('；');
+}
+
+/** 动向还新鲜吗：处境章（floor/day）比最后一条经历新，或压根没有经历，才算新鲜。
+ *  经历是“这个人从此不一样了”的重大转变——比章新就说明处境多半已经变了而动向没跟上，
+ *  此时旧动向一律不许原样吐给正文。没有章（旧档/没人动过处境）但有经历时，宁可当过时。 */
+export function doingFresh(record) {
+    const exp = Array.isArray(record?.exp) ? record.exp : [];
+    const last = exp.length ? exp[exp.length - 1] : null;
+    if (!last) return true;
+    const mark = record?.situationStamp;
+    if (!mark) return false;
+    if (Number.isInteger(mark.floor) && Number.isInteger(last.floor)) return mark.floor >= last.floor;
+    if (mark.day !== null && mark.day !== undefined && last.day !== null && last.day !== undefined) return mark.day >= last.day;
+    return false;
+}
+
+/** 最近几条经历拼「第N天xxx」；超长裁短。简档近况、记录员材料、体检材料共用这一个出口。 */
+export function recentExpLines(record, { count = 1, maxChars = 50 } = {}) {
+    return (Array.isArray(record?.exp) ? record.exp : [])
+        .slice(-count)
+        .map(item => {
+            const body = typeof item?.text === 'string' ? item.text.trim() : '';
+            if (!body) return '';
+            const line = `${(item?.day !== null && item?.day !== undefined) ? `第${item.day}天` : ''}${body}`;
+            return line.length > maxChars ? `${line.slice(0, maxChars)}…` : line;
+        })
+        .filter(Boolean);
+}
+
+function latestExpLine(record, maxChars = 60) {
+    return recentExpLines(record, { count: 1, maxChars })[0] ?? '';
+}
+
 function describeFull(record) {    const lines = [];
     const head = [`【${record.name}】`];
     if (record.aliases.length) head.push(`别名：${record.aliases.join('、')}`);
@@ -1091,33 +1221,49 @@ function describeFull(record) {    const lines = [];
     if (record.others.length) lines.push(`对他人：${record.others.map(item => `${item.who}${item.relation ? `（${item.relation}）` : ''}${item.attitude ? `：${item.attitude}` : ''}`).join('；')}`);
     const assets = [record.items.length && `随身：${joinText(record.items)}`, record.storage && `储物：${record.storage}`, record.money && `货币：${record.money}`, record.property && `产业：${record.property}`, record.debt && `债务：${record.debt}`].filter(Boolean).join('｜');
     if (assets) lines.push(`资产：${assets}`);
-    const place = [record.location && `在${record.location}`, record.doing && `正在${doingText(record.doing)}`, record.reachable && `联系：${record.reachable}`].filter(Boolean).join('，');
+    // 处境行也过动向出口：章旧于最后经历时，位置/动向/联系都可能是搬家前的旧账，只留在场与否；
+    // 真相由下面的「经历」行兜底（全档本来就全量带经历）。
+    const freshFull = doingFresh(record);
+    const place = freshFull
+        ? [record.location && `在${record.location}`, record.doing && `正在${doingText(record.doing)}`, record.reachable && `联系：${record.reachable}`].filter(Boolean).join('，')
+        : (record.presence === '在场' ? '在场' : '不在场');
     if (place) lines.push(`处境：${place}`);
     if (record.secret.what || record.secret.hideFrom) lines.push(`秘密：${record.secret.hideFrom ? `瞒着${record.secret.hideFrom}` : ''}${record.secret.hideFrom && record.secret.what ? '，' : ''}${record.secret.what}`);
     const summary = text(record.logSummary);
     if (summary) lines.push(`往来：${summary}`);
-    else if (record.log.length) lines.push(`近事：${record.log.map(item => item?.text).filter(Boolean).join('；')}`);
+    else if (record.log.length) lines.push(`近事：${recentLogLines(record)}`);
     if (record.exp.length) lines.push(`经历：${record.exp.map(item => `${item.day !== null ? `第${item.day}天` : ''}${item.text}`).join('；')}`);
     return lines.join('\n');
 }
 
 function describeBrief(record, options = {}) {
+    const fresh = doingFresh(record);
     const parts = [record.name];
-    const place = record.presence === '在场' ? (record.location || '在场') : (record.location ? `不在场，在${record.location}` : '不在场');
+    const place = record.presence === '在场' ? (fresh ? (record.location || '在场') : '在场') : (fresh && record.location ? `不在场，在${record.location}` : '不在场');
     parts.push(place);
     if (record.identity) parts.push(record.identity);
     parts.push(`好感 ${record.favor}（${favorLabel(record.favor) || '未定'}）`);
     if (Array.isArray(record.moods) && record.moods.length) parts.push(`此刻${record.moods.map(mood => mood.label).join('、')}`);
     if (record.appellation) parts.push(`称呼你「${record.appellation}」`);
-    if (record.doing) parts.push(`正在${doingText(record.doing)}`);
-    if (options.distant === false && record.log.length) parts.push(`近事：${record.log.map(item => item?.text).filter(Boolean).join('；')}`);
+    if (record.doing && fresh) parts.push(`正在${doingText(record.doing)}`);
+    const recent = latestExpLine(record);
+    // 近况：远处的人物永远带一句最近经历——他经历里“被囚禁”这类转变，不在这里就永远看不见；
+    // 动向过时的人更是必须靠它顶上，旧动向绝不再原样吐出去。
+    if (recent && (options.distant === true || !fresh)) parts.push(`近况：${recent}`);
+    if (options.distant === false && record.log.length) parts.push(`近事：${recentLogLines(record)}`);
     return parts.join('｜');
 }
 
 function describeLine(record) {
+    const fresh = doingFresh(record);
     const parts = [record.name, `好感 ${record.favor}`];
-    if (record.location) parts.push(`在${record.location}`);
-    if (record.doing) parts.push(record.doing);
+    if (record.location && fresh) parts.push(`在${record.location}`);
+    if (record.doing && fresh) parts.push(record.doing);
+    if (!fresh) {
+        // 单行档过时了别硬吐旧动向：拿最近经历顶上，宁可少说不可说错。
+        const recent = latestExpLine(record);
+        if (recent) parts.push(`近况：${recent}`);
+    }
     return parts.join('｜');
 }
 

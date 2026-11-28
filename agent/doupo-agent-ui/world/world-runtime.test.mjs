@@ -642,3 +642,25 @@ assert.equal(taskPurgeStatus.tasks.total, 1, '任务栏只剩还开着的');
     assert.equal(expiry.snapshot().nearEvents.some(event => event.text === '三日后散场'), true, '过期事件回滚也要放回');
     assert.equal(expiry.snapshot().clock.day, 1, '时间一并回滚');
 }
+
+// —— removeEvent：影响落成的事件要能单独撤掉，撤销步骤里带原样事件 ——
+{
+    const rt = createWorldRuntime({ now: () => 't9' });
+    rt.apply([{ op: 'addEvent', scope: 'near', title: '药材涨价', text: '城中药材一日三涨' }], { source: 'impact', floor: 20 });
+    const event = rt.snapshot().nearEvents[0];
+    const removed = rt.apply([{ op: 'removeEvent', id: event.id }], { source: 'impact', floor: 20 });
+    assert.equal(removed.status, 'applied');
+    assert.equal(removed.applied[0].ok, true);
+    assert.equal(rt.snapshot().nearEvents.length, 0, '删事件后事件栏清空');
+    assert.equal(removed.applied[0].undo.op, '_restoreEvent');
+    assert.equal(removed.applied[0].undo.event.text, '城中药材一日三涨', '撤销步骤里要带原样事件');
+
+    const missing = rt.apply([{ op: 'removeEvent', id: 'e99' }], { source: 'impact', floor: 20 });
+    assert.equal(missing.rejected[0].reason, 'event_not_found', '删不存在的 id 要拒绝而不是静默');
+
+    // 世界事件同样走 removeEvent
+    rt.apply([{ op: 'addEvent', scope: 'world', title: '势力变动', text: '加列家收紧药材' }], { source: 'impact', floor: 20 });
+    const worldEvent = rt.snapshot().worldEvents[0];
+    rt.apply([{ op: 'removeEvent', id: worldEvent.id }], { source: 'impact', floor: 20 });
+    assert.equal(rt.snapshot().worldEvents.length, 0, '世界级事件也能撤');
+}

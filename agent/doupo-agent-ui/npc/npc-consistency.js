@@ -6,6 +6,7 @@
  * （防 OOC）。结果进审计流水与人物簿面板，供人工复查；模型惯性跑偏时这里最先看见。
  */
 
+import { doingFresh, recentExpLines } from './npc-ledger.js';
 
 export const CONSISTENCY_PROMPT = `你是这部小说的「人物体检员」。给你几个人物的档案和最近正文，你只做一件事：找出正文描写与档案相违反的地方。不改档案、不评价文笔、不重写正文。
 
@@ -14,6 +15,7 @@ export const CONSISTENCY_PROMPT = `你是这部小说的「人物体检员」。
 - 雷区：人物当众做了档案写明他会忌讳/绝不去做的事；
 - 称呼：对玩家的称呼与档案里的「当前称呼」对不上；
 - 境界/伤势连续性：境界凭空跳档、档案里的伤势凭空消失；
+- 动向连续性：档案「近况」写明处境已变（被囚、被困、被逐、远走、身亡这类），正文却还按旧动向写他自由活动（打坐、逛街、议事……）；或正文写法与档案动向明显矛盾；
 - 态度：对玩家的言行与档案态度方向明显相反（好感为负却谄媚、生死之交却形同路人）。
 
 【规矩】
@@ -29,7 +31,9 @@ export const CONSISTENCY_PROMPT = `你是这部小说的「人物体检员」。
 
 /**
  * 拼体检材料：每个人物挑体检用得上的字段拼成短档案 + 最近正文。
- * 档案只给「性格组 + 对玩家组 + 身体硬信息」，不给资产流水——体检不关心那些。
+ * 档案只给「性格组 + 对玩家组 + 身体硬信息 + 处境」，不给资产流水——体检不关心那些。
+ * 处境行同样过动向出口：过时动向不进材料，近况（最近两条经历）顶上，体检员才核得出
+ * 「正文拿旧动向写人」这类违反。
  */
 export function buildConsistencyUser({ profiles = [], floors = [], day = null } = {}) {
     const blocks = [];
@@ -45,6 +49,13 @@ export function buildConsistencyUser({ profiles = [], floors = [], day = null } 
         if (bond) lines.push(bond);
         const body = [record.realm ? `修为：${record.realm}` : '', record.injury ? `伤势：${record.injury}` : ''].filter(Boolean).join('｜');
         if (body) lines.push(body);
+        const fresh = doingFresh(record);
+        const situation = [record.presence ? (record.presence === '在场' ? '在场' : '不在场') : '',
+            fresh && record.location ? `在${record.location}` : '',
+            fresh && record.doing ? `正在做什么：${record.doing}` : ''].filter(Boolean).join('｜');
+        const recent = recentExpLines(record, { count: 2 }).join('；');
+        const situLine = [situation ? `处境：${situation}` : '', recent ? `近况：${recent}` : ''].filter(Boolean).join('；');
+        if (situLine) lines.push(situLine);
         return lines.join('\n');
     }).filter(Boolean);
     blocks.push(profileLines.length ? `【人物档案】\n${profileLines.join('\n\n')}` : '【人物档案】\n（空的，输出 {"检查":[]}）');

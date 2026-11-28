@@ -532,7 +532,7 @@ body.doupo-dress-page .dpd-crafting-flame { width: 0.55rem; height: 0.55rem; fle
 body.doupo-dress-page.doupo-window[data-dress-theme="gilt"] { --dpd-desk: #15100a; --dpd-desk2: #1e1710; --dpd-paper: #211a12; --dpd-paper2: #191410; --dpd-scroll-line: rgba(217, 167, 43, 0.45); --dpd-prose: #f0e6cd; --dpd-prose-dialogue: #f6dd9a; --dpd-prose-glow: 0 0 16px rgba(217, 167, 43, 0.12); --dpd-user-tint: rgba(217, 167, 43, 0.05); --dpd-card-surface: #262017; }
 body.doupo-dress-page.doupo-window[data-dress-theme="graphite"] { --dpd-desk: #0d1412; --dpd-desk2: #121b17; --dpd-paper: #14201b; --dpd-paper2: #101815; --dpd-scroll-line: rgba(62, 207, 165, 0.4); --dpd-prose: #ddebe3; --dpd-prose-dialogue: #b7f0dd; --dpd-prose-glow: 0 0 16px rgba(62, 207, 165, 0.1); --dpd-user-tint: rgba(62, 207, 165, 0.045); --dpd-card-surface: #17231e; }
 body.doupo-dress-page.doupo-window[data-dress-theme="parchment"] { --dpd-desk: #261c12; --dpd-desk2: #33261a; --dpd-paper: #f6efdd; --dpd-paper2: #eee3c8; --dpd-scroll-line: rgba(180, 69, 47, 0.4); --dpd-prose: #3c3122; --dpd-prose-dialogue: #a8522f; --dpd-prose-glow: none; --dpd-user-tint: rgba(180, 69, 47, 0.045); --dpd-card-surface: #fffdf4; }
-body.doupo-dress-page.doupo-window { background: radial-gradient(130% 100% at 50% 0%, var(--dpd-desk2), var(--dpd-desk) 72%) !important; }
+body.doupo-dress-page.doupo-window.doupo-own-bg { background: radial-gradient(130% 100% at 50% 0%, var(--dpd-desk2), var(--dpd-desk) 72%) !important; }
 /* 顶栏与输入区给一层实底案台色（原先是透明——别人导入后输入框、发送键和左下角功能键
    全都悬空飘在背景上；实底随主题变色，既留换装观感又落回桌面） */
 body.doupo-dress-page.doupo-window #top-bar, body.doupo-dress-page.doupo-window #form_sheld { background: var(--dpd-desk) !important; }
@@ -547,7 +547,8 @@ body.doupo-dress-page.doupo-window #chat .mes_text { color: var(--dpd-prose); }
 body.doupo-dress-page.doupo-window #chat .mes_text .dpd-dialogue { color: var(--dpd-prose-dialogue); text-shadow: var(--dpd-prose-glow); }
 body.doupo-dress-page.doupo-window #chat .mes .ch_name { color: var(--dpd-prose); }
 body.doupo-dress-page.doupo-window #chat .dpd-world-card, body.doupo-dress-page.doupo-window #chat .dpd-pre-card { --dpd-surface: var(--dpd-card-surface); }
-body.doupo-dress-page.doupo-window #send_textarea { color: var(--dpd-prose) !important; }
+body.doupo-dress-page.doupo-window #send_textarea { color: var(--SmartThemeBodyColor, inherit); }
+body.doupo-dress-page.doupo-window.doupo-desk-ink #send_textarea { color: var(--dpd-prose); }
 /* ⑩ 斗破焰装：案台暖光 + 纸面烛光晕染 + 章首焰字 + 卷尾落款
    （余烬粒子已删：飘动的光点在别的机器上像悬浮杂物，案台只留一层静态暖光） */
 body.doupo-dress-page.doupo-window.doupo-blaze { background: radial-gradient(60% 34% at 50% 104%, rgba(255, 122, 40, 0.15), transparent 70%), radial-gradient(130% 100% at 50% 0%, var(--dpd-desk2), var(--dpd-desk) 72%) !important; }
@@ -2062,6 +2063,13 @@ body.doupo-blaze #chat::-webkit-scrollbar-thumb { background: linear-gradient(18
             body.classList.toggle('doupo-dress-page', pageOn);
             body.classList.toggle('doupo-window', pageOn && CONFIG.window);
             body.classList.toggle('doupo-blaze', pageOn && CONFIG.flavor);
+            // 玩家自己的聊天背景优先：酒馆设置里换成了自定义图片就不披窗景底色；输入框在深底上补齐字色。
+            try {
+                const bgName = String(hostWindow.SillyTavern?.getContext?.()?.background?.name ?? '');
+                const ownBg = !bgName || /^__.*\.(png|jpg|jpeg|webp)$/i.test(bgName);
+                body.classList.toggle('doupo-own-bg', pageOn && CONFIG.window && !ownBg);
+                body.classList.toggle('doupo-desk-ink', pageOn && CONFIG.window && !ownBg);
+            } catch { /* 读不到就不披窗景，宁可少穿也别盖玩家的图 */ }
             if (pageOn) body.dataset.dressTheme = theme;
             else delete body.dataset.dressTheme;
             // 视口锁：美化开着就锁死 document 滚动（悬空的根修，详见 CSS 里的注释）。

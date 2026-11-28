@@ -86,3 +86,12 @@ test('对话上下文：往来概要单独成行', () => {
     });
     assert.ok(context.includes('往来概要：连着三天做药材生意'), context);
 });
+
+// —— 过时动向不进闲聊材料：人都被囚了不能聊“他在打坐” ——
+{
+    const stale = { name: '青袍客', presence: '不在场', doing: '打坐调息', location: '坊市', situationStamp: { floor: 20, day: 10 }, exp: [{ text: '被云岚宗锁拿下狱', day: 25, floor: 40 }] };
+    const context = buildChatContext({ record: stale, day: 26, channel: '面对面' });
+    assert.equal(context.includes('正在做什么'), false, '过时动向不进闲聊材料');
+    assert.equal(context.includes('在 坊市'), false, '过时位置不进闲聊材料');
+    assert.ok(context.includes('被云岚宗锁拿下狱'), '经历还在材料里说话');
+}

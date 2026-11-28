@@ -32,7 +32,7 @@ const user = buildNpcColdUser({ record, fromDay: 3, toDay: 4, events: snapshot.n
 assert.match(user, /【目标人物】/);
 assert.match(user, /第 3 天 → 第 4 天/);
 assert.match(user, /萧战收到族内急报/);
-assert.match(NPC_COLD_PROMPT, /单次最多 ±10/);
+assert.match(NPC_COLD_PROMPT, /单次最多 ±15/);
 // OPT-052: restoring pending IDs cannot overwrite unrelated drafts.
 {
     const cold = createNpcColdRuntime();
@@ -244,6 +244,17 @@ for (const chosenDay of [2, 3]) {
     assert.match(withNote, /派人打探消息/);
     const withParticipants = buildNpcColdUser({ record: { name: '药老' }, fromDay: 1, toDay: 2, events: [{ id: 'p9', day: 2, text: '事件', participants: ['萧炎', '药老'] }], floors: [] });
     assert.match(withParticipants, /（涉及：萧炎、药老）/);
+    // 世界影响也进冷藏喂料：玩家做过的事要能影响到不在场的人（三问原样搬进来）。
+    const withImpact = buildNpcColdUser({
+        record: { name: '萧战' }, fromDay: 1, toDay: 2, events: [], floors: [],
+        impactAnswers: [{ id: '#i7 药铺断货', done: '直接｜第 5 天｜大事｜药铺断货', canon: '', future: '第 8 天发作（还有 2 天）' }],
+    });
+    assert.match(withImpact, /【这局玩家做出、已经改到世界上的事（他可能受影响）】/);
+    assert.match(withImpact, /做了什么：直接｜第 5 天｜大事｜药铺断货/);
+    assert.match(withImpact, /以后：第 8 天发作/);
+    assert.ok(!withImpact.includes('对原著：'), '没牵动原著就不写这一截');
+    const withoutImpact = buildNpcColdUser({ record: { name: '萧战' }, fromDay: 1, toDay: 2, events: [], floors: [] });
+    assert.ok(!withoutImpact.includes('已经改到世界上的事'), '没有影响就不铺空段');
 }
 
 console.log('npc-cold-runtime: ok');

@@ -26,7 +26,7 @@ import { createNpcLedger } from './npc-ledger.js';
     assert.equal(lines.length, 2);
     assert.ok(lines[0].includes('萧炎'));
     assert.ok(lines[0].includes('在场'));
-    assert.ok(lines[0].includes('好感10'), '一条 +30 的补丁会被单次 ±10 压成 +10');
+    assert.ok(lines[0].includes('好感15'), '一条 +30 的补丁会被单次 ±15 压成 +15');
     assert.ok(lines[0].includes('萧家议事厅'));
     assert.ok(lines[0].includes('称呼玩家「小炎子」'));
     assert.ok(lines[1].includes('不在场'));
@@ -124,6 +124,20 @@ import { createNpcLedger } from './npc-ledger.js';
     assert.ok(!without.includes('【玩家此刻】'), '没接个人信息时不要空标题');
 }
 
+// 10b) 世界影响进记录员喂料：人物档案能把“因为哪条影响”记下来（键「世界影响」）。
+{
+    const withImpact = buildNpcRecordUser({
+        floors: [{ role: '角色', text: '他听说药铺断货，脸色变了。' }],
+        records: [],
+        impactLines: ['影响#i7｜第 5 天｜药铺断货·乌坦城｜确凿'],
+    });
+    assert.ok(withImpact.includes('【最近的世界影响】'));
+    assert.ok(withImpact.includes('影响#i7'));
+    assert.ok(NPC_RECORD_PROMPT.includes('世界影响'), '提示词里要有「世界影响」键，模型才知道往哪写编号');
+    const plain = buildNpcRecordUser({ floors: [{ role: '角色', text: '他在院里。' }], records: [] });
+    assert.ok(!plain.includes('【最近的世界影响】'), '没有影响就不铺空段');
+}
+
 // 11) 抄档员拿到的是“这个人还缺什么 + 世界书原文”，且只填空。
 {
     const ledger = createNpcLedger();
@@ -146,9 +160,9 @@ import { createNpcLedger } from './npc-ledger.js';
     assert.ok(buildNpcExtractUser({ record: { name: '萧战', aliases: [], titles: [], missing: [] }, entries: [], day: 1 }).includes('没找到这个人的条目'), '没有条目要明说，别让抄档员编');
 }
 
-// 12) 记录员规则里要写明单次好感最多 ±10。
+// 12) 记录员规则里要写明单次好感最多 ±15。
 {
-    assert.ok(NPC_RECORD_PROMPT.includes('±10'), '规则要给模型一个幅度上限');
+    assert.ok(NPC_RECORD_PROMPT.includes('±15'), '规则要给模型一个幅度上限');
 }
 
 // 13) 建档门槛：背景龙套不许进人物簿，新人物建档必须以过门槛为前提。
@@ -193,4 +207,20 @@ console.log('npc-recorder 测试通过');
     assert.ok(lines[0].includes('往来：连着三天做药材生意'), lines[0]);
     const noSummary = ledgerLines([{ name: '新人', presence: '在场', importance: '普通', favor: 0 }]);
     assert.ok(!noSummary[0].includes('往来：'), '没有概要就不带往来行');
+}
+
+// —— 动向与近况进索引：记录员看得见“最近经历了什么”，才有机会推翻旧动向 ——
+{
+    const ledger = createNpcLedger({ now: () => 'fixed' });
+    ledger.apply({ 人物: [{ 姓名: '青袍客', 位置: '坊市', 正在做什么: '打坐调息', 在场: '在场', 重要: '重要' }] }, { floor: 20, day: 10 });
+    ledger.apply({ 人物: [{ 姓名: '青袍客', 经历: '被云岚宗执法队锁拿，押入地牢' }] }, { floor: 40, day: 25 });
+    const lines = ledgerLines(ledger.list());
+    assert.equal(lines[0].includes('正在打坐调息'), false, '过时动向不进记录员材料');
+    assert.equal(lines[0].includes('在坊市'), false, '过时位置不进材料');
+    assert.ok(lines[0].includes('近况：第25天被云岚宗执法队锁拿'), '近况（最近两条经历）进材料');
+    const freshLines = ledgerLines([{ name: '掌柜', presence: '在场', importance: '普通', favor: 0, location: '药铺', doing: '整理药材' }]);
+    assert.ok(freshLines[0].includes('在药铺'), '新鲜位置进材料');
+    assert.ok(freshLines[0].includes('正在整理药材'), '新鲜动向进材料');
+    assert.ok(NPC_RECORD_PROMPT.includes('处境类转变'), '提示词写明处境类经历必须同时改处境字段');
+    assert.ok(NPC_RECORD_PROMPT.includes('以近况为准'), '材料近况与动向矛盾时以近况为准');
 }

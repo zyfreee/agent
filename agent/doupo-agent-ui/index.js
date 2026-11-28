@@ -18,15 +18,17 @@ import { createFactsLibrary } from './narrative/facts-library.js';
 import { createSettingSupply, trimToVolume } from './narrative/setting-supply.js';
 import { VERIFY_PROMPT, VERIFY_JSON_SCHEMA, buildVerifyUser, buildVerifyRetryUser, parseVerifyReply, shouldVerify, buildVerifyEntries, mergeVerifyEntries, markEntryFalsePositive, addExemption, listOpenFindings, normalizeVerifyLedger } from './narrative/verify-claims.js';
 import { createImpactRuntime } from './impact/impact-runtime.js';
-import { buildImpactInjection, buildImpactInjectionDetail, impactMark, isImpactDecideDue, WEIGHT_LABEL, STATE_LABEL, SHIFT_LABEL } from './impact/impact-ops.js';
+import { createImpactExecutor } from './impact/impact-executor.js';
+import { canonNodeLabel, canonNodePromptLines } from './impact/canon-nodes.js';
+import { buildImpactInjection, buildImpactInjectionDetail, impactMark, isImpactDecideDue, WEIGHT_LABEL, STATE_LABEL, SHIFT_LABEL, KIND_LABEL, linksSummary, effectsSummary, impactThreeQuestions, impactAnswers } from './impact/impact-ops.js';
 import { buildImpactDecideUser, parseImpactDecision, IMPACT_DECIDE_PROMPT, IMPACT_JSON_SCHEMA } from './impact/impact-decide.js';
-import { buildImpactInjectUser, buildImpactInjectionFromPicksDetail, parseImpactSelect, IMPACT_INJECT_PROMPT, IMPACT_INJECT_SCHEMA } from './impact/impact-select.js';
+import { buildImpactInjectBundle, buildImpactInjectionFromPicksDetail, judgeImpactHits, parseImpactSelect, IMPACT_INJECT_PROMPT, IMPACT_INJECT_SCHEMA } from './impact/impact-select.js';
 import { createNpcDecisionGuard } from './npc/npc-decision-guard.js';
 import { createNpcAutonomyPlanner } from './npc/npc-autonomy.js';
 import { createNpcPlanReassessment } from './npc/npc-plan-reassessment.js';
 import { createNpcConflictCoordinator } from './npc/npc-conflict.js';
 import { createNpcCommitGate } from './npc/npc-commit-gate.js';
-import { createNpcLedger, normalizePatch, NPC_FIELDS, FAVOR_SCALE, FAVOR_STEP_MAX, favorLabel } from './npc/npc-ledger.js';
+import { createNpcLedger, normalizePatch, NPC_FIELDS, FAVOR_SCALE, FAVOR_STEP_MAX, favorLabel, doingFresh } from './npc/npc-ledger.js';
 import { NPC_RECORD_PROMPT, NPC_RECORD_JSON_SCHEMA, NPC_EXTRACT_PROMPT, buildNpcRecordUser, buildNpcExtractUser, playerContextLine, parseNpcRecordReply, NPC_RECORD_RETRY_SYSTEM_NOTE, buildRecordRetryUser, EXP_CONDENSE_PROMPT, buildExpCondenseUser, parseExpCondenseReply } from './npc/npc-recorder.js';
 import { createNpcColdRuntime, filterColdPatches, mapWithLimit } from './npc/npc-cold-runtime.js';
 import { createNpcRelations } from './npc/npc-relations.js';
@@ -43,7 +45,7 @@ import { chatFloorShape, findDeletedFloor } from './narrative/history-events.js'
 import { probeHostCapabilities } from './host/capability-preflight.js';
 import { createHostStorage } from './host/host-storage.js';
 import { buildControlDashboard, normalizeTheme } from './host/control-dashboard.js';
-import { ORB_ITEMS, buildOrbPanels, createOrbState } from './host/orb-hud.js';
+import { ORB_ITEMS, buildOrbPanels, buildImpactEchoes, createOrbState } from './host/orb-hud.js';
 import { createOrbToasts, npcLedgerResultToToasts, selfResultToToasts, applyResultToToasts, rejectionToToast } from './host/orb-toast.js';
 import { createTurnStages } from './core/turn-stages.js';
 import { createLitePick } from './lite/lite-pick.js';
@@ -66,7 +68,7 @@ import { buildWorldInjection, extractOpsBlock, parseOps, stripOpsBlock, OPS_GUID
 import { buildDecideUser, parseDecision, WORLD_DECIDE_PROMPT, DECIDE_JSON_SCHEMA } from './world/world-decide.js';
 import { PLOT_DECIDE_PROMPT, PLOT_JSON_SCHEMA, buildPlotDecideUser, parsePlotDecision } from './plot/plot-decide.js';
 import { buildPlotInjection, PLOT_HEADER } from './plot/plot-ops.js';
-import { createPlotRuntime } from './plot/plot-runtime.js';
+import { createPlotRuntime, KIND_LABELS } from './plot/plot-runtime.js';
 import { createSelfRuntime } from './self/self-runtime.js';
 import { buildSelfInjection, extractOpsBlock as extractSelfOpsBlock, stripOpsBlock as stripSelfOpsBlock, SELF_GUIDE, SELF_HEADER } from './self/self-ops.js';
 import { SELF_DECIDE_PROMPT, SELF_JSON_SCHEMA, buildSelfDecideUser, parseSelfDecision } from './self/self-decide.js';
@@ -250,6 +252,7 @@ function bindHostLifecycle() {
         try { wakeUpPendingChatId = String(getHostContext()?.chatId ?? ''); } catch { /* 上下文不可用时保持关闭 */ }
         hydrateFactsLastInjection();
         hydrateMemoryLastInjection();
+        hydrateImpactLastRun();
         hydrateSettleAdjudication();
         // 申报条目开机对齐：变量更新一律由纳戒 API 决定，世界书申报教学条目无条件停用（幂等，已对齐时不落盘）。
         try {
@@ -303,6 +306,7 @@ function bindHostLifecycle() {
             try { wakeUpPendingChatId = String(getHostContext()?.chatId ?? ''); } catch { /* 上下文不可用时保持原状 */ }
             hydrateFactsLastInjection();
             hydrateMemoryLastInjection();
+            hydrateImpactLastRun();
             hydrateSettleAdjudication();
             refreshControlDashboard();
             refreshWorldPage();
@@ -549,8 +553,10 @@ function bindHostLifecycle() {
                             const chat = Array.isArray(getHostContext()?.chat) ? getHostContext().chat : [];
                             // 没记到东西也算叫过一次记录员，否则 every=3 会在“连着几轮没变化”后退化成每轮都跑。
                             const decidedFloor = agentImpactRuntime.status().decidedFloor;
-                            // 删过楼的话旧楼层号会超出当前聊天：夹到最后一楼，别把“删楼”误判成“一整段都没记过”。
-                            const lastFloor = Math.min(decidedFloor, chat.length - 1);
+                            // 删过楼的话旧楼层号会超出当前聊天。这里**不要**把它夹到 chat.length - 1：
+                            // 夹过之后 isImpactDecideDue 拿到的 start 正好等于 chat.length，会一直判「没到点」，
+                            // 这个聊天从此再也不记账（老聊天就这么死锁的）。原样传下去，让它自己判“重新数”。
+                            const lastFloor = decidedFloor;
                             const replyIdentity = replyIdentityOf(chat, lastReplyIndex(chat));
                             // 同楼重 roll：最新一楼的正文/swipe 变了就重读重算，哪怕记录节奏上还不到。
                             const identityChanged = decidedFloor === chat.length - 1 && lastImpactDecideIdentity !== replyIdentity;
@@ -747,6 +753,12 @@ export const agentMessageAdapter = createMessageAdapter({ getContext: getHostCon
 export const agentPromptInjection = createPromptInjection({ getContext: getHostContext });
 /** 世界事件系统：台账（时钟/基础信息/双栏事件）+ 独立的注入通道（key 与原著设定分开，互不清空）。 */
 export const agentWorldRuntime = createWorldRuntime({ maxOps: 12 });
+/** 影响落成执行器：把已应验的影响推进世界台账（事件/名声通缉/势力立场），同一条只推一次。 */
+/**
+ * plot 用取值函数而不是直接传实例：agentPlotRuntime 的声明在这行之后，
+ * 直接把实例写死会撞上暂时性死区（TDZ）让整个模块加载失败。
+ */
+export const agentImpactExecutor = createImpactExecutor({ runtime: agentImpactRuntime, world: agentWorldRuntime, plot: () => agentPlotRuntime, npcs: () => agentNpcLedger.list(), worldDay: () => worldDay(), maxPerRun: 3 });
 export const agentWorldPromptInjection = createPromptInjection({ getContext: getHostContext, key: 'doupo_world' });
 /** 剧情账本：滚动计划与线索账（叙事层的长篇一致性），独立的决定与注入通道（doupo_plot）。 */
 export const agentPlotRuntime = createPlotRuntime();
@@ -804,7 +816,7 @@ const API_PRESET_BINDINGS = Object.freeze({
     memoryRecall: 'memory.recallApiPreset', // 记忆召回（生成前挑旧记忆）
     memoryConsolidate: 'memory.consolidateApiPreset', // 记忆总结（小记忆攒批成大记忆）
     impactDecide: 'impact.decideApiPreset', // 世界影响记录员
-    impactInject: 'impact.injectApiPreset', // 世界影响场记
+    impactInject: 'impact.injectApiPreset', // 世界影响判定官
     litePick: 'lite.pickApiPreset', // 简略版·素材总挑选（原著/影响/记忆三路合并）
     liteSettle: 'lite.settleApiPreset', // 简略版·总结算（五本账合并）
 });
@@ -817,6 +829,16 @@ function presetOverrides(group) {
     if (!id) return undefined;
     const preset = (currentSettings().api?.presets ?? []).find(item => item?.id === id);
     return preset ? (presetToOverrides(preset) ?? undefined) : undefined;
+}
+
+/**
+ * 一个功能的连接口径：绑了方案、且方案真的能直连（有接口地址）＝'custom'，否则 'tavern'。
+ * 不能只判 presetOverrides() 有没有返回值——方案被绑但没填地址时它返回 null，
+ * 旧写法会把这种情况也当成自定义连接，于是跳过"酒馆静默生成可用吗"的检查，
+ * 报错就指到错的地方去。连接与否只认 connection 字段本身。
+ */
+function presetConnection(group) {
+    return presetOverrides(group)?.connection === 'custom' ? 'custom' : 'tavern';
 }
 
 /** 原著选条用哪套连接：绑定了方案整套走方案；没绑＝跟随酒馆主连接（模型设置页已无手填字段）。 */
@@ -984,6 +1006,9 @@ function writeWorldInjectionForPrompt() {
 
 /** 生成前把剧情前瞻（滚动计划 + 未回收线索）写进独立注入通道；与世界等各路互不清空。 */
 function writePlotInjectionForPrompt() {
+    // 剧情账本只属于进阶版：完整版/简略版不做剧情决定，账本永远停在旧的一天，
+    // 这时候还往提示词里喂它就是喂一份过期前瞻，所以直接清空通道、什么都不写。
+    if (!advancedMode()) { agentPlotPromptInjection.clear(); return { status: 'disabled' }; }
     const plot = currentSettings().plot ?? {};
     const settings = plotLedgerSettings();
     if (!plot.enabled || !settings.inject) { agentPlotPromptInjection.clear(); return { status: 'disabled' }; }
@@ -1389,6 +1414,51 @@ function hydrateMemoryLastInjection() {
         const record = state?.status === 'ready' ? state.value?.memoryLastInjection : undefined;
         if (record && typeof record === 'object') memoryLastInjectionRecord = { ...record, cleared: true };
     } catch { /* 恢复失败就当没有记录 */ }
+}
+
+// ---------- 世界影响最近一轮的三条回执：面板与 /impact status 共用（仿上面的记忆注入记录） ----------
+// 这三个值原本只活在内存里，Ctrl+F5 之后面板一律显示「还没跑过 / 还没挑过」，
+// 跟账本对不上（账本里明明记过一条）。现在跟着聊天存档走，刷新之后按存档显示。
+
+let impactLastRunCache = null;
+
+/** 注入回执：内存优先（这一轮刚挑完），刷新之后看存档。 */
+function impactInjectionLastState() {
+    const live = agentImpactInjection.lastState();
+    if (live) return live;
+    const cached = impactLastRunCache?.injection;
+    return cached && typeof cached === 'object' ? { ...cached } : null;
+}
+
+function persistImpactLastRun() {
+    try {
+        if (!hostStorage?.chatState || !hostStorage?.saveChatState) return;
+        const state = hostStorage.chatState();
+        const value = state?.status === 'ready' && state.value && typeof state.value === 'object' ? { ...state.value } : {};
+        const injection = agentImpactInjection.lastState();
+        value.impactLastRun = {
+            record: lastImpactResult,
+            materialize: lastMaterializeResult,
+            injection: injection ? { ...injection } : (impactLastRunCache?.injection ?? null),
+        };
+        Promise.resolve(hostStorage.saveChatState(value)).catch(() => { /* 存档失败不影响记账 */ });
+    } catch { /* 存档失败不影响记账 */ }
+}
+
+/** 换聊天/启动恢复：把上一轮的三条回执读回内存。
+ *  注入那条读回来一律标「已清理」——注入容器在生成结束时就没了，说「还在提示词里」是假话。 */
+function hydrateImpactLastRun() {
+    try {
+        const state = hostStorage?.chatState?.();
+        const saved = state?.status === 'ready' ? state.value?.impactLastRun : undefined;
+        impactLastRunCache = saved && typeof saved === 'object' ? saved : null;
+        if (!lastImpactResult && impactLastRunCache?.record) lastImpactResult = impactLastRunCache.record;
+        if (!lastMaterializeResult && impactLastRunCache?.materialize) lastMaterializeResult = impactLastRunCache.materialize;
+        const injection = impactLastRunCache?.injection;
+        if (injection && typeof injection === 'object' && injection.status === 'injected') {
+            impactLastRunCache = { ...impactLastRunCache, injection: { ...injection, cleared: true } };
+        }
+    } catch { impactLastRunCache = null; }
 }
 
 /** 生成前注入记忆存储：主路由召回决定挑选（用户输入之后跑，缓存内重 roll 不重复调用）；
@@ -2217,7 +2287,11 @@ function impactSettings() {
         injectPresencePenalty: impactParam(impact.injectPresencePenalty, 2),
         injectFrequencyPenalty: impactParam(impact.injectFrequencyPenalty, 2),
         prompt: typeof impact.prompt === 'string' && impact.prompt.trim() ? impact.prompt.trim() : IMPACT_DECIDE_PROMPT,
-        // 账本不设上限：注入每轮只挑几条，记多少条都不影响正文。
+        // 埋下的因（蝴蝶效应）开关：开＝记录员可以连“因/等”一起记、先沉在账本里；
+        // 关＝一记下就摆在明面上。它只管要不要埋，不排任何天数。
+        autoLatent: impact.autoLatent !== false,
+        // 落成后自动派生一条“余波”，让影响链真的往下走（可关）。
+        deriveChain: impact.deriveChain !== false,
         maxRecords: 0,
         maxChainDepth: Number.isInteger(impact.maxChainDepth) ? Math.max(0, impact.maxChainDepth) : 4,
     };
@@ -2242,7 +2316,7 @@ function impactPlanFromPreset(bound) {
     };
 }
 
-/** 影响决定/场记挑选两处 complete 调用的附加参数透传：方案没带就是空对象，spread 无痕。 */
+/** 影响决定/判定官两处 complete 调用的附加参数透传：方案没带就是空对象，spread 无痕。 */
 function planExtras(role) {
     const extras = {};
     if (role?.extraBody) extras.extraBody = role.extraBody;
@@ -2251,8 +2325,8 @@ function planExtras(role) {
     return extras;
 }
 
-/** 记录员与场记各自用哪套连接和生成参数：绑定了 API设置方案整套走方案；
- *  场记没绑就完全跟着记录员（原来“一个模型干两件事”的语义，用不绑场记方案表达）。 */
+/** 记录员与判定官各自用哪套连接和生成参数：绑定了 API设置方案整套走方案；
+ *  判定官没绑就完全跟着记录员（原来“一个模型干两件事”的语义，用不绑判定官方案表达）。 */
 function impactModelPlan(settings) {
     const boundDecide = presetOverrides('impactDecide');
     const decide = boundDecide ? impactPlanFromPreset(boundDecide) : {
@@ -2491,8 +2565,8 @@ function npcLedgerSettings() {
         maxFull: Number.isInteger(maxFull) && maxFull > 0 ? maxFull : Infinity,
         maxBrief: Number.isInteger(maxBrief) && maxBrief > 0 ? maxBrief : Infinity,
         floors: Number.isInteger(floors) && floors > 0 ? floors : globalReadFloors(),
-        // 绑定了 API设置方案＝自定义连接（守卫只认 connection，方案里自带地址密钥模型）；没绑＝跟随酒馆。
-        connection: presetOverrides('npcLedger') ? 'custom' : 'tavern',
+        // 绑了方案且方案填了接口地址＝自定义连接；没绑、或方案没填地址＝跟随酒馆（见 presetConnection）。
+        connection: presetConnection('npcLedger'),
         model: typeof npc.ledgerModel === 'string' ? npc.ledgerModel.trim() : '',
         baseUrl: typeof npc.ledgerBaseUrl === 'string' ? npc.ledgerBaseUrl.trim() : '',
         apiKey: typeof npc.ledgerApiKey === 'string' ? npc.ledgerApiKey.trim() : '',
@@ -2602,7 +2676,7 @@ function npcChatSettings() {
         maxTurns: Number.isInteger(npc.chatMaxTurns) && npc.chatMaxTurns > 0 ? npc.chatMaxTurns : 20,
         writeback: npc.chatWriteback !== false,
         prompt: typeof npc.chatPrompt === 'string' && npc.chatPrompt.trim() ? npc.chatPrompt.trim() : NPC_CHAT_PROMPT,
-        connection: presetOverrides('npcChat') ? 'custom' : 'tavern',
+        connection: presetConnection('npcChat'),
     };
 }
 
@@ -2624,7 +2698,7 @@ function npcReachoutSettings() {
         motivesGossip: npc.reachoutMotivesGossip !== false,
         motivesRandom: npc.reachoutMotivesRandom !== false,
         prompt: typeof npc.reachoutPrompt === 'string' && npc.reachoutPrompt.trim() ? npc.reachoutPrompt.trim() : NPC_REACHOUT_PROMPT,
-        connection: presetOverrides('npcReachout') ? 'custom' : 'tavern',
+        connection: presetConnection('npcReachout'),
     };
 }
 
@@ -2971,7 +3045,10 @@ async function runNpcChatRecap({ silent = false, session: given = null } = {}) {
         const writes = [{ name: record.name, log: [parsed.log] }];
         if (parsed.favor) writes.push({ name: record.name, favor: parsed.favor, favorReason: '整段交谈的净变化', basis: '自由对话' });
         const applied = agentNpcLedger.apply(writes, { source: '对话', floor: null, day: worldDay() });
-        if (parsed.exp) agentNpcLedger.addExp(record.name, parsed.exp, { day: worldDay() });
+        // 对话里长出来的经历是“此刻才确认的新知识”：楼层取当前聊天层（不是档案 lastFloor），
+        // 否则它和处境章同层，注入出口会把已被经历推翻的旧动向当成新鲜的。
+        const chat = Array.isArray(getHostContext()?.chat) ? getHostContext().chat : [];
+        if (parsed.exp) agentNpcLedger.addExp(record.name, parsed.exp, { day: worldDay(), floor: chat.length ? chat.length - 1 : null });
         session.loops = [];
         active.recappedTurns = active.turns ?? 0;
         if (applied?.status === 'applied' || applied?.status === 'empty') persistNpcLedger();
@@ -3179,8 +3256,8 @@ function npcColdSettings() {
     const npc = settings.npc ?? {};
     return {
         enabled: settings.enableNpcLedger !== false,
-        // 绑定了 API设置方案＝自定义连接（守卫只认 connection，方案里自带地址密钥模型）；没绑＝跟随酒馆。
-        connection: presetOverrides('npcCold') ? 'custom' : 'tavern',
+        // 绑了方案且方案填了接口地址＝自定义连接；没绑、或方案没填地址＝跟随酒馆（见 presetConnection）。
+        connection: presetConnection('npcCold'),
         model: typeof npc.coldModel === 'string' ? npc.coldModel.trim() : '',
         baseUrl: typeof npc.coldBaseUrl === 'string' ? npc.coldBaseUrl.trim() : '',
         apiKey: typeof npc.coldApiKey === 'string' ? npc.coldApiKey.trim() : '',
@@ -3203,6 +3280,67 @@ function npcColdOverrides(settings) {
 function coldFloors(limit) {
     const chat = Array.isArray(getHostContext()?.chat) ? getHostContext().chat : [];
     return impactConversation(chat, limit).then(result => result.floors);
+}
+
+/**
+ * 世界影响挂到人物身上时，这个人该听到什么风声：
+ * 传闻口径的影响不写进人物档案，但要让冷藏推进能“听见有人在传”，只改态度不改事实。
+ */
+function impactRumorsFor(record) {
+    const name = typeof record?.name === 'string' ? record.name.trim() : '';
+    if (!name) return [];
+    const today = worldDay();
+    return agentImpactRuntime.list({})
+        .filter(item => item.certainty === 'rumor' || item.materialized)
+        .filter(item => {
+            const linked = (Array.isArray(item.links) ? item.links : []).some(link => link.type === 'person' && link.name === name);
+            return linked || item.target === name || String(item.title ?? '').includes(name);
+        })
+        .slice(-3)
+        .map(item => ({
+            day: item.materializedDay ?? item.day,
+            kind: item.certainty === 'rumor' ? '风闻' : '已经发生',
+            text: item.resolution || `第 ${item.day} 天：${item.title}`,
+            target: item.target,
+        }));
+}
+
+/**
+ * 人物记录员看到的世界影响清单：最近 6 条还没收场的（带编号），让它能把
+ * 「谁因为哪条影响变了」写进档案——影响和人物簿因此是同一本账。
+ */
+function impactInjectionLinesForNpc(limit = 6) {
+    return agentImpactRuntime.list({})
+        .filter(record => record.state === 'active' || record.state === 'ripened')
+        .slice(-Math.max(1, limit))
+        .map(record => `影响#${record.id}｜第 ${record.day} 天｜${record.title}${record.target ? `·${record.target}` : ''}｜${record.certainty === 'rumor' ? '传闻' : '确凿'}`)
+        .filter(Boolean);
+}
+
+/**
+ * 对这个人物有关系、已经落到世界上的影响，按三问原样交给冷藏推进员：
+ * 不在场的人也要能感觉到玩家做过的事、以及这件事之后还会怎么落到他身上。
+ */
+function impactAnswersForPerson(record) {
+    const name = typeof record?.name === 'string' ? record.name.trim() : '';
+    if (!name) return [];
+    const today = worldDay();
+    const all = agentImpactRuntime.list({});
+    const childrenOf = new Map();
+    for (const item of all) {
+        if (!item.parent) continue;
+        if (!childrenOf.has(item.parent)) childrenOf.set(item.parent, []);
+        childrenOf.get(item.parent).push(item);
+    }
+    return all
+        .filter(item => item.state !== 'reverted')
+        .filter(item => {
+            const linked = (Array.isArray(item.links) ? item.links : []).some(link => link.type === 'person' && link.name === name);
+            return linked || item.target === name || String(item.title ?? '').includes(name);
+        })
+        .map(item => ({ id: `#${item.id} ${item.title}`, ...impactAnswers(item, { day: today, children: childrenOf.get(item.id) ?? [], nodeLabel: canonNodeLabel }) }))
+        .filter(item => item.done || item.future)
+        .slice(0, 4);
 }
 
 let npcColdRunning = false;
@@ -3236,7 +3374,7 @@ async function runNpcColdPreview() {
         // 有界并行：一次推 3 个人，每人仍带同款重试；结果按候选顺序回填，草稿顺序稳定。
         const results = await mapWithLimit(candidates, NPC_COLD_CONCURRENCY, async candidate => {
             try {
-                const coldUser = buildNpcColdUser({ record: candidate.record, fromDay: candidate.fromDay, toDay: candidate.toDay, events: candidate.events, floors: candidate.floors, lastNote: candidate.lastNote });
+                const coldUser = buildNpcColdUser({ record: candidate.record, fromDay: candidate.fromDay, toDay: candidate.toDay, events: candidate.events, floors: candidate.floors, lastNote: candidate.lastNote, rumors: impactRumorsFor(candidate.record), impactAnswers: impactAnswersForPerson(candidate.record) });
                 const raw = await agentLlmClient.complete({
                     label: '冷藏推进',
                     system: settings.prompt,
@@ -3440,7 +3578,23 @@ function collectRumorEvents() {
     return events.filter(event => event?.weight === 'rumor' && event?.done !== true)
         .map(event => ({ day: Number.isFinite(Number(event.day)) ? Number(event.day) : null, text: String(event.text ?? ''), basis: String(event.basis ?? '') }))
         .filter(event => event.text)
-        .slice(0, rumorLimit);
+        .slice(0, rumorLimit)
+        .concat(impactRumorLines(rumorLimit));
+}
+
+/**
+ * 账本里的传闻也参与传播：压成传闻的影响没落成事件，但它照样该被外人听见。
+ * 只取 active/ripened 的 rumor 口径影响，正文用详情，basis 带影响编号方便回溯。
+ */
+function impactRumorLines(limit) {
+    return agentImpactRuntime.list({})
+        .filter(record => record.certainty === 'rumor' && record.state !== 'closed' && record.state !== 'reverted')
+        .slice(-Math.max(1, limit))
+        .map(record => ({
+            day: record.materializedDay ?? record.day,
+            text: `（风闻）${record.detail || record.title}`,
+            basis: `影响#${record.id}`,
+        }));
 }
 
 /** 挑传闻目标：不在场、且与传闻正文提到的建档人物有一跳边；最多 6 人。 */
@@ -3603,14 +3757,18 @@ async function runNpcConsistencyCheck({ source = 'manual' } = {}) {
     // 正文后体检只读「用户输入＋正文」两楼（全文不截）——用户口径 2026-11-18。
     const floors = await collectReplyFloor(chat);
     if (!floors.length) return { status: 'no_floors' };
-    const presentImportant = agentNpcLedger.list().filter(record => record.presence === '在场');
+    const allRecords = agentNpcLedger.list();
+    const presentImportant = allRecords.filter(record => record.presence === '在场');
+    // 动向疑似过时的不在场人物也进池子：经历比处境章新，多半是“人挪了/被囚了而动向没跟上”
+    // 那类账（“20楼打坐、40楼被囚”）。不在场的人正文碰不到，正是旧动向最难被抓的盲区。
+    const staleAbsent = allRecords.filter(record => record.presence !== '在场' && !doingFresh(record));
     const pool = source === 'auto'
-        ? presentImportant.filter(record => record.importance === '重要').slice(0, 3)
-        : presentImportant.slice(0, 6);
+        ? [...presentImportant.filter(record => record.importance === '重要').slice(0, 3), ...staleAbsent.slice(0, 2)]
+        : [...presentImportant.slice(0, 6), ...staleAbsent.slice(0, 3)];
     if (!pool.length) return { status: 'no_targets' };
     const continuation = captureAgentContinuation();
     npcConsistencyRunning = true;
-    if (source === 'manual') setNpcLedgerStatus(`正在给 ${pool.length} 个在场人物做一致性体检……`);
+    if (source === 'manual') setNpcLedgerStatus(`正在给 ${pool.length} 个人做一致性体检（含 ${staleAbsent.slice(0, source === 'auto' ? 2 : 3).length} 个动向疑似过时的不在场人物）……`);
     try {
         const raw = await agentLlmClient.complete({
             label: '人物一致性体检',
@@ -3629,7 +3787,7 @@ async function runNpcConsistencyCheck({ source = 'manual' } = {}) {
         lastNpcConsistency = { at: new Date().toISOString(), day: worldDay(), source, results: parsed.results };
         const violations = parsed.results.reduce((sum, item) => sum + item.violations.length, 0);
         recordAgentAudit({ event: 'npc_consistency', outcome: `${source}·checked:${pool.length}·violations:${violations}` });
-        if (source === 'manual') setNpcLedgerStatus(violations ? `体检完成：发现 ${violations} 处疑似违反档案的描写，详见人物簿页体检卡。` : '体检完成：在场人物的描写都对得上档案。');
+        if (source === 'manual') setNpcLedgerStatus(violations ? `体检完成：发现 ${violations} 处疑似违反档案的描写，详见人物簿页体检卡。` : '体检完成：这批人物（含动向疑似过时的不在场人物）的描写都对得上档案。');
         try { refreshNpcLedgerPage(); } catch { /* 面板没开时忽略 */ }
         return { status: 'checked', results: parsed.results, violations };
     } catch (error) {
@@ -3755,6 +3913,7 @@ async function runNpcLedgerRecord({ source = 'auto' } = {}) {
             day: worldDay(),
             worldbookLines: npcLedgerBookLines(floors),
             playerContext: npcPlayerContext(),
+            impactLines: impactInjectionLinesForNpc(),
         });
         const raw = await agentLlmClient.complete({
             label: '人物记录',
@@ -3857,7 +4016,7 @@ function writeNpcLedgerInjectionForPrompt() {
         const decayed = agentNpcLedger.decayMoods(worldDay());
         if (decayed.pruned) persistNpcLedger();
     } catch { /* 情绪消散失败不影响注入 */ }
-    const built = agentNpcLedger.injection({ budget: settings.budget, maxFull: settings.maxFull });
+    const built = agentNpcLedger.injection({ budget: settings.budget, maxFull: settings.maxFull, maxBrief: settings.maxBrief });
     // 二跳关系网（进阶版）：在场人物一圈的间接关系（盟友的敌人、师门的仇家）一行带进提示词。
     // 字数不限制时整段照带；设了预算才可能整段放弃——人物档案本身优先。
     if (built.text && Array.isArray(built.used) && built.used.length && settings.relationsInject !== false && advancedMode()) {
@@ -4456,7 +4615,7 @@ function renderNpcConsistencyCard(target) {
     const list = target.querySelector('[data-npc-consistency-list]');
     if (!summary || !list) return;
     if (!lastNpcConsistency) {
-        summary.textContent = '还没有体检过。点「一致性体检」立即查一次；之后每次记账会自动查在场重要人物。';
+        summary.textContent = '还没有体检过。点「一致性体检」立即查一次；之后每次记账会自动查在场重要人物，动向疑似过时的不在场人物也一并进池子。';
         list.replaceChildren();
         return;
     }
@@ -4884,7 +5043,9 @@ async function saveNpcProfileFields(panel, name) {
     }
     const status = page.querySelector('[data-npc-profile-status]');
     const result = await panelMutation(panel, { name, fields }, () => {
-        const changed = agentNpcLedger.setFields(name, fields, { source: '手填' });
+        // 手填动到处境字段要带上当前楼层/世界天数：玩家改的动向是最新事实，章一盖注入出口才认它新鲜。
+        const chat = Array.isArray(getHostContext()?.chat) ? getHostContext().chat : [];
+        const changed = agentNpcLedger.setFields(name, fields, { source: '手填', floor: chat.length ? chat.length - 1 : null, day: worldDay() });
         if (changed.status === 'updated') changed.persistence = persistNpcLedger();
         return changed;
     }, persistNpcLedger, message => { if (status) status.textContent = message; });
@@ -5015,16 +5176,116 @@ async function impactConversation(chat, limit = 6) {
 let impactShown = 100;
 let impactArchiveShown = 60;
 let impactReturnToLedger = false;
+// 最近一轮判定官报了、但被证据链驳回的命中：{ ref, reason, title }。
+// 留在面板上是有意的——玩家能看见“模型报了什么、为什么没站住”，而不是只有一句“这轮没撞上”。
+let lastDroppedImpactHits = [];
 
-/** 叫挑选员：从账本里挑这一幕用得上的影响。失败时返回非 ok，由调用方回落到脚本挑选。 */
+/** 给判定官的原著节点行：从原著资料库里挑和这一幕相关的故事线节点（找得到就用真节点，
+ *  找不到就退回硬编码的那几个主线节点）。判定“撞上了没有”靠场面，判“对原著意味着什么”
+ *  就得知道原著本来怎么走，所以这一步不能省。 */
+function impactCanonLinesForJudge(records) {
+    const lines = [];
+    try {
+        const terms = [];
+        for (const record of Array.isArray(records) ? records : []) {
+            if (record?.canon) terms.push(String(record.canon).split('｜')[0]);
+        }
+        for (const item of agentFactsIndex.entriesOfCategory('故事线') ?? []) {
+            if (!item?.name) continue;
+            const range = /原著范围：\s*卷\s*0*(\d{1,2})/u.exec(item.content ?? '');
+            lines.push(`- ${item.name}${range ? `（卷 ${Number(range[1])}）` : ''}${item.summary ? `：${String(item.summary).slice(0, 40)}` : ''}`);
+            if (lines.length >= 12) break;
+        }
+        if (terms.length && lines.length) lines.push(`（账本里这些节点要按上面的名字写：${terms.join('、')}）`);
+    } catch { /* 资料库没加载就不给，判定官退回不写节点 */ }
+    if (!lines.length) {
+        try { return canonNodePromptLines(); } catch { return []; }
+    }
+    return lines;
+}
+
+/** 判定官的“共用世界上下文”之记忆一路：从记忆库里捞跟这一幕有关的旧事。
+ *  只捞不记，不动记忆账本；捞不到就返回空数组（判定官照旧只看账本）。 */
+function impactMemoryLinesForJudge(sceneText, limit = 5) {
+    try {
+        const snapshot = agentMemoryRuntime.snapshot();
+        const hits = recallHits(snapshot, { sceneText, limit, currentDay: worldDay(), advanced: advancedMode() });
+        if (!hits.length) return [];
+        const rendered = renderMemoryEntriesDetail(hits, { maxChars: 900 });
+        return rendered.text ? rendered.text.split('\n') : [];
+    } catch { return []; }
+}
+
+/** 共用上下文之人物一路：此刻在场的人对玩家什么态度。
+ *  只报在场或重要的（远处的人不影响这一场），每人一行“名字：档位（好感）· 此刻情绪”。 */
+function impactNpcLinesForJudge(limit = 8) {
+    const lines = [];
+    try {
+        const rows = agentNpcLedger.list() ?? [];
+        const ranked = rows
+            .filter(record => record && record.name)
+            .filter(record => record.presence === '在场' || record.importance === '重要')
+            .slice(0, limit);
+        for (const record of ranked) {
+            const favor = Number.isFinite(Number(record.favor)) ? Number(record.favor) : 0;
+            const mood = Array.isArray(record.moods) && record.moods[0]?.label ? record.moods[0].label : '';
+            const where = record.location ? `@${record.location}` : '';
+            const bits = [`${record.name}`, `${favorLabel(favor)}（${favor}）`];
+            if (mood) bits.push(mood);
+            if (where) bits.push(where);
+            lines.push(`- ${bits.join(' · ')}`);
+        }
+    } catch { /* 人物簿没加载就不给 */ }
+    return lines;
+}
+
+/** 共用上下文之“刚认领过哪几条”：近两轮已经兑现的因，避免同一件事被反复重新发现。 */
+function impactClaimedLinesForJudge(limit = 6) {
+    const lines = [];
+    try {
+        const today = worldDay();
+        const rows = (agentImpactRuntime.list({}) ?? [])
+            .filter(record => record && Number.isInteger(record.ripenedDay) && today - record.ripenedDay <= 2)
+            .sort((left, right) => (right.ripenedDay - left.ripenedDay));
+        for (const record of rows.slice(0, limit)) {
+            lines.push(`- #${record.id}「${String(record.title).slice(0, 20)}」第 ${record.ripenedDay} 天被认领`);
+        }
+    } catch { /* 账本读不到就不给 */ }
+    return lines;
+}
+
+/** 叫判定官：这一轮有没有撞上埋下的因（要证据链），顺带挑明面上已经发生的变化。
+ *  失败时返回非 ok，由调用方回落到脚本挑选。
+ *
+ *  三件事在这一层做完，别处不再猜：
+ *  1. 埋着的因按分数排队（场面对得上的、埋得久的先露面），并回传这一轮真正露面的编号；
+ *  2. 模型报上来的 hits 必须过 judgeImpactHits：编号存在、真的埋着、why 里既有因又有场面、
+ *     evidence 能在原文里原样找到——一条不过就丢，不让模型自己给自己发奖；
+ *  3. 判过的就当场兑现（ripen），不等人再点一次按钮——否则“判定撞上”和“账本变成已应验”
+ *     永远是两回事，下一轮还会被同一件事重复认领。 */
 async function pickImpactsForPrompt({ snapshot, settings, chat }) {
     const plan = impactModelPlan(settings);
     if (plan.inject.connection !== 'custom' && agentLlmClient.availableFor('tavern') !== true) return { status: 'unavailable' };
     const { draft, floors } = await impactConversation(chat, settings.injectFloors);
+    const sceneText = [draft, ...floors.map(floor => floor.text)].join('\n');
+    const bundle = buildImpactInjectBundle({
+        snapshot,
+        records: snapshot.records,
+        floors,
+        draft,
+        day: worldDay(),
+        canonLines: sandboxModeActive() ? [] : impactCanonLinesForJudge(snapshot.records),
+        exposure: safeRuntimeExposure(),
+        memoryLines: impactMemoryLinesForJudge(sceneText),
+        npcLines: impactNpcLinesForJudge(),
+        claimed: impactClaimedLinesForJudge(),
+    });
+    // 曝光计数在这里就记：这一轮确实把这些因摆到了判定官面前，不管最后判没判上。
+    safeNoteExposure(bundle.buriedIds);
     const raw = await agentLlmClient.complete({
-        label: '场记挑选',
+        label: '世界判定官',
         system: settings.injectPrompt,
-        user: buildImpactInjectUser({ snapshot, records: snapshot.records, floors, draft, day: worldDay() }),
+        user: bundle.user,
         jsonSchema: IMPACT_INJECT_SCHEMA,
         overrides: {
             connection: plan.inject.connection,
@@ -5038,7 +5299,62 @@ async function pickImpactsForPrompt({ snapshot, settings, chat }) {
             ...planExtras(plan.inject),
         },
     });
-    return parseImpactSelect(raw, { records: snapshot.records });
+    const parsed = parseImpactSelect(raw, { records: snapshot.records });
+    // 证据链复核：模型说什么不算，原文里找得到才算。
+    const judged = judgeImpactHits(parsed.hits ?? [], { records: snapshot.records, corpus: sceneText });
+    const hits = judged.accepted.map(hit => ({ ref: hit.ref, why: hit.why, evidence: hit.evidence, text: hit.text }));
+    if (judged.rejected.length) {
+        try { noteDroppedImpactHits(judged.rejected, parsed.hits ?? []); } catch { /* 面板没开就算了 */ }
+    }
+    if (hits.length) ripenJudgedHits(hits);
+    return {
+        ...parsed,
+        hits,
+        droppedHits: judged.rejected,
+        buriedIds: bundle.buriedIds,
+        buriedHidden: bundle.buriedHidden,
+        buriedTotal: bundle.buriedTotal,
+    };
+}
+
+/** 读曝光计数（异常一律当没有，判定官照常工作，不因为一个计数器罢工）。 */
+function safeRuntimeExposure() {
+    try { return agentImpactRuntime.exposureOf(); } catch { return {}; }
+}
+
+function safeNoteExposure(ids) {
+    try {
+        if (!Array.isArray(ids) || !ids.length) return;
+        agentImpactRuntime.noteExposure(ids);
+        persistImpact();
+    } catch { /* 计数失败不影响判定 */ }
+}
+
+/** 判定通过＝当场兑现：把埋着的因记成“应验”，带上这一轮的场面凭证。
+ *  落成（变世界事件）等生成结束后由 runImpactMaterialization 统一推，这里只翻状态。 */
+function ripenJudgedHits(hits) {
+    try {
+        const ops = (Array.isArray(hits) ? hits : []).map(hit => ({
+            op: 'ripen',
+            ref: hit.ref,
+            detail: String(hit.why ?? '').slice(0, 120) || '这一轮正文里被认领',
+            hit: String(hit.evidence ?? '').slice(0, 120),
+        }));
+        if (!ops.length) return;
+        const result = agentImpactRuntime.apply(ops, { source: 'decide', day: worldDay() });
+        if (result?.applied?.length) persistImpact();
+    } catch { /* 兑现失败不阻断注入：下一轮还会被认领一次 */ }
+}
+
+/** 被证据链驳回的命中记在最近一次判定上，设置页能看见“模型报了但没站住”的理由。 */
+function noteDroppedImpactHits(rejected, rawHits) {
+    const byRef = new Map((Array.isArray(rawHits) ? rawHits : []).map(item => [String(item?.ref ?? '').replace(/^#/, ''), item]));
+    const rows = (Array.isArray(rejected) ? rejected : []).map(item => ({
+        ref: item.ref,
+        reason: item.reason,
+        title: String(byRef.get(item.ref)?.text ?? '').slice(0, 40),
+    }));
+    lastDroppedImpactHits = rows.slice(0, 10);
 }
 
 
@@ -5166,14 +5482,15 @@ const agentLitePick = createLitePick({
     consumers: litePickConsumers,
 });
 
-/** 影响注入的挑选依赖：简略版取素材总挑选里 impact 一节，完整版照旧单路场记挑选。 */
+/** 影响注入的挑选依赖：简略版取素材总挑选里 impact 一节，完整版走单路世界判定官。
+ *  简略版只回编号、判断不了“撞没撞上”（没有证据链），所以只当明面账本用，hits 恒空。 */
 async function pickImpactsForPromptByMode({ snapshot, settings, chat }) {
     if (apiMode() !== 'lite') return pickImpactsForPrompt({ snapshot, settings, chat });
     const pick = await agentLitePick.run({ chat });
     if (pick.status === 'failed' || pick.status === 'no_input') return { status: 'empty', note: pick.note };
     const known = new Set((snapshot?.records ?? []).map(record => String(record.id)));
-    const picks = pick.impact.map(String).filter(id => known.has(id));
-    return picks.length ? { status: 'ok', picks } : { status: 'empty', note: pick.note };
+    const picks = pick.impact.map(String).filter(id => known.has(id)).map(id => ({ ref: id, text: '' }));
+    return picks.length ? { status: 'ok', picks, hits: [] } : { status: 'empty', note: pick.note, hits: [] };
 }
 
 const agentLiteSettle = createLiteSettle({
@@ -5250,7 +5567,7 @@ async function prepareInjectionForPrompt({ chat } = {}) {
     try { writeWorldInjectionForPrompt(); } catch { /* 世界注入失败不影响原著设定注入 */ }
     // 剧情前瞻：滚动方向 + 未回收线索，紧跟世界现状之后，两路互不清空。
     try { writePlotInjectionForPrompt(); } catch { /* 剧情注入失败不影响正文生成 */ }
-    try { await agentImpactInjection.write({ chat }); } catch { /* 影响库注入失败不影响正文生成 */ }
+    try { await agentImpactInjection.write({ chat }); persistImpactLastRun(); } catch { /* 影响库注入失败不影响正文生成 */ }
     if (!continuation.current()) return { status: 'stale' };
     // 人物档案与影响库同属“这一局已经发生成什么样”，排在原著设定之前写，预算各算各的。
     try { writeNpcLedgerInjectionForPrompt(); } catch { /* 人物簿注入失败不影响正文生成 */ }
@@ -5654,7 +5971,7 @@ async function writeSettleAdjudicationForPrompt({ chat = null, force = false, pr
     }
 }
 
-// —— 备料失败登记：用户输入后的备料 API（记忆召回/原著选条/场记挑选/行动结算）若失败，
+// —— 备料失败登记：用户输入后的备料 API（记忆召回/原著选条/世界判定官/行动结算）若失败，
 //  直接终止本次正文调用，绝不让残缺提示词去生成；页面上不弹报错，状态看悬浮球总控
 //  （失败那路打叉）。重试入口就是再发一次消息或再重roll：已成功的备料走轮次缓存复用，
 //  只重调失败的那几路，全部成功才放行正文。每次生成的拦截器开头清空。 ——
@@ -5747,7 +6064,7 @@ function lastReplyIndex(chat) {
 
 /** 正文后调用（记账/决定/核验/体检）的喂料：读两楼——触发这轮的玩家输入 + 正文那一楼（旧→新），全文不截。
  *  用户口径 2026-11-18：账从「玩家这轮做了什么 + 正文演了什么」里记，更早的历史楼一概不读、单楼也不截；
- *  生成前的备料路（召回/拾卷/过秤/场记挑选）另按可见窗口读，与此处无关。 */
+ *  生成前的备料路（召回/拾卷/过秤/世界判定官）另按可见窗口读，与此处无关。 */
 async function collectReplyFloor(chat = null) {
     const sourceChat = Array.isArray(chat) ? chat : (getHostContext()?.chat ?? []);
     const replyIndex = lastReplyIndex(sourceChat);
@@ -5809,7 +6126,7 @@ const DAI_ICON_PATHS = Object.freeze({
 });
 const DAI_ORB_ICON_NAMES = Object.freeze({
     overview: 'ding', world: 'mountain', self: 'ring', memory: 'slip', npc: 'person', npcledger: 'ledger',
-    cold: 'snow', impact: 'ripple', facts: 'book', settle: 'balance', mirror: 'mirror',
+    cold: 'snow', impact: 'ripple', plot: 'letter', facts: 'book', settle: 'balance', mirror: 'mirror',
     journal: 'brush', sandbox: 'compass', system: 'gear',
 });
 function daiIcon(name) {
@@ -5901,7 +6218,7 @@ function apiPresetHtml(preset) {
     const text = value => escapeHtml(String(value ?? ''));
     const providerOption = (value, label) => `<option value="${value}"${preset.provider === value ? ' selected' : ''}>${label}</option>`;
     const numberRow = (name, label, small, max, step) => `<label class="dai-setting-row"><span><b>${label}</b><small>${small}</small></span><input type="number" min="0" max="${max}" step="${step}" data-api-preset-field="${name}" value="${text(preset[name] ?? 0)}"></label>`;
-    return `<details class="dai-settle-category dai-api-preset" data-api-preset-id="${id}"><summary><span class="dai-feature-icon" aria-hidden="true">${daiIcon("letter")}</span><span><b>${text(preset.name || '未命名方案')}</b><small>${preset.tavern === true ? '走酒馆通道' : text(preset.baseUrl || '还没填接口地址')}</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row dai-setting-toggle"><span><b>走酒馆通道</b><small>开：绑定这个方案的功能经由酒馆当前的 API 连接发出，下面的地址、密钥、模型都用不上；关：按下面填的接口直连。</small></span><input type="checkbox" data-api-preset-field="tavern" ${preset.tavern === true ? 'checked' : ''}></label><label class="dai-setting-row"><span><b>方案名称</b><small>「模型设置」页各功能选方案时显示的名字。</small></span><input type="text" data-api-preset-field="name" value="${text(preset.name)}" placeholder="例如：深修直连"></label><label class="dai-setting-row"><span><b>接口协议</b><small>留空按接口地址自动判断。</small></span><select data-api-preset-field="provider">${providerOption('', '自动判断')}${providerOption('openai', 'OpenAI 兼容')}${providerOption('anthropic', 'Anthropic')}</select></label><label class="dai-setting-row"><span><b>接口地址</b><small>OpenAI 兼容的 Base URL，填到 /v1 为止（同酒馆自定义接口）。</small></span><input type="text" data-api-preset-field="baseUrl" value="${text(preset.baseUrl)}" placeholder="https://api.example.com/v1"></label><label class="dai-setting-row"><span><b>API Key</b><small>只保存到扩展设置，不写入聊天消息。</small></span><input type="password" data-api-preset-field="apiKey" value="${text(preset.apiKey)}" autocomplete="off" placeholder="留空表示不使用密钥"></label><label class="dai-setting-row"><span><b>模型名称</b><small>填好地址后点“拉取模型”，弹出列表里下滑点一个就填上；也可以手填。</small></span><input type="text" data-api-preset-field="model" value="${text(preset.model)}" placeholder="例如 deepseek-chat"></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-api-preset-models="${id}">拉取模型</button><small role="status" data-api-preset-models-status="${id}"></small></div><details class="dai-advanced-fold dai-advanced-preset"><summary>高级参数 · 采样与附加参数（一般不用动）</summary><div class="dai-advanced-body"><div class="dai-setting-grid dai-param-grid">${numberRow('temperature', 'Temperature', '0 更稳，2 更发散；0 ＝不指定。', 2, 0.05)}${numberRow('maxTokens', '最大输出 Token', 'tokens；0 ＝不指定。', 32768, 64)}${numberRow('topP', 'top_p', '0–1；0 ＝不指定。', 1, 0.05)}${numberRow('presencePenalty', '存在惩罚', '0–2；0 ＝不指定。', 2, 0.1)}${numberRow('frequencyPenalty', '频率惩罚', '0–2；0 ＝不指定。', 2, 0.1)}</div><label class="dai-setting-row"><span><b>包括主体参数</b><small>YAML 对象，最后并进聊天补全请求体（酒馆附加参数同语义）；例：top_k: 20</small></span><textarea data-api-preset-field="includeBody" rows="3" spellcheck="false" placeholder="top_k: 20">${text(preset.includeBody)}</textarea></label><label class="dai-setting-row"><span><b>排除主体参数</b><small>YAML 数组，最后从请求体删掉这些顶层字段；例：- frequency_penalty</small></span><textarea data-api-preset-field="excludeBody" rows="3" spellcheck="false" placeholder="- frequency_penalty">${text(preset.excludeBody)}</textarea></label><label class="dai-setting-row"><span><b>包含请求标头</b><small>YAML 对象，合并覆盖请求头（可覆盖鉴权头）；例：CustomHeader: custom-value</small></span><textarea data-api-preset-field="headers" rows="3" spellcheck="false" placeholder="CustomHeader: custom-value">${text(preset.headers)}</textarea></label></div></details><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-api-preset-copy="${id}">复制方案</button><button type="button" class="dai-button dai-button-ghost" data-api-preset-remove="${id}">删除方案</button><small>改动即时保存；删除后用到它的功能自动回到跟随酒馆主连接。</small></div></div></details>`;
+    return `<details class="dai-settle-category dai-api-preset" data-api-preset-id="${id}"><summary><span class="dai-feature-icon" aria-hidden="true">${daiIcon("letter")}</span><span><b>${text(preset.name || '未命名方案')}</b><small>${text(preset.baseUrl || '还没填接口地址')}</small></span></summary><div class="dai-settle-category-body"><label class="dai-setting-row"><span><b>方案名称</b><small>「模型设置」页各功能选方案时显示的名字。</small></span><input type="text" data-api-preset-field="name" value="${text(preset.name)}" placeholder="例如：深修直连"></label><label class="dai-setting-row"><span><b>接口协议</b><small>留空按接口地址自动判断。</small></span><select data-api-preset-field="provider">${providerOption('', '自动判断')}${providerOption('openai', 'OpenAI 兼容')}${providerOption('anthropic', 'Anthropic')}</select></label><label class="dai-setting-row"><span><b>接口地址</b><small>OpenAI 兼容的 Base URL，填到 /v1 为止（同酒馆自定义接口）。</small></span><input type="text" data-api-preset-field="baseUrl" value="${text(preset.baseUrl)}" placeholder="https://api.example.com/v1"></label><label class="dai-setting-row"><span><b>API Key</b><small>只保存到扩展设置，不写入聊天消息。</small></span><input type="password" data-api-preset-field="apiKey" value="${text(preset.apiKey)}" autocomplete="off" placeholder="留空表示不使用密钥"></label><label class="dai-setting-row"><span><b>模型名称</b><small>填好地址后点“拉取模型”，弹出列表里下滑点一个就填上；也可以手填。</small></span><input type="text" data-api-preset-field="model" value="${text(preset.model)}" placeholder="例如 deepseek-chat"></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-api-preset-models="${id}">拉取模型</button><small role="status" data-api-preset-models-status="${id}"></small></div><details class="dai-advanced-fold dai-advanced-preset"><summary>高级参数 · 采样与附加参数（一般不用动）</summary><div class="dai-advanced-body"><div class="dai-setting-grid dai-param-grid">${numberRow('temperature', 'Temperature', '0 更稳，2 更发散；0 ＝不指定。', 2, 0.05)}${numberRow('maxTokens', '最大输出 Token', 'tokens；0 ＝不指定。', 32768, 64)}${numberRow('topP', 'top_p', '0–1；0 ＝不指定。', 1, 0.05)}${numberRow('presencePenalty', '存在惩罚', '0–2；0 ＝不指定。', 2, 0.1)}${numberRow('frequencyPenalty', '频率惩罚', '0–2；0 ＝不指定。', 2, 0.1)}</div><label class="dai-setting-row"><span><b>包括主体参数</b><small>YAML 对象，最后并进聊天补全请求体（酒馆附加参数同语义）；例：top_k: 20</small></span><textarea data-api-preset-field="includeBody" rows="3" spellcheck="false" placeholder="top_k: 20">${text(preset.includeBody)}</textarea></label><label class="dai-setting-row"><span><b>排除主体参数</b><small>YAML 数组，最后从请求体删掉这些顶层字段；例：- frequency_penalty</small></span><textarea data-api-preset-field="excludeBody" rows="3" spellcheck="false" placeholder="- frequency_penalty">${text(preset.excludeBody)}</textarea></label><label class="dai-setting-row"><span><b>包含请求标头</b><small>YAML 对象，合并覆盖请求头（可覆盖鉴权头）；例：CustomHeader: custom-value</small></span><textarea data-api-preset-field="headers" rows="3" spellcheck="false" placeholder="CustomHeader: custom-value">${text(preset.headers)}</textarea></label></div></details><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-api-preset-copy="${id}">复制方案</button><button type="button" class="dai-button dai-button-ghost" data-api-preset-remove="${id}">删除方案</button><small>改动即时保存；删除后用到它的功能自动回到跟随酒馆主连接。</small></div></div></details>`;
 }
 
 function renderApiPresets(panel, openId = null) {
@@ -5944,7 +6261,7 @@ function renderApiPresetSelects(panel) {
         for (const preset of presets) {
             const option = document.createElement('option');
             option.value = preset.id;
-            option.textContent = `${preset.name || '未命名方案'}${preset.tavern === true ? '（走酒馆）' : ''}`;
+            option.textContent = preset.name || '未命名方案';
             select.appendChild(option);
         }
         select.value = presets.some(item => item?.id === bound) ? bound : '';
@@ -5974,7 +6291,7 @@ async function addApiPreset(panel) {
         const ok = await awaitPanelPersistence(pending.result, message => { if (status) status.textContent = message; });
         if (ok) {
             panel.__pendingApiSave = null;
-            if (status) status.textContent = '已添加：默认走酒馆通道，要直连就填上接口地址再把「走酒馆通道」关掉。';
+            if (status) status.textContent = '已添加：填上接口地址和模型就能用；想让某个功能走酒馆，在「模型设置」页把它选成「跟随酒馆主连接」即可。';
         }
         return;
     }
@@ -5983,7 +6300,7 @@ async function addApiPreset(panel) {
         if (status) status.textContent = `方案最多 ${API_PRESETS_MAX} 个，先删一个再加。`;
         return;
     }
-    presets.push({ name: '新方案', tavern: true, provider: '', baseUrl: '', apiKey: '', model: '', temperature: 0, maxTokens: 0, topP: 0, presencePenalty: 0, frequencyPenalty: 0, includeBody: '', excludeBody: '', headers: '' });
+    presets.push({ name: '新方案', provider: '', baseUrl: '', apiKey: '', model: '', temperature: 0, maxTokens: 0, topP: 0, presencePenalty: 0, frequencyPenalty: 0, includeBody: '', excludeBody: '', headers: '' });
     const sequence = ++settingsSaveSequence;
     const result = saveApiPresets(presets);
     // 失败重试只补交宿主保存，方案已在内存里，不能重复 push。
@@ -5995,7 +6312,7 @@ async function addApiPreset(panel) {
     const newId = saved[saved.length - 1]?.id ?? null;
     renderApiPresets(panel, newId);
     renderApiPresetSelects(panel);
-    if (status) status.textContent = '已添加：默认走酒馆通道，要直连就填上接口地址再把「走酒馆通道」关掉。';
+    if (status) status.textContent = '已添加：填上接口地址和模型就能用；想让某个功能走酒馆，在「模型设置」页把它选成「跟随酒馆主连接」即可。';
 }
 
 async function removeApiPreset(panel, id) {
@@ -7086,6 +7403,7 @@ let unifiedDecideRunning = false;
 let impactDecideRunning = false;
 let lastImpactDecideIdentity = null;
 let lastImpactResult = null;
+let lastMaterializeResult = null;
 
 function setImpactStatus(message) {
     const panel = typeof document !== 'undefined' ? document.getElementById(SETTINGS_PANEL_ID) : null;
@@ -7098,6 +7416,212 @@ function setImpactStatus(message) {
  * 只回一张 JSON 清单；脚本逐条校验落账（impact-runtime），坏条目单独丢弃、不整批作废。
  * 生成结束后自动跑；面板按钮或命名空间也能手动触发。
  */
+/**
+ * 把“已经应验”的影响推成世界上真实发生的事：写世界事件、改名声通缉、改势力立场，
+ * 再回头把影响标成“已应验”。失败不拖垮记账主流程——记录还在，下一轮会重试。
+ */
+function impactAftermathWeight(weight) {
+    return weight === 'world' ? 'major' : 'minor';
+}
+
+/**
+ * 影响链的"派生"：一条影响落成后，自动长出一条余波（涟漪、传闻、父指回去）。
+ * 余波现在两头都写：影响账本里长一条，世界台账里也落一条「风声」传闻事件——
+ * 只有这样，别人才可能听说、NPC 才可能被它带偏，回响才追得到它。
+ * 允许链式生长：余波自己落成后还能再长出下一层，靠 maxChainDepth 兜住（默认 3 层），
+ * 每层都带父编号，面板能一路回溯到最初那颗因。
+ */
+function deriveImpactAftermath(execution) {
+    const settings = impactSettings();
+    if (!settings.deriveChain) return [];
+    const maxDepth = Math.max(1, Number(agentImpactRuntime.config()?.maxChainDepth) || 1);
+    const created = [];
+    for (const row of execution.rows ?? []) {
+        if (row.status !== 'materialized') continue;
+        const parent = row.impact?.applied?.find(item => item.ok)?.record;
+        if (!parent) continue;
+        if ((parent.depth ?? 0) + 1 >= maxDepth) continue;
+        if (agentImpactRuntime.snapshot().records.some(item => item.parent === parent.id)) continue;
+        const applied = agentImpactRuntime.apply([{
+            op: 'record',
+            title: `余波：${parent.title}`.slice(0, 20),
+            detail: `「${parent.title}」落成之后，有人开始顺着这件事动心思；风向变了，但还没人把话挑明。`.slice(0, 240),
+            target: parent.target || '局势',
+            kind: 'ripple',
+            weight: impactAftermathWeight(parent.weight),
+            certainty: 'rumor',
+            parent: parent.id,
+        }], { source: 'reply', day: worldDay() });
+        const ripple = applied.applied?.find(item => item.ok)?.record;
+        if (applied.status !== 'applied' || !ripple) continue;
+        created.push(...applied.applied);
+        // 落一条世界台账里的传闻：basis 挂着这条余波的编号，回响按编号能反查到「风声」这条事件。
+        try {
+            const people = (Array.isArray(parent.links) ? parent.links : [])
+                .filter(link => link?.type === 'person' && link.name)
+                .map(link => link.name)
+                .slice(0, 3);
+            agentWorldRuntime.apply([{
+                op: 'addEvent',
+                scope: parent.weight === 'world' ? 'world' : 'near',
+                title: `风声：${parent.title}`.slice(0, 30),
+                text: `（风闻）${ripple.detail}`.slice(0, 300),
+                participants: people,
+                weight: 'rumor',
+                basis: `影响#${ripple.id}`,
+            }], { source: 'impact' });
+        } catch (error) {
+            // 余波落不进世界台账不算失败：影响账本里那条还在，下一轮记录员照旧能把它接下去。
+            console.warn('[doupo-agent] 余波世界事件没落成', error);
+        }
+    }
+    return created;
+}
+
+/**
+ * 落成回执里的剧情线一句话：哪条线索被这次影响往前推了、哪条没对上。
+ * 只按执行器给的行写，不自己再猜一次匹配。
+ */
+function impactThreadReceipt(execution) {
+    const rows = Array.isArray(execution?.rows) ? execution.rows : [];
+    const touched = rows.flatMap(row => (Array.isArray(row.threadTouched) ? row.threadTouched : []));
+    const missing = rows.flatMap(row => (Array.isArray(row.threadMissing) ? row.threadMissing : []));
+    const bits = [];
+    if (touched.length) bits.push(`推进剧情线 ${touched.length} 条（${touched.slice(0, 3).join('、')}${touched.length > 3 ? '…' : ''}）`);
+    if (missing.length) bits.push(`${missing.length} 条线索没在账上：${missing.slice(0, 3).join('、')}`);
+    return bits.join('；');
+}
+
+/**
+ * 把影响里「动到人」的那部分后果落进人物簿：好感增减、人前/私下态度、称呼。
+ * 走的是人物簿自己的 apply()，所以那道 ±15 的幅度闸、审计、流水全部照旧生效；
+ * 影响编号写进「世界影响」键，人物簿那边就能反向看到「这个人被哪几条影响动过」。
+ */
+function applyImpactNpcTouches(execution) {
+    const rows = Array.isArray(execution?.rows) ? execution.rows : [];
+    const patches = [];
+    const impactIds = [];
+    for (const row of rows) {
+        const touches = Array.isArray(row?.npcTouches) ? row.npcTouches : [];
+        if (!touches.length) continue;
+        impactIds.push(row.id);
+        for (const touch of touches) {
+            const patch = { name: touch.name, 世界影响: `影响#${row.id}`, 依据: touch.note };
+            if (Number.isFinite(touch.favor) && touch.favor !== 0) {
+                patch.好感 = touch.favor > 0 ? `+${touch.favor}` : String(touch.favor);
+                patch.好感理由 = String(touch.note ?? '').slice(0, 15);
+            }
+            if (touch.attitude) patch.态度 = touch.attitude;
+            if (touch.privateAttitude) patch.私下态度 = touch.privateAttitude;
+            if (touch.appellation) patch.称呼 = touch.appellation;
+            // 处境五键：剧变（被囚/重伤/突破/死亡/远走）直接落到人物簿的处境格上，
+            // 不再只能指望正文写到、记录员下一轮才记——影响落成那一刻，人的现状就变了。
+            if (touch.injury) patch.伤势 = String(touch.injury).slice(0, 40);
+            if (touch.realm) patch.境界 = String(touch.realm).slice(0, 30);
+            if (touch.location) patch.位置 = String(touch.location).slice(0, 40);
+            if (touch.doing) patch.正在做什么 = String(touch.doing).slice(0, 40);
+            if (touch.presence === '在场' || touch.presence === '不在场') patch.在场 = touch.presence;
+            patches.push(patch);
+        }
+    }
+    if (!patches.length) return { status: 'noop', changed: 0, names: [] };
+    try {
+        const result = agentNpcLedger.apply({ 人物: patches }, { day: worldDay(), source: '正文' });
+        if (result.changed) persistNpcLedger();
+        const names = (result.applied ?? []).map(item => item.name).filter(Boolean);
+        return { status: result.status, changed: result.changed, names, ignored: result.ignored, audits: result.audits };
+    } catch (error) {
+        console.warn('[doupo-agent] 影响没能写进人物簿', error);
+        return { status: 'error', changed: 0, names: [] };
+    }
+}
+
+/**
+ * 把影响里「动到玩家身家」的那部分后果落进纳戒：金币增减、行囊进出、境界推进。
+ * 走的是纳戒自己的 apply()，所以纳戒的费用上限、流水、撤销记录全部照旧生效；
+ * 依据写成「影响#i9」跟着流水走，纳戒那边也能一路倒回是哪条世界影响花的这笔钱。
+ * 物品扣减要先在行囊里按名字找到那一条（不凭空扣不存在的货）。
+ */
+function applyImpactSelfTouches(execution) {
+    const rows = Array.isArray(execution?.rows) ? execution.rows : [];
+    const ops = [];
+    for (const row of rows) {
+        const touches = Array.isArray(row?.selfTouches) ? row.selfTouches : [];
+        if (!touches.length) continue;
+        for (const touch of touches) {
+            if (touch.field === 'gold' && Number.isFinite(touch.amount) && touch.amount !== 0) {
+                ops.push({ op: 'addGold', amount: touch.amount, note: `影响#${row.id}｜${touch.note}` });
+            } else if (touch.field === 'realm' && touch.realm) {
+                ops.push({ op: 'setRealm', realm: touch.realm, stage: touch.stage || '' });
+            } else if (touch.field === 'item' && touch.name && Number(touch.count)) {
+                if (touch.count > 0) {
+                    ops.push({ op: 'addItem', name: touch.name, count: touch.count, note: `影响#${row.id}｜${touch.note}` });
+                } else {
+                    // 扣东西必须落到具体那一条：行囊里没有就跳过，绝不凭空扣。
+                    const stock = (agentSelfRuntime.snapshot()?.items ?? []).filter(item => item?.name === touch.name);
+                    let left = Math.abs(touch.count);
+                    for (const item of stock) {
+                        if (left <= 0) break;
+                        const take = Math.min(left, Number(item.count) || 1);
+                        ops.push({ op: 'removeItem', id: item.id, count: take });
+                        left -= take;
+                    }
+                }
+            }
+        }
+    }
+    if (!ops.length) return { status: 'noop', changed: 0, summaries: [] };
+    try {
+        const result = applySelfOps(ops, { source: 'impact' });
+        const summaries = (result.applied ?? []).map(item => item.summary).filter(Boolean);
+        return { status: result.status, changed: result.applied?.length ?? 0, summaries };
+    } catch (error) {
+        console.warn('[doupo-agent] 影响没能写进纳戒', error);
+        return { status: 'error', changed: 0, summaries: [] };
+    }
+}
+
+function runImpactMaterialization() {
+    try {
+        // 先对账：世界事件被玩家删掉/并账后，账本里挂着的“已落成”要退回待落成，否则永远不会再推。
+        const reconciled = agentImpactExecutor.reconcile(worldDay());
+        const execution = agentImpactExecutor.run({ day: worldDay() });
+        // 动到人的后果交给人物簿落账（好感/态度/称呼），动到身家的交给纳戒落账，
+        // 两边都落完再派生余波——余波要能引用那几个人、也能接住钱物的去向。
+        const npcTouch = applyImpactNpcTouches(execution);
+        if (npcTouch.changed) execution.npcTouch = npcTouch;
+        const selfTouch = applyImpactSelfTouches(execution);
+        if (selfTouch.changed) execution.selfTouch = selfTouch;
+        const chain = deriveImpactAftermath(execution);
+        if (chain.length) execution.chain = chain;
+        if (reconciled.fixed.length) execution.reconciled = reconciled.fixed;
+        if (execution.changed || chain.length || reconciled.fixed.length) {
+            persistWorld();
+            persistImpact();
+            refreshWorldPage();
+        }
+        // 顺带推进的剧情线回执也存一份：面板/悬浮球要能显示“这条影响把哪条线索往前推了”。
+        const threads = (Array.isArray(execution.rows) ? execution.rows : []).flatMap(row => (Array.isArray(row.threadTouched) ? row.threadTouched : []));
+        lastMaterializeResult = {
+            at: new Date().toISOString(),
+            day: execution.day,
+            rows: execution.rows,
+            chain,
+            reconciled: reconciled.fixed,
+            threads,
+            error: null,
+        };
+        // 回执进存档：刷新后悬浮球与 /impact status 还要显示这一轮落成了几条。
+        persistImpactLastRun();
+        return execution;
+    } catch (error) {
+        const message = String(error?.message ?? error);
+        lastMaterializeResult = { at: new Date().toISOString(), day: worldDay(), rows: [], chain: [], reconciled: [], threads: [], error: message };
+        persistImpactLastRun();
+        return { day: worldDay(), rows: [], changed: false, error: message };
+    }
+}
+
 async function runImpactDecision({ source = 'auto', note = '' } = {}) {
     const settings = impactSettings();
     if (!settings.enabled || !settings.decideEnabled) {
@@ -7151,8 +7675,12 @@ async function runImpactDecision({ source = 'auto', note = '' } = {}) {
         }
         const result = agentImpactRuntime.apply(decision.ops, { source: 'decide', floor: lastReplyIndex(chat), day: worldDay() });
         if (!result.applied.length) agentImpactRuntime.note(decision.note || '世界线没有偏移。', { source: 'decide' });
+        const execution = runImpactMaterialization();
         persistImpact();
         notifyApply('impact', result, { source: '正文后' });
+        const materializedRows = execution.rows.filter(row => row.status === 'materialized');
+        const failedRows = execution.rows.filter(row => row.status !== 'materialized');
+        const warnings = [...new Set(execution.rows.flatMap(row => row.warnings ?? []))];
         lastImpactResult = {
             at: new Date().toISOString(),
             source,
@@ -7161,17 +7689,29 @@ async function runImpactDecision({ source = 'auto', note = '' } = {}) {
             rejected: result.rejected,
             due: result.due,
             dropped: decision.dropped,
+            materialized: materializedRows.length,
+            chain: execution.chain?.length ?? 0,
+            materializeError: execution.error ?? null,
+            warnings,
             day: worldDay(),
         };
+        // 回执进存档：刷新之后面板还能说出「上次记录：第 N 天 · 记 X 条」。
+        persistImpactLastRun();
         const summary = decision.note ? `｜${decision.note}` : '';
+        const materializedNote = materializedRows.length ? `，推演 ${materializedRows.length} 条后果进世界台账` : '';
+        const chainNote = execution.chain?.length ? `，派生 ${execution.chain.length} 条余波` : '';
+        const failNote = execution.error
+            ? `，世界后果没落成：${execution.error}`
+            : (failedRows.length ? `，${failedRows.length} 条后果被世界台账拒绝` : '');
+        const warnNote = warnings.length ? `（${warnings[0]}${warnings.length > 1 ? `等 ${warnings.length} 条` : ''}）` : '';
         setImpactStatus(result.applied.length
-            ? `第 ${worldDay()} 天：记录 ${result.applied.length} 条世界影响${result.due.length ? `，${result.due.length} 条旧影响发酵` : ''}${summary}`
-            : `世界线没有新的偏移${summary}`);
-        return { status: 'ok', decision, result };
+            ? `第 ${worldDay()} 天：记录 ${result.applied.length} 条世界影响${result.due.length ? `，${result.due.length} 条旧影响到点应验` : ''}${materializedNote}${chainNote}${failNote}${summary}${warnNote}`
+            : `世界线没有新的偏移${summary}${failNote}`);
+        return { status: 'ok', decision, result, execution };
     } catch (error) {
         if (!continuation.current()) return { status: 'stale' };
         const message = error?.code === 'llm_custom_not_configured'
-            ? '记录员设成了“自定义模型”，但接口地址或模型名还没填全（填在“世界影响 → 记录员与场记的模型”里，或改回跟随酒馆）。'
+            ? '记录员设成了“自定义模型”，但接口地址或模型名还没填全（填在“世界影响 → 记录员与判定官的模型”里，或改回跟随酒馆）。'
             : `世界记录失败：${error?.message ?? error}`;
         setImpactStatus(message);
         notifyFailure('世界影响', message);
@@ -7205,7 +7745,18 @@ export const doupoAgent = Object.freeze({
     impactStatus: () => agentImpactRuntime.status(),
     impactArchived: () => agentImpactRuntime.archived(),
     impactInjectedIds: () => agentImpactInjection.injectedIds(),
+    impactInjectedHistory: () => agentImpactInjection.injectedHistory(),
+    /** 上一轮判定官报了、但被证据链驳回的命中（编号 + 原因）：给面板与自测看“模型错在哪”。 */
+    impactDroppedHits: () => lastDroppedImpactHits.map(item => ({ ...item })),
     impactLast: () => lastImpactResult,
+    /**
+     * 把已应验的影响推进世界台账（并落人物簿 / 纳戒那两本账、派生余波）。
+     * 面板按钮与 /impact materialize 走的是同一个函数；这里开出来是给冒烟页与联调脚本用的，
+     * 免得为了验证一条影响要模拟整轮生成。
+     */
+    impactMaterialize: () => runImpactMaterialization(),
+    // 剧情账本：冒烟页与外部脚本都要能灌演示数据，所以和世界/自身/记忆一样直接暴露实例。
+    plotRuntime: agentPlotRuntime,
     npcs: agentNpcDecisionGuard,
     npcAutonomy: agentNpcAutonomyPlanner,
     npcPlanReassessment: agentNpcPlanReassessment,
@@ -8056,10 +8607,14 @@ function syncOrbHud() {
     // 简略版不开放 NPC 决策：功能属于完整版/进阶版，简略版保持原有那几路调用，球上不露 ☯ 图标。
     const liteMode = apiMode() === 'lite';
     if (liteMode && orbState.panelId === 'npc') orbState.select('overview');
+    // 剧情线只属于进阶版：剧情决定只在进阶版跑，别的版本账本不会更新，露出 ◇ 就是给人看一份冻结的旧账。
+    const plotOff = !advancedMode();
+    if (plotOff && orbState.panelId === 'plot') orbState.select('overview');
     const icons = [...orbElement.querySelectorAll('.dai-orb-icon')];
     const visibleIcons = [];
     icons.forEach(icon => {
-        const hidden = (icon.dataset.orbItem === 'sandbox' && sandboxOff) || (icon.dataset.orbItem === 'npc' && liteMode);
+        const hidden = (icon.dataset.orbItem === 'sandbox' && sandboxOff) || (icon.dataset.orbItem === 'npc' && liteMode)
+            || (icon.dataset.orbItem === 'plot' && plotOff);
         icon.hidden = hidden;
         if (!hidden) visibleIcons.push(icon);
     });
@@ -8105,6 +8660,26 @@ function refreshOpenOrbPanel() {
 }
 
 /** 收集各信息窗的只读数据；哪路运行时没就绪就缺哪块，窗里显示“暂无”。 */
+/**
+ * 全部影响的三问速查表（id → { done, canon, future }）：悬浮球和列表行都靠它
+ * 显示每条影响自己的「做了什么 / 对原著 / 以后」，不用等玩家点开详情。
+ */
+function impactAnswersMap() {
+    const all = agentImpactRuntime.list({});
+    const today = worldDay();
+    const childrenOf = new Map();
+    for (const record of all) {
+        if (!record.parent) continue;
+        if (!childrenOf.has(record.parent)) childrenOf.set(record.parent, []);
+        childrenOf.get(record.parent).push(record);
+    }
+    const map = {};
+    for (const record of all) {
+        map[record.id] = impactAnswers(record, { day: today, children: childrenOf.get(record.id) ?? [], nodeLabel: canonNodeLabel });
+    }
+    return map;
+}
+
 function collectOrbData() {
     const settings = currentSettings();
     const safe = getter => { try { return getter(); } catch { return undefined; } };
@@ -8145,7 +8720,39 @@ function collectOrbData() {
             records: safe(() => agentNpcLedger.list()),
             lastFloor: safe(() => lastReplyIndex(Array.isArray(getHostContext()?.chat) ? getHostContext().chat : [])),
         },
-        impact: { status: safe(() => agentImpactRuntime.status()), records: safe(() => agentImpactRuntime.list({ state: 'active' })) },
+        impact: {
+            status: safe(() => agentImpactRuntime.status()),
+            // 明面上已经发生的变化：不说日子，只说世界变成了什么样。
+            records: safe(() => [...agentImpactRuntime.list({ state: 'active' }), ...agentImpactRuntime.list({ state: 'sunk' })]),
+            // 埋着的因：已经埋进世界、当事人还不知道；撞不撞得上由判定官按场面判，不按日子。
+            pending: safe(() => agentImpactRuntime.list({ state: 'sunk' })),
+            materialized: safe(() => agentImpactRuntime.list().filter(record => record.materialized)),
+            last: lastImpactResult ?? impactLastRunCache?.record ?? null,
+            injection: safe(() => impactInjectionLastState()),
+            materialize: lastMaterializeResult ?? impactLastRunCache?.materialize ?? null,
+            // 全量单子只给悬浮球挑“传闻”用：不给在 active/pending 里，得从全量里找。
+            all: safe(() => agentImpactRuntime.list()),
+            // 三问跟着每条影响走：悬浮球每一行都靠它显示「对原著 / 以后」。
+            answers: safe(() => impactAnswersMap()),
+            // 上一轮判定官报了、但被证据链驳回的命中：面板要能说清“模型报了哪条、为什么没站住”。
+            dropped: lastDroppedImpactHits.slice(0, 6),
+            // 回响的原始材料：世界事件、剧情线、人物簿痕迹、注入历史。纯数据，算在 orb-hud 里。
+            echoSource: {
+                records: safe(() => agentImpactRuntime.list()) ?? [],
+                events: safe(() => {
+                    const snapshot = agentWorldRuntime.snapshot();
+                    return [...(snapshot?.nearEvents ?? []), ...(snapshot?.worldEvents ?? [])];
+                }) ?? [],
+                threads: safe(() => agentPlotRuntime.snapshot()?.threads ?? []) ?? [],
+                npcs: safe(() => agentNpcLedger.list()) ?? [],
+                injected: safe(() => agentImpactInjection.injectedIds()) ?? [],
+                history: safe(() => agentImpactInjection.injectedHistory()) ?? [],
+            },
+        },
+        plot: {
+            status: safe(() => agentPlotRuntime.status()),
+            snapshot: safe(() => agentPlotRuntime.snapshot()),
+        },
         facts: {
             stats: safe(() => agentFactsIndex.stats()),
             worldbook: typeof settings.setting?.worldbook === 'string' ? settings.setting.worldbook.trim() : '',
@@ -8187,6 +8794,7 @@ const ORB_PANEL_CONTROLS = Object.freeze({
     npcledger: { setting: 'enableNpcLedger', title: '人物簿', rerolls: [['重记这一楼', () => runNpcLedgerRecord({ source: 'manual' })]] },
     cold: { rerolls: [] },
     impact: { setting: 'enablePlayerImpact', title: '世界影响', rerolls: [['重记这一楼', () => runImpactDecision({ source: 'manual' })]] },
+    plot: { setting: 'plot.enabled', title: '剧情线', rerolls: [['重roll 决定', () => runPlotDecision({ source: 'manual' })]] },
     sandbox: { setting: 'enableSandboxMode', title: '开放世界', rerolls: [] },
 });
 
@@ -8409,11 +9017,42 @@ function renderOrbPanel(panel, id) {    const view = buildOrbPanels(collectOrbDa
     panel.replaceChildren(heading, body);
 }
 
+/** 好感一行（悬浮球用）：数值 + 档位 + 最近一次涨落箭头 + 此刻情绪 + 刻度条。
+ *  刻度与设置页人物卡同一套 -100~100 渐变底 + 指针；球上也要能一眼看出冷暖。 */
+function buildOrbFavor(favor) {
+    const value = Math.max(-100, Math.min(100, Math.round(Number(favor?.value) || 0)));
+    const delta = Math.round(Number(favor?.delta) || 0);
+    const label = favor?.label || favorLabel(value) || '未定';
+    const line = makeElement('span', 'dai-orb-favor');
+    const num = makeElement('b', 'dai-orb-favor-value', `${value > 0 ? '+' : ''}${value}`);
+    num.dataset.tone = value > 0 ? 'up' : value < 0 ? 'down' : 'flat';
+    line.append(num, makeElement('i', 'dai-orb-favor-label', label));
+    if (delta) {
+        line.append(makeElement('i', `dai-orb-favor-delta is-${delta > 0 ? 'up' : 'down'}`, `${delta > 0 ? '↑' : '↓'}${Math.abs(delta)}`));
+    }
+    if (favor?.mood) line.append(makeElement('i', 'dai-orb-favor-mood', favor.mood));
+    // 刻度条：指针位置＝(好感 + 100) / 2 %，与设置页人物卡算法一致。
+    const bar = makeElement('span', 'dai-favor-bar');
+    const mark = makeElement('i');
+    mark.style.left = `${Math.max(0, Math.min(100, Math.round((value + 100) / 2)))}%`;
+    bar.append(mark);
+    line.append(bar);
+    line.title = [
+        `好感 ${value}（${label}）`,
+        delta ? `最近 ${delta > 0 ? '+' : ''}${delta}` : '',
+        favor?.mood ? `此刻 ${favor.mood}` : '',
+    ].filter(Boolean).join('，');
+    return line;
+}
+
 /** 条目卡：主信息窗与「全部」副窗共用一套长相，带引用的都能点开详情小卡。 */
 function buildOrbEntryCard(item) {
     const card = makeElement('div', 'dai-orb-entry');
     card.append(makeElement('b', '', item.head));
     if (item.meta) card.append(makeElement('small', '', item.meta));
+    // 好感条：数值 + 档位 + 最近一次涨落 + 此刻情绪，刻度与设置页人物卡同一套（-100~100）。
+    // 只给人物簿条目挂，别的面板没有 favor 字段就不会多出这一行。
+    if (item.favor) card.append(buildOrbFavor(item.favor));
     if (item.detail) card.append(makeElement('p', '', item.detail));
     // 带引用的条目都能点开：人物簿弹完整档案小卡，其余按引用弹各自的详情小卡，都贴在信息窗旁。
     // 主动联系条目例外：点开不是弹详情，是直接应约开聊。
@@ -8755,6 +9394,23 @@ function buildOrbNpcPopup(record) {
     if (record.identity) chips.append(makeElement('span', 'dai-profile-chip', record.identity));
     pop.append(chips);
 
+    // 好感条 + 最近一次涨落 + 此刻情绪：和球上那一行同源，点开还能往下看这笔账是怎么走的。
+    const favorLog = Array.isArray(record.favorLog) ? record.favorLog : [];
+    const favorValue = Math.round(Number(record.favor) || 0);
+    const moodText = (Array.isArray(record.moods) ? record.moods : [])
+        .map(item => item?.label)
+        .filter(Boolean)
+        .slice(0, 2)
+        .join('、');
+    const favorWrap = makeElement('div', 'dai-orb-pop-favor');
+    favorWrap.append(buildOrbFavor({
+        value: favorValue,
+        label: favorLabel(favorValue) || '未定',
+        delta: Math.round(Number(favorLog.at(-1)?.delta) || 0),
+        mood: moodText,
+    }));
+    pop.append(favorWrap);
+
     const groups = new Map();
     // 身份已经做成角标，小卡里不再重复一行；设置页大面板保留这行不动。
     const popSkip = new Set([...NPC_READ_SKIP, 'identity']);
@@ -8771,6 +9427,39 @@ function buildOrbNpcPopup(record) {
         for (const [label, value] of rows) {
             const line = makeElement('div', 'dai-profile-row');
             line.append(makeElement('span', 'dai-profile-label', label), makeElement('span', 'dai-profile-value', value));
+            block.append(line);
+        }
+        pop.append(block);
+    }
+    // 好感变化：最近几笔的钱从哪来、往哪去（好感是累计值，这里只列增减）。
+    if (favorLog.length) {
+        const block = makeElement('section', 'dai-orb-pop-group');
+        block.append(makeElement('b', '', '好感变化'));
+        for (const item of [...favorLog].reverse().slice(0, 4)) {
+            const line = makeElement('div', 'dai-profile-row');
+            const day = item.day !== null && item.day !== undefined ? `第${item.day}天` : '—';
+            const delta = Math.round(Number(item.delta) || 0);
+            const reason = typeof item.reason === 'string' && item.reason.trim() ? `（${item.reason.trim()}）` : '';
+            line.append(
+                makeElement('span', 'dai-profile-label', day),
+                makeElement('span', 'dai-profile-value', `${delta > 0 ? '+' : ''}${delta}${reason}`),
+            );
+            block.append(line);
+        }
+        pop.append(block);
+    }
+    // 世界影响：这个人被哪几条影响动过（人物档案里的 impactRefs，反向看就是“谁在世界里被改了”）。
+    const impactRefs = Array.isArray(record.impactRefs) ? record.impactRefs : [];
+    if (impactRefs.length) {
+        const block = makeElement('section', 'dai-orb-pop-group');
+        block.append(makeElement('b', '', '世界影响'));
+        for (const item of [...impactRefs].reverse().slice(0, 6)) {
+            const line = makeElement('div', 'dai-profile-row');
+            const day = item.day !== null && item.day !== undefined ? `第${item.day}天` : '—';
+            line.append(
+                makeElement('span', 'dai-profile-label', day),
+                makeElement('span', 'dai-profile-value', [`#${item.id}`, item.note].filter(Boolean).join(' · ')),
+            );
             block.append(line);
         }
         pop.append(block);
@@ -8996,13 +9685,46 @@ function buildOrbItemPopModel(ref) {
         };
     }
     if (ref.kind === 'impact') {
-        const record = (safe(() => agentImpactRuntime.list({ state: 'active' })) ?? []).find(item => String(item?.id ?? item?.title) === ref.id);
+        // 全状态都查：进行中、埋着、已落成的条目点进详情都应该有东西看，不能只在 active 里找。
+        const record = (safe(() => agentImpactRuntime.list()) ?? []).find(item => String(item?.id ?? item?.title) === ref.id);
         if (!record) return null;
+        const stateText = { active: '未了结', sunk: '埋着', ripened: '已应验', closed: '已了结', reverted: '已修复' }[record.state] ?? record.state;
+        const buriedText = record.state === 'sunk' && (record.seed || record.trigger)
+            ? `因：${record.seed || '—'}｜等：${record.trigger || '—'}`
+            : '明面上';
+        // 回响：这条影响落成后在世界上留下了什么——世界事件、推进的剧情线、被波及的人、派生余波、进过几轮正文。
+        const echoes = impactEchoView(record);
+        const echoRows = (echoes?.rows ?? []).slice(0, 10);
         return {
             title: capDetailTitle(record.title),
             sub: '世界影响',
             groups: [
-                { rows: [['内容', popText(record.detail)], ['级别', ORB_POP_IMPACT_WEIGHT[record.weight] ?? '小事'], ['记账', `第 ${record.day} 天`], ['目标', popText(record.target)]] },
+                { rows: [['内容', popText(record.detail)], ['级别', ORB_POP_IMPACT_WEIGHT[record.weight] ?? '小事'], ['状态', stateText], ['记账', `第 ${record.day} 天`], ['目标', popText(record.target)]] },
+                { heading: '世界线', rows: [['牵涉', popText(linksSummary(record))], ['后果', popText(effectsSummary(record))], ['沉浮', buriedText], ['落成', record.materialized ? `第 ${record.materializedDay ?? record.day} 天 · ${record.outcomeEventId || impactSeatLabel(record)}` : '还没'], ['依据', popText(record.evidence)]] },
+                // 原著偏移四段：节点、怎么改、改成了什么样、凭什么。没牵动节点就整段不出现。
+                ...(record.canon ? [{ heading: '原著', rows: [['节点', popText(record.canon)], ['怎么改', SHIFT_LABEL[record.shift] ?? '改写'], ['改成了什么样', popText(record.canonWhat)], ['凭什么', popText(record.canonBasis)]] }] : []),
+                // 一条痕迹都没有就不占版面：没动过世界的影响不该在这里假装有回响。
+                ...(echoRows.length ? [{ heading: `回响 ${echoes.count}（${echoes.summary || '痕迹'}）`, rows: echoRows }] : []),
+            ],
+        };
+    }
+    if (ref.kind === 'plot') {
+        // 剧情线：按编号在活线索里找（含已回收的，方便回看当时埋了什么、怎么收的）。
+        const threads = safe(() => agentPlotRuntime.snapshot()?.threads) ?? [];
+        const thread = threads.find(item => String(item?.id ?? '') === String(ref.id));
+        if (!thread) return null;
+        const today = Number(safe(() => agentPlotRuntime.status()?.day)) || Number(thread.day) || 0;
+        const dueText = thread.dueDay === null || thread.dueDay === undefined
+            ? '没排期（看场合，不按日子算）'
+            : `第 ${thread.dueDay} 天${Number(thread.dueDay) < today ? `（已超 ${today - Number(thread.dueDay)} 天）` : `（还剩 ${Number(thread.dueDay) - today} 天）`}`;
+        const stateText = { open: '还开着', resolved: '已回收', dropped: '已放弃' }[thread.status] ?? thread.status;
+        return {
+            title: capDetailTitle(thread.title) || thread.id,
+            sub: '剧情线',
+            groups: [
+                { rows: [['类型', KIND_LABELS[thread.kind] ?? ''], ['状态', stateText], ['登记', `第 ${thread.day ?? '?'} 天`], ['到期', dueText], ['编号', thread.id]] },
+                { heading: '这台戏', rows: [['梗概', popText(thread.detail)], ['凭什么', popText(thread.basis)], ['被影响推动', thread.fromImpact ? `影响 ${thread.fromImpact}` : '']] },
+                { heading: '收束', rows: [['回收日', thread.resolvedDay ? `第 ${thread.resolvedDay} 天` : ''], ['结果', popText(thread.outcome)]] },
             ],
         };
     }
@@ -9102,13 +9824,14 @@ function applyAppearance(settings = currentSettings()) {
 }
 
 /* ── Agent 能力地图：一屏看全扩展能做什么 ─────────────────
- * 13 个模块一枚图标卡（悬浮球同款图标/名称），绿点=本局启用，灰点=停用；
+ * 14 个模块一枚图标卡（悬浮球同款图标/名称），绿点=本局启用，灰点=停用；
  * NPC 决策与其他功能一样占一格（简略版不开放该功能，格子随版本隐藏）。
  * 悬停看一句话说明。纯展示，不改任何设置。 */
 
 const CAPABILITY_ENABLE_KEYS = Object.freeze({
     world: 'enableWorldProgress', self: 'enableSelfLedger', memory: 'enableMemoryLedger',
     npc: 'enableNpcAutonomy', npcledger: 'enableNpcLedger', cold: 'enableNpcLedger', impact: 'enablePlayerImpact',
+    plot: 'plot.enabled',
     facts: 'enableFactsLibrary', settle: 'enableActionResolution', mirror: 'enableDbBridge',
     sandbox: 'enableSandboxMode', overview: null, journal: null,
 });
@@ -9117,7 +9840,8 @@ function renderAgentCapabilityMap(target) {
     const grid = target?.querySelector?.('[data-agent-capability-grid]');
     if (!grid) return;
     const settings = currentSettings();
-    grid.replaceChildren(...ORB_ITEMS.filter(item => item.id !== 'npc' || apiMode() !== 'lite').map(item => {
+    grid.replaceChildren(...ORB_ITEMS.filter(item => item.id !== 'npc' || apiMode() !== 'lite')
+        .filter(item => item.id !== 'plot' || advancedMode()).map(item => {
         const key = CAPABILITY_ENABLE_KEYS[item.id] ?? null;
         const enabled = key ? settings?.[key] !== false : true;
         const cell = makeElement('div', `dai-cap-cell${enabled ? ' is-on' : ''}`);
@@ -9380,7 +10104,7 @@ function closeWorldTileEditors(panel) {
 const ADVANCED_FOLD_SPECS = Object.freeze({
     overview: ['模型调用体检', '卡面脚本'],
     hub: ['功能读取楼层数'],
-    facts: ['检索库状态', '检索库 · 条目浏览', '注入通道', '正文核验（事实审计）'],
+    facts: ['检索库 · 条目浏览', '注入通道', '正文核验（事实审计）'],
     action: ['行动结算注入', '类别规则与自定义判定'],
     world: ['模型决定（LLM 决定脚本执行）', '接一个任务', '登记势力', '登记人物', '登记事件'],
     npc: ['NPC 自由对话', '主动联系（他来找你）'],
@@ -9551,7 +10275,7 @@ function createSettingsPanel() {
                     </section>
                     
                     <section class="dai-settings-page" data-settings-section="apis" role="tabpanel" hidden>
-                        <div class="dai-page-heading"><h3>API设置</h3><p>把每套接口配置（地址、密钥、模型、采样参数、附加参数）存成命名方案，「模型设置」页里每个功能直接选一套，不用再逐项手填。每个方案自己决定走不走酒馆通道（卡上的「走酒馆通道」开关）。附加参数与酒馆「自定义接口 · 附加参数」同语义：包括主体参数并进请求体、排除主体参数删字段、包含请求标头覆盖请求头。</p></div>
+                        <div class="dai-page-heading"><h3>API设置</h3><p>把每套接口配置（地址、密钥、模型、采样参数、附加参数）存成命名方案，「模型设置」页里每个功能直接选一套，不用再逐项手填。「模型设置」页里选「跟随酒馆主连接」＝走酒馆；绑了一个方案＝按方案自己的地址直连。附加参数与酒馆「自定义接口 · 附加参数」同语义：包括主体参数并进请求体、排除主体参数删字段、包含请求标头覆盖请求头。</p></div>
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>接口方案</b><small>方案只保存在扩展设置里（密钥也是），不进聊天消息；改完方案下一轮调用就生效，不用重启。功能在「模型设置」页绑定方案。</small></div><p data-api-preset-count role="status">已配置 0 套方案</p><div data-api-preset-list></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-api-add-preset>＋ 新建 API 设置</button><small role="status" data-api-preset-status>最多 20 个方案。</small></div></div>
                     </section>
                                         <section class="dai-settings-page" data-settings-section="hub" role="tabpanel" hidden>
@@ -9568,7 +10292,7 @@ function createSettingsPanel() {
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>世界运转 · 模型决定</b><small>世界事件决定调用；决定提示词与降级指令指南在「世界运转」页改。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="world.decideApiPreset" data-api-preset-select></select></label></div><div class="dai-settings-card"><div class="dai-card-heading"><b>剧情账本 · 决定模型</b><small>滚动计划与线索账的维护调用，排在世界决定之后；决定开关与提示词在「世界运转」页改。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="plot.decideApiPreset" data-api-preset-select></select></label></div><div class="dai-settings-card"><div class="dai-card-heading"><b>正文核验 · 事实审计</b><small>生成后拆断言对照台账的旁路小调用；开关、审计列表与提示词在「原著资料」页改。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="verify.apiPreset" data-api-preset-select></select></label></div>
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>纳戒 · 决定模型</b><small>纳戒决定是一条独立调用（生成后自动跑或手动“让模型决定一次”）；决定开关与提示词在「纳戒」页改。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="self.decideApiPreset" data-api-preset-select></select></label></div>
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>记忆 · 决定模型</b><small>记忆决定专用；召回与总结各有独立连接卡。决定提示词与开关在「记忆存储」页改。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="memory.decideApiPreset" data-api-preset-select></select></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>喂召回员最近几楼聊天</b><small>召回员（生成前挑旧记忆）读最近聊天用的楼数；正文后的书记官只读「用户输入＋正文」两楼，不看这个数。留空或 0＝跟随角色正则。</small></span><input type="number" min="1" max="12" step="1" data-setting="memory.decideMaxFloors" placeholder="留空或 0＝跟随角色正则"></label></div></div><div class="dai-settings-card"><div class="dai-card-heading"><b>记忆 · 召回模型</b><small>用户输入之后、生成之前，按记忆目录挑要注入的旧记忆；召回提示词与自动开关在「记忆存储」页。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="memory.recallApiPreset" data-api-preset-select></select></label></div><div class="dai-settings-card"><div class="dai-card-heading"><b>记忆 · 总结模型</b><small>小记忆攒够条数总结成一条大记忆；阈值在「记忆存储」页。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="memory.consolidateApiPreset" data-api-preset-select></select></label></div>
-                        <div class="dai-settings-card"><div class="dai-card-heading"><b>世界影响 · 记录员与场记</b><small>生成后记账与生成前挑选的两个调用；提示词在「世界影响」页改。场记不绑方案就跟着记录员走。</small></div><label class="dai-setting-row"><span><b>记录员用哪套API设置</b><small>生成结束后记账的那个。</small></span><select data-setting="impact.decideApiPreset" data-api-preset-select></select></label><label class="dai-setting-row"><span><b>场记用哪套API设置</b><small>生成前挑影响的那个；不绑＝跟记录员同一套。</small></span><select data-setting="impact.injectApiPreset" data-api-preset-select></select></label></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>世界影响 · 记录员与判定官</b><small>生成后记账与生成前判定两次调用；提示词在「世界影响」页改。判定官不绑方案就跟着记录员走。</small></div><label class="dai-setting-row"><span><b>记录员用哪套API设置</b><small>生成结束后记账的那个。</small></span><select data-setting="impact.decideApiPreset" data-api-preset-select></select></label><label class="dai-setting-row"><span><b>判定官用哪套API设置</b><small>生成前判断“撞没撞上埋下的因”的那个；不绑＝跟记录员同一套。</small></span><select data-setting="impact.injectApiPreset" data-api-preset-select></select></label></div>
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>人物簿 · 记录员</b><small>生成后补人物档案的小调用；提示词在「人物簿」页改。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="npc.ledgerApiPreset" data-api-preset-select></select></label></div><div class="dai-settings-card"><div class="dai-card-heading"><b>人物簿 · 档案抄录</b><small>按世界书给人物补空字段的小调用（面板「按世界书重抽」也会用到）。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="npc.extractApiPreset" data-api-preset-select></select></label></div><div class="dai-settings-card"><div class="dai-card-heading"><b>人物簿 · 经历精简</b><small>把某人的经历清单压缩成草稿、确认后写回的手动调用。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="npc.expApiPreset" data-api-preset-select></select></label></div><div class="dai-settings-card"><div class="dai-card-heading"><b>人物簿 · 冷藏推进员</b><small>给勾选的冷藏人物补世界时间走过那一段的小调用；提示词在「人物簿」页改。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="npc.coldApiPreset" data-api-preset-select></select></label></div><div class="dai-settings-card"><div class="dai-card-heading"><b>NPC 自由对话 · 调用模型</b><small>和人物簿里的人当面/传讯私聊的调用；开关与回合上限在「NPC 决策」页。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="npc.chatApiPreset" data-api-preset-select></select></label></div><div class="dai-settings-card"><div class="dai-card-heading"><b>主动联系 · 开场白模型</b><small>NPC 主动来找你的开场白生成调用；开关、动机与队列在「NPC 决策」页。</small></div><label class="dai-setting-row"><span><b>用哪套API设置</b><small>不绑＝跟随酒馆主连接；选方案就整套走方案。</small></span><select data-setting="npc.reachoutApiPreset" data-api-preset-select></select></label></div>
                         </div>
                         <div data-api-mode-section="lite" hidden>
@@ -9602,7 +10326,7 @@ function createSettingsPanel() {
                         <div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon" aria-hidden="true">${daiIcon("ledger")}</span><span><b>启用人物簿</b><small>关闭后不记账、不注入；已经记下的档案仍留在聊天存档里，不会被删。</small></span><input type="checkbox" data-setting="enableNpcLedger"></div><label class="dai-setting-row dai-setting-toggle"><span><b>生成后自动记账</b><small>每轮正文结束后让“人物记录员”读「用户输入＋正文」两楼（全文不截），把这一轮的变化记进档案；关掉后只能手动记一次。</small></span><input type="checkbox" data-setting="npc.ledgerAuto"></label><label class="dai-setting-row"><span><b>记账节奏</b><small>每轮都记更像实时，但每轮多一次小调用；每三轮更省，代价是中间两轮的变化要等下次记账才进档。</small></span><select data-setting="npc.ledgerEvery"><option value="1">每轮生成后</option><option value="2">每两轮生成后</option><option value="3">每三轮生成后</option></select></label><label class="dai-setting-row dai-setting-toggle"><span><b>把人物档案写进正文提示词</b><small>关掉后只记账、不告诉正文模型——人物就会“忘了自己身上发生过什么”。</small></span><input type="checkbox" data-setting="npc.ledgerInject"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>注入字数预算</b><small>0 或留空＝不限制（默认）：该注入的人物全量进提示词；填了正数才按预算降级（先降一行、再挤掉）。</small></span><input type="number" min="0" step="100" data-setting="npc.ledgerBudget"></label><label class="dai-setting-row"><span><b>全字段最多几个人</b><small>0 或留空＝不限制（默认）：“在场且重要”的人全写完整档案；填了正数，超出的人只写一行。</small></span><input type="number" min="0" step="1" data-setting="npc.ledgerMaxFull"></label><label class="dai-setting-row"><span><b>一行简档最多几个人</b><small>0 或留空＝不限制（默认）：在场但不重要、不在场但重要的人都给一行；填了正数，超出的人这轮不注入。</small></span><input type="number" min="0" step="1" data-setting="npc.ledgerMaxBrief"></label><label class="dai-setting-row"><span><b>正文参考读最近几楼</b><small>只给「冷藏推进」用：时间快进推演时读最近正文作参考的楼数；人物记录员本身只读「用户输入＋正文」两楼，不看这个数。留空或 0＝跟随角色正则。</small></span><input type="number" min="1" max="12" step="1" data-setting="npc.ledgerFloors" placeholder="留空或 0＝跟随角色正则"></label></div></div>
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>本局人物</b><small>主界面只铺最近活动的 8 个人（点名字开信息面板，行尾小图标=在场/重要/冷藏）；全部人物、筛选和搜索收进「人物总簿」。</small></div><p class="dai-state-strip" data-npc-ledger-summary>还没有载入人物簿。</p><p class="dai-turn-result" data-npc-ledger-status role="status">还没有记账。生成结束后，人物记录员会把这一轮的人物变化写进档案。</p><div data-npc-exp-auto></div><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-modal-open="npc-ledger-browser" data-modal-title="人物总簿">打开人物总簿</button><button type="button" class="dai-secondary-button" data-npc-ledger-run>让记录员记一次</button><button type="button" class="dai-secondary-button" data-npc-ledger-refresh>刷新名单</button><button type="button" class="dai-secondary-button" data-npc-ledger-extract>按世界书补空字段</button><button type="button" class="dai-secondary-button" data-api-mode-section="advanced" data-npc-gossip-run>传播传闻</button><button type="button" class="dai-secondary-button" data-npc-consistency-run>一致性体检</button><button type="button" class="dai-secondary-button" data-modal-open="npc-patch" data-modal-title="记进人物簿">＋ 补一笔</button></div><ul class="dai-status-list dai-npc-grid" data-npc-ledger-recent></ul></div>
                         <div class="dai-settings-card" data-api-mode-section="advanced"><div class="dai-card-heading"><b>人物关系网</b><small>档案「对他人」的有向边汇总：谁认谁是什么关系。金边=在场、黄点=有情绪、虚线=未建档；力导向自动排版（玩家居中），拖动可钉住微调、点节点开档案；箭头=关系的方向。单边强绑定、两边立场打架会列在明细里提醒；进阶版下生成前本楼人物的一跳/二跳关系会随人物注入带进提示词。跟着聊天存档。</small></div><p class="dai-state-strip" data-npc-relations-summary>还没有关系边。</p><div data-npc-relations-graph></div><div class="dai-rel-legend"><span><i style="background:#b39ddb"></i>血亲/师徒/同门</span><span><i style="background:#34d399"></i>同盟</span><span><i style="background:#86efac"></i>友好</span><span><i style="background:#9ca3af"></i>中立</span><span><i style="background:#fbbf24"></i>警惕</span><span><i style="background:#f87171"></i>敌对</span></div><details class="dai-rel-details"><summary>关系明细与提醒</summary><div class="dai-world-events" data-npc-relations-list></div></details><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-npc-relations-refresh>刷新关系网</button></div></div>
-                        <div class="dai-settings-card" data-api-mode-section="advanced"><div class="dai-card-heading"><b>一致性体检</b><small>旁路小调用：拿在场人物档案对照最近正文，只报「写违反档案的地方」（说话风格/雷区/称呼/境界/态度方向），不改档案、不拦正文。进阶版下每次记账后自动查在场重要人物，也可手动全量查。</small></div><p class="dai-state-strip" data-npc-consistency-summary>还没有体检过。</p><div class="dai-world-events" data-npc-consistency-list></div></div>
+                        <div class="dai-settings-card" data-api-mode-section="advanced"><div class="dai-card-heading"><b>一致性体检</b><small>旁路小调用：拿人物档案对照最近正文，只报「写违反档案的地方」（说话风格/雷区/称呼/境界/动向连续性/态度方向），不改档案、不拦正文。进阶版下每次记账后自动查在场重要人物，动向疑似过时的不在场人物也进池子，也可手动全量查。</small></div><p class="dai-state-strip" data-npc-consistency-summary>还没有体检过。</p><div class="dai-world-events" data-npc-consistency-list></div></div>
                         <div class="dai-modal-dock" data-modal-dock="npc-ledger-browser" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>人物总簿</b><small>本局全部人物都在这里：筛选、搜索、行尾小图标照常用；点名字打开信息面板。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>只看</b></span><select data-npc-ledger-filter><option value="">全部</option><option value="present">在场的</option><option value="absent">不在场的</option><option value="important">重要的</option></select></label><label class="dai-setting-row"><span><b>搜名字</b><small>姓名、别名、称号都能搜。</small></span><input type="search" data-npc-ledger-search placeholder="如 萧战"></label></div><ul class="dai-status-list dai-npc-grid" data-npc-ledger-list></ul></div><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-agent-modal-close>关闭</button></div></div>
                         <div class="dai-settings-card"><div class="dai-card-heading"><b>冷藏推进台</b><small>只给勾选的人补世界时间已经走过的那一段；不会自行推进时间，先出草稿，确认后才写回人物簿。勾选在人物行尾的「❄」。</small></div><p class="dai-state-strip" data-npc-cold-summary>当前世界日：第 1 天 · 未选择冷藏人物</p><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-modal-open="npc-cold-bench" data-modal-title="冷藏推进台">打开冷藏推进台</button></div><details class="dai-prompt-fold"><summary><span><b>推进员提示词</b><small>留空使用内置规则；必须保留“先出草稿、只输出 JSON”等边界；点开修改。</small></span></summary><label class="dai-setting-row"><span><b>规则正文</b><small>改完下一轮生效；清空恢复内置默认。</small></span><textarea data-setting="npc.coldPrompt" rows="8" spellcheck="false" placeholder="打开页面会自动铺入当前生效规则"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-secondary-button" data-npc-cold-default>填入默认推进规则</button></div></details></div>
                         <div class="dai-modal-dock" data-modal-dock="npc-cold-bench" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>冷藏推进台</b><small>勾选名单、扫描与草稿确认都在这里；先出草稿，确认后才写回。</small></div><ul class="dai-status-list dai-npc-grid" data-npc-cold-bench></ul><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-npc-cold-scan>扫描需要推进的人物</button><button type="button" class="dai-secondary-button" data-npc-cold-undo>撤销上次确认</button><button type="button" class="dai-secondary-button" data-npc-cold-clear>清空冷藏选择</button></div><div data-npc-cold-previews></div></div><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-agent-modal-close>关闭</button></div></div>
@@ -9678,11 +10402,11 @@ function createSettingsPanel() {
                                             <div class="dai-modal-dock" data-modal-dock="memory-add" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>手动登记</b><small>书记官漏记时在这里补一笔，校验与模型指令完全一致。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>层级</b></span><select data-memory-new-tier><option value="small">小记忆</option><option value="big">大记忆</option></select></label><label class="dai-setting-row"><span><b>标签（大记忆可选）</b></span><select data-memory-new-tag><option value="">不标</option><option value="grudge">恩怨</option><option value="intel">情报</option><option value="thread">伏笔</option><option value="milestone">大事记</option></select></label><label class="dai-setting-row"><span><b>分量</b></span><select data-memory-new-weight><option value="minor">一般</option><option value="major">关键</option></select></label></div><label class="dai-setting-row"><span><b>短标题</b><small>必填；列表主页只显示这一行。</small></span><input type="text" data-memory-new-title required></label><label class="dai-setting-row"><span><b>内容</b><small>一句话说清记住了什么、为什么值得记。</small></span><input type="text" data-memory-new-text></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>依据</b><small>从哪来：哪楼/谁/什么事。</small></span><input type="text" data-memory-new-basis></label><label class="dai-setting-row"><span><b>关联（必填）</b><small>人名/地名/物名，顿号分隔——这是日后按需召回的钥匙。</small></span><input type="text" data-memory-new-related></label></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>别名（可选）</b><small>同一记忆的其余叫法（药老/药尘），也算召回钥匙。</small></span><input type="text" data-memory-new-aliases></label><label class="dai-setting-row"><span><b>引文（可选）</b><small>当时的一句原话，召回时以「」带回正文。</small></span><input type="text" data-memory-new-quote></label></div><label class="dai-setting-row"><span><b>备注（可选）</b><small>细节、背景、后续影响——列表行内只显示内容一句，这些都在详情弹窗里。</small></span><input type="text" data-memory-new-note></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button" data-memory-add>登记这条记忆</button></div></div><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-agent-modal-close>取消</button></div></div></section>
                     <section class="dai-settings-page" data-settings-section="impact" role="tabpanel" hidden>
                         <div class="dai-page-heading"><h3>世界影响</h3><p>记录你把这局世界改成了什么样：烧掉的据点、得罪的势力、提前发生或没能发生的原著事件。库跟着这份聊天存档走，写进后续每一轮的正文提示词。账本在下面；添加和编辑都走弹窗。</p></div>
-                        <div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon" aria-hidden="true">${daiIcon("ripple")}</span><span><b>启用世界影响库</b><small>关掉后不记录、不注入，但已记下的内容仍留在聊天存档里。</small></span><input type="checkbox" data-setting="enablePlayerImpact"></div></div><div class="dai-settings-card"><div class="dai-card-heading"><b>世界线最近变化</b><small data-impact-summary>加载中…</small></div><p class="dai-state-strip" data-impact-stats>本轮还没挑过注入；生成前会自动挑。</p><p class="dai-turn-result" data-impact-decide-status role="status">默认按上面的节奏自动记录；也可以点“现在记录一次”。</p><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-impact-open-ledger>打开世界账本</button><button type="button" class="dai-secondary-button" data-impact-add>＋ 记一条</button><button type="button" class="dai-secondary-button" data-impact-record>现在记录一次</button></div><ul class="dai-impact-list dai-impact-recent" data-impact-recent></ul></div><div class="dai-modal-dock" data-modal-dock="impact-ledger" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>世界账本</b><small>全部记录都在这里：筛选、搜索、编辑、收场、删除与档案恢复。</small></div><div class="dai-impact-toolbar"><select data-impact-filter aria-label="筛选影响"><option value="all">全部</option><option value="active">未了结</option><option value="ripened">已发酵</option><option value="closed">已了结</option></select><select data-impact-weight aria-label="按分量筛选"><option value="">分量</option><option value="world">世界级</option><option value="major">大事</option><option value="minor">小事</option></select><select data-impact-kind aria-label="按性质筛选"><option value="">性质</option><option value="direct">直接</option><option value="ripple">涟漪</option><option value="butterfly">蝴蝶</option></select><input type="search" data-impact-search placeholder="搜标题、对象或原著" aria-label="搜索影响"><button type="button" class="dai-button dai-button-ghost" data-impact-refresh>刷新</button></div><ul class="dai-impact-list" data-impact-library></ul><details class="dai-impact-archive" data-impact-archive><summary>档案 <small data-impact-archive-count>0 条</small></summary><p class="dai-impact-empty">被删除或因为库满挤出去的旧影响会留在这里，可以恢复。</p><ol class="dai-impact-list" data-impact-archive-list></ol></details><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-agent-modal-close>关闭</button></div></div></div>
-                        <div class="dai-settings-card"><div class="dai-card-heading"><b>记录与注入</b><small>什么时机记账、怎么进正文；记录员与场记用的接口在「模型设置」页。</small></div><label class="dai-setting-row dai-setting-toggle"><span><b>生成后自动记录</b><small>让“记录模型”在正文生成结束后把这一轮的世界变化写进库；关掉后只剩手动记录。</small></span><input type="checkbox" data-setting="impact.decideAuto"></label><label class="dai-setting-row"><span><b>记录节奏</b><small>每轮都记更细，但每轮多一次模型调用；每三轮记一次更省，代价是中间两轮的改动要等到下次记账才进库。</small></span><select data-setting="impact.decideEvery"><option value="1">每轮生成后</option><option value="3">每三轮生成后</option></select></label><label class="dai-setting-row"><span><b>总览显示最近几条</b><small>总页面只铺最近生成的影响；其余进「世界账本」弹窗看。</small></span><input type="number" min="1" max="20" step="1" data-setting="impact.recentCount"></label><label class="dai-setting-row dai-setting-toggle"><span><b>把世界线写进正文提示词</b><small>已发生、还没收场的影响会作为“本局世界线”随生成发给正文模型。</small></span><input type="checkbox" data-setting="impact.inject"></label><label class="dai-setting-row dai-setting-toggle"><span><b>注入前让模型挑选</b><small>每轮生成前，让“挑选模型”从账本里挑出这一幕真正用得上的影响，并改写成旁白；关掉则按分量和日期直接取，省一次调用。</small></span><input type="checkbox" data-setting="impact.injectSmart"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>注入字数预算</b><small>0 或留空＝不限制（默认）：没收场的影响全量进提示词；填了正数才把放不下的影响留在库里不注入。</small></span><input type="number" min="0" step="50" data-setting="impact.injectBudget"></label><label class="dai-setting-row"><span><b>注入前看最近几楼</b><small>挑选模型据此判断这一幕的场面：玩家在哪、身边有谁、要做什么。</small></span><input type="number" min="1" max="12" step="1" data-setting="impact.injectFloors" placeholder="留空或 0＝跟随角色正则"></label></div><label class="dai-setting-row"><span><b>影响链最多接几层</b><small>一条影响还能接出几条后续；超过这个层数就只记录，不再自动接链。</small></span><input type="number" min="0" max="8" step="1" data-setting="impact.maxChainDepth"></label></div>
+                        <div class="dai-settings-card"><div class="dai-feature-toggle"><span class="dai-feature-icon" aria-hidden="true">${daiIcon("ripple")}</span><span><b>启用世界影响库</b><small>关掉后不记录、不注入，但已记下的内容仍留在聊天存档里。</small></span><input type="checkbox" data-setting="enablePlayerImpact"></div></div><div class="dai-settings-card"><div class="dai-card-heading"><b>世界线最近变化</b><small data-impact-summary>加载中…</small></div><p class="dai-state-strip" data-impact-stats>本轮还没挑过注入；生成前会自动挑。</p><p class="dai-turn-result" data-impact-decide-status role="status">默认按上面的节奏自动记录；也可以点“现在记录一次”。</p><div class="dai-turn-actions"><button type="button" class="dai-run-button" data-impact-open-ledger>打开世界账本</button><button type="button" class="dai-secondary-button" data-impact-add>＋ 记一条</button><button type="button" class="dai-secondary-button" data-impact-record>现在记录一次</button></div><div class="dai-impact-board" data-impact-board></div><ul class="dai-impact-list dai-impact-recent" data-impact-recent></ul></div><div class="dai-modal-dock" data-modal-dock="impact-ledger" hidden><div class="dai-settings-card"><div class="dai-card-heading"><b>世界账本</b><small>全部记录都在这里：筛选、搜索、编辑、收场、删除与档案恢复。</small></div><div class="dai-impact-toolbar"><select data-impact-filter aria-label="筛选影响"><option value="all">全部</option><option value="active">未了结</option><option value="ripened">已应验</option><option value="closed">已了结</option></select><select data-impact-weight aria-label="按分量筛选"><option value="">分量</option><option value="world">世界级</option><option value="major">大事</option><option value="minor">小事</option></select><select data-impact-kind aria-label="按性质筛选"><option value="">性质</option><option value="direct">直接</option><option value="ripple">涟漪</option><option value="butterfly">蝴蝶</option></select><input type="search" data-impact-search placeholder="搜标题、对象或原著" aria-label="搜索影响"><button type="button" class="dai-button dai-button-ghost" data-impact-refresh>刷新</button></div><ul class="dai-impact-list" data-impact-library></ul><details class="dai-impact-archive" data-impact-archive><summary>档案 <small data-impact-archive-count>0 条</small></summary><p class="dai-impact-empty">被删除或因为库满挤出去的旧影响会留在这里，可以恢复。</p><ol class="dai-impact-list" data-impact-archive-list></ol></details><div class="dai-turn-actions"><button type="button" class="dai-secondary-button" data-agent-modal-close>关闭</button></div></div></div>
+                        <div class="dai-settings-card"><div class="dai-card-heading"><b>记录与注入</b><small>什么时机记账、怎么进正文；记录员与判定官用的接口在「模型设置」页。</small></div><label class="dai-setting-row dai-setting-toggle"><span><b>生成后自动记录</b><small>让“记录模型”在正文生成结束后把这一轮的世界变化写进库；关掉后只剩手动记录。</small></span><input type="checkbox" data-setting="impact.decideAuto"></label><label class="dai-setting-row"><span><b>记录节奏</b><small>每轮都记更细，但每轮多一次模型调用；每三轮记一次更省，代价是中间两轮的改动要等到下次记账才进库。</small></span><select data-setting="impact.decideEvery"><option value="1">每轮生成后</option><option value="3">每三轮生成后</option></select></label><label class="dai-setting-row"><span><b>总览显示最近几条</b><small>总页面只铺最近生成的影响；其余进「世界账本」弹窗看。</small></span><input type="number" min="1" max="20" step="1" data-setting="impact.recentCount"></label><label class="dai-setting-row dai-setting-toggle"><span><b>把世界线写进正文提示词</b><small>已发生、还没收场的影响会作为“本局世界线”随生成发给正文模型。</small></span><input type="checkbox" data-setting="impact.inject"></label><label class="dai-setting-row dai-setting-toggle"><span><b>注入前让模型挑选</b><small>每轮生成前，让“挑选模型”从账本里挑出这一幕真正用得上的影响，并改写成旁白；关掉则按分量和日期直接取，省一次调用。</small></span><input type="checkbox" data-setting="impact.injectSmart"></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>注入字数预算</b><small>0 或留空＝不限制（默认）：没收场的影响全量进提示词；填了正数才把放不下的影响留在库里不注入。</small></span><input type="number" min="0" step="50" data-setting="impact.injectBudget"></label><label class="dai-setting-row"><span><b>注入前看最近几楼</b><small>挑选模型据此判断这一幕的场面：玩家在哪、身边有谁、要做什么。</small></span><input type="number" min="1" max="12" step="1" data-setting="impact.injectFloors" placeholder="留空或 0＝跟随角色正则"></label></div><label class="dai-setting-row"><span><b>影响链最多接几层</b><small>一条影响还能接出几条后续；超过这个层数就只记录，不再自动接链。</small></span><input type="number" min="0" max="8" step="1" data-setting="impact.maxChainDepth"></label><label class="dai-setting-row dai-setting-toggle"><span><b>埋下的因（蝴蝶效应）</b><small>开＝记录员可以把一条影响连“因”（埋进世界的物件或人情）和“等”（什么样的场面才算撞上）一起记下，先沉在账本里，等后面某个场合真的出现才显形；关＝所有影响一记下就摆在明面上。这一项不按天数算，什么时候显形只由剧情决定。</small></span><input type="checkbox" data-setting="impact.autoLatent"></label><label class="dai-setting-row dai-setting-toggle"><span><b>落成后自动派生余波</b><small>一条影响落成世界事件后，再记一条“余波”涟漪，让影响链往下走；只动账本，不再多调一次模型。关掉则只记当前这一层。</small></span><input type="checkbox" data-setting="impact.deriveChain"></label></div>
                         <details class="dai-prompt-fold"><summary><span><b>记录员提示词</b><small>生成结束后记账用的规则；点开才展开。</small></span></summary><label class="dai-setting-row"><span><b>规则正文</b><small>打开页面显示的就是当前生效的全文；清空＝恢复内置默认。改写时保持“只输出 JSON”和操作字段名不变。</small></span><textarea data-setting="impact.prompt" rows="14" spellcheck="false" placeholder="留空使用内置提示词"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-impact-prompt-default="decide">填入内置提示词</button><small>改完下一轮生效，不用重启。</small></div></details>
-                        <details class="dai-prompt-fold"><summary><span><b>场记提示词</b><small>生成前挑选并改写影响用的规则；点开才展开。</small></span></summary><label class="dai-setting-row"><span><b>规则正文</b><small>打开页面显示的就是当前生效的全文；清空＝恢复内置默认。改写时保持“只从账本挑、用 #编号”不变。</small></span><textarea data-setting="impact.injectPrompt" rows="12" spellcheck="false" placeholder="留空使用内置提示词"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-impact-prompt-default="inject">填入内置提示词</button><small>默认收起；改完下一轮生效。</small></div></details>
-                        <div class="dai-modal-dock" data-modal-dock="impact-form" hidden><div class="dai-settings-card"><div class="dai-impact-form" data-impact-form hidden><input type="hidden" data-impact-field="ref"><div class="dai-impact-form-head"><b data-impact-form-title>记一条世界影响</b><small>手动记的条目和记录员记的一样：会进正文、会发酵，也保留在聊天存档里。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>标题</b></span><input type="text" data-impact-field="title" placeholder="世界哪一块变了"></label><label class="dai-setting-row"><span><b>对象</b></span><input type="text" data-impact-field="target" placeholder="哪个地方/势力/规矩"></label></div><label class="dai-setting-row"><span><b>详情</b><small>具体变了什么、有什么能被看见的后果。</small></span><textarea rows="3" data-impact-field="detail" placeholder="例如：城中药材涨价，加列家族开始暗中追查纵火者"></textarea></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>性质</b></span><select data-impact-field="kind"><option value="direct">直接 · 玩家亲手</option><option value="ripple">涟漪 · 旁人因此改主意</option><option value="butterfly">蝴蝶 · 隔了时间才显形</option></select></label><label class="dai-setting-row"><span><b>分量</b></span><select data-impact-field="weight"><option value="minor">小事</option><option value="major">大事</option><option value="world">世界级</option></select></label><label class="dai-setting-row"><span><b>确定性</b></span><select data-impact-field="certainty"><option value="certain">确凿</option><option value="rumor">传闻</option></select></label></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>依据</b></span><input type="text" data-impact-field="evidence" placeholder="哪一楼、哪句话"></label><label class="dai-setting-row"><span><b>对上台账事件</b><small>世界运转里的事件编号，如 e2；没有就留空。</small></span><input type="text" data-impact-field="eventId" placeholder="例如：e2"></label><label class="dai-setting-row"><span><b>原著节点</b><small>没牵动就留空。</small></span><input type="text" data-impact-field="canon" placeholder="例如：退婚"></label><label class="dai-setting-row"><span><b>原著偏移</b></span><select data-impact-field="shift"><option value="none">不牵动</option><option value="accelerate">加速</option><option value="delay">延后</option><option value="avoid">避过</option><option value="alter">改写</option></select></label></div><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button" data-impact-save>保存</button><button type="button" class="dai-button dai-button-ghost" data-impact-form-close>取消</button><small role="status" data-impact-form-status></small></div></div></div></div>
+                        <details class="dai-prompt-fold"><summary><span><b>判定官提示词</b><small>生成前判断这一轮有没有撞上埋下的因用的规则；点开才展开。</small></span></summary><label class="dai-setting-row"><span><b>规则正文</b><small>打开页面显示的就是当前生效的全文；清空＝恢复内置默认。改写时保持“只从账本里挑、用 #编号、没有证据不许判撞上”不变。</small></span><textarea data-setting="impact.injectPrompt" rows="12" spellcheck="false" placeholder="留空使用内置提示词"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button dai-button-ghost" data-impact-prompt-default="inject">填入内置提示词</button><small>默认收起；改完下一轮生效。</small></div></details>
+                        <div class="dai-modal-dock" data-modal-dock="impact-form" hidden><div class="dai-settings-card"><div class="dai-impact-form" data-impact-form hidden><input type="hidden" data-impact-field="ref"><div class="dai-impact-form-head"><b data-impact-form-title>记一条世界影响</b><small>手动记的条目和记录员记的一样：会进正文、会按剧情应验，也保留在聊天存档里。</small></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>标题</b></span><input type="text" data-impact-field="title" placeholder="世界哪一块变了"></label><label class="dai-setting-row"><span><b>对象</b></span><input type="text" data-impact-field="target" placeholder="哪个地方/势力/规矩"></label></div><label class="dai-setting-row"><span><b>详情</b><small>具体变了什么、有什么能被看见的后果。</small></span><textarea rows="3" data-impact-field="detail" placeholder="例如：城中药材涨价，加列家族开始暗中追查纵火者"></textarea></label><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>性质</b></span><select data-impact-field="kind"><option value="direct">直接 · 玩家亲手</option><option value="ripple">涟漪 · 旁人因此改主意</option><option value="butterfly">蝴蝶 · 隔了时间才显形</option></select></label><label class="dai-setting-row"><span><b>分量</b></span><select data-impact-field="weight"><option value="minor">小事</option><option value="major">大事</option><option value="world">世界级</option></select></label><label class="dai-setting-row"><span><b>确定性</b></span><select data-impact-field="certainty"><option value="certain">确凿</option><option value="rumor">传闻</option></select></label></div><div class="dai-setting-grid"><label class="dai-setting-row"><span><b>依据</b></span><input type="text" data-impact-field="evidence" placeholder="哪一楼、哪句话"></label><label class="dai-setting-row"><span><b>对上台账事件</b><small>世界运转里的事件编号，如 e2；没有就留空。</small></span><input type="text" data-impact-field="eventId" placeholder="例如：e2"></label><label class="dai-setting-row"><span><b>原著节点</b><small>没牵动就留空。</small></span><input type="text" data-impact-field="canon" placeholder="例如：退婚"></label><label class="dai-setting-row"><span><b>原著偏移</b></span><select data-impact-field="shift"><option value="none">不牵动</option><option value="accelerate">加速</option><option value="delay">延后</option><option value="avoid">避过</option><option value="alter">改写</option></select></label></div><label class="dai-setting-row"><span><b>牵涉对象</b><small>可选。每行一个：势力 云岚宗／人物 萧战／地方 乌坦城／剧情线 三年之约／原著 退婚／事件 e2。</small></span><textarea rows="2" data-impact-field="links" placeholder="人物 萧战&#10;势力 云岚宗"></textarea></label><label class="dai-setting-row"><span><b>落成什么后果</b><small>可选。每行一条：事件 标题｜正文｜参与人／名声 新值／通缉 新值／势力 云岚宗 敌对 动向／人物 萧炎 好感+12 态度=拿你当能托底的人 称呼=兄台｜为什么变／金币 +120｜哪来的／物品 玄铁片 +2｜哪来的／境界 斗师 三星｜怎么破的阶。留空则由脚本按分量默认推演成世界事件。</small></span><textarea rows="2" data-impact-field="effects" placeholder="事件 药材涨价｜城中药材一日三涨｜乌坦城"></textarea></label><div class="dai-setting-row dai-setting-actions"><button type="button" class="dai-button" data-impact-save>保存</button><button type="button" class="dai-button dai-button-ghost" data-impact-form-close>取消</button><small role="status" data-impact-form-status></small></div></div></div></div>
                     </section>
                     <section class="dai-settings-page" data-settings-section="sandbox" role="tabpanel" hidden>
                         <div class="dai-page-heading"><h3>开放世界</h3><p>开启后进入开放世界口径：不跟随原著剧情、不用世界书，斗气大陆照自己的逻辑运转，任务与传闻就是世界递到玩家手里的方向；关回主线一切照旧。</p><p role="status" data-sandbox-status>开关随开随关：拨了立刻按新口径换向并落存档，下一轮生成就按它跑。</p></div>
@@ -10351,8 +11075,40 @@ function createSettingsPanel() {
         if (revertButton) { runImpactOp(panel, { op: 'revert', ref: revertButton.dataset.impactRevert, resolution: '手动修复' }, `已标为修复 #${revertButton.dataset.impactRevert}。`); return; }
         const forgetButton = event.target.closest?.('[data-impact-forget]');
         if (forgetButton) { runImpactOp(panel, { op: 'forget', ref: forgetButton.dataset.impactForget }, `已删除 #${forgetButton.dataset.impactForget}，可在档案里恢复。`); return; }
+        // 传闻化 / 坐实：切换这条影响的确定性口径，落成时按传闻走（不点名参与人、世界事件按 rumor 分量）。
+        const rumorButton = event.target.closest?.('[data-impact-rumor]');
+        if (rumorButton) {
+            const ref = rumorButton.dataset.impactRumor;
+            const record = agentImpactRuntime.list().find(item => item.id === ref);
+            const toRumor = record ? record.certainty !== 'rumor' : true;
+            runImpactOp(panel, { op: 'rumorize', ref, certainty: toRumor ? 'rumor' : 'certain' },
+                toRumor ? `已压成传闻 #${ref}：落成时只当风声。` : `已坐实 #${ref}：落成时按事实写进世界。`);
+            return;
+        }
         const unarchiveButton = event.target.closest?.('[data-impact-unarchive]');
         if (unarchiveButton) { runImpactOp(panel, { op: 'unarchive', ref: unarchiveButton.dataset.impactUnarchive }, `已从档案恢复 #${unarchiveButton.dataset.impactUnarchive}。`); return; }
+        const ripenButton = event.target.closest?.('[data-impact-ripen]');
+        if (ripenButton) {
+            const ref = ripenButton.dataset.impactRipen;
+            ripenButton.disabled = true;
+            void (async () => {
+                const result = await runImpactOp(panel, { op: 'ripen', ref, detail: '手动催熟' }, `已标记应验 #${ref}。`);
+                if (result?.status !== 'applied') return;
+                const execution = runImpactMaterialization();
+                setImpactStatus(execution?.changed
+                    ? `已应验 #${ref}，推演 ${execution.rows.length} 条后果进世界台账。`
+                    : `已应验 #${ref}；暂时没有可落成的后果，下一次记账再试。`);
+            })().catch(error => setImpactStatus(`应验失败：${error?.message ?? error}`)).finally(() => { ripenButton.disabled = false; });
+            return;
+        }
+        const materializeButton = event.target.closest?.('[data-impact-materialize]');
+        if (materializeButton) {
+            const execution = runImpactMaterialization();
+            setImpactStatus(execution?.changed
+                ? `已落成 ${execution.rows.length} 条后果进世界台账。`
+                : '没有可落成的后果：先点「应验」，判官撞上埋下的因之后才会落成。');
+            return;
+        }
         if (event.target.closest?.('[data-impact-save]')) { saveImpactForm(panel); return; }
         if (event.target.closest?.('[data-impact-form-close]')) { closeImpactForm(panel); return; }
         const gossipRun = event.target.closest?.('[data-npc-gossip-run]');
@@ -10593,8 +11349,11 @@ function createSettingsPanel() {
             const body = typeof textInput?.value === 'string' ? textInput.value.trim() : '';
             if (!body) { if (textInput) textInput.placeholder = '先写一句“从此哪里不一样了”'; return; }
             const day = Number(dayInput?.value);
+            // 面板补记的经历按“当前聊天层”入账：补记是此刻确认的新知识，楼层不该沿用档案
+            // lastFloor（那会让它和处境章同层，注入出口漏判过时动向）。
+            const panelChat = Array.isArray(getHostContext()?.chat) ? getHostContext().chat : [];
             const result = await panelMutation(panel, { name, body, day: Number.isInteger(day) && day > 0 ? day : worldDay() }, operation => {
-                const changed = agentNpcLedger.addExp(operation.name, operation.body, { day: operation.day });
+                const changed = agentNpcLedger.addExp(operation.name, operation.body, { day: operation.day, floor: panelChat.length ? panelChat.length - 1 : null });
                 if (changed.status === 'added') {
                     changed.persistence = persistNpcLedger();
                     emitOrbToasts([{ icon: 'letter', title: operation.name, text: '新记一条经历', tone: 'info', detail: '手动' }]);
@@ -10762,7 +11521,7 @@ function createSettingsPanel() {
             return;
         }
         // API设置方案的各字段：同样不走 data-setting 通道，按 id 改数组条目并即时保存。
-        // 复选框（走酒馆通道）取 checked 存布尔，文本/下拉取 value。
+        // 方案已经没有通道开关（schemaVersion 16 删掉了「走酒馆通道」复选框），这里只剩文本/下拉取 value。
         const presetField = event.target.closest?.('[data-api-preset-field]');
         if (presetField) {
             const holder = presetField.closest('[data-api-preset-id]');
@@ -10786,16 +11545,6 @@ function createSettingsPanel() {
                 if (field === 'baseUrl') {
                     const summary = holder.querySelector('summary small');
                     if (summary) summary.textContent = presetField.value.trim() || '还没填接口地址';
-                }
-                if (field === 'tavern') {
-                    // 通道切换：摘要与各功能下拉的标记即时跟上
-                    const summary = holder.querySelector('summary small');
-                    if (summary) {
-                        summary.textContent = presetField.checked
-                            ? '走酒馆通道'
-                            : ((currentSettings().api?.presets ?? []).find(item => item?.id === holder.dataset.apiPresetId)?.baseUrl?.trim() || '还没填接口地址');
-                    }
-                    renderApiPresetSelects(panel);
                 }
                 const status = panel.querySelector('[data-api-preset-status]');
                 const ok = await awaitPanelPersistence(result, message => { if (status && sequence === settingsSaveSequence) status.textContent = message; });
@@ -11051,9 +11800,367 @@ export function onEnable() {
     void enforceStVersionGate();
 }
 
+function impactInjectionStatusText() {
+    const state = impactInjectionLastState();
+    if (!state) return '注入：本轮还没挑过（生成前会自动挑）';
+    if (state.status === 'injected') {
+        // 从存档读回来的注入一定已经随生成结束被清空，别再说「已写进去」。
+        const tail = state.cleared ? ' · 那段已随生成清空' : '';
+        return `注入：已写 ${state.usedIds?.length ?? 0} 条（${state.via === 'llm' ? '模型挑选' : '按分量直取'}）${tail}`;
+    }
+    if (state.status === 'skipped') return '注入：模型判断这一幕用不上旧账';
+    if (state.status === 'empty') return '注入：账本里没有可写的影响';
+    return `注入：${state.status}`;
+}
+
+function impactListText(filter = 'all') {
+    const states = { active: '未了结', sunk: '埋着', ripened: '已应验', closed: '已了结', reverted: '已修复' };
+    const weights = { minor: '小事', major: '大事', world: '世界级' };
+    const wanted = states[filter] ? filter : 'all';
+    const rows = agentImpactRuntime.list(wanted === 'all' ? {} : { state: wanted });
+    if (!rows.length) return `【世界影响】${wanted === 'all' ? '账本是空的' : `没有「${states[wanted]}」的记录`}。`;
+    const lines = rows.slice(0, 20).map(record => {
+        const bits = [`#${record.id}`, `[${states[record.state] ?? record.state}]`, weights[record.weight] ?? record.weight, `${record.title}｜${record.target}`];
+        if (record.state === 'sunk' && (record.seed || record.trigger)) {
+            bits.push(`埋着（因：${record.seed || '—'}｜等：${record.trigger || '—'}）`);
+        }
+        if (record.materialized) {
+            bits.push(record.outcomeEventId
+                ? `已落成 ${record.outcomeEventId}`
+                : `已落成${record.resolution?.includes('并入') ? `（${record.resolution}）` : ''}`);
+        }
+        if (record.parent) bits.push(`接自 #${record.parent}`);
+        return bits.join(' ');
+    });
+    const more = rows.length > 20 ? `\n…还有 ${rows.length - 20} 条，用 /impact list 分状态看。` : '';
+    return `【世界影响】第 ${worldDay()} 天 · 共 ${agentImpactRuntime.status().total} 条\n${lines.join('\n')}${more}`;
+}
+
+/** /impact why：三问分解——做了什么、牵动哪条原著线、以后还会长出什么。 */
+function impactThreeQuestionsText() {
+    const today = worldDay();
+    const all = agentImpactRuntime.list();
+    if (!all.length) return '【世界影响】这一局还没有记录。';
+    // 三问是每条影响自己的：整本账只做统计，逐条列每条的“做了什么 / 对原著 / 以后”。
+    const live = all.filter(record => record.state === 'active' || record.state === 'ripened');
+    const pending = all.filter(record => record.state === 'sunk');
+    // 等着落成＝判定官已经撞上、还没写进世界台账的那几条：这是唯一要人盯的队列。
+    const awaitSettle = all.filter(record => record.state === 'ripened' && !record.materialized);
+    const materialized = all.filter(record => record.materialized);
+    const canonCount = all.filter(record => record.canon).length;
+    const childrenOf = new Map();
+    for (const record of all) {
+        if (!record.parent) continue;
+        if (!childrenOf.has(record.parent)) childrenOf.set(record.parent, []);
+        childrenOf.get(record.parent).push(record);
+    }
+    const head = `【世界影响】第 ${today} 天 · 共 ${all.length} 条（还在演 ${live.length} · 埋着 ${pending.length}${awaitSettle.length ? `、等着落成 ${awaitSettle.length}` : ''} · 落成世界 ${materialized.length}）`;
+    const lines = [...all]
+        .sort((a, b) => (b.day - a.day) || String(b.id).localeCompare(String(a.id), 'zh', { numeric: true }))
+        .slice(0, 12)
+        .map(record => {
+            const answers = impactAnswers(record, { day: today, children: childrenOf.get(record.id) ?? [], nodeLabel: canonNodeLabel });
+            return [`#${record.id} ${record.title}`, `  做了什么：${answers.done}`, `  对原著：${answers.canon || '没牵动原著节点'}`, `  以后会发生：${answers.future}`].join('\n');
+        });
+    const tail = all.length > lines.length ? `\n…还有 ${all.length - lines.length} 条，用 /impact list 看全账。` : '';
+    return `${head}\n动过原著 ${canonCount} 处\n\n${lines.join('\n\n')}${tail}`;
+}
+
+/** /impact 的入口：纯文本返回，既能给玩家用，也能让自动化/宏拿 pipe 验证账本真的动了。 */
+async function runImpactCommand(raw) {
+    const input = String(raw ?? '').trim();
+    const space = input.indexOf(' ');
+    const sub = (space < 0 ? input : input.slice(0, space)).toLowerCase() || 'status';
+    const arg = space < 0 ? '' : input.slice(space + 1).trim();
+    try {
+        if (sub === 'status') {
+            const status = agentImpactRuntime.status();
+            // 每行各自独立拼接：一条语句里塞太多内联模板，运行环境会认错插值边界（旧版就出现过抬头读成「已发酵」），拆开更稳。
+            const counts = [
+                `未了结 ${status.active}`,
+                `埋着 ${status.sunk ?? 0}`,
+                `已应验 ${status.ripened}`,
+                `收了 ${status.closed}`,
+                `修回 ${status.reverted}`,
+                `档案 ${status.archived}`,
+            ].join(' · ');
+            const head = `共 ${status.total} 条：${counts}`;
+            const previous = lastImpactResult;
+            const last = previous
+                ? `上次记录：第 ${previous.day} 天 · 记 ${previous.applied?.length ?? 0} 条${previous.rejected?.length ? ` · 拒 ${previous.rejected.length} 条` : ''}${previous.note ? `｜${previous.note}` : ''}`
+                : '上次记录：还没跑过';
+            const materialize = lastMaterializeResult
+                ? (lastMaterializeResult.error
+                    ? `落成：失败（${lastMaterializeResult.error}）`
+                    : `落成：${lastMaterializeResult.rows.filter(row => row.status === 'materialized').length} 条${lastMaterializeResult.chain?.length ? ` · 余波 ${lastMaterializeResult.chain.length} 条` : ''}${lastMaterializeResult.reconciled?.length ? ` · 对账修正 ${lastMaterializeResult.reconciled.length} 条` : ''}${lastMaterializeResult.rows.flatMap(row => row.warnings ?? []).length ? '（有提示）' : ''}`)
+                : '落成：还没跑过';
+            const lines = [`【世界影响】第 ${worldDay()} 天`, head, impactInjectionStatusText(), last, materialize];
+            return lines.join('\n');
+        }
+        if (sub === 'list') return impactListText(arg.toLowerCase() || 'all');
+        if (sub === 'check') {
+            // 对账：把“事件已经不在台账里”的落成标记退回，或按 basis 补记事件号。
+            const reconciled = agentImpactExecutor.reconcile(worldDay());
+            if (reconciled.fixed.length) { persistImpact(); refreshWorldPage(); }
+            if (!reconciled.fixed.length) return '【世界影响】对账完成：账本和世界台账一致，没有要修的落成。';
+            return `【世界影响】对账修正 ${reconciled.fixed.length} 条：\n${reconciled.fixed.map(item => `#${item.id} ${item.status === 'relinked' ? `补记事件 ${item.eventId}` : `退回待落成（原 ${item.eventId} 已不在）`}`).join('\n')}`;
+        }
+        if (sub === 'record') {
+            const parts = arg.split(/[｜|]/).map(part => part.trim()).filter(Boolean);
+            if (!parts.length) return '用法：/impact record 标题｜对象｜详情｜事件 标题｜正文｜参与人';
+            // 第三段之后如果有「事件/名声/通缉/势力」开头的行，就是这个影响的后果（effects），
+            // 和手动画板里那个“落成什么后果”框同一个语法；没有就按分量给默认事件。
+            // 注意：模型/玩家经常用空格连写，所以第 3 段里的“事件”“势力”也算后果开头。
+            // 「详情 + 空格 + 势力 名称 立场 动向」经常挤在同一段里，所以先按段的开头切开，
+            // 再对详情那一段里的“另起一句的后果”再切一次；纯文本里的“事件”不会误伤。
+            // 后果开头五种都认：世界事件/事件/名声/通缉/势力/人物/金币/物品/境界——和面板的
+            // “落成什么后果”框同一套语法（人物/金币/物品/境界以前只在面板里认得，/impact record 里写了会被当详情吞掉）。
+            const effectHead = /(?:^|\s)(世界事件|事件|名声|通缉|势力|人物|金币|物品|境界)(?=\s)/;
+            const effectParts = [];
+            const detailParts = [];
+            parts.slice(2).forEach(part => {
+                if (!effectParts.length && /^(世界事件|事件|名声|通缉|势力|人物|金币|物品|境界)(\s|$)/.test(part)) {
+                    effectParts.push(part);
+                    return;
+                }
+                if (!effectParts.length && effectHead.test(part)) {
+                    const at = part.search(effectHead);
+                    const head = part.slice(at).trim();
+                    detailParts.push(part.slice(0, at).trim());
+                    if (head) effectParts.push(head);
+                    return;
+                }
+                if (effectParts.length) effectParts.push(part);
+                else detailParts.push(part);
+            });
+            // 标题里常写「加列家」，台账里注册的却是「加列家族」：把台账里以标题/对象开头的势力名也算成牵涉。
+            const canonicalNames = (agentWorldRuntime.snapshot()?.factions ?? []).map(f => String(f.name ?? '')).filter(Boolean);
+            const guessName = (text) => canonicalNames
+                .filter(name => name && String(text ?? '').includes(name))
+                .sort((a, b) => b.length - a.length)[0] ?? '';
+            const guessFaction = guessName(parts[0]) || guessName(parts[1]);
+            // 详情里可以手写「剧情线 药材价」「人物 萧炎」「地方 乌坦城」「原著 三年之约」，
+            // 和手动画板的“牵涉”框同一个语法；不写就只按标题/对象猜势力。
+            // 边界除了空白还包括全/半角竖线：detail 段是被 ｜ 拼回成一段的，段开头的牵涉头不能断。
+            const linkHead = /(?:^|[\s｜|])(势力|地方|地点|人物|剧情线|线索|原著|原著节点|事件)(?=\s)/g;
+            const typedLinks = [];
+            const stripped = [];
+            // 原著后面常跟一个偏移词（accelerate/delay/avoid/alter 或 加速/延后/避过/改写），
+            // 它属于 canonShift，不能当成节点名字写进牵涉。
+            const canonShiftOf = (token) => {
+                const map = { accelerate: 'accelerate', delay: 'delay', avoid: 'avoid', alter: 'alter', '加速': 'accelerate', '延后': 'delay', '拖延': 'delay', '避过': 'avoid', '改写': 'alter', '偏移': 'alter' };
+                return map[String(token ?? '').trim().toLowerCase()] ?? '';
+            };
+            let canonShift = '';
+            for (const piece of (detailParts.join('｜') || '').split(linkHead)) {
+                const body = String(piece ?? '').trim();
+                if (!body) continue;
+                const type = IMPACT_LINK_TYPE_BY_TEXT[body];
+                if (Object.values(IMPACT_LINK_TYPE_BY_TEXT).includes(type)) {
+                    typedLinks.push({ marker: true, type });
+                    continue;
+                }
+                const held = typedLinks[typedLinks.length - 1];
+                if (held && held.marker) {
+                    const chunks = body.split(/[｜|]/).map(chunk => chunk.trim()).filter(Boolean);
+                    const head = chunks.shift() ?? '';
+                    if (held.type === 'canon') {
+                        const words = head.split(/\s+/);
+                        const shiftIndex = words.findIndex(word => canonShiftOf(word));
+                        if (shiftIndex >= 0) canonShift = canonShiftOf(words[shiftIndex]);
+                        typedLinks[typedLinks.length - 1] = { type: 'canon', name: words.filter((word, index) => index !== shiftIndex).join(' ') };
+                    } else {
+                        typedLinks[typedLinks.length - 1] = { type: held.type, name: head };
+                    }
+                    for (const rest of chunks) stripped.push(rest);
+                    continue;
+                }
+                stripped.push(body);
+            }
+            const linkList = typedLinks.filter(link => link.name).map(link => ({ type: link.type, name: link.name }));
+            // 牵涉里最多留一个原著节点，它同时决定 canon / canonShift 两个字段。
+            const canonLink = linkList.find(link => link.type === 'canon') ?? null;
+            if (guessFaction && !linkList.some(link => link.type === 'faction')) linkList.unshift({ type: 'faction', name: guessFaction });
+            // 「事件」既是后果开头也是牵涉开头：只有一段、没写正文也没有参与人时，就当牵涉（线索/事件名字），
+            // 不当成一条后果去落成世界事件。
+            const eventLike = [];
+            const linkLike = [];
+            effectParts.forEach((part, index) => {
+                const isEvent = /^(世界事件|事件)(\s|$)/.test(part);
+                const alone = index === 0 && effectParts.length === 1 && !part.includes('｜') && !part.includes('|') && part.split(/\s+/).length <= 2;
+                if (isEvent && alone) linkLike.push(part);
+                else eventLike.push(part);
+            });
+            if (linkLike.length) {
+                detailParts.push(...linkLike);
+                effectParts.length = 0;
+                effectParts.push(...eventLike);
+            }
+            // 后果段里还带着「｜」时，说明正文/参与人是切成几段送进来的，先按标点拼回去再解析。
+            const effectBody = eventLike
+                .map((part, index) => (index === 0 ? part : `｜${part}`))
+                .join('')
+                .replace(/^([^｜|]+)[｜|]([^｜|]*)[｜|]?\s*(?=(?:(?:世界事件|事件|名声|通缉|势力)\s)|$)/gm, '$1｜$2');
+            const effects = parseImpactEffectsText(effectBody);
+            const applied = agentImpactRuntime.apply([{
+                op: 'record',
+                title: parts[0],
+                target: parts[1] || parts[0],
+                detail: stripped.join('｜') || detailParts.join('｜') || parts[0],
+                kind: 'direct',
+                weight: 'minor',
+                certainty: 'certain',
+                links: linkList,
+                canon: canonLink ? canonLink.name : '',
+                shift: canonLink && canonShift ? canonShift : (canonLink ? 'alter' : 'none'),
+                effects,
+            }], { source: 'manual', day: worldDay() });
+            if (applied.status !== 'applied') {
+                const reason = applied.rejected?.[0]?.reason ?? applied.status;
+                return `记录失败：${IMPACT_REASON_TEXT[reason] ?? reason}`;
+            }
+            persistImpact();
+            agentImpactInjection.invalidate();
+            try { renderImpactLibrary(); } catch { /* 面板没开时忽略 */ }
+            return `已记录 #${applied.applied[0].id}：${applied.applied[0].record.title}${effects.length ? `（后果 ${effects.length} 条）` : ''}${linkList.length ? `（牵涉 ${linkList.map(link => link.name).join('、')}）` : ''}`;
+        }
+        if (sub === 'bury') {
+            // 把一条明面上的影响改成「埋着等场面」：/impact bury i3 萧炎被逼到绝境、无路可退｜一枚旧护符
+            // 参数可以只给「等」（当场把 title 或已有的因当因），也可以「因｜等」两段都给。
+            const [refPart, pairPart = ''] = arg.split(/\s+/);
+            const ref = String(refPart ?? '').replace(/^#/, '');
+            if (!ref) return '用法：/impact bury i3 要等的场面｜那颗因（也可以只写要等的场面）';
+            const body = arg.slice(String(refPart ?? '').length).trim().replace(/^[｜|]/, '');
+            const [first = '', second = ''] = body.split(/[｜|]/).map(part => part.trim());
+            const record = agentImpactRuntime.snapshot().records.find(item => item.id === ref) ?? null;
+            const trigger = body.includes('｜') || body.includes('|') ? second : first;
+            const seed = (body.includes('｜') || body.includes('|') ? first : '') || record?.seed || record?.title || '';
+            if (!trigger) return '用法：/impact bury i3 要等的场面｜那颗因（也可以只写要等的场面）';
+            const applied = agentImpactRuntime.apply([{ op: 'edit', ref, seed, trigger }], { source: 'manual', day: worldDay() });
+            if (applied.status !== 'applied') {
+                const reason = applied.rejected?.[0]?.reason ?? applied.status;
+                return `没埋下：${IMPACT_REASON_TEXT[reason] ?? reason}`;
+            }
+            persistImpact();
+            agentImpactInjection.invalidate();
+            try { renderImpactLibrary(); } catch { /* 面板没开时忽略 */ }
+            return `已埋下 #${ref}：因「${seed}」等「${trigger}」`;
+        }
+        if (sub === 'ripen' || sub === 'materialize') {
+            if (sub === 'ripen') {
+                const ref = arg.replace(/^#/, '');
+                if (!ref) return '用法：/impact ripen i3';
+                const applied = agentImpactRuntime.apply([{ op: 'ripen', ref, detail: '手动催熟' }], { source: 'manual', day: worldDay() });
+                if (applied.status !== 'applied') {
+                    const reason = applied.rejected?.[0]?.reason ?? applied.status;
+                    return `应验失败：${IMPACT_REASON_TEXT[reason] ?? reason}`;
+                }
+                persistImpact();
+            }
+            const execution = runImpactMaterialization();
+            agentImpactInjection.invalidate();
+            try { renderImpactLibrary(); } catch { /* 面板没开时忽略 */ }
+            try { refreshWorldPage(); } catch { /* 世界页没开时忽略 */ }
+            try { refreshPlotPanel(); } catch { /* 剧情页没开时忽略 */ }
+            if (execution.error) return `应验失败：${execution.error}`;
+            const done = execution.rows.filter(row => row.status === 'materialized');
+            const threadLine = impactThreadReceipt(execution);
+            return done.length
+                ? `已应验并落成 ${done.length} 条：${done.map(row => `#${row.id}${row.impact?.applied?.[0]?.record?.outcomeEventId ? `→${row.impact.applied[0].record.outcomeEventId}` : ''}`).join('、')}${execution.chain?.length ? `；派生余波 ${execution.chain.length} 条` : ''}${threadLine ? `；${threadLine}` : ''}`
+                : `暂时没有可落成的后果（先让影响应验，或点条目上的“应验”）。${threadLine ? ` ${threadLine}` : ''}`;
+        }
+        if (sub === 'why') return impactThreeQuestionsText();
+        if (sub === 'rumor' || sub === 'sure') {
+            const ref = arg.replace(/^#/, '');
+            if (!ref) return '用法：/impact rumor i3（压成传闻）｜/impact sure i3（坐实）';
+            const result = agentImpactRuntime.apply([{ op: 'rumorize', ref, certainty: sub === 'rumor' ? 'rumor' : 'certain' }], { source: 'manual', day: worldDay() });
+            if (result.status !== 'applied') return `没改：#${ref}（${IMPACT_REASON_TEXT[result.rejected?.[0]?.reason] ?? '记录不存在'}）`;
+            persistImpact();
+            return `${sub === 'rumor' ? '已压成传闻' : '已坐实'} #${ref}：${result.applied[0]?.summary ?? ''}`;
+        }
+        if (sub === 'forget') {
+            const ref = arg.replace(/^#/, '');
+            if (!ref) return '用法：/impact forget i3';
+            const target = agentImpactRuntime.snapshot().records.find(record => record.id === ref) ?? null;
+            const applied = agentImpactRuntime.apply([{ op: 'forget', ref }], { source: 'manual', day: worldDay() });
+            if (applied.status !== 'applied') {
+                const reason = applied.rejected?.[0]?.reason ?? applied.status;
+                return `删除失败：${IMPACT_REASON_TEXT[reason] ?? reason}`;
+            }
+            const rollback = target ? agentImpactExecutor.rollback(target) : null;
+            if (rollback?.status === 'removed') { persistWorld(); refreshWorldPage(); }
+            persistImpact();
+            agentImpactInjection.invalidate();
+            try { renderImpactLibrary(); } catch { /* 面板没开时忽略 */ }
+            return `已删除 #${ref}${rollback?.status === 'removed' ? `；世界事件 ${rollback.eventId} 也撤了` : ''}`;
+        }
+        if (sub === 'inject') {
+            agentImpactInjection.invalidate();
+            const written = await agentImpactInjection.write({ chat: getHostContext()?.chat });
+            try { renderImpactLibrary(); } catch { /* 面板没开时忽略 */ }
+            if (written.status === 'injected') return `已写入注入：\n${written.text}`;
+            return `没有写入（${written.status}）：${written.note || '账本里没有这一幕用得上的影响'}`;
+        }
+        return '用法：/impact [status | list [all|active|ripened|closed] | record 标题｜对象｜详情 | bury i3 要等的场面｜那颗因 | ripen i3 | materialize | forget i3 | why | inject]';
+    } catch (error) {
+        return `世界影响命令出错：${error?.message ?? error}`;
+    }
+}
+
+/** 注册 STScript 命令：酒馆里打 /impact 就能查账、催熟、落成、删除、看注入文本。 */
+let impactCommandRegistered = false;
+async function registerImpactSlashCommand() {
+    if (impactCommandRegistered) return true;
+    try {
+        const hosted = getHostContext();
+        let Parser = hosted?.SlashCommandParser;
+        let Command = hosted?.SlashCommand;
+        let Argument = hosted?.SlashCommandArgument;
+        // getContext() 不一定带这三个；退回按页面路径直接加载酒馆自带的斜杠命令模块。
+        if (!Parser?.addCommandObject || !Command?.fromProps) {
+            const base = typeof document !== 'undefined' ? document.baseURI : 'http://localhost/';
+            const [parserMod, commandMod, argumentMod] = await Promise.all([
+                import(new URL('scripts/slash-commands/SlashCommandParser.js', base).href),
+                import(new URL('scripts/slash-commands/SlashCommand.js', base).href),
+                import(new URL('scripts/slash-commands/SlashCommandArgument.js', base).href),
+            ]);
+            Parser = parserMod.SlashCommandParser;
+            Command = commandMod.SlashCommand;
+            Argument = argumentMod.SlashCommandArgument;
+        }
+        if (!Parser?.addCommandObject || !Command?.fromProps) return false;
+        const command = Command.fromProps({
+            name: 'impact',
+            helpString: '世界影响：status 看状态；list [all|active|ripened|closed] 列账；record 标题｜对象｜详情；ripen i3 手动催熟；materialize 落成；rumor i3 压成传闻；sure i3 坐实；forget i3 删除并撤事件；check 对账；why 三问分解；inject 看本轮注入文本。',
+            callback: (namedArgs, value) => runImpactCommand(value),
+            unnamedArgumentList: Argument?.fromProps
+                ? [Argument.fromProps({ description: '子命令与参数，例如 list active 或 ripen i3', typeList: ['string'], isRequired: false })]
+                : [],
+            returns: '世界影响状态或操作结果',
+        });
+        Parser.addCommandObject(command);
+        impactCommandRegistered = true;
+        return true;
+    } catch (error) {
+        console.warn('[斗破] 注册 /impact 失败（不影响面板）', error);
+        return false;
+    }
+}
+
+/** 扩展脚本可能先于斜杠命令模块初始化：失败就隔一会儿再试，最多 6 次。 */
+async function ensureImpactSlashCommand() {
+    for (let tries = 0; tries < 6; tries += 1) {
+        if (await registerImpactSlashCommand()) return true;
+        await new Promise(resolve => setTimeout(resolve, 1500));
+    }
+    return false;
+}
+
 function start() {
-    onActivate();
-    onEnable();
+    // 单个模块初始化失败不该把整页拖垮：命令注册放在两个 try 之外，照样执行。
+    try { onActivate(); } catch (error) { console.warn('[斗破] onActivate 失败', error); }
+    try { onEnable(); } catch (error) { console.warn('[斗破] onEnable 失败', error); }
+    ensureImpactSlashCommand();
 }
 
 // 卡面脚本跑在酒馆助手的 iframe 里，够不到这个模块的 export：
@@ -12053,7 +13160,143 @@ function refreshWorldPage(panel) {
     }
 }
 
-const IMPACT_FORM_FIELDS = ['title', 'detail', 'target', 'kind', 'weight', 'certainty', 'evidence', 'eventId', 'canon', 'shift'];
+const IMPACT_FORM_FIELDS = ['title', 'detail', 'target', 'kind', 'weight', 'certainty', 'evidence', 'eventId', 'canon', 'shift', 'seed', 'trigger', 'hit', 'links', 'effects'];
+
+/** 手动表单里的“牵涉对象”：每行「势力 云岚宗」，也认英文类型名。 */
+const IMPACT_LINK_TYPE_BY_TEXT = { 势力: 'faction', 地方: 'place', 人物: 'person', 剧情线: 'thread', 原著: 'canon', 事件: 'event' };
+const IMPACT_LINK_TEXT_BY_TYPE = { faction: '势力', place: '地方', person: '人物', thread: '剧情线', canon: '原著', event: '事件' };
+const IMPACT_STANCE_BY_TEXT = { 敌对: 'hostile', 警惕: 'wary', 中立: 'neutral', 友好: 'friendly', 同盟: 'allied' };
+const IMPACT_STANCE_TEXT_BY_VALUE = { hostile: '敌对', wary: '警惕', neutral: '中立', friendly: '友好', allied: '同盟' };
+
+function parseImpactLinksText(value) {
+    const links = [];
+    for (const line of String(value ?? '').split('\n')) {
+        const body = line.trim();
+        if (!body) continue;
+        const match = body.match(/^(\S+)\s+(.+)$/);
+        if (!match) continue;
+        const type = IMPACT_LINK_TYPE_BY_TEXT[match[1]] ?? match[1].trim();
+        if (!Object.values(IMPACT_LINK_TYPE_BY_TEXT).includes(type)) continue;
+        links.push({ type, name: match[2].trim() });
+    }
+    return links;
+}
+
+function impactLinksText(links) {
+    return (Array.isArray(links) ? links : [])
+        .map(link => `${IMPACT_LINK_TEXT_BY_TYPE[link.type] ?? link.type} ${link.name}`)
+        .join('\n');
+}
+
+function parseImpactEffectsText(value) {
+    const effects = [];
+    for (const line of String(value ?? '').split('\n')) {
+        const body = line.trim();
+        if (!body) continue;
+        const world = body.startsWith('世界事件');
+        const bare = world ? body.slice(4).trim() : body;
+        if (world || bare.startsWith('事件')) {
+            const rest = bare.startsWith('事件') ? bare.slice(2).trim() : bare;
+            const [title, text, participants] = rest.split('｜').map(part => (part ?? '').trim());
+            if (!title && !text) continue;
+            effects.push({
+                type: 'event',
+                title: title || text,
+                text: text || title,
+                scope: world ? 'world' : 'near',
+                participants: participants ? participants.split(/[,，、\s]+/).filter(Boolean).slice(0, 3) : [],
+            });
+            continue;
+        }
+        const info = bare.match(/^(名声|通缉)\s+(.+)$/);
+        if (info) {
+            effects.push({ type: 'info', field: info[1] === '通缉' ? 'wanted' : 'reputation', value: info[2].trim() });
+            continue;
+        }
+        const faction = bare.match(/^势力\s+(\S+)\s+(\S+)(?:\s+(.+))?$/);
+        if (faction) {
+            const stance = IMPACT_STANCE_BY_TEXT[faction[2]] ?? faction[2];
+            effects.push({ type: 'faction', name: faction[1], stance, dynamics: (faction[3] ?? '').trim() });
+            continue;
+        }
+        // 人物后果：人物 萧炎 好感+12 态度=拿你当能托底的人 伤势=内伤未愈 位置=云岚宗监狱 在场=不在场｜为什么变
+        // 看法（好感/态度/私下态度/称呼）和处境（伤势/境界/位置/在场/正在做什么）都能写。
+        const npc = bare.match(/^人物\s+(\S+)(.*)$/);
+        if (npc) {
+            const rest = npc[2] ?? '';
+            const [body, note] = rest.split('｜');
+            const touch = { type: 'npc', name: npc[1], note: (note ?? '').trim() };
+            for (const part of String(body ?? '').split(/\s+/).filter(Boolean)) {
+                const favor = part.match(/^好感([+-]?\d+)$/);
+                if (favor) touch.favor = Number(favor[1]);
+                const pair = part.match(/^(态度|私下态度|称呼|伤势|境界|位置|在场|正在做什么)=(.+)$/);
+                if (pair) {
+                    if (pair[1] === '态度') touch.attitude = pair[2];
+                    else if (pair[1] === '私下态度') touch.privateAttitude = pair[2];
+                    else if (pair[1] === '称呼') touch.appellation = pair[2];
+                    else if (pair[1] === '伤势') touch.injury = pair[2];
+                    else if (pair[1] === '境界') touch.realm = pair[2];
+                    else if (pair[1] === '位置') touch.location = pair[2];
+                    else if (pair[1] === '在场') touch.presence = /^(在场|true|是)$/i.test(pair[2]) ? '在场' : '不在场';
+                    else if (pair[1] === '正在做什么') touch.doing = pair[2];
+                }
+            }
+            effects.push(touch);
+            continue;
+        }
+        // 玩家身家：金币 +120 / 金币 -30 / 物品 玄铁片 +2 / 境界 斗师 三星
+        const gold = bare.match(/^金币\s*([+-]?\d+)(?:\s*｜\s*(.+))?$/);
+        if (gold) {
+            effects.push({ type: 'self', field: 'gold', amount: Number(gold[1]), note: (gold[2] ?? '').trim() });
+            continue;
+        }
+        const item = bare.match(/^物品\s+(\S+)\s*([+-]?\d+)(?:\s*｜\s*(.+))?$/);
+        if (item) {
+            effects.push({ type: 'self', field: 'item', name: item[1], count: Number(item[2]), note: (item[3] ?? '').trim() });
+            continue;
+        }
+        // 先按「｜」把理由摘出去再切词：否则「斗师 三星｜被逼着当众突破」里的｜会被当成 stages 的一部分。
+        if (bare.startsWith('境界')) {
+            const [head, note] = bare.slice(2).split('｜');
+            const parts = String(head ?? '').trim().split(/\s+/).filter(Boolean);
+            if (parts.length) {
+                effects.push({ type: 'self', field: 'realm', realm: parts[0], stage: (parts[1] ?? '').trim(), note: (note ?? '').trim() });
+            }
+        }
+    }
+    return effects;
+}
+
+function impactEffectsText(effects) {
+    return (Array.isArray(effects) ? effects : []).map(effect => {
+        if (effect.type === 'event') {
+            const head = effect.scope === 'world' ? '世界事件' : '事件';
+            return `${head} ${[effect.title, effect.text, (effect.participants ?? []).join(',')].filter(Boolean).join('｜')}`;
+        }
+        if (effect.type === 'info') return `${effect.field === 'wanted' ? '通缉' : '名声'} ${effect.value}`;
+        if (effect.type === 'faction') {
+            return `势力 ${effect.name} ${IMPACT_STANCE_TEXT_BY_VALUE[effect.stance] ?? effect.stance}${effect.dynamics ? ` ${effect.dynamics}` : ''}`;
+        }
+        if (effect.type === 'npc') {
+            const bits = [Number(effect.favor) ? `好感${Number(effect.favor) > 0 ? '+' : ''}${effect.favor}` : ''];
+            if (effect.attitude) bits.push(`态度=${effect.attitude}`);
+            if (effect.privateAttitude) bits.push(`私下态度=${effect.privateAttitude}`);
+            if (effect.appellation) bits.push(`称呼=${effect.appellation}`);
+            if (effect.injury) bits.push(`伤势=${effect.injury}`);
+            if (effect.realm) bits.push(`境界=${effect.realm}`);
+            if (effect.location) bits.push(`位置=${effect.location}`);
+            if (effect.presence) bits.push(`在场=${effect.presence}`);
+            if (effect.doing) bits.push(`正在做什么=${effect.doing}`);
+            return `人物 ${effect.name} ${bits.filter(Boolean).join(' ')}${effect.note ? `｜${effect.note}` : ''}`.trim();
+        }
+        if (effect.type === 'self') {
+            if (effect.field === 'gold') return `金币 ${Number(effect.amount) > 0 ? '+' : ''}${effect.amount}${effect.note ? `｜${effect.note}` : ''}`;
+            if (effect.field === 'item') return `物品 ${effect.name} ${Number(effect.count) > 0 ? '+' : ''}${effect.count}${effect.note ? `｜${effect.note}` : ''}`;
+            if (effect.field === 'realm') return `境界 ${effect.realm}${effect.stage ? ` ${effect.stage}` : ''}${effect.note ? `｜${effect.note}` : ''}`;
+        }
+        return '';
+    }).filter(Boolean).join('\n');
+}
 const IMPACT_REASON_TEXT = {
     title_missing: '请写标题：世界哪一块变了。',
     title_too_long: '标题超过 20 字，删短一点。',
@@ -12066,18 +13309,21 @@ const IMPACT_REASON_TEXT = {
     event_too_long: '对上台账的事件编号超过 40 字，删短一点。',
     duplicate_record: '同一天、同一对象已经有同名影响，改个标题或换一天。',
     duplicate_similar: '账本里已经有一件很像的事（同一对象、同样的偏移、两天之内）：要改它就用“编辑”，别新开一条。',
-    bad_ripen: '发酵天数要填 1–365 的整数。',
-    bad_days: '提前/延后天数要填非 0 的整数，负数提前、正数延后。',
-    no_schedule: '这条本来没有安排发酵日，没法“提前”；直接编辑它定一个发酵天数。',
+    bad_seed: '“因”超过 40 字，删短一点（写清埋进去的是什么物件或人情）。',
+    bad_trigger: '“等”超过 60 字，删短一点（写清什么样的场面才算撞上）。',
+    bad_hit: '“撞上的场面”超过 120 字，删短一点。',
+    bad_days: '调整方向要填非 0 的整数：负数＝沉下去等场面，正数＝捞回明面。',
     bad_kind: '性质选项不认识。',
     bad_weight: '分量选项不认识。',
     bad_certainty: '确定性选项不认识。',
     bad_shift: '原著偏移选项不认识。',
     record_not_found: '这条影响已经不在了，刷新一下账本。',
-    record_inactive: '这条已经了结或修复了，不能再调时间。',
-    already_ripened: '这件事已经发酵过了，不能再改发酵日。',
+    record_inactive: '这条已经了结或修复了，不能再动它。',
     archive_not_found: '档案里找不到这条，刷新一下。',
     library_full: '库里满了，先删一条或调大库容量再恢复。',
+    already_materialized: '这条的后果已经推进世界台账了，不用再落成一次。',
+    record_not_ripened: '这条还没应验，先点“应验”再落成。',
+    already_unmaterialized: '这条本来就没算落成，不用退回。',
     unknown_op: '操作不认识，刷新页面后重试。',
 };
 
@@ -12092,12 +13338,20 @@ function openImpactForm(panel, record = null) {
     const dock = form.closest('[data-modal-dock]');
     form.hidden = false;
     form.dataset.ref = record?.id ?? '';
-    // 只记“世界被改成了什么样”，不排发酵日：新旧影响一律立即生效，能用到时就注入。
+    // 只记“世界被改成了什么样”，不排发作日子：新旧影响一律立即生效，能用到时就注入。
     for (const name of IMPACT_FORM_FIELDS) {
         const field = impactFormField(form, name);
         if (!field) continue;
         if (!record) {
             field.value = name === 'kind' ? 'direct' : name === 'weight' ? 'minor' : name === 'certainty' ? 'certain' : name === 'shift' ? 'none' : '';
+            continue;
+        }
+        if (name === 'links') {
+            field.value = impactLinksText(record.links);
+            continue;
+        }
+        if (name === 'effects') {
+            field.value = impactEffectsText(record.effects);
             continue;
         }
         field.value = record[name] ?? '';
@@ -12143,6 +13397,8 @@ async function saveImpactForm(panel) {
         eventId: read('eventId'),
         canon: read('canon'),
         shift: read('shift'),
+        links: parseImpactLinksText(read('links')),
+        effects: parseImpactEffectsText(read('effects')),
     };
     const ops = [op];
     const result = await panelMutation(panel, ops, operations => {
@@ -12189,6 +13445,11 @@ async function saveImpactForm(panel) {
 
 /** 单条操作（收场/修复/删除/恢复）：走同一条落账路径，失败把原因翻成人话。 */
 async function runImpactOp(panel, op, successText) {
+    // 删/修复一条已经落成过世界事件的影响时，把那条事件一起撤掉；否则账上没了、世界里还留着，
+    // 玩家会看到一条没人认领的旧事件。先记下目标，等落账成功再动世界，避免落账失败却先删了事件。
+    const target = ['forget', 'revert'].includes(op?.op) && op.ref
+        ? agentImpactRuntime.snapshot().records.find(record => record.id === op.ref) ?? null
+        : null;
     const result = await panelMutation(panel, [op], operations => {
         const changed = agentImpactRuntime.apply(operations, { source: 'manual', day: worldDay() });
         if (changed.status === 'applied') changed.persistence = persistImpact();
@@ -12200,9 +13461,18 @@ async function runImpactOp(panel, op, successText) {
         setImpactStatus(IMPACT_REASON_TEXT[reason] ?? `操作被拒绝（${reason}）。`);
         return { status: 'rejected', reason };
     }
+    let extra = '';
+    if (target?.materialized && target.outcomeEventId) {
+        const rollback = agentImpactExecutor.rollback(target);
+        if (rollback.status === 'removed') {
+            persistWorld();
+            refreshWorldPage();
+            extra = `；世界事件 ${rollback.eventId} 也一起撤了`;
+        }
+    }
     agentImpactInjection.invalidate();
     renderImpactLibrary(panel);
-    setImpactStatus(successText);
+    setImpactStatus(`${successText}${extra}`);
     return { status: 'applied' };
 }
 
@@ -12255,8 +13525,117 @@ function renderImpactArchive(panel) {
     }
 }
 
+/** 账本里记的原著节点名（`节点｜加速` 只取前面那段）。 */
+function impactCanonName(record) {
+    const raw = typeof record?.canon === 'string' ? record.canon.trim() : '';
+    return raw ? raw.split(/[｜|]/)[0].trim() : '';
+}
+
+/** 拿账本里的节点名去原著资料库（世界书「故事线」类）里找回那一条。
+ *  资料库没导入、或名字对不上，就返回 null——面板会如实写“资料库里没找到”，不编内容。 */
+function impactCanonEntry(record) {
+    const name = impactCanonName(record);
+    if (!name) return null;
+    try {
+        const hits = agentFactsIndex.findByName(name) ?? [];
+        if (hits.length) {
+            return hits.find(item => item.category === '故事线') ?? hits[0];
+        }
+        const loose = (agentFactsIndex.entriesOfCategory('故事线') ?? []).find(item =>
+            item?.name && (item.name.includes(name) || name.includes(item.name)));
+        return loose ?? null;
+    } catch {
+        return null;
+    }
+}
+
+/** 原著条目里那几段固定结构（承接 / 正文 / 接续），有才取，没有留空。 */
+function impactCanonParts(entry) {
+    const content = String(entry?.content ?? '');
+    const pick = label => {
+        const match = new RegExp(`${label}[：:]\\s*([\\s\\S]*?)(?=\\n\\s*(?:原著范围|承接|接续|正文)[：:]|$)`, 'u').exec(content);
+        return match ? match[1].trim() : '';
+    };
+    return { volume: /原著范围[：:]\s*卷\s*0*(\d{1,2})/u.exec(content)?.[1] ?? '', carry: pick('承接'), body: pick('正文'), next: pick('接续') };
+}
+
+/** “对原著”展开的那一块：偏移、这条影响本身，外加资料库里那节原文（承接/正文/接续）。 */
+function impactCanonModalSections(record, entry) {
+    const parts = impactCanonParts(entry);
+    const sections = [
+        { title: '这条影响怎么改原著', rows: [
+            ['原著节点', impactCanonName(record) || '没牵动原著节点'],
+            ['偏移', record.canon ? (SHIFT_LABEL[record.shift] ?? '改写') : '不牵动'],
+            ['改成了什么样', typeof record.canonWhat === 'string' ? record.canonWhat.trim() : ''],
+            ['凭什么', typeof record.canonBasis === 'string' ? record.canonBasis.trim() : ''],
+            ['这一条', typeof record.title === 'string' ? record.title.trim() : ''],
+            ['详情', typeof record.detail === 'string' ? record.detail.trim() : ''],
+        ] },
+    ];
+    if (!entry) {
+        sections.push({ title: '资料库里的原著', rows: [['原文', '资料库里没找到这个节点：可能是名字对不上，或还没从世界书导入「故事线」类条目。']] });
+        return sections;
+    }
+    sections.push({ title: `资料库 · ${entry.category}`, rows: [
+        ['编号', `#${entry.uid}`],
+        ['卷号', parts.volume ? `卷 ${Number(parts.volume)}` : (Array.isArray(entry.volumes) && entry.volumes.length ? entry.volumes.map(item => `卷${item}`).join('、') : '未标卷')],
+        ['汇总', typeof entry.summary === 'string' ? entry.summary : ''],
+        ['承接', parts.carry],
+        ['接续', parts.next],
+    ].filter(row => row[1] !== '') });
+    sections.push({ title: '原著正文（这一节）', rows: [['全文', parts.body || String(entry.content ?? '').trim()]] });
+    return sections;
+}
+
+/**
+ * 回响：这条影响落成之后在世界上留下的痕迹（世界事件 / 推进的剧情线 / 被波及的人 / 派生余波 / 进过几轮正文）。
+ * 面板和小卡都调这一个，免得两处口径打架。
+ */
+/**
+ * 落成之后到底落在哪儿：有世界事件就报事件号；只动了人/身家的影响要说清落在人物簿还是纳戒。
+ * 面板、小卡、命令回执共用这一处口径，免得有的地方写「世界事件」、有的地方写「没落成」。
+ */
+function impactSeatLabel(record) {
+    const types = new Set((Array.isArray(record?.effects) ? record.effects : []).map(effect => effect?.type));
+    if (types.has('self') && types.has('npc')) return '人物簿与纳戒';
+    if (types.has('self')) return '纳戒';
+    if (types.has('npc')) return '人物簿';
+    return '世界事件';
+}
+
+function impactEchoView(record) {
+    if (!record) return { count: 0, summary: '', rows: [] };
+    try {
+        const snapshot = agentWorldRuntime.snapshot();
+        const echoes = buildImpactEchoes({
+            record,
+            records: agentImpactRuntime.list() ?? [],
+            events: [...(snapshot?.nearEvents ?? []), ...(snapshot?.worldEvents ?? [])],
+            threads: agentPlotRuntime.snapshot()?.threads ?? [],
+            npcs: agentNpcLedger.list() ?? [],
+            injected: agentImpactInjection.injectedIds(),
+            history: agentImpactInjection.injectedHistory(),
+        });
+        const labelOf = { ripple: '余波', event: '世界事件', thread: '剧情线', npc: '人物' };
+        const rows = (echoes?.items ?? []).slice(0, 10).map(item => [
+            labelOf[item.kind] ?? '痕迹',
+            [item.title, item.id && item.id !== item.title ? `（${item.id}）` : '', item.day ? `第 ${item.day} 天` : '', item.note].filter(Boolean).join(' · '),
+        ]);
+        return { count: echoes?.count ?? 0, summary: echoes?.summary ?? '', rows };
+    } catch {
+        return { count: 0, summary: '', rows: [] };
+    }
+}
+
 /** 一条影响的卡片：标题/状态徽标/详情/对象与出处分三层，不再把所有信息挤在首行。 */
-function buildImpactItem(record, { injected = false, children = null, chatLength = null, compact = false } = {}) {
+/** 行内那颗小徽标：只说状态，不再报天数——什么时候显形由剧情决定，不按日子算。 */
+function impactCountdownText(record, today) {
+    if (record.state === 'ripened' && !record.materialized) return { text: '等着落成', soon: true };
+    if (record.state === 'sunk') return { text: '埋着等场面', soon: false };
+    return null;
+}
+
+function buildImpactItem(record, { injected = false, children = null, chatLength = null, compact = false, today = null } = {}) {
     const item = makeElement('li', `dai-impact-item${compact ? ' is-compact' : ''}`);
     if (record.edited) item.classList.add('is-edited');
     const top = makeElement('div', 'dai-impact-top');
@@ -12277,6 +13656,29 @@ function buildImpactItem(record, { injected = false, children = null, chatLength
             revert.dataset.impactRevert = record.id;
             actions.append(close, revert);
         }
+        // 手动应验/落成：埋着的因等的是场面，等不到场面又想当场看后果时，给一个手动开关。
+        if (record.state === 'active') {
+            const ripen = makeElement('button', 'dai-impact-edit', '应验');
+            ripen.type = 'button';
+            ripen.title = '把这条影响标记为已应验，并立刻尝试落成世界后果';
+            ripen.dataset.impactRipen = record.id;
+            actions.append(ripen);
+        }
+        // 传闻化 / 坐实：压成传闻的影响落成后不点名参与人、世界事件按 rumor 分量走，NPC 只会“听说”。
+        if (record.state !== 'closed' && record.state !== 'reverted') {
+            const rumorButton = makeElement('button', 'dai-impact-edit', record.certainty === 'rumor' ? '坐实' : '压成传闻');
+            rumorButton.type = 'button';
+            rumorButton.title = record.certainty === 'rumor' ? '把这条传闻坐实成确凿事实' : '把这条影响压成街上的风声（落成时不点名、只当传闻）';
+            rumorButton.dataset.impactRumor = record.id;
+            actions.append(rumorButton);
+        }
+        if (record.state === 'ripened' && !record.materialized) {
+            const materialize = makeElement('button', 'dai-impact-edit', '落成');
+            materialize.type = 'button';
+            materialize.title = '把已应验的影响推演成世界台账事件';
+            materialize.dataset.impactMaterialize = record.id;
+            actions.append(materialize);
+        }
         const forget = makeElement('button', 'dai-impact-edit is-danger', '删除');
         forget.type = 'button';
         forget.dataset.impactForget = record.id;
@@ -12294,6 +13696,19 @@ function buildImpactItem(record, { injected = false, children = null, chatLength
     if (record.eventId) chips.append(makeElement('span', 'dai-impact-chip', `台账 ${record.eventId}`));
     if (record.parent) chips.append(makeElement('span', 'dai-impact-chip', `接自 #${record.parent}`));
     if (children?.length) chips.append(makeElement('span', 'dai-impact-chip', `引出 ${children.map(id => `#${id}`).join('、')}`));
+    if (record.materialized) {
+        chips.append(makeElement('span', 'dai-impact-chip is-accent', `已应验${record.outcomeEventId ? ` · ${record.outcomeEventId}` : ''}`));
+    } else if (record.latent && record.state === 'active') {
+        chips.append(makeElement('span', 'dai-impact-chip', '潜伏中'));
+    }
+    // 倒计时是“以后会发生什么”的抓手：几时发作、还剩几天，直接写进行里，不用点开算。
+    const countdown = impactCountdownText(record, today);
+    if (countdown) chips.append(makeElement('span', `dai-impact-chip${countdown.soon ? ' is-warn' : ''}`, countdown.text));
+    const links = linksSummary(record);
+    if (links) chips.append(makeElement('span', 'dai-impact-chip', `牵涉 ${introText(links, 30)}`));
+    if (Array.isArray(record.effects) && record.effects.length) {
+        chips.append(makeElement('span', 'dai-impact-chip', `后果 ${record.effects.length}`));
+    }
     if (injected) chips.append(makeElement('span', 'dai-impact-chip is-accent', '本轮已注入'));
     if (record.edited) chips.append(makeElement('span', 'dai-impact-chip is-warn', '改过'));
     if (Number.isInteger(record.floor) && chatLength !== null && record.floor >= chatLength) {
@@ -12301,11 +13716,63 @@ function buildImpactItem(record, { injected = false, children = null, chatLength
     }
     if (chips.childNodes.length) item.append(chips);
 
-    // 行内只留一句截断简介，完整内容与全部元数据点开弹窗看。
-    if (record.detail) item.append(makeElement('p', 'dai-impact-detail', introText(record.detail, 40)));
+    // 每条影响自己的三问就挂在卡片上：做了什么 / 对原著 / 以后会发生。
+    // 这三问是这一条影响的属性，不是整页的汇总；长内容各行只留一行，点开弹窗看全。
+    const childRecords = (Array.isArray(children) ? children : [])
+        .map(id => agentImpactRuntime.list({}).find(item => item.id === id))
+        .filter(Boolean);
+    const answers = impactAnswers(record, { day: today ?? worldDay(), children: childRecords, nodeLabel: canonNodeLabel });
+    const answersBox = makeElement('dl', 'dai-impact-answers');
+    const answerRow = (label, value, cls = '') => {
+        const row = makeElement('div', `dai-impact-answer${cls ? ` ${cls}` : ''}`);
+        row.append(makeElement('dt', '', label), makeElement('dd', '', value));
+        answersBox.append(row);
+    };
+    if (answers.done) answerRow('做了什么', compact ? introText(answers.done, 60) : answers.done);
+    answerRow('对原著', answers.canon || '没牵动原著节点', answers.canon ? 'is-canon' : 'is-quiet');
+    if (answers.future) answerRow('以后', compact ? introText(answers.future, 60) : answers.future, 'is-future');
+    // 点“对原著”那一行就地展开原著原文与偏移：想知道这条改了什么原著，不用再翻世界书。
+    const canonCell = answersBox.querySelector('.dai-impact-answer.is-canon dd');
+    if (canonCell) {
+        const canonEntry = impactCanonEntry(record);
+        canonCell.classList.add('is-clickable');
+        canonCell.title = canonEntry ? '点开看原著这一节怎么写、被改成了什么' : '点开看这条对原著的说明';
+        canonCell.addEventListener('click', clickEvent => {
+            clickEvent.stopPropagation();
+            const panel = typeof document === 'undefined' ? null : document.getElementById(SETTINGS_PANEL_ID);
+            if (!panel) return;
+            openReadonlyDetailModal(panel, `${impactCanonName(record) || record.title} · 原著`, impactCanonModalSections(record, canonEntry));
+        });
+    }
+    item.append(answersBox);
+    // 回响行内提示：有痕迹才露一句，让玩家不点开也知道“这条真的动到了东西”。
+    const echoLine = impactEchoView(record);
+    if (echoLine.count) item.append(makeElement('small', 'dai-impact-echo', `回响 ${echoLine.count}${echoLine.summary ? ` · ${echoLine.summary}` : ''}`));
+
     wireRowDetail(item, panel => {
+        const childRecords = (Array.isArray(children) ? children : [])
+            .map(id => agentImpactRuntime.list({}).find(item => item.id === id))
+            .filter(Boolean);
+        const full = impactAnswers(record, { day: today ?? worldDay(), children: childRecords, nodeLabel: canonNodeLabel });
+        // 回响只算一次：算力不大，但同一张卡里重复三遍没必要。
+        const echo = impactEchoView(record);
         openReadonlyDetailModal(panel, capDetailTitle(record.title), [
-            { rows: [
+            // 三问是这条影响自己的属性：做了什么 / 对原著 / 以后会发生，放在最前面，展开就能答。
+            { title: '这条影响的三问', rows: [
+                ['做了什么', full.done],
+                ['对原著', full.canon || '没牵动原著节点'],
+                ['以后会发生', full.future],
+            ] },
+            { title: '世界改了什么', rows: [
+                ['牵涉', linksSummary(record)],
+                ['后果', effectsSummary(record)],
+                ['应验', record.materialized ? `第 ${record.materializedDay ?? record.day} 天${record.outcomeEventId ? `（事件 ${record.outcomeEventId}）` : ''}` : ''],
+                ['结果', typeof record.resolution === 'string' ? record.resolution.trim() : ''],
+                ['备注', record.certainty === 'rumor' ? '传闻（未证实）' : ''],
+            ] },
+            // 回响单独一并：落成之后这条影响到底在世界上留下了什么，是「蝴蝶效应」的落点。
+            ...(echo.count ? [{ title: `回响 ${echo.count}${echo.summary ? `（${echo.summary}）` : ''}`, rows: echo.rows }] : []),
+            { title: '这条影响的来历', rows: [
                 ['内容', typeof record.detail === 'string' ? record.detail.trim() : ''],
                 ['级别', WEIGHT_LABEL[record.weight] ?? '小事'],
                 ['状态', STATE_LABEL[record.state] ?? '未了结'],
@@ -12316,15 +13783,44 @@ function buildImpactItem(record, { injected = false, children = null, chatLength
                 ['台账事件', record.eventId ? `#${record.eventId}` : ''],
                 ['承接', record.parent ? `#${record.parent}` : ''],
                 ['引出', children?.length ? children.map(id => `#${id}`).join('、') : ''],
-                ['结果', typeof record.resolution === 'string' ? record.resolution.trim() : ''],
-                ['备注', record.certainty === 'rumor' ? '传闻（未证实）' : ''],
             ] },
         ]);
     }, { ignore: 'button, input, textarea, select, .dai-impact-form' });
-    if (record.state === 'ripened') item.append(makeElement('small', 'dai-impact-fate', `已发酵${record.resolution ? ` · ${record.resolution}` : ''}`));
+    if (record.materialized) item.append(makeElement('small', 'dai-impact-fate', `已应验${record.materializedDay ? `（第 ${record.materializedDay} 天）` : ''}${record.outcomeEventId ? ` · 世界事件 ${record.outcomeEventId}` : ''}${record.resolution ? ` · ${record.resolution}` : ''}`));
+    else if (record.state === 'ripened') item.append(makeElement('small', 'dai-impact-fate', `已应验${record.resolution ? ` · ${record.resolution}` : ''}`));
     else if (record.state === 'closed') item.append(makeElement('small', 'dai-impact-fate', `已了结${record.resolution ? ` · ${record.resolution}` : ''}`));
     else if (record.state === 'reverted') item.append(makeElement('small', 'dai-impact-fate', '已被修复/撤销'));
     return item;
+}
+
+/**
+ * 顶部只留一行统计：三问是每条影响自己的属性，展开某一条才能看到它的三问。
+ * 这里只回答“这局一共多大”：记了多少、动了原著几处、还有几件事在等。
+ * 想看具体内容，往下点某一条；不要在这里重复铺一遍账本。
+ */
+function renderImpactBoard(panel) {
+    const board = panel?.querySelector?.('[data-impact-board]');
+    if (!board) return;
+    const today = worldDay();
+    const all = agentImpactRuntime.list();
+    const live = all.filter(record => record.state === 'active' || record.state === 'ripened' || record.state === 'sunk');
+    if (!all.length) {
+        board.replaceChildren(makeElement('p', 'dai-impact-empty', '这一局还没有记录。玩家做出会改变世界的事之后，每条影响都会带“做了什么 / 对原著 / 以后”。'));
+        return;
+    }
+    const view = impactThreeQuestions(all, { day: today, doneLimit: 0, futureLimit: 0, nodeLabel: record => canonNodeLabel(record) || '未归类' });
+    const canonCount = all.filter(record => record.canon).length;
+    const line = [
+        `这局记了 ${all.length} 条`,
+        `还在演 ${live.length} 条`,
+        `动过原著 ${canonCount} 处`,
+        `埋着 ${view.sunk} 条`,
+        `落成世界 ${view.materialized} 条`,
+    ].join(' · ');
+    board.replaceChildren(
+        makeElement('span', 'dai-impact-oneline', line),
+        makeElement('small', 'dai-impact-oneline-hint', '每条影响自己都带「做了什么 / 对原著 / 以后」——点开任一查看。'),
+    );
 }
 
 /** 总览页：只铺最近生成的 N 条（N 可在设置里改），完整账本进弹窗。 */
@@ -12342,7 +13838,7 @@ function renderImpactRecent(panel) {
         return;
     }
     const injected = new Set(agentImpactInjection.injectedIds());
-    list.replaceChildren(...recent.map(record => buildImpactItem(record, { injected: injected.has(record.id), compact: true })));
+    list.replaceChildren(...recent.map(record => buildImpactItem(record, { injected: injected.has(record.id), compact: true, today: worldDay() })));
     if (all.length > recent.length) {
         const hint = makeElement('li', 'dai-impact-empty', `只显示最近 ${recent.length} 条（共 ${all.length} 条）；全部记录与筛选在「世界账本」里。`);
         list.append(hint);
@@ -12379,23 +13875,68 @@ function renderImpactLibrary(panel) {
     // 页面顶部状态行：账本规模 + 上一轮注入走了哪条路、挑了几条，功能一眼可见。
     const statsBox = target?.querySelector?.('[data-impact-stats]');
     if (statsBox) {
-        const lastState = agentImpactInjection.lastState();
+        const lastState = impactInjectionLastState();
         const via = lastState
             ? (lastState.status === 'injected'
                 ? `上一轮已注入 ${lastState.usedIds?.length ?? 0} 条（${lastState.via === 'llm' ? '模型挑选' : '按分量直取'}）`
                 : lastState.status === 'skipped' ? '上一轮模型判断这一幕用不上旧账，未注入' : '上一轮没有可注入的影响')
             : '本轮还没挑过注入；生成前会自动挑。';
-        statsBox.textContent = via;
+        const lines = [via];
+        if (lastImpactResult) {
+            const applied = Array.isArray(lastImpactResult.applied) ? lastImpactResult.applied.length : 0;
+            const rejected = Array.isArray(lastImpactResult.rejected) ? lastImpactResult.rejected.length : 0;
+            lines.push(`上次记录：第 ${lastImpactResult.day} 天 · 记 ${applied} 条${rejected ? ` · 拒 ${rejected} 条` : ''}${lastImpactResult.note ? `｜${lastImpactResult.note}` : ''}`);
+            if (lastImpactResult.materializeError) lines.push(`后果没落成：${lastImpactResult.materializeError}`);
+            else if (lastImpactResult.materialized || lastImpactResult.chain) lines.push(`后果：落成 ${lastImpactResult.materialized ?? 0} 条${lastImpactResult.chain ? ` · 派生 ${lastImpactResult.chain} 条余波` : ''}`);
+            else if (lastMaterializeResult?.threads?.length) lines.push(`后果：推进剧情线 ${lastMaterializeResult.threads.length} 条`);
+            const threadLines = Array.isArray(lastImpactResult.threads) ? lastImpactResult.threads : [];
+            if (threadLines.length) lines.push(`剧情线：${threadLines.slice(0, 2).join('；')}${threadLines.length > 2 ? `（等 ${threadLines.length} 条）` : ''}`);
+            if (lastImpactResult.warnings?.length) lines.push(`提示：${lastImpactResult.warnings[0]}${lastImpactResult.warnings.length > 1 ? `（等 ${lastImpactResult.warnings.length} 条）` : ''}`);
+        } else {
+            lines.push('还没跑过自动记录；点“现在记录一次”可以先手动跑。');
+        }
+        statsBox.textContent = lines.join(' ｜ ');
     }
     if (summary) {
-        const extra = [`已了结 ${status.closed}`];
+        const extra = [`收了 ${status.closed}`];
         if (status.reverted) extra.push(`修复 ${status.reverted}`);
         if (status.edited) extra.push(`改过 ${status.edited}`);
         if (status.archived) extra.push(`档案 ${status.archived}`);
-        summary.textContent = status.total
-            ? `本局 ${status.total} 条 · 未了结 ${status.active} · 已发酵 ${status.ripened} · ${extra.join(' · ')}`
-            : '这一局还没有记录。玩家做出会改变世界的事之后，记录员会把它们记在这里。';
+        if (!status.total) {
+            summary.textContent = '这一局还没有记录。玩家做出会改变世界的事之后，记录员会把它们记在这里。';
+        } else {
+            // 三个问题一眼可答：做了什么、对原著做了什么、以后还会发生什么。
+            const all = agentImpactRuntime.list();
+            const today = worldDay();
+            const direct = all.filter(record => record.kind === 'direct').length;
+            const canon = all.filter(record => record.canon);
+            const shifted = {};
+            for (const record of canon) shifted[record.shift] = (shifted[record.shift] ?? 0) + 1;
+            const shiftText = Object.entries(shifted)
+                .filter(([key]) => key !== 'none')
+                .map(([key, count]) => `${SHIFT_LABEL[key] ?? key} ${count}`)
+                .join('、');
+            // 原著节点归组：同一件事被记成“退婚”“纳兰嫣然退婚”时，面板按标准名合在一起。
+            const nodeCounts = new Map();
+            for (const record of canon) {
+                const label = canonNodeLabel(record.canon);
+                if (!label) continue;
+                nodeCounts.set(label, (nodeCounts.get(label) ?? 0) + 1);
+            }
+            const nodeText = [...nodeCounts.entries()].map(([label, count]) => `${label} ${count}`).join('、');
+            const pending = all.filter(record => record.state === 'sunk');
+            const awaitSettle = all.filter(record => record.state === 'ripened' && !record.materialized).length;
+            const materialized = all.filter(record => record.materialized).length;
+            const canonDetail = [nodeText, shiftText].filter(Boolean).join('；');
+            summary.textContent = [
+                `做了什么：${status.total} 条（亲手 ${direct}）`,
+                `对原著：${canon.length ? `${canon.length} 处${canonDetail ? `（${canonDetail}）` : ''}` : '还没牵动'}`,
+                `以后：埋着 ${pending.length} 条${awaitSettle ? `、等着落成 ${awaitSettle} 条` : ''} · 已落成世界事件 ${materialized} 条`,
+                extra.join(' · '),
+            ].filter(Boolean).join(' ｜ ');
+        }
     }
+    renderImpactBoard(target);
     renderImpactRecent(target);
     renderImpactArchive(target);
     if (!records.length) {
@@ -12408,6 +13949,7 @@ function renderImpactLibrary(panel) {
         injected: injected.has(record.id),
         children: children.get(record.id),
         chatLength,
+        today: worldDay(),
     })));
     if (records.length > impactShown) {
         const more = makeElement('li', 'dai-impact-item');
@@ -12655,10 +14197,22 @@ function renderFactsBrowser(panel) {
         row.append(head);
         if (entry.summary) row.append(makeElement('small', 'dai-world-event-basis', entry.summary));
         wireRowDetail(row, detailPanel => {
-            openReadonlyDetailModal(detailPanel, `${entry.category} · ${capDetailTitle(entry.name)}`, [
+            // 故事线是原著节点：反过来查“这一节被哪些影响动过”，两边对得上看才不会各说各话。
+            const touched = entry.category === '故事线'
+                ? agentImpactRuntime.list({}).filter(record => impactCanonName(record) === entry.name
+                    || (typeof record.canon === 'string' && record.canon.includes(entry.name)))
+                : [];
+            const sections = [
                 { rows: [['编号', `#${entry.uid}`], ['类别', entry.category], ['卷号', Array.isArray(entry.volumes) && entry.volumes.length ? entry.volumes.map(item => `卷${item}`).join('、') : '未标卷'], ['标题', entry.name], ['别名', Array.isArray(entry.aliases) ? entry.aliases.join('、') : ''], ['字数', String(entry.chars ?? '')]] },
                 { title: '正文', rows: [['全文', String(entry.content ?? '').trim()]] },
-            ]);
+            ];
+            if (entry.category === '故事线') {
+                // 反向查到之后要交代清楚“被改成了什么样”：只写「加速」等于没说改了什么。
+                sections.push({ title: `这一节被本局改过 ${touched.length} 处（反向）`, rows: touched.length
+                    ? touched.map(record => [`#${record.id}`, `${record.title}｜${SHIFT_LABEL[record.shift] ?? '改写'}${record.canonWhat ? `：${record.canonWhat}` : ''}｜${STATE_LABEL[record.state] ?? '未了结'}｜第 ${record.day} 天`])
+                    : [['反向', '这一局的账本还没动过这一节。']] });
+            }
+            openReadonlyDetailModal(detailPanel, `${entry.category} · ${capDetailTitle(entry.name)}`, sections);
         });
         return row;
     });

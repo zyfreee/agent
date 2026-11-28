@@ -214,6 +214,9 @@ function normalizeOneFaction(raw) {
         stance: STANCES.includes(raw.stance) ? raw.stance : 'neutral',
         dynamics: text(raw.dynamics),
         basis: text(raw.basis),
+        // 存亡：'dissolved'＝已覆灭（名字保留在台账，注入里打「已覆灭」标记，正文不能当活势力写）；空＝存续。
+        status: raw.status === 'dissolved' ? 'dissolved' : '',
+        dissolvedDay: clampInt(raw.dissolvedDay, 1, 99999, null),
         day: clampInt(raw.day, 1, 99999, 1),
         updatedDay: clampInt(raw.updatedDay, 1, 99999, null),
     };
@@ -491,6 +494,9 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
             if (twin) {
                 const before = structuredClone(twin);
                 const merged = [];
+                // 并账前先记下这条旧事件原来挂的是谁的依据：影响落成时认领它之前，
+                // 必须知道「它本来就已经是谁的」。否则新影响会把依据覆盖成自己，删影响时连带删掉别人的事件。
+                const basisBefore = String(twin.basis ?? '');
                 if (body && body !== twin.text && sameText !== twin) { twin.text = body; merged.push('正文'); }
                 if (title && title !== twin.title) { twin.title = title; merged.push('标题'); }
                 const basis = text(op.basis);
@@ -514,6 +520,7 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
                     id: twin.id,
                     day: twin.day,
                     merged: true,
+                    basisBefore,
                     summary: `事件并入 ${twin.id}「${twin.title}」（${why}${merged.length ? `：更新${merged.join('、')}` : '，内容未变'}）`,
                     undo: { op: '_setEventRaw', event: before },
                 };
@@ -551,6 +558,20 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
             event.resolvedDay = state.clock.day;
             if (outcome) event.resolvedNote = outcome;
             return { ok: true, id: event.id, summary: `事件了结 ${event.id}：${event.text}${outcome ? `（结论：${outcome}）` : ''}`, undo: { op: '_restoreEvent', id: event.id, scope: event.scope, event: before, done: beforeDone, resolvedDay: beforeResolvedDay, resolvedNote: beforeResolvedNote } };
+        }
+        // 公开删事件：记错的事件、影响落成后又撤销的那条，都要能真从台账删掉，
+        // 而不是只把影响条目标成“已撤销”把世界事件留在原地。撤销步骤带原样事件，
+        // _restoreEvent 凭 scope+event 能把它放回去。
+        if (kind === 'removeEvent') {
+            const event = findEvent(text(op.id));
+            if (!event) return { ok: false, reason: 'event_not_found' };
+            if (event.done) return { ok: false, reason: 'event_already_done' };
+            const before = structuredClone(event);
+            const list = eventsOf(event.scope);
+            const at = list.findIndex(item => item.id === before.id);
+            if (at < 0) return { ok: false, reason: 'event_not_found' };
+            list.splice(at, 1);
+            return { ok: true, id: before.id, summary: `删事件 ${before.id}「${before.title}」`, undo: { op: '_restoreEvent', id: before.id, scope: before.scope, event: before, done: false, resolvedDay: null, resolvedNote: before.resolvedNote } };
         }
         // 事件进度：大事的酝酿→爆发、传闻的升级实锤都走它，只动已存在事件的四个字段。
         if (kind === 'updateEvent') {
@@ -668,6 +689,8 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
                 if (op[key] !== undefined) profile[key] = text(op[key]).slice(0, cap);
             }
             const existing = state.factions.find(item => item.name === name);
+            // 存亡：status='dissolved'＝覆灭（名字留在台账、注入打已覆灭标记）；'active'＝复立。省略＝不动存亡。
+            const wantedStatus = op.status === 'dissolved' ? 'dissolved' : op.status === 'active' ? '' : null;
             if (existing) {
                 const before = { ...existing };
                 if (op.stance !== undefined) existing.stance = stance;
@@ -676,12 +699,17 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
                 for (const [key] of FACTION_PROFILE_FIELDS) {
                     if (profile[key]) existing[key] = profile[key];
                 }
-                const changedKeys = ['stance', 'dynamics', 'basis', ...FACTION_PROFILE_FIELDS.map(([key]) => key)]
+                if (wantedStatus !== null) {
+                    existing.status = wantedStatus;
+                    existing.dissolvedDay = wantedStatus === 'dissolved' ? state.clock.day : null;
+                }
+                const changedKeys = ['stance', 'dynamics', 'basis', 'status', 'dissolvedDay', ...FACTION_PROFILE_FIELDS.map(([key]) => key)]
                     .filter(key => existing[key] !== before[key]);
                 if (!changedKeys.length) return { ok: false, reason: 'faction_nothing_to_update' };
                 existing.updatedDay = state.clock.day;
                 // 流水摘要：态度/动向照旧展示，档案变化逐项列出来（值截短防流水爆行）。
-                const head = `${STANCE_LABELS[existing.stance]}${existing.dynamics ? `（${existing.dynamics}）` : ''}`;
+                const goneTag = existing.status === 'dissolved' ? '【已覆灭】' : '';
+                const head = `${goneTag}${STANCE_LABELS[existing.stance]}${existing.dynamics ? `（${existing.dynamics}）` : ''}`;
                 const profileNote = FACTION_PROFILE_FIELDS
                     .filter(([key]) => changedKeys.includes(key))
                     .map(([key, label]) => `${label} ${clipText(existing[key]) || '（清空）'}`)
@@ -689,7 +717,10 @@ export function createWorldRuntime({ maxEvents = DEFAULT_MAX_EVENTS, maxLog = DE
                 const summary = profileNote ? `势力更新 ${name}：${head}｜${profileNote}` : `势力更新 ${name}：${head}`;
                 return { ok: true, summary, undo: { op: '_setFactionRaw', faction: before } };
             }
-            const faction = normalizeOneFaction({ name, stance, dynamics, basis, day: state.clock.day, updatedDay: state.clock.day, ...profile });
+            const faction = normalizeOneFaction({
+                name, stance, dynamics, basis, day: state.clock.day, updatedDay: state.clock.day, ...profile,
+                ...(wantedStatus ? { status: wantedStatus, dissolvedDay: state.clock.day } : {}),
+            });
             state.factions.push(faction);
             const tag = profile.type ? `（${profile.type}）` : '';
             const leaderNote = faction.leader ? `｜首领 ${faction.leader}` : '';

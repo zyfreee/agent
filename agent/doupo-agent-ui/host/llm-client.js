@@ -1,4 +1,4 @@
-const TYPES = new Set(['query', 'conversation', 'explicit_action', 'time_advance', 'due_event', 'historical_operation', 'system_operation', 'unclear']);
+﻿const TYPES = new Set(['query', 'conversation', 'explicit_action', 'time_advance', 'due_event', 'historical_operation', 'system_operation', 'unclear']);
 const TASKS = new Set(['ordinary_interaction', 'explicit_action', 'complex_action', 'system_operation', 'historical_operation', 'time_advance', 'unclear']);
 const EFFECT_TYPES = new Set(['set', 'add', 'remove']);
 
@@ -477,7 +477,7 @@ export function createLlmClient({ getSettings, getContext, fetchImpl, capture = 
     }
 
     /**
-     * 选连接：hint 是这一次调用自己的要求（记录员/场记可以各自选跟随酒馆或自定义），
+     * 选连接：hint 是这一次调用自己的要求（记录员/判定官可以各自选跟随酒馆或自定义），
      * 没给 hint 才看设置页的全局模式。custom 是这一次调用自带的一套接口参数（地址/密钥/模型），
      * 有不完整的地方就沿用“模型与连接”页填的值。
      * custom 只在这次调用明确要“自定义”时生效——设置页写明这些字段“选自定义才用得上”，

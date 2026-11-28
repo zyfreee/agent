@@ -144,6 +144,10 @@ lines.push(`时钟：${formatClock(clock)}（${seasonOf(today2)}季）${textOr(c
 
 /** 势力行：类型·驻地·档次做括号标签，首领/高层/成员/底蕴/关系逐段跟上；没填的整段跳过（老格式逐字不变）。 */
 function factionLine(faction) {
+    // 已覆灭的势力照列但打上标记：正文不能再把它当活着的势力写（覆灭也是既定状态）。
+    const gone = faction.status === 'dissolved'
+        ? `【已覆灭${Number.isFinite(Number(faction.dissolvedDay)) && faction.dissolvedDay ? `·第 ${faction.dissolvedDay} 天` : ''}】`
+        : '';
     const tag = [text(faction.type), text(faction.location), text(faction.level)].filter(Boolean).join('·');
     const profile = [
         text(faction.leader) ? `首领：${text(faction.leader)}` : '',
@@ -154,7 +158,7 @@ function factionLine(faction) {
     ].filter(Boolean).join('｜');
     const dynamics = text(faction.dynamics) ? `（${text(faction.dynamics)}）` : '';
     const basis = text(faction.basis) ? `（依据：${text(faction.basis)}）` : '';
-    return `- ${faction.name}${tag ? `（${tag}）` : ''}：${STANCE_LABELS[faction.stance] ?? '中立'}${profile ? `｜${profile}` : ''}${dynamics}${basis}`;
+    return `${gone}- ${faction.name}${tag ? `（${tag}）` : ''}：${STANCE_LABELS[faction.stance] ?? '中立'}${profile ? `｜${profile}` : ''}${dynamics}${basis}`;
 }
 
 function personLine(person) {

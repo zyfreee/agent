@@ -326,6 +326,11 @@ const DEFAULT_SETTINGS = Object.freeze({
         trackResources: true,
         showExplanation: true,
         maxChainDepth: 3,
+        // 涟漪/蝴蝶没写明确期限时，脚本按分量给一个默认潜伏期，到期后由推演器落成世界事件。
+        autoLatent: true,
+        // 落成后自动长出一条“余波”：账本里记一条，世界台账里也落一条风闻。
+        // 余波自己落成后还能再长下一层，层数由 maxChainDepth 管；不额外调模型。
+        deriveChain: true,
         // 世界影响总览页只铺最近几条；全量去“世界账本”弹窗里看。
         recentCount: 5,
         // 世界影响库：记录玩家把世界线改成了什么样，并在正文提示词里提醒叙事模型。
@@ -333,13 +338,13 @@ const DEFAULT_SETTINGS = Object.freeze({
         injectBudget: 0, // 注入字数预算，0/留空 = 不限制（默认口径）；填正数才把放不下的留在库里
         injectSmart: true, // 注入前先让模型挑“这一幕用得上”的影响；关掉则脚本按分量/日期直接挑
         injectMaxLines: 0, // 注入条数上限，0/留空 = 不限制（默认口径）
-        injectFloors: 0, // 场记判断“这一幕用得上什么”时看最近几楼（含玩家这句话；0 = 跟随全局读楼默认，即角色正则）
+        injectFloors: 0, // 判定官判“这一轮撞没撞上因”时看最近几楼（含玩家这句话；0 = 跟随全局读楼默认，即角色正则）
         injectModel: '', // 挑选员模型名；mode 选 custom 才用得上
         injectMode: 'tavern', // 'tavern' = 跟随酒馆当前设置；'custom' = 用下面这套自定义连接
         injectBaseUrl: '', // 自定义接口地址（选 custom 才用得上；留空沿用“模型与连接”页）
         injectApiKey: '', // 自定义接口密钥（留空沿用“模型与连接”页）
         injectProvider: '', // 'openai' / 'anthropic'（留空按接口地址判断）
-        // 'shared' = 记录员与场记共用一个模型；'split' = 各配各的
+        // 'shared' = 记录员与判定官共用一个模型；'split' = 各配各的
         modelMode: 'shared',
         decideMode: 'tavern', // 记录员的连接：跟随酒馆 / 自定义
         maxRecords: 0, // 账本上限，0 = 不限；注入只挑几条，不需要为了正文缩库
@@ -351,8 +356,8 @@ const DEFAULT_SETTINGS = Object.freeze({
         decideBaseUrl: '', // 自定义接口地址（选 custom 才用得上；留空沿用“模型与连接”页）
         decideApiKey: '', // 自定义接口密钥（留空沿用“模型与连接”页）
         decideProvider: '', // 'openai' / 'anthropic'（留空按接口地址判断）
-        injectTemperature: 0.2, // 场记温度；0 = 不显式指定
-        injectMaxTokens: 500, // 场记输出上限；0 = 不显式指定
+        injectTemperature: 0.2, // 判定官温度；0 = 不显式指定
+        injectMaxTokens: 500, // 判定官输出上限；0 = 不显式指定
         injectTopP: 0, // 0 = 不显式指定
         injectPresencePenalty: 0, // 0 = 不显式指定
         injectFrequencyPenalty: 0, // 0 = 不显式指定
@@ -362,9 +367,9 @@ const DEFAULT_SETTINGS = Object.freeze({
         decidePresencePenalty: 0, // 0 = 不显式指定
         decideFrequencyPenalty: 0, // 0 = 不显式指定
         prompt: '', // 记录员提示词，留空用内置默认
-        injectPrompt: '', // 场记提示词，留空用内置默认
+        injectPrompt: '', // 判定官提示词，留空用内置默认
         decideApiPreset: '', // API设置方案绑定：非空时记录员整套走方案
-        injectApiPreset: '', // API设置方案绑定：非空时场记整套走方案（shared 时随记录员绑定）
+        injectApiPreset: '', // API设置方案绑定：非空时判定官整套走方案（shared 时随记录员绑定）
     }),
     sandbox: Object.freeze({
         inertia: 'medium',
@@ -381,7 +386,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     api: Object.freeze({
         presets: Object.freeze([]),
     }),
-    schemaVersion: 15,
+    schemaVersion: 16,
 });
 
 function clone(value) {
@@ -413,7 +418,7 @@ const LEGACY_API_GROUPS = Object.freeze([
     { binding: 'npc.coldApiPreset', name: '冷藏推进员（迁移）', group: 'npc', prefix: 'cold', modeKey: 'coldMode' },
     { binding: 'memory.decideApiPreset', name: '纳戒与记忆决定（迁移）', group: 'memory', prefix: 'decide', modeKey: 'decideMode' },
     { binding: 'impact.decideApiPreset', name: '影响记录员（迁移）', group: 'impact', prefix: 'decide', modeKey: 'decideMode' },
-    { binding: 'impact.injectApiPreset', name: '影响场记（迁移）', group: 'impact', prefix: 'inject', modeKey: 'injectMode', onlyWhenSplit: true },
+    { binding: 'impact.injectApiPreset', name: '影响判定官（迁移）', group: 'impact', prefix: 'inject', modeKey: 'injectMode', onlyWhenSplit: true },
 ]);
 const LEGACY_PRESET_FIELDS = Object.freeze(['baseUrl', 'apiKey', 'provider', 'model', 'temperature', 'maxTokens', 'topP', 'presencePenalty', 'frequencyPenalty']);
 
@@ -465,6 +470,8 @@ function mergeSettings(current = {}) {
         ...(merged.memory.embedding && typeof merged.memory.embedding === 'object' && !Array.isArray(merged.memory.embedding) ? merged.memory.embedding : {}),
     };
     merged.ui.theme = normalizeTheme(merged.ui.theme);
+    // 窗景背景只认真布尔：老存档里没有这个键、或者被写成字符串 "false"，一律按关处理，
+    // 免得一个手改过的存档把玩家自己的聊天背景又盖掉。
     merged.sandbox.inertia = normalizeInertia(merged.sandbox.inertia);
     // 决定连接并成一套后，老配置纳戒侧单独填过、记忆侧还是默认值的，把纳戒那份搬过来当共用，
     // 免得升级后纳戒的连接悄悄丢掉；两侧都填过以记忆侧为准（集中页那张卡一直是它）。
@@ -546,6 +553,17 @@ function mergeSettings(current = {}) {
         for (const [group, key, legacy] of legacyBudgetDefaults) {
             const holder = merged[group];
             if (holder && Number(holder[key]) === legacy) holder[key] = 0;
+        }
+    }
+    // schemaVersion 16：方案自己那个「走酒馆通道」开关退役。它和「模型设置」页下拉里的
+    // 「跟随酒馆主连接」重复，而且一旦勾上，方案里填的地址/密钥/模型/采样参数全部作废——
+    // 填了却不用，是纯歧义。现在只剩一条口径：不绑方案＝走酒馆，绑了方案＝按方案地址直连。
+    // 老档里的 tavern 标记在 normalizeApiPresets 那一步就不再保留，这里再扫一遍兜底：
+    // 只删字段，绑定与地址一概不动；曾经是 tavern: true 又没填地址的方案，
+    // 现在 presetToOverrides 返回 null，绑定它的功能自动回落跟随酒馆，与旧行为一致。
+    if (Number(source.schemaVersion ?? 0) < 16) {
+        for (const preset of merged.api.presets ?? []) {
+            if (preset && Object.prototype.hasOwnProperty.call(preset, 'tavern')) delete preset.tavern;
         }
     }
     // 曾短暂把 NPC 决策并成 npc.apiPreset 的存档：拆回原样——收编值回到记录员绑定（空着才写），

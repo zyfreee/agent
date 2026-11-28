@@ -9,6 +9,7 @@
  */
 
 import { extractJson } from '../host/llm-client.js';
+import { doingFresh, recentExpLines } from './npc-ledger.js';
 
 const MOTIVE_ORDER = ['loop', 'favor', 'gossip', 'random'];
 
@@ -43,18 +44,22 @@ export const NPC_REACHOUT_JSON_SCHEMA = Object.freeze({
     additionalProperties: false,
 });
 
-/** 拼给主动联系调用的材料：档案要点 + 动机专属材料（开环/风闻）+ 时间与渠道。 */
+/** 拼给主动联系调用的材料：档案要点 + 动机专属材料（开环/风闻）+ 时间与渠道。
+ *  位置/动向过动向出口：人都被囚了还跑来找你喝茶，就是旧动向没把关。 */
 export function buildReachoutUser({ record = null, motive = 'random', loops = [], rumors = [], day = null, channel = '面对面', maxChars = 3000 } = {}) {
     const who = record && typeof record === 'object' ? record : {};
+    const fresh = doingFresh(who);
     const bits = [who.name || '（未知名）'];
     if (who.identity) bits.push(who.identity);
     if (who.realm) bits.push(`境界 ${who.realm}`);
-    if (who.location) bits.push(`在 ${who.location}`);
+    if (fresh && who.location) bits.push(`在 ${who.location}`);
     if (Array.isArray(who.traits) && who.traits.length) bits.push(`性格：${who.traits.join('、')}`);
     if (who.speech) bits.push(`说话风格：${who.speech}`);
     if (who.catchphrase) bits.push(`口头禅：${who.catchphrase}`);
     if (who.attitude) bits.push(`对玩家现状：${who.attitude}`);
-    if (who.doing) bits.push(`正在做什么：${who.doing}`);
+    if (fresh && who.doing) bits.push(`正在做什么：${who.doing}`);
+    const recent = recentExpLines(who, { count: 1 }).join('');
+    if (!fresh && recent) bits.push(`近况（动向以此为准）：${recent}`);
     bits.push(`好感 ${Number(who.favor) || 0}`);
     const blocks = [`${MOTIVE_LABELS[motive] ?? motive}｜${bits.filter(Boolean).join('｜')}`];
     const loopLines = (Array.isArray(loops) ? loops : [])

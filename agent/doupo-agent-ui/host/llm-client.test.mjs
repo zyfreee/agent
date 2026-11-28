@@ -245,7 +245,7 @@ assert.equal(adjudicateCalls[0].body.max_tokens, 512);
 assert.equal(adjudicateCalls[0].body.messages[0].content, '你是丹药判定器。只输出 JSON。');
 await assert.rejects(() => adjudicating.adjudicateAction({ system: '', input: 'x' }), /缺少类别判定提示词/);
 
-// —— 单次调用的连接覆盖：记录员/场记可以一个跟随酒馆、一个走自定义接口 ——
+// —— 单次调用的连接覆盖：记录员/判定官可以一个跟随酒馆、一个走自定义接口 ——
 const forcedCalls = [];
 const forced = createLlmClient({
     getSettings: () => ({ llm: { mode: 'tavern', baseUrl: 'https://api.example.com/v1', apiKey: 'k', model: 'global-model', temperature: 0.9 } }),
@@ -530,7 +530,7 @@ await assert.rejects(
     '自定义连接没配好时要用专属错误码，页面才能给出准确提示',
 );
 
-// —— 每次调用自带接口参数：记录员/场记各填各的地址和模型，互不干扰 ——
+// —— 每次调用自带接口参数：记录员/判定官各填各的地址和模型，互不干扰 ——
 const ownCalls = [];
 const own = createLlmClient({
     getSettings: () => ({ llm: { mode: 'tavern', baseUrl: 'https://global.example/v1', apiKey: 'global-key', model: 'global-model' } }),

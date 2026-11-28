@@ -24,7 +24,7 @@ const user = buildImpactDecideUser({
 });
 assert.ok(user.includes('世界台账'));
 assert.ok(user.includes('世界影响库'));
-assert.ok(user.includes('共 2 条：未了结 1、已发酵 0、已收场 1'));
+assert.ok(user.includes('共 2 条：未了结 1、埋着 0、已应验 0、已收场 1'));
 assert.ok(user.includes('#i1'));
 assert.ok(user.includes('原著·改写'));
 // 2026-11-18 用户口径：正文后调用只读「用户输入＋正文」两楼、全文不截——组装层不再有楼数天花板。
@@ -78,5 +78,45 @@ const settleUser = buildImpactDecideUser({ snapshot: { clock: { day: 12 }, recor
 assert.ok(settleUser.includes('【本轮行动结算（生成前已判定，影响库只记与判定一致的世界变化）】'), '喂料带结算节');
 assert.ok(settleUser.includes('药铺购凝血草'));
 assert.ok(!buildImpactDecideUser({ snapshot: { clock: { day: 12 }, records: [] }, floors: [] }).includes('【本轮行动结算'), '没有结算时不出这一节');
+
+// —— 牵涉与后果：schema 允许，解析时按上限截断，别让模型把账本撑爆 ——
+assert.ok(IMPACT_DECIDE_PROMPT.includes('牵涉'));
+assert.ok(IMPACT_DECIDE_PROMPT.includes('后果'));
+const recordSchema = IMPACT_JSON_SCHEMA.properties.ops.items.properties;
+assert.ok(recordSchema.links, 'schema 要有 links');
+assert.ok(recordSchema.effects, 'schema 要有 effects');
+assert.deepEqual(recordSchema.links.items.properties.type.enum, ['faction', 'place', 'person', 'thread', 'canon', 'event']);
+assert.deepEqual(recordSchema.effects.items.properties.type.enum, ['event', 'info', 'faction', 'npc', 'self']);
+// 五类后果在 schema 里都要有自己字段：npc 的 favor 与 self 的 amount/realm 缺了，
+// 结构化输出后端就产不出合法的人物簿/纳戒后果（提示词教了，表不认）。
+for (const key of ['favor', 'attitude', 'privateAttitude', 'appellation', 'note', 'injury', 'realm', 'location', 'doing', 'founded', 'dissolved']) {
+    assert.ok(recordSchema.effects.items.properties[key], `effects.items 要有 ${key}`);
+}
+assert.deepEqual(recordSchema.effects.items.properties.presence.enum, ['在场', '不在场']);
+for (const key of ['amount', 'count', 'realm', 'stage']) {
+    assert.ok(recordSchema.effects.items.properties[key], `effects.items 要有 ${key}`);
+}
+assert.deepEqual(recordSchema.effects.items.properties.field.enum, ['reputation', 'wanted', 'gold', 'item', 'realm']);
+
+const capped = parseImpactDecision(JSON.stringify({
+    ops: [{
+        op: 'record', title: '药材涨价', detail: 'd', target: '乌坦城',
+        links: Array.from({ length: 8 }, (_, index) => ({ type: 'person', name: `人${index}-${'长'.repeat(40)}` })),
+        effects: [
+            { type: 'event', title: '长'.repeat(40), text: '长'.repeat(200), scope: 'world', participants: ['a', 'b', 'c', 'd', 'e'] },
+            { type: 'info', field: 'reputation', value: '长'.repeat(80) },
+            { type: 'faction', name: '加列家族', stance: 'wary', dynamics: '长'.repeat(90) },
+            { type: 'faction', name: '萧家', stance: 'friendly' },
+        ],
+    }],
+}));
+assert.equal(capped.ops[0].links.length, 6, '牵涉最多 6 条');
+assert.equal(capped.ops[0].links[0].name.length, 40);
+assert.equal(capped.ops[0].effects.length, 3, '后果最多 3 条');
+assert.equal(capped.ops[0].effects[0].title.length, 30);
+assert.equal(capped.ops[0].effects[0].text.length, 120);
+assert.equal(capped.ops[0].effects[0].participants.length, 3, '参与人最多 3 个');
+assert.equal(capped.ops[0].effects[1].value.length, 80);
+assert.equal(capped.ops[0].effects[2].dynamics.length, 90);
 
 console.log('impact decide tests passed');

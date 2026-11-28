@@ -128,20 +128,23 @@ const anthropic = presetToOverrides(normalizeApiPreset({ baseUrl: 'https://x/v1'
 assert.equal(anthropic.custom.provider, 'anthropic');
 assert.deepEqual(anthropic.headers, { 'anthropic-version': '2023-07-01' });
 
-// ---------- 方案通道：tavern 方案只带通道标记，地址/密钥一概不带 ----------
-const tavernPreset = normalizeApiPreset({ id: 'p-tavern', name: '酒馆通道', tavern: true, baseUrl: 'https://ignored.example/v1', apiKey: 'sk-x', model: 'm' });
-assert.equal(tavernPreset.tavern, true, 'normalize 保留通道标记');
-assert.equal(tavernPreset.baseUrl, 'https://ignored.example/v1', '地址照常保留（切回直连时还在）');
-const tavernOverrides = presetToOverrides(tavernPreset);
-assert.deepEqual(tavernOverrides, { connection: 'tavern' }, 'tavern 方案＝单走酒馆通道，不带任何直连参数');
-// 没填地址的 tavern 方案照样可用（不会被 baseUrl 检查误杀）
-const tavernNoUrl = presetToOverrides(normalizeApiPreset({ tavern: true }));
-assert.deepEqual(tavernNoUrl, { connection: 'tavern' });
-// 老方案没有 tavern 字段：默认直连，行为不变
+// ---------- 方案不再自带通道开关：绑了方案＝直连，走酒馆＝不绑 ----------
+// 旧版方案卡上那个「走酒馆通道」复选框已删，tavern 字段也不再被 normalize 保留；
+// 语义只剩一处：功能卡下拉选「跟随酒馆主连接」＝走酒馆，绑了方案＝按方案地址直连。
+assert.equal(
+    Object.prototype.hasOwnProperty.call(normalizeApiPreset({ id: 'p-old', name: '老档', tavern: true, baseUrl: 'https://x/v1' }), 'tavern'),
+    false,
+    '旧档的 tavern 字段不再被保留（迁移里清掉）',
+);
+// 老存档里还带着 tavern: true 的方案，其地址照常生效——不再因为那个标记整条作废
+const staleTavern = presetToOverrides(normalizeApiPreset({ id: 'p-stale', name: '旧酒馆方案', tavern: true, baseUrl: 'https://x/v1', model: 'm' }));
+assert.equal(staleTavern.connection, 'custom', '旧 tavern 标记不再让整条方案变成“走酒馆”');
+assert.equal(staleTavern.custom.model, 'm');
+// 没填地址的方案仍然不可用（返回 null，调用方回落跟随酒馆并在设置页标出来）
+assert.equal(presetToOverrides(normalizeApiPreset({ tavern: true })), null, '没地址的方案不可用，不管旧档里写了什么');
+// 正常直连方案
 const legacyDirect = presetToOverrides(normalizeApiPreset({ baseUrl: 'https://x/v1', model: 'm' }));
 assert.equal(legacyDirect.connection, 'custom');
 assert.equal(legacyDirect.custom.model, 'm');
-// 新建/清洗后的方案默认 tavern: false
-assert.equal(normalizeApiPreset({ name: '新' }).tavern, false);
 
 console.log('api-presets tests passed');

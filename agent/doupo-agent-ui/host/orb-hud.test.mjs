@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { ORB_ITEMS, createOrbState, buildOrbPanels, buildWorldPanel, buildSelfPanel, buildNpcPanel, buildNpcDecisionPanel, buildColdPanel, buildImpactPanel, buildFactsPanel, buildSandboxPanel, buildOverviewPanel, buildMemoryPanel, buildMirrorPanel, buildJournalPanel, buildSettlePanel } from './orb-hud.js';
+import { ORB_ITEMS, createOrbState, buildOrbPanels, buildWorldPanel, buildSelfPanel, buildNpcPanel, buildNpcDecisionPanel, buildColdPanel, buildImpactPanel, buildImpactEchoes, buildPlotPanel, buildFactsPanel, buildSandboxPanel, buildOverviewPanel, buildMemoryPanel, buildMirrorPanel, buildJournalPanel, buildSettlePanel } from './orb-hud.js';
 
 // OPT-098: truthful totals and bounded pages expose every record beyond 200.
 for (const count of [201, 1000]) {
@@ -20,8 +20,8 @@ for (const count of [201, 1000]) {
 }
 
 // —— 图标清单：顺序固定、id 唯一、不依赖外部输入 ——
-assert.equal(ORB_ITEMS.length, 13);
-assert.deepEqual(ORB_ITEMS.map(item => item.id), ['overview', 'world', 'self', 'memory', 'npcledger', 'npc', 'cold', 'impact', 'facts', 'settle', 'mirror', 'journal', 'sandbox']);
+assert.equal(ORB_ITEMS.length, 14);
+assert.deepEqual(ORB_ITEMS.map(item => item.id), ['overview', 'world', 'self', 'memory', 'npcledger', 'npc', 'cold', 'impact', 'plot', 'facts', 'settle', 'mirror', 'journal', 'sandbox']);
 assert.ok(ORB_ITEMS.every(item => item.icon && item.title && item.hint));
 for (const probe of [ORB_ITEMS, ORB_ITEMS[0]]) assert.equal(Object.isFrozen(probe), true);
 
@@ -40,7 +40,7 @@ const resumed = createOrbState({ initial: 'impact' });
 assert.deepEqual(resumed.toggle(), { collapsed: false, panelId: 'impact' }, '记住上次选中的功能');
 assert.deepEqual(createOrbState({ initial: 'nope' }).toggle().panelId, null);
 
-// —— 空输入：十一个窗都不炸，全是“暂无”——
+// —— 空输入：十四个窗都不炸，全是“暂无”——
 const empty = buildOrbPanels({});
 for (const item of ORB_ITEMS) {
     const panel = empty[item.id];
@@ -201,9 +201,42 @@ const npc = buildNpcPanel({
     ],
 });
 assert.match(npc.summary, /记了 3 人，在场 2 人/);
-assert.match(npc.lists[0].items[0].meta, /友善（45）/);
-assert.match(npc.lists[0].items[1].meta, /冷淡（0）/);
-assert.match(npc.lists[0].items[2].meta, /信任（88）/);
+// 好感不再是 meta 里的一串字：单独一格给球上画数值、档位、涨落与刻度条。
+assert.deepEqual(npc.lists[0].items[0].favor, { value: 45, label: '友善', delta: 0 });
+assert.deepEqual(npc.lists[0].items[1].favor, { value: 0, label: '冷淡', delta: 0 });
+assert.deepEqual(npc.lists[0].items[2].favor, { value: 88, label: '信任', delta: 0 });
+assert.equal(npc.lists[0].items[0].meta, '在场 · 重要', 'meta 只留在场与重要度，好感不重复');
+assert.equal(npc.rows.find(row => row.label === '最亲近').value, '药老 +88');
+assert.equal(npc.rows.find(row => row.label === '最生分').value, '萧战 0');
+
+// 好感涨落与此刻情绪：都从档案的 favorLog / moods 现算，不额外存字段。
+const npcFavorPanel = buildNpcPanel({
+    status: { total: 1, present: 1, important: 0 },
+    records: [{
+        name: '云香',
+        favor: -12,
+        presence: '在场',
+        importance: '不重要',
+        favorLog: [{ floor: 1, day: 2, delta: 3 }, { floor: 2, day: 3, delta: -5, reason: '当众驳了她' }],
+        moods: [{ label: '恼怒', expiresDay: 6 }],
+    }],
+});
+const npcFavorFace = npcFavorPanel.lists.find(group => group.heading === '人物一览').items[0].favor;
+assert.equal(npcFavorFace.value, -12);
+assert.equal(npcFavorFace.label, '冷淡');
+assert.equal(npcFavorFace.delta, -5, '取最近一笔，不是求和');
+assert.equal(npcFavorFace.mood, '恼怒');
+// 「最近的态度」是横切面：跨人物取各自最后一笔，按世界天倒排。
+const npcMoves = npcFavorPanel.lists.find(group => group.heading === '最近的态度');
+assert.equal(npcMoves.items[0].head, '云香');
+assert.equal(npcMoves.items[0].meta, '-5 · 当众驳了她');
+assert.equal(npcMoves.items[0].detail, '第 3 天');
+assert.deepEqual(npcMoves.items[0].ref, { kind: 'npc', id: '云香' }, '横切面也能点开小卡');
+assert.equal(buildNpcPanel({ records: [{ name: 'A', favor: 300, favorLog: [{ day: 9, delta: 0 }] }] })
+    .lists.find(group => group.heading === '最近的态度'), undefined, '没有真实增减去向就不铺这一栏');
+// 越界的好感钳进 -100~100，刻度条不会画到框外。
+assert.equal(buildNpcPanel({ records: [{ name: 'A', favor: 300 }] }).lists[0].items[0].favor.value, 100);
+assert.equal(buildNpcPanel({ records: [{ name: 'B', favor: -300 }] }).lists[0].items[0].favor.value, -100);
 
 // —— NPC 决策窗：待处理联系带应约引用，可对话的人只列联系得上的 ——
 const npcDecision = buildNpcDecisionPanel({
@@ -279,8 +312,177 @@ const impact = buildImpactPanel({
     ],
 });
 assert.equal(impact.rows.find(row => row.label === '已对账到').value, '第 12 楼');
+// 三条回执：内存里没有、存档里有的时候要说得出来；从存档读回来的注入要标「已随生成清空」。
+const runPanel = buildImpactPanel({
+    status: { day: 7, decidedFloor: 12, total: 2, active: 1 },
+    records: [{ id: 'i1', title: '坊市涨价', day: 5, weight: 'major' }],
+    last: { day: 7, applied: [{ id: 'i1' }], rejected: [{ ref: 'i9' }] },
+    materialize: { day: 7, rows: [{ status: 'materialized' }], chain: [{ id: 'r1' }], threads: ['线索推进'] },
+    injection: { status: 'injected', via: 'llm', usedIds: ['i1'], cleared: true },
+});
+assert.equal(runPanel.rows.find(row => row.label === '上次记录').value, '第 7 天 · 记 1 条 · 拒 1 条');
+assert.equal(runPanel.rows.find(row => row.label === '落成').value, '落成 1 条 · 剧情线 1 条 · 余波 1 条');
+assert.match(runPanel.rows.find(row => row.label === '本幕注入').value, /已写 1 条（模型挑选） · 已随生成清空/);
+// 存档里没有、内存里也没有，才说「还没跑过」。
+const coldPanel = buildImpactPanel({ status: { day: 7, decidedFloor: 12, total: 1, active: 1 }, records: [{ id: 'i1', title: '坊市涨价', day: 5 }] });
+assert.equal(coldPanel.rows.find(row => row.label === '上次记录').value, '还没跑过');
+assert.equal(coldPanel.rows.find(row => row.label === '本幕注入').value, '还没挑过');
 assert.match(impact.lists[0].items[0].meta, /大事 · 乌坦城坊市/);
 assert.equal(impact.lists[0].items[0].detail, undefined, '影响条目行内不铺详情，详情收进详情小卡');
+// 三问跟着每条影响走：给了 answers 时，悬浮球行内就带「对原著 / 以后」两截。
+const impactAnswered = buildImpactPanel({
+    status: { day: 6, decidedFloor: 12, total: 2, active: 1 },
+    records: [{ id: 'i1', title: '坊市涨价', day: 5, weight: 'major', target: '乌坦城坊市' }],
+    pending: [{ id: 'i3', title: '药铺断货', day: 5, weight: 'minor', state: 'sunk', seed: '药铺断货的消息', trigger: '药铺老板上门问价', certainty: 'rumor' }],
+    answers: {
+        i1: { done: '直接｜第 5 天', canon: '三年之约｜加速｜当众立约提前', future: '已落成世界事件 e9；第 6 天落成' },
+        i3: { done: '涟漪｜第 5 天', canon: '', future: '埋着：因 药铺断货的消息｜等 药铺老板上门问价；什么时候显形，看之后有没有那样的场合，不按日子算' },
+    },
+});
+const answeredRow = impactAnswered.lists[0].items[0];
+assert.match(answeredRow.detail, /原著：三年之约｜加速/);
+assert.match(answeredRow.detail, /以后：已落成世界事件 e9/);
+const pendingLine = impactAnswered.lists[1].items[0].detail;
+assert.equal((pendingLine || '').includes('原著：'), false, '没牵动原著就不铺这一截');
+assert.match(pendingLine, /以后：埋着：因 药铺断货的消息/);
+assert.doesNotMatch(pendingLine, /第 8 天|还有 \d+ 天/, '悬浮球里也不再有倒计时');
+// 埋着的因不排期：行内不许出现「随时」这种隐约的时间口径（以前写死成“第 null 天”的补丁）。
+assert.doesNotMatch(impactAnswered.lists[1].items[0].meta, /随时|\d+ 天/, '埋着的因这一行只说埋着等场面，不给时间口径');
+assert.match(impactAnswered.lists[1].items[0].meta, /埋着等场面/);
+// 落成的地点要说清楚：只动了人和身家的影响不落世界事件，不能一律写成「→ 世界事件」。
+const seatPanel = buildImpactPanel({
+    status: { day: 6, decidedFloor: 12, total: 3, active: 0 },
+    records: [],
+    materialized: [
+        { id: 'i1', title: '只动身家', day: 5, materialized: true, materializedDay: 6, effects: [{ type: 'self', field: 'gold', amount: 10 }] },
+        { id: 'i2', title: '只动人物', day: 5, materialized: true, materializedDay: 6, effects: [{ type: 'npc', name: '萧炎', favor: 3 }] },
+        { id: 'i3', title: '人财两动', day: 5, materialized: true, materializedDay: 6, effects: [{ type: 'self', field: 'gold', amount: 10 }, { type: 'npc', name: '萧炎', favor: 3 }] },
+    ],
+});
+const seats = seatPanel.lists.find(group => group.heading === '已落成的后果').items.map(item => item.meta);
+assert.match(seats[0], /→ 纳戒 · 第 6 天/, '只动身家的落在纳戒');
+assert.match(seats[1], /→ 人物簿 · 第 6 天/, '只动人的落在人物簿');
+assert.match(seats[2], /→ 人物簿与纳戒 · 第 6 天/, '人财都动的两处都写');
+
+
+// —— 回响：一条影响落成后在世界各处留下的痕迹，按编号现算 ——
+const echoSource = {
+    records: [
+        { id: 'i1', title: '坊市涨价', day: 5, materialized: true, outcomeEventId: 'e9', echoes: [{ kind: 'thread', id: 'f2', title: '货栈三株药材', day: 6, note: '到期第 26 天 → 25 天' }, { kind: 'npc', id: '萧炎', title: '萧炎', day: 6 }] },
+        { id: 'i7', title: '余波：坊市涨价', day: 6, parent: 'i1', kind: 'ripple' },
+    ],
+    events: [{ id: 'e9', title: '坊市药材一日三涨', day: 6, basis: '影响#i1' }],
+    threads: [],
+    npcs: [{ name: '萧炎', impactRefs: [{ id: 'i1', day: 6, floor: 12 }] }],
+    injected: ['i1'],
+    history: [{ ids: ['i1'], at: '2026-01-01T00:00:00.000Z' }, { ids: ['i1'], at: '2026-01-02T00:00:00.000Z' }],
+};
+const echoes = buildImpactEchoes({ ...echoSource, record: echoSource.records[0] });
+assert.equal(echoes.count, 4, `四个来源各算一处：${JSON.stringify(echoes.summary)}`);
+assert.equal(echoes.summary, '世界 1 · 剧情线 1 · 人物 1 · 余波 1');
+const echoLabels = echoes.rows.map(row => row.label);
+assert.ok(echoLabels.includes('世界事件') && echoLabels.includes('剧情线') && echoLabels.includes('人物'), echoLabels.join('/'));
+assert.ok(echoes.rows.some(row => String(row.value).includes('e9')), '世界事件要能点名');
+assert.ok(echoes.rows.some(row => String(row.value).includes('到期第 26 天 → 25 天')), '剧情线的推进说明要带出来');
+assert.ok(echoes.rows.some(row => row.label === '正文' && String(row.value).includes('这一轮写进去了')), '这一轮写过就直说');
+// 只是过去写过：不冒充「这一轮」，按轮数说。
+const pastEchoes = buildImpactEchoes({ ...echoSource, injected: [], record: echoSource.records[0] });
+assert.ok(pastEchoes.rows.some(row => row.label === '正文' && String(row.value).includes('写过 2 轮')), '正文侧要看得到写过几轮');
+const neverEchoes = buildImpactEchoes({ ...echoSource, injected: [], history: [], record: { id: 'i1', title: '坊市涨价' } });
+assert.ok(neverEchoes.rows.some(row => row.label === '正文' && row.value === '还没写过'), '没写过也要说清楚');
+// 没有 echoSource 的老调用方：面板不多出「回响」行，也不报错。
+const noEcho = buildImpactPanel({ status: { day: 6, total: 1, active: 1 }, records: [{ id: 'i1', title: '坊市涨价', day: 5 }] });
+assert.equal(noEcho.rows.some(row => String(row.label).includes('回响')), false, '没给数据就不显示回响');
+// —— 编号边界：i1 不许认领 i12/i100 的痕迹。裸 includes 会让第 10 条影响之后全部错账 ——
+{
+    const i1 = buildImpactEchoes({
+        record: { id: 'i1', title: '坊市涨价' },
+        events: [
+            { id: 'e12', title: '别家的事', day: 6, basis: '影响#i12' },
+            { id: 'e1b', title: '真自己家的', day: 6, basis: '影响#i1。' },
+        ],
+    });
+    assert.equal(i1.count, 1, `i1 只认自己的事件（编号后跟数字不算）：${JSON.stringify(i1.summary)}`);
+    assert.ok(i1.summary.includes('世界 1'), `世界事件只算自己那条：${i1.summary}`);
+}
+// 给了数据：面板汇总一条「回响 N 处」，行内 meta 也带来源拆分。
+const withEcho = buildImpactPanel({ status: { day: 6, total: 1, active: 1 }, records: [{ ...echoSource.records[0], weight: 'major', target: '乌坦城坊市' }], echoSource });
+assert.equal(withEcho.rows.find(row => String(row.label).includes('回响')).value, '4 处');
+assert.match(withEcho.lists[0].items[0].meta, /回响 4（世界 1 · 剧情线 1 · 人物 1 · 余波 1）/);
+// 面板拿到的 record 没带 echoes（比如只取了列表字段）时不能算错：人物侧还能靠人物簿的 impactRefs 兜住。
+const bareEcho = buildImpactPanel({ status: { day: 6, total: 1, active: 1 }, records: [{ id: 'i1', title: '坊市涨价', day: 5 }], echoSource });
+assert.equal(bareEcho.rows.find(row => String(row.label).includes('回响')).value, '3 处');
+// 空输入不能炸。
+const emptyEchoes = buildImpactEchoes({});
+assert.deepEqual({ count: emptyEchoes.count, rows: emptyEchoes.rows.length, items: emptyEchoes.items.length }, { count: 0, rows: 0, items: 0 });
+assert.doesNotThrow(() => buildImpactEchoes({ record: null }));
+
+// —— 判定官报了、证据链没让过：面板要说清“模型想认领哪条、凭什么没站住” ——
+const withDropped = buildImpactPanel({
+    status: { day: 6, total: 1, active: 1 },
+    records: [{ id: 'i1', title: '坊市涨价', day: 5 }],
+    dropped: [
+        { ref: 'i5', reason: 'evidence_not_found', title: '旧护符' },
+        { ref: 'i6', reason: 'why_incomplete', title: '药铺欠条' },
+        { ref: '', reason: 'duplicate', title: '没有编号的行要丢掉' },
+    ],
+});
+const droppedList = withDropped.lists.find(group => group.heading === '判定官报了、证据链没让过');
+assert.ok(droppedList, '有驳回才出这一栏');
+assert.equal(droppedList.items.length, 2, '没有编号的行不进清单');
+assert.equal(droppedList.items[0].head, '旧护符');
+assert.match(droppedList.items[0].meta, /#i5 · 原文里找不到这句/);
+assert.match(droppedList.items[1].meta, /#i6 · 理由没同时说到因和场面/);
+// 没有驳回时不留空栏，也不影响别的调用。
+const noDropped = buildImpactPanel({ status: { day: 6, total: 1, active: 1 }, records: [{ id: 'i1', title: '坊市涨价', day: 5 }] });
+assert.equal(noDropped.lists.some(group => group.heading === '判定官报了、证据链没让过'), false);
+
+
+// —— 剧情线：还开着的线、被什么推着、还剩几步、有没有被世界影响动过 ——
+const plot = buildPlotPanel({
+    status: { day: 16, plan: { goal: '摸清坊市货源', next: '去货栈看账' }, threads: { open: 2, resolved: 1, dropped: 0, total: 3 }, overdue: 1 },
+    snapshot: {
+        day: 16,
+        threads: [
+            { id: 'f2', title: '货栈三株药材', kind: 'foreshadow', detail: '药铺断货并不只是缺货', basis: '玩家问过掌柜', day: 10, dueDay: 14, status: 'open', fromImpact: 'i31' },
+            { id: 'f5', title: '萧炎被堵死巷', kind: 'conflict', detail: '萧宁带人堵他', basis: '玩家塞了护符', day: 15, dueDay: 26, status: 'open' },
+            { id: 'f1', title: '已经收了的线', kind: 'suspense', day: 3, dueDay: 8, status: 'resolved', resolvedDay: 9, outcome: '查清了' },
+        ],
+    },
+});
+assert.equal(plot.title, '剧情线');
+assert.equal(plot.rows.find(row => row.label === '开放线索').value, '2 条');
+assert.equal(plot.rows.find(row => row.label === '超期未收').value, '1 条');
+assert.equal(plot.rows.find(row => row.label === '本幕目标').value, '摸清坊市货源');
+assert.equal(plot.rows.find(row => row.label === '被影响推动').value, '1 条');
+// 超期的那条排最前：这才是“该给个交代”的线。
+const plotRows = plot.lists[0].items;
+assert.equal(plotRows.length, 2, '只列还开着的线');
+assert.equal(plotRows[0].head, 'f2「货栈三株药材」');
+// 到期日按天数算，绝不写“还有几天”以外的模糊话：超期就说已超几天。
+assert.match(plotRows[0].meta, /伏笔/);
+assert.match(plotRows[0].meta, /已超 2 天/);
+assert.match(plotRows[0].meta, /影响推动/);
+assert.match(plotRows[0].meta, /已悬 6 天/);
+assert.equal(plotRows[0].ref.kind, 'plot');
+assert.equal(plotRows[0].ref.id, 'f2');
+assert.equal(plotRows[0].plotDue, 14, '到期日单独带出去给小卡用');
+assert.equal(plotRows[1].head, 'f5「萧炎被堵死巷」');
+assert.match(plotRows[1].meta, /还剩 10 天/);
+// 没人推动的线不带「影响推动」，也不该出现在第二栏。
+assert.equal(plot.lists[1].items.length, 1);
+assert.equal(plot.lists[1].heading, '被世界影响推动过');
+assert.equal(plot.lists[1].items[0].head, '货栈三株药材');
+assert.match(plot.lists[1].items[0].meta, /影响 i31/);
+// 没排期的线：明说看场合，不硬算天数。
+const plotNoDue = buildPlotPanel({ status: { day: 5 }, snapshot: { threads: [{ id: 'f9', title: '没排期的线', kind: 'suspense', day: 4, dueDay: null, status: 'open' }] } });
+assert.match(plotNoDue.lists[0].items[0].meta, /没排期，看场合/);
+assert.doesNotMatch(plotNoDue.lists[0].items[0].meta, /还剩|已超/);
+// 空着不炸：没有线索时给出能读的“暂无”。
+const plotEmpty = buildPlotPanel({});
+assert.equal(plotEmpty.lists[0].items.length, 0);
+assert.match(plotEmpty.summary, /还没埋下/);
+assert.match(plotEmpty.lists[0].empty, /没有开着的线索/);
 
 // —— 原著资料与沙盒 ——
 const facts = buildFactsPanel({
@@ -446,7 +648,7 @@ assert.equal(overview.rows[1].value, '已开启', 'idle 模块只报开关状态
 assert.equal(overview.rows.length, 2, '总控行数=模块行数：调用状态改挂行尾，不再铺底部列表');
 
 // —— 总控调用标记按真实调用标签匹配：原著选条登记「事实检索」，影响行挂注入挑选员＋决定 ——
-// 回归：facts 渠道曾误写成「场记挑选」（那是影响注入挑选员的标签），原著设定行因此永远显示「无」。
+// 回归：facts 渠道曾误写成「世界判定官」（那是影响生成前判定的标签），原著设定行因此永远显示「无」。
 const markNow = new Date().toISOString();
 const markView = buildOverviewPanel({
     dashboard: {
@@ -460,7 +662,7 @@ const markView = buildOverviewPanel({
     mode: 'advanced',
     calls: [
         { label: '事实检索', ok: true, at: markNow },
-        { label: '场记挑选', ok: true, at: markNow },
+        { label: '世界判定官', ok: true, at: markNow },
         { label: '影响决定', ok: false, error: '等待超时', at: markNow },
         { label: '记忆召回', ok: true, at: markNow },
         { label: '记忆决定', ok: true, at: markNow },
@@ -470,10 +672,10 @@ const markView = buildOverviewPanel({
 const markRows = new Map(markView.rows.map(row => [row.label, row]));
 assert.deepEqual(markRows.get('原著设定').marks.map(mark => mark.status), ['ok', 'none'], '原著设定行挂「事实检索＋正文核验」两渠道：选条调过打勾，核验没调过标「无」');
 assert.deepEqual(markRows.get('原著设定').marks.map(mark => mark.short), ['选条', '核验'], '原著行短名＝选条/核验（核验是生成后事实审计的第二路调用）');
-assert.deepEqual(markRows.get('世界影响').marks.map(mark => mark.status), ['ok', 'failed'], '世界影响行挂「场记挑选＋影响决定」两个渠道');
+assert.deepEqual(markRows.get('世界影响').marks.map(mark => mark.status), ['ok', 'failed'], '世界影响行挂「世界判定官＋影响决定」两个渠道');
 assert.match(markRows.get('世界影响').marks[1].detail, /等待超时/);
-// 行尾多记号并排时用短名对齐（记忆＝召回/决定，影响＝挑选/决定），全名保留在悬停标题里。
-assert.deepEqual(markRows.get('世界影响').marks.map(mark => mark.short), ['挑选', '决定'], '影响行短名＝挑选/决定');
+// 行尾多记号并排时用短名对齐（记忆＝召回/决定，影响＝判定/决定），全名保留在悬停标题里。
+assert.deepEqual(markRows.get('世界影响').marks.map(mark => mark.short), ['判定', '决定'], '影响行短名＝判定/决定');
 const memRow = markView.rows.find(row => row.label === '记忆');
 if (memRow) assert.deepEqual(memRow.marks.map(mark => mark.short), ['召回', '决定'], '记忆行短名＝召回/决定');
 

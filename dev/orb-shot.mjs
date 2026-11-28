@@ -128,5 +128,85 @@ await sleep(400);
 const afterEsc2 = await evaluate(`({ popup: Boolean(document.querySelector('.dai-orb-pop-list')), state: document.querySelector('.dai-orb')?.dataset.state })`);
 console.log('after esc 2', JSON.stringify(afterEsc2));
 
+// 剧情线窗（第 14 个）：三种时间说法 + 被世界影响推动过那一栏。
+await evaluate(`document.querySelector('.dai-orb-ball')?.click()`);
+await sleep(400);
+await evaluate(`document.querySelector('.dai-orb-icon[data-orb-item="plot"]')?.click()`);
+await sleep(700);
+await shot('08-plot-panel');
+const plotPanel = await evaluate(`(() => {
+  const panel = document.querySelector('.dai-orb-panel');
+  return {
+    summary: panel?.querySelector('.dai-orb-panel-head small')?.textContent ?? null,
+    rows: [...panel.querySelectorAll('.dai-orb-row')].map(r => r.textContent),
+    groups: [...panel.querySelectorAll('.dai-orb-group')].map(g => ({
+      title: g.querySelector('.dai-orb-group-title')?.textContent,
+      items: [...g.querySelectorAll('.dai-orb-entry')].map(e => e.textContent),
+    })),
+  };
+})()`);
+console.log('plot panel', JSON.stringify(plotPanel, null, 2));
+
+// 点一条看详情小卡。
+await evaluate(`document.querySelector('.dai-orb-panel .dai-orb-entry.is-clickable')?.click()`);
+await sleep(600);
+await shot('09-plot-detail');
+const plotDetail = await evaluate(`(() => {
+  const pop = document.querySelector('.dai-orb-pop');
+  if (!pop) return null;
+  return {
+    name: pop.querySelector('.dai-orb-pop-name b')?.textContent ?? null,
+    sub: pop.querySelector('.dai-orb-pop-name small')?.textContent ?? null,
+    groups: [...pop.querySelectorAll('.dai-orb-pop-group')].map(g => ({
+      heading: g.querySelector('b')?.textContent ?? null,
+      rows: [...g.querySelectorAll('.dai-profile-row')].map(r => (r.querySelector('.dai-profile-label')?.textContent ?? '') + '=' + (r.querySelector('.dai-profile-value')?.textContent ?? '')),
+    })),
+  };
+})()`);
+console.log('plot detail', JSON.stringify(plotDetail, null, 2));
+
+// 世界影响窗（第 8 个）：一条已落成、带三处回响，一条还在演，一条埋着。
+await evaluate(`document.querySelector('.dai-orb-ball')?.click()`);
+await sleep(400);
+await evaluate(`document.querySelector('.dai-orb-ball')?.click()`);
+await sleep(400);
+await evaluate(`document.querySelector('.dai-orb-icon[data-orb-item="impact"]')?.click()`);
+await sleep(700);
+await shot('10-impact-panel');
+const impactPanel = await evaluate(`(() => {
+  const panel = document.querySelector('.dai-orb-panel');
+  return {
+    summary: panel?.querySelector('.dai-orb-panel-head small')?.textContent ?? null,
+    rows: [...panel.querySelectorAll('.dai-orb-row')].map(r => r.textContent),
+    groups: [...panel.querySelectorAll('.dai-orb-group')].map(g => ({
+      title: g.querySelector('.dai-orb-group-title')?.textContent,
+      items: [...g.querySelectorAll('.dai-orb-entry')].map(e => e.textContent),
+    })),
+  };
+})()`);
+console.log('impact panel', JSON.stringify(impactPanel, null, 2));
+
+// 点那条已落成的看小卡：应多出一段「回响 N」。
+await evaluate(`(() => {
+  const panel = document.querySelector('.dai-orb-panel');
+  const entries = [...panel.querySelectorAll('.dai-orb-entry.is-clickable')];
+  const hit = entries.find(e => e.textContent.includes('货栈三株药材被截'));
+  (hit ?? entries[0])?.click();
+})()`);
+await sleep(600);
+await shot('11-impact-echo-detail');
+const impactDetail = await evaluate(`(() => {
+  const pop = document.querySelector('.dai-orb-pop');
+  if (!pop) return null;
+  return {
+    name: pop.querySelector('.dai-orb-pop-name b')?.textContent ?? null,
+    groups: [...pop.querySelectorAll('.dai-orb-pop-group')].map(g => ({
+      heading: g.querySelector('b')?.textContent ?? null,
+      rows: [...g.querySelectorAll('.dai-profile-row')].map(r => (r.querySelector('.dai-profile-label')?.textContent ?? '') + '=' + (r.querySelector('.dai-profile-value')?.textContent ?? '')),
+    })),
+  };
+})()`);
+console.log('impact detail', JSON.stringify(impactDetail, null, 2));
+
 ws.close();
 proc.kill();

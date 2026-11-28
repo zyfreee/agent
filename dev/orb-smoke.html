@@ -18,8 +18,20 @@
     <p>下面这行是给信息窗灌的演示数据：世界第 5 天（事件 6 条、势力氛围齐全）、纳戒有功法行囊、记忆两条、人物簿六个人。事件与人物都超过主窗上限，栏目标题右边应出现「全部」，点它弹全量副窗（副窗自己滚动）。</p>
 </div>
 <script type="module">
-    // 最小宿主桩：没有 eventSource、没有 extensionSettings，扩展会走“未连接宿主”的默认路径。
-    globalThis.SillyTavern = { getContext: () => ({ version: '1.18.0' }) };
+    // 最小宿主桩：没有 eventSource，扩展会走“未连接宿主”的默认路径。
+    // extensionSettings 里给一份「进阶版 + 剧情账本开着」的设置：剧情线窗只在进阶版露出，
+    // 桩里不给 apiMode 的话球上根本不会出现 ◇，冒烟页就截不到这一窗。
+    // 注意 getContext 必须每次返回同一个对象——扩展会就地改设置再读回来，
+    // 每次新建字面量的话改完就丢，版本切换的验证会假失败。
+    // 调用版本可以用 ?mode=full / ?mode=lite 覆盖，用来验「非进阶版不露 ◇」。
+    const apiMode = new URLSearchParams(location.search).get('mode') || 'advanced';
+    const stubContext = {
+        version: '1.18.0',
+        extensionSettings: {
+            doupo_agent_ui: { apiMode, plot: { enabled: true, inject: true } },
+        },
+    };
+    globalThis.SillyTavern = { getContext: () => stubContext };
 
     const mod = await import('../agent/doupo-agent-ui/index.js');
     mod.onActivate();
@@ -37,6 +49,8 @@
             { id: 'e5', text: '萧家护卫队在城外操练', day: 4, weight: 'minor' },
             { id: 'e6', title: '纳兰家车马入城', text: '纳兰家的车马进了乌坦城，随行带着云岚宗的旗号', day: 5, weight: 'rumor', basis: '城门守卫闲聊' },
             { id: 'e7', text: '后山出现陌生斗者踪迹', day: 3, weight: 'minor' },
+            // basis 上的「影响#i31」是脚本写死的短标记：世界影响窗靠它把这条事件算成 i31 的回响。
+            { id: 'e9', title: '坊市三株药材一日三涨', text: '三株药材被截走后，坊市上同类药材一日三涨', day: 16, weight: 'major', basis: '影响#i31', location: '乌坦城·坊市' },
         ],
         worldEvents: [{ id: 'e2', title: '迦南学院招生', text: '迦南学院招生队路过乌坦城，在广场当街考校少年斗气', day: 3, weight: 'major', basis: '城门守卫闲聊', location: '乌坦城广场', endDay: 9, pinned: true }],
         factions: [
@@ -80,7 +94,81 @@
             { name: '萧媚', favor: 12, presence: '在场', importance: '不重要', identity: '萧家旁支' },
             { name: '加列奥', favor: -30, presence: '不在场', importance: '重要', identity: '加列家少主' },
             { name: '坊市管事', favor: 5, presence: '在场', importance: '不重要', identity: '坊市管事' },
+            // 被 i31 动过的人：人物簿这一侧的回响靠它反查（记录员的「世界影响」键落到这里）。
+            { name: '萧炎', favor: 20, presence: '在场', importance: '重要', identity: '萧家少爷', impactRefs: [{ id: 'i31', day: 16, floor: 24, note: '药材被玩家先一步提走' }] },
         ],
+    });
+    // 剧情线：一条已超期、一条被世界影响推动过、一条没排期，正好覆盖三种时间的说法。
+    agent.plotRuntime.restore({
+        schemaVersion: 1,
+        day: 16,
+        plan: { goal: '安全南下抵近乌坦城萧家，途中避开加列家的眼线', next: '先在坊市把三株药材凑齐', updatedAt: '' },
+        threads: [
+            { id: 'f2', title: '货栈三株药材', kind: 'foreshadow', detail: '药老要的三株药材压在加列家的货栈里，掌柜不敢卖', basis: '药老随口一提', day: 6, dueDay: 14, status: 'open', fromImpact: 'i31' },
+            { id: 'f3', title: '赤鳞驹上的素袍贵人', kind: 'suspense', detail: '城门那天骑赤鳞驹过去的素袍人，腰间挂的牌子像是云岚宗', basis: '城门守卫闲聊', day: 9, dueDay: 35, status: 'open' },
+            { id: 'f4', title: '和萧宁的那笔账', kind: 'conflict', detail: '萧宁当众折辱过萧炎一回，还没算', basis: '比武场上的旧怨', day: 12, dueDay: null, status: 'open' },
+            { id: 'f1', title: '药铺断货的消息传到别家', kind: 'foreshadow', detail: '已经闹开了', basis: '坊市传言', day: 3, dueDay: 8, status: 'resolved', resolvedDay: 9, outcome: '别家药铺趁机抬价' },
+        ],
+        log: [],
+    });
+
+    // 世界影响：一条已落成、带三处回响（剧情线 / 人物 / 世界事件），一条还在演，一条埋着。
+    // 回响是「这条影响落到世界上留下的痕迹」，冒烟页要能看出五处来源里哪三处亮着。
+    agent.impactRuntime.restore({
+        schemaVersion: 1,
+        day: 16,
+        decidedFloor: 24,
+        records: [
+            {
+                id: 'i31', day: 12, floor: 18, title: '货栈三株药材被截', detail: '玩家先一步把三株药材从加列家货栈里提走',
+                target: '乌坦城·加列货栈', kind: 'direct', weight: 'major', certainty: 'certain', evidence: '第 18 楼',
+                canon: '三年之约', shift: 'accelerate', canonWhat: '退婚的日子被提前到今年年尾', canonBasis: '第 18 楼玩家把三株药材提走，加列家提前翻脸', state: 'closed', materialized: true, materializedDay: 16, outcomeEventId: 'e9',
+                links: [{ type: 'person', name: '萧炎' }, { type: 'thread', name: '货栈三株药材' }],
+                echoes: [
+                    { kind: 'thread', id: 'f2', title: '货栈三株药材', day: 16, note: '到期第 26 天 → 25 天' },
+                    { kind: 'npc', id: '萧炎', title: '萧炎', day: 16 },
+                    { kind: 'event', id: 'e9', title: '坊市三株药材一日三涨', day: 16 },
+                ],
+            },
+            {
+                id: 'i32', day: 15, floor: 22, title: '中街设卡的规矩松了', detail: '交验货单的人少了，行商开始夹带私货',
+                target: '乌坦城·中街', kind: 'ripple', weight: 'minor', certainty: 'certain', evidence: '第 22 楼',
+                state: 'active',
+            },
+            {
+                id: 'i33', day: 14, floor: 20, title: '萧宁憋着一口气', detail: '被当众下了面子，迟早要找回来',
+                target: '萧宁', kind: 'butterfly', weight: 'minor', certainty: 'rumor', evidence: '第 20 楼',
+                state: 'sunk', seed: '当众折辱萧宁那一回', trigger: '萧宁被逼到绝处、没人替他说话',
+            },
+            {
+                // 人物后果演示：这条影响落成后动到了人（好感 +12、态度、称呼），
+                // 展示「影响 → 人物簿」这条通道不是只记账，真的改得动关系。
+                id: 'i34', day: 16, floor: 24, title: '死巷里把萧炎捞出来', detail: '萧宁带人堵死巷，玩家把萧炎从墙头拽了出去',
+                target: '萧炎', kind: 'butterfly', weight: 'major', certainty: 'certain', evidence: '第 24 楼',
+                state: 'closed', materialized: true, materializedDay: 16, outcomeEventId: 'e9',
+                links: [{ type: 'person', name: '萧炎' }],
+                effects: [{ type: 'npc', name: '萧炎', favor: 12, attitude: '拿你当能托底的人', appellation: '兄台', note: '死巷里救了他一命' }],
+                echoes: [{ kind: 'npc', id: '萧炎', title: '萧炎', day: 16, note: '死巷里救了他一命' }],
+            },
+            {
+                // 身家后果演示：这条影响落成后动到了玩家自己的账（金币 / 行囊 / 境界），
+                // 展示「影响 → 纳戒」这条通道不是只记账，真的改得动钱物与境界。
+                id: 'i35', day: 16, floor: 24, title: '药老留下的谢礼与半块玄铁', detail: '救下萧炎之后，药老从纳戒里取出一笔盘缠和半块玄铁片，顺手点了玩家一句境界上的关窍',
+                target: '药老', kind: 'butterfly', weight: 'major', certainty: 'certain', evidence: '第 24 楼',
+                state: 'closed', materialized: true, materializedDay: 16,
+                links: [{ type: 'person', name: '萧炎' }],
+                effects: [
+                    { type: 'self', field: 'gold', amount: 120, note: '药老给的谢礼' },
+                    { type: 'self', field: 'item', name: '玄铁片', count: 2, note: '炼器用的边角料' },
+                    { type: 'self', field: 'realm', realm: '斗师', stage: '三星', note: '点破关窍，当场破阶' },
+                ],
+            },
+        ],
+        archive: [],
+        log: [],
+        // 曝光计数：i33 已经被摆到判定官面前 3 次。埋着的因靠它做“曝光公平”，
+        // 冒烟页带上是为了让存档往返也过一遍这个字段（不显示在面板上）。
+        exposure: { i33: 3 },
     });
 
     document.getElementById('orb-ready')?.remove();

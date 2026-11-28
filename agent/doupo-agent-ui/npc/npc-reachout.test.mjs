@@ -134,3 +134,14 @@ test('主动联系：开场白提示词与解析，动机材料按需拼块', ()
     assert.equal(MOTIVE_LABELS.loop, '旧约');
     assert.equal(MOTIVE_LABELS.gossip, '风闻');
 });
+
+// —— 过时动向不进搭话材料，近况顶上；新鲜动向照常 ——
+{
+    const stale = { name: '青袍客', presence: '不在场', doing: '打坐调息', location: '坊市', situationStamp: { floor: 20, day: 10 }, exp: [{ text: '被云岚宗锁拿下狱', day: 25, floor: 40 }], favor: 2 };
+    const user = buildReachoutUser({ record: stale, motive: 'random', day: 26 });
+    assert.equal(user.includes('正在做什么'), false, '过时动向不进搭话材料');
+    assert.equal(user.includes('在 坊市'), false, '过时位置不进搭话材料');
+    assert.ok(user.includes('近况（动向以此为准）：第25天被云岚宗锁拿下狱'), '近况顶上');
+    const fresh = buildReachoutUser({ record: { name: '萧战', doing: '议事', location: '议事厅', situationStamp: { floor: 44, day: 30 }, favor: 0 }, motive: 'random', day: 31 });
+    assert.ok(fresh.includes('正在做什么：议事'), '新鲜动向照常进材料');
+}

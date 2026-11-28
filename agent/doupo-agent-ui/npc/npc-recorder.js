@@ -7,7 +7,7 @@
  * 模型必须先过【谁能建档】筛选，再谈写什么字段。
  */
 
-import { NPC_FIELDS, favorLabel } from './npc-ledger.js';
+import { NPC_FIELDS, favorLabel, doingFresh, recentExpLines } from './npc-ledger.js';
 
 /** 记录员看到的字段清单，和档案格式同源，改格式不用改两处。 */
 function fieldMenu() {
@@ -35,13 +35,14 @@ ${fieldMenu()}
 
 【特殊键】
 姓名：必填，写正文里出现的那个称呼；别名/称号另起键写。
-好感：只写“本次增减”，整数，正数=变好，负数=变坏；单次最多 ±10，超过会被脚本压回 ±10。不要写累计值，累计由脚本算。
+好感：只写“本次增减”，整数，正数=变好，负数=变坏；单次最多 ±15，超过会被脚本压回 ±15。不要写累计值，累计由脚本算。
 好感理由：不超过 15 个字，写清“因为什么”，例：护住族人、当众打脸、救命之恩。
 依据：好感单次超过 ±5、或写了「经历」时必写一句（不超过 80 字）：正文里哪句话支撑了这个变化。普通小改动不用写。
+世界影响：这一楼的世界影响如果落到了这个人身上（他因此改了处境、打算、态度），把影响编号原样写进这个键，例：影响#i12；只写材料里真实给出编号的，不要自己编号。没有就留空。
 情绪：这个人这一楼冒出来的短期情绪（感激、恼怒、警惕、愧疚、畏惧、心疼……一个词），可选；三天后自动消散。长期态度走「态度」，别写进情绪。
 流水：一句话记“他做了什么/发生了什么”，会原样追加到流水里，不要覆盖旧记录。
 往来概要：把给出的「旧往来概要」与这几楼的新互动合并成一段不超过 100 字的概述——保留长期事实与没结的钩子（他在忙什么、和你之间悬着什么、欠着什么），旧概要里已有的内容不要重复展开，纯过场细节直接丢；没给旧概要就从这几楼的互动起笔。写了流水就顺带更新它，不用攒批。
-经历：只记“这个人从此不一样了”的重大转变——心智改变、态度反转、立场易帜、身份更替、结下死契或深仇这类。一件一行，写成完整的一句话；普通小事写“流水”，不要写进经历。
+经历：只记“这个人从此不一样了”的重大转变——心智改变、态度反转、立场易帜、身份更替、结下死契或深仇这类。一件一行，写成完整的一句话；普通小事写“流水”，不要写进经历。处境类转变（被囚、被困、被逐、易主、远走、重伤倒地、身亡这类“人挪了/动不了了”的事）写了经历，同一张补丁必须同时改「所在位置」「正在做什么」「在场」——经历说人已经挪了、动向还停在原地，就是记错账；材料近况和他的「正在做什么」对不上时，一律以近况为准把动向改过来。
 在场：true 或 false；同时尽量给位置和正在做什么。
 重要：true 或 false。只对过了门槛建档的人打标：主角身边的关键人物为 true，其余为 false。
 设定：想一次改多个字段时，把字段塞进这个对象里，例：{"设定":{"境界":"斗皇","伤势":"左臂旧伤未愈"}}。
@@ -104,7 +105,9 @@ function clampText(value, limit) {
     return raw.length > limit ? `${raw.slice(0, limit)}…` : raw;
 }
 
-/** 人物簿索引：让人物记录员知道“谁已经建过档、现在什么状态”，避免重复造人和写错好感的起点。 */
+/** 人物簿索引：让人物记录员知道“谁已经建过档、现在什么状态”，避免重复造人和写错好感的起点。
+ *  动向与近况也在这里：记录员得看见“他最近经历了什么大转变”，才有机会把过时的旧动向自己推翻
+ *  （“20楼打坐、40楼被囚”那类账，漏的就是这一眼）；过时的动向不进材料，近况顶上。 */
 export function ledgerLines(records = [], { limit = Infinity } = {}) {
     return records.slice(0, limit).map(record => {
         const bits = [record.name];
@@ -112,7 +115,11 @@ export function ledgerLines(records = [], { limit = Infinity } = {}) {
         bits.push(record.importance === '重要' ? '重要' : '普通');
         bits.push(`好感${record.favor}${favorLabel(record.favor) ? `（${favorLabel(record.favor)}）` : ''}`);
         if (record.identity) bits.push(record.identity);
-        if (record.location) bits.push(`在${record.location}`);
+        const fresh = doingFresh(record);
+        if (record.location && fresh) bits.push(`在${record.location}`);
+        if (record.doing && fresh) bits.push(`正在${record.doing}`);
+        const recent = recentExpLines(record, { count: 2 }).join('；');
+        if (recent) bits.push(`近况：${recent}`);
         if (record.appellation) bits.push(`称呼玩家「${record.appellation}」`);
         if (record.logSummary) bits.push(`往来：${record.logSummary}`);
         return bits.join('｜');
@@ -123,7 +130,7 @@ export function ledgerLines(records = [], { limit = Infinity } = {}) {
  * 拼给记录员的这一轮材料：「用户输入＋正文」两楼（全文不截）+ 人物簿索引 + 当前世界第几天。
  * 用户口径 2026-11-18：正文后的记账只看这两楼（玩家这轮做了什么 + 正文演了什么），整楼喂入，不截断。
  */
-export function buildNpcRecordUser({ floors = [], records = [], playerName = '', day = null, worldbookLines = [], playerContext = null } = {}) {
+export function buildNpcRecordUser({ floors = [], records = [], playerName = '', day = null, worldbookLines = [], playerContext = null, impactLines = [] } = {}) {
     const blocks = [];
     const chatLines = [];
     for (const floor of floors) {
@@ -140,6 +147,10 @@ export function buildNpcRecordUser({ floors = [], records = [], playerName = '',
     if (index.length) blocks.push(`【人物簿索引】（已建档的人，只作参照，不要重复建档）\n${index.join('\n')}`);
     else blocks.push('【人物簿索引】\n（还是空的，这一轮出现的每个人都要新建档案）');
     if (Number.isFinite(Number(day))) blocks.push(`【世界时间】第 ${Number(day)} 天`);
+    // 账本里的世界影响：让它能落到具体人物身上（好感/打算/经历的变化可以引用编号），
+    // 这样“影响→人物”这条路是通的，而不是两本账各记各的。
+    const impacts = (Array.isArray(impactLines) ? impactLines : []).filter(line => typeof line === 'string' && line.trim());
+    if (impacts.length) blocks.push(`【最近的世界影响】（这些事已经或即将改到这个世界上的人；谁因此变了，就在「世界影响」键里写上编号）\n${impacts.join('\n')}`);
     return blocks.join('\n\n');
 }
 

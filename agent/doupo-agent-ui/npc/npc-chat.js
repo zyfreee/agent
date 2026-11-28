@@ -5,11 +5,12 @@
  * 常驻、关系块（关系图一跳）、知情块（他经正文/传闻知道的事）、开环块（没兑现的
  * 承诺）、时间块（世界日 + 渠道 + 玩家近况）。模型每轮只回一个 JSON：说的话、心里
  * 话、好感微调、短期情绪、可能的新承诺。好感步进比照传闻传播的收紧口径（±3，比
- * 人物簿的 ±10 紧），脚本落账，模型不直接写账。收尾另有一次回写调用：把整段对话
+ * 人物簿的 ±15 紧），脚本落账，模型不直接写账。收尾另有一次回写调用：把整段对话
  * 对人物簿的长期影响（经历 / 流水 / 好感 / 他新知道的事）抽出来。
  */
 
 import { extractJson } from '../host/llm-client.js';
+import { doingFresh } from './npc-ledger.js';
 
 /** 单轮对话好感步进上限：面对面几句话不该比传闻搬弄是非（±3）改动更大。 */
 export const CHAT_FAVOR_STEP_MAX = 3;
@@ -104,13 +105,16 @@ function relationLines(relations) {
 export function buildChatContext({ record, relations = [], knownFacts = [], loops = [], day = null, playerContext = null, channel = '面对面' } = {}) {
     const who = record && typeof record === 'object' ? record : {};
     const blocks = [];
+    // 动向过时就别拿旧账闲聊：位置/旧动向不进材料（expTail 里的经历自会说话）——
+    // 人都被囚了还聊“他在哪儿打坐”，就是同一根上的衍生错。
+    const fresh = doingFresh(who);
     const profile = [
         who.name || '（未知名）',
         who.gender || '',
         who.identity || '',
         who.realm ? `境界 ${who.realm}` : '',
         who.stage ? `与玩家关系阶段：${who.stage}` : '',
-        who.location ? `在 ${who.location}` : '',
+        fresh && who.location ? `在 ${who.location}` : '',
         who.presence || '',
     ].filter(Boolean).join('｜');
     const traits = [
@@ -120,7 +124,7 @@ export function buildChatContext({ record, relations = [], knownFacts = [], loop
         who.taboo ? `雷区：${who.taboo}` : '',
         who.want ? `想要什么：${who.want}` : '',
         who.fear ? `怕什么：${who.fear}` : '',
-        who.doing ? `正在做什么：${who.doing}` : '',
+        fresh && who.doing ? `正在做什么：${who.doing}` : '',
         who.appellation ? `他对玩家的称呼：${who.appellation}` : '',
     ].filter(Boolean);
     const attitudes = [

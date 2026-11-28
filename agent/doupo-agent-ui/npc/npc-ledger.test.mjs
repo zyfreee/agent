@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createNpcLedger, favorLabel, normalizePatch, normalizeRecord, NPC_FIELDS, FAVOR_MIN, FAVOR_MAX, FAVOR_STEP_MAX } from './npc-ledger.js';
+import { createNpcLedger, favorLabel, normalizePatch, normalizeRecord, NPC_FIELDS, FAVOR_MIN, FAVOR_MAX, FAVOR_STEP_MAX, recentExpLines } from './npc-ledger.js';
 
 // OPT-051: replace only the owned latest floor, never restore over manual work.
 {
@@ -159,11 +159,11 @@ for (const day of [null, undefined, '', '  ', 0, -1, 1.5, 100000, true, 'bad', 1
     assert.equal(ledger.get('萧炎').attitude, '多了几分欣赏');
 }
 
-// 2) 好感只记增减、单次最多 ±10：模型写 +95 也只记 +10；理由不截断（用户口径 2026-11-17）。
+// 2) 好感只记增减、单次最多 ±15：模型写 +95 也只记 +15；理由不截断（用户口径 2026-11-17）。
 {
     const ledger = createNpcLedger();
     ledger.apply({ 人物: [{ 姓名: '萧炎', 好感: '+95', 理由: '救下萧家满门上下老小' }] }, { floor: 5, day: 2 });
-    assert.equal(ledger.get('萧炎').favor, FAVOR_STEP_MAX, '单次超过 ±10 要压回 ±10');
+    assert.equal(ledger.get('萧炎').favor, FAVOR_STEP_MAX, '单次超过 ±15 要压回 ±15');
     assert.equal(ledger.get('萧炎').favorLog[0].delta, FAVOR_STEP_MAX);
     assert.equal(ledger.get('萧炎').favorLog[0].reason, '救下萧家满门上下老小', '长理由原样保留');
 
@@ -172,10 +172,10 @@ for (const day of [null, undefined, '', '  ', 0, -1, 1.5, 100000, true, 'bad', 1
     }
     assert.equal(ledger.get('萧炎').favor, FAVOR_MAX, '累计到上限要停在 100，不能溢出');
     assert.equal(favorLabel(FAVOR_MAX), '生死之交');
-    assert.ok(ledger.get('萧炎').favorLog.every(entry => Math.abs(entry.delta) <= FAVOR_STEP_MAX), '每条流水都不能超过 ±10');
+    assert.ok(ledger.get('萧炎').favorLog.every(entry => Math.abs(entry.delta) <= FAVOR_STEP_MAX), '每条流水都不能超过 ±15');
 
     ledger.apply({ 人物: [{ 姓名: '萧炎', 好感: '-200', 理由: '翻脸' }] }, { floor: 30, day: 2 });
-    assert.equal(ledger.get('萧炎').favorLog.at(-1).delta, -FAVOR_STEP_MAX, '负向也压到 -10');
+    assert.equal(ledger.get('萧炎').favorLog.at(-1).delta, -FAVOR_STEP_MAX, '负向也压到 -15');
     assert.equal(ledger.get('萧炎').favor, FAVOR_MAX - FAVOR_STEP_MAX);
     assert.equal(ledger.get('萧炎').favorLog.at(-1).floor, 30);
 }
@@ -363,7 +363,7 @@ for (const day of [null, undefined, '', '  ', 0, -1, 1.5, 100000, true, 'bad', 1
     assert.equal(loaded.status, 'loaded');
     assert.equal(loaded.total, 2);
     assert.equal(reloaded.get('药老').injury, '魂魄残破');
-    assert.equal(reloaded.get('萧薰儿').favor, 10, '相对 +12 的单次增减按 ±10 收');
+    assert.equal(reloaded.get('萧薰儿').favor, 12, '相对 +12 落在 ±15 闸内，原样记');
     assert.equal(reloaded.get('萧薰儿').favorLog.length, 1);
     assert.equal(loaded.skipped, 0);
 
@@ -698,4 +698,127 @@ console.log('npc-ledger 测试通过');
     ledger.apply({ name: 'C', identity: '守门人', presence: '在场', importance: '重要', log: ['登记了来意'] });
     const injected = ledger.injection({ maxFull: 5, maxBrief: 5 }).text;
     assert.ok(injected.includes('近事：登记了来意'), '没有概要时回退近事');
+}
+// —— 近事只带最近 3 条并带天数戳：流水只增不减，全量倒进提示词长聊必炸；不带天数模型分不清先后 ——
+{
+    const ledger = createNpcLedger({ now: () => 'fixed' });
+    ledger.apply({ name: 'D', identity: '药铺伙计', presence: '在场', importance: '重要', log: ['第一天上门问价'] }, { day: 1, floor: 1 });
+    ledger.apply({ name: 'D', log: ['第二天的争吵'] }, { day: 2, floor: 2 });
+    ledger.apply({ name: 'D', log: ['第三天的和解'] }, { day: 3, floor: 3 });
+    ledger.apply({ name: 'D', log: ['第四天又翻了脸'] }, { day: 4, floor: 4 });
+    ledger.apply({ name: 'D', log: ['第五天上门赔罪'] }, { day: 5, floor: 5 });
+    const injected = ledger.injection({ maxFull: 5, maxBrief: 5 }).text;
+    assert.ok(!injected.includes('第一天上门问价'), '近事只带最近 3 条，最旧的要截掉');
+    assert.ok(!injected.includes('第二天的争吵'), '最近 3 条以外的同样截掉');
+    assert.ok(injected.includes('第3天第三天的和解'), '留下的近事要带天数戳');
+    assert.ok(injected.includes('第5天第五天上门赔罪'), '最新一条在列');
+}
+
+// 世界影响的回响：记录员把「影响#i12」写进「世界影响」键，以前这个键不在别名表里，
+// 会被 normalizePatch 当未知键丢掉（打断链）；现在要能落成 impactRefs，且只追加不重复。
+{
+    const ledger = createNpcLedger({ now: () => 'fixed' });
+    const first = ledger.apply({ name: '萧炎', '世界影响': '影响#i12', log: ['被点了名'] }, { day: 7, floor: 5 });
+    assert.equal(first.status, 'applied');
+    assert.deepEqual(first.ignored, [], '「世界影响」不能再被当未知键丢掉');
+    const record = ledger.get('萧炎');
+    assert.ok(Array.isArray(record.impactRefs), '档案要存 impactRefs');
+    assert.deepEqual(record.impactRefs, [{ id: 'i12', day: 7, floor: 5 }]);
+    // 第二轮：旧编号不重复记，新编号追加。
+    ledger.apply({ name: '萧炎', '世界影响': ['影响 i12', 'i13'] }, { day: 9 });
+    const after = ledger.get('萧炎').impactRefs;
+    assert.equal(after.length, 2, `同一编号不能记两遍：${JSON.stringify(after)}`);
+    assert.deepEqual(after.map(item => item.id), ['i12', 'i13']);
+    assert.equal(after[1].day, 9, '没写当天的编号用补丁那天补上');
+    // 存档往返不能把痕迹洗掉：normalizeRecord 之后 fingerprint 必须仍然一致。
+    const snapshot = JSON.parse(JSON.stringify(ledger.exportAll()));
+    const back = createNpcLedger({ now: () => 'fixed' });
+    back.load(snapshot);
+    assert.deepEqual(back.get('萧炎').impactRefs.map(item => item.id), ['i12', 'i13'], '读档后回响还在');
+    // 旧存档里没有这个键的人，读档时不能凭空多出空数组，否则 fingerprint 对不上整本会被拒。
+    const legacy = normalizeRecord({ name: '路人乙', log: ['路过'] });
+    assert.equal('impactRefs' in legacy, false, '没有痕迹的旧档不写这个键');
+    const legacyBook = { records: [{ name: '路人乙', log: ['路过'] }], changes: 0, lastChange: null };
+    const legacyLedger = createNpcLedger({ now: () => 'fixed' });
+    assert.doesNotThrow(() => legacyLedger.load(JSON.parse(JSON.stringify(legacyBook))), '没有 impactRefs 的旧存档要能读进来');
+    assert.deepEqual(legacyLedger.get('路人乙').log.map(item => item.text), ['路过']);
+}
+
+// —— 动向盖章与出口把关（“20楼打坐、40楼被囚”根治）——
+// 处境写入盖楼层+天章；注入时章旧于最后经历＝旧动向绝迹，近况顶上。
+{
+    const ledger = createNpcLedger({ now: () => 'fixed' });
+    // 第20楼：坊市打坐（处境落账＝盖章）
+    ledger.apply({ 人物: [{ 姓名: '青袍客', 位置: '坊市', 正在做什么: '打坐调息', 在场: '在场', 重要: '重要' }] }, { floor: 20, day: 10 });
+    assert.deepEqual(ledger.get('青袍客').situationStamp, { floor: 20, day: 10 }, '处境字段写入要盖楼层+天章');
+    // 第21楼：只改态度——不盖新章
+    ledger.apply({ 人物: [{ 姓名: '青袍客', 态度: '多了几分忌惮' }] }, { floor: 21, day: 11 });
+    assert.equal(ledger.get('青袍客').situationStamp.floor, 20, '非处境字段不盖新章');
+    // 第40楼：经历写被囚禁，但没动处境字段
+    ledger.apply({ 人物: [{ 姓名: '青袍客', 经历: '在坊市北巷被云岚宗执法队锁拿，押入地牢' }] }, { floor: 40, day: 25 });
+    // 第41楼：注入——旧动向与旧位置绝迹（此人还在场，走全档：处境只留在场与否，经历行兜底真相）
+    const view = ledger.injection({ budget: 4000 });
+    assert.equal(view.text.includes('打坐'), false, '经历比章新：旧动向不许再吐给正文');
+    assert.equal(view.text.includes('处境：在坊市'), false, '旧位置不随处境行吐出');
+    assert.ok(view.text.includes('处境：在场'), '过时全档处境只留在场与否');
+    assert.ok(view.text.includes('经历：第25天在坊市北巷被云岚宗执法队锁拿'), '全档经历行兜底真相');
+    // 冷藏推进/记录员守规矩的正面情形：经历与处境同楼落账 → 章不旧于经历，新动向照常吐
+    ledger.apply({ 人物: [{ 姓名: '青袍客', 位置: '云岚宗地牢', 正在做什么: '拖着锁链清扫牢房', 在场: '不在场', 经历: '被云岚宗正式收押' }] }, { floor: 41, day: 26 });
+    const fresh = ledger.injection({ budget: 4000 });
+    assert.ok(fresh.text.includes('拖着锁链清扫牢房'), '章与经历同楼：新动向照常注入');
+    assert.ok(fresh.text.includes('在云岚宗地牢'), '新位置照常注入');
+}
+{
+    // 全档（在场×重要）同样过出口：过时处境只留在场与否，经历行兜底真相
+    const ledger = createNpcLedger({ now: () => 'fixed' });
+    ledger.apply({ 人物: [{ 姓名: '打坐人', 位置: '静室', 正在做什么: '打坐', 在场: '在场', 重要: '重要' }] }, { floor: 10, day: 5 });
+    ledger.apply({ 人物: [{ 姓名: '打坐人', 经历: '走火入魔，昏迷被人抬走' }] }, { floor: 30, day: 20 });
+    const view = ledger.injection({ budget: 4000 });
+    assert.ok(view.text.includes('【打坐人】'), '全档给在场重要人物');
+    assert.ok(view.text.includes('处境：在场'), '过时全档处境只留在场与否');
+    assert.equal(view.text.includes('正在打坐'), false, '全档同样不吐旧动向');
+    assert.equal(view.text.includes('在静室'), false, '全档同样不吐旧位置');
+    assert.ok(view.text.includes('走火入魔'), '经历行兜底真相');
+}
+{
+    // 旧档没有章但有经历：保守当过时；面板手填动向带上当前楼层 → 盖章认新鲜
+    const ledger = createNpcLedger({ now: () => 'fixed' });
+    ledger.apply({ 人物: [{ 姓名: '老档人', 位置: '乌坦城', 正在做什么: '打坐', 重要: '重要', 经历: '远走他乡' }] }, { floor: 5, day: 3 });
+    const snapshot = JSON.parse(JSON.stringify(ledger.exportAll()));
+    for (const record of snapshot.records) delete record.situationStamp;
+    const restored = createNpcLedger({ now: () => 'fixed' });
+    restored.load(snapshot);
+    let view = restored.injection({ budget: 4000 });
+    assert.equal(view.text.includes('打坐'), false, '旧档无章但有经历：保守当过时，旧动向不吐');
+    assert.ok(view.text.includes('近况：第3天远走他乡'), '近况顶上');
+    restored.setFields('老档人', { doing: '在集市替人看摊' }, { floor: 50, day: 30 });
+    view = restored.injection({ budget: 4000 });
+    assert.ok(view.text.includes('在集市替人看摊'), '手填动向盖章后按新鲜注入');
+}
+{
+    // 楼层缺失时退回天数比较：章的日子旧于经历日子＝过时，新章救回来
+    const ledger = createNpcLedger({ now: () => 'fixed' });
+    ledger.apply({ 人物: [{ 姓名: '比天者', 正在做什么: '闭关', 重要: '重要' }] }, { floor: null, day: 31 });
+    ledger.apply({ 人物: [{ 姓名: '比天者', 经历: '闭关中被仇家寻上门' }] }, { floor: null, day: 32 });
+    let view = ledger.injection({ budget: 4000 });
+    assert.equal(view.text.includes('正在闭关'), false, '天数比较：经历日子更新＝旧动向不吐');
+    assert.ok(view.text.includes('近况：第32天闭关中被仇家寻上门'), '近况顶上');
+    ledger.apply({ 人物: [{ 姓名: '比天者', 正在做什么: '疗伤' }] }, { floor: null, day: 33 });
+    view = ledger.injection({ budget: 4000 });
+    assert.ok(view.text.includes('疗伤'), '新章救回：动向按新鲜注入');
+    // 单行档（不重要的人）同样把关：过时丢动向补近况
+    const lineLedger = createNpcLedger({ now: () => 'fixed' });
+    lineLedger.apply({ 人物: [{ 姓名: '龙套甲', 正在做什么: '打铁', 在场: '在场' }] }, { floor: 2, day: 1 });
+    lineLedger.apply({ 人物: [{ 姓名: '龙套甲', 经历: '被逐出铁铺' }] }, { floor: 3, day: 2 });
+    const lineView = lineLedger.injection({ budget: 4000 });
+    assert.equal(lineView.text.includes('打铁'), false, '单行档旧动向不吐');
+    assert.ok(lineView.text.includes('近况：第2天被逐出铁铺'), '单行档过时补近况');
+}
+{
+    // recentExpLines：条数与超长裁短（记录员/体检材料共用的这一个出口）
+    const record = { exp: [{ day: 1, text: '一'.repeat(80) }, { day: 2, text: '二'.repeat(80) }, { day: 3, text: '三'.repeat(80) }] };
+    const lines = recentExpLines(record, { count: 2 });
+    assert.equal(lines.length, 2);
+    assert.ok(lines[0].startsWith('第2天'), '取最近两条');
+    assert.ok(lines.every(line => line.length <= 51), '每条裁到 50 字加省略号');
 }
