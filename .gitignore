@@ -12,10 +12,28 @@ dev/shots/
 nul
 agent/doupo-agent-ui/nul
 
-# 审查工作区里的改动前快照与逐门禁日志（代码本身已在仓库内，快照重复且有数 MB）
-agent/review-2026-11-04/.tmpsnapshot/
-agent/review-2026-11-04/implementation-batch-a-2026-11-04/
-agent/review-2026-11-04/implementation-continuation/
+# 本机审查工作区：报告里写死了本机酒馆目录、桌面上的项目路径和本机运行数据，只留在本地。
+agent/review-2026-11-04/
+
+# 本机部署与实测工具：写死本机酒馆目录、本机 Chrome profile、127.0.0.1 端口，
+# 对安装扩展的读者没有用处，只留在本地。需要时改造成读环境变量再单独放出来。
+dev/ext-files.mjs
+dev/deploy-ext.mjs
+dev/compare-deploy.mjs
+dev/orb-mode-check.mjs
+dev/orb-shot.mjs
+dev/st-live-check-preset.mjs
+dev/st-live-clean-lastrun.mjs
+dev/st-live-newchat.mjs
+dev/st-live-round.mjs
+dev/st-live-verify-lastrun.mjs
+dev/floor-dress/embed-into-card.mjs
+dev/floor-dress/export-card-script.mjs
+dev/floor-dress/serve.mjs
+dev/floor-dress/world-card-fold.mjs
+dev/floor-dress/world-card-live.mjs
+dev/floor-dress/world-card-shot.mjs
+dev/floor-dress/backup-tavern-helper-scripts-2026-11-10.json
 
 # 原著全文与本地工作产物（体积大、含受版权保护的原作正文），不随仓库发布
 原著分卷/

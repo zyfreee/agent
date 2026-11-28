@@ -376,7 +376,7 @@ node agent/doupo-agent-ui/demo-turn.mjs   # 离线演示完整一轮（含被拦
 ### 已验证（离线，可复现）
 
 - `npc/npc-cold-runtime.test.mjs`：第一次勾选只建当天基线、不补旧事件；世界第 3 天时只对牵连事件出 1 条候选且只带该事件；确认后同一份快照不再出候选；`restore` 后选择列表保留；提示词含「单次最多 ±15」和「第 3 天 → 第 4 天」日期差。
-- 原有整套测试文件数和脚本数量是旧快照，不再作为当前通过数字。可重跑 `node agent/doupo-agent-ui/run-tests.mjs`；本次命令、退出码与实际汇总记录在 `agent/review-2026-11-04/implementation-continuation/docs-final-receipt.json` 及其引用日志。
+- 原有整套测试文件数和脚本数量是旧快照，不再作为当前通过数字。要复核就跑 `node agent/doupo-agent-ui/run-tests.mjs`，它会打印本次的命令、退出码与汇总；早前那轮的逐门禁记录留在本地审查工作区，未随仓库发布。
 - 安装包与模板合同分别由 `extension-package.test.mjs`、`settings-template.test.mjs` 检查；文档与生成物由 `tools/docs-contract.test.mjs` 检查。离线通过不代表真实酒馆安装、模型调用、旧档迁移或人工验收已通过。
 
 ### 待执行验收（真实酒馆，尚未执行）
