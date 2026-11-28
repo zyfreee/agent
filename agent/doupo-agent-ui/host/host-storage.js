@@ -107,6 +107,9 @@ const DEFAULT_SETTINGS = Object.freeze({
         compact: false,
         theme: 'gilt',
         placeholder: false,
+        // 背景美化总开关（总控页）：关＝卡内美化脚本不再披「窗景＋焰装」两层整窗背景，
+        // 聊天窗交还给玩家自己的酒馆美化；观世牌/备料/落账等状态栏不受影响。默认开＝现状。
+        bgDress: true,
         // 旧“扩展自己写正文”入口默认关闭：正文交回酒馆主生成，原著设定只做注入。
         legacyTurn: false,
     }),

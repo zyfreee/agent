@@ -240,4 +240,20 @@ assert.doesNotMatch(entry, /回合流水线|data-agent-state|data-agent-run-resu
 assert.doesNotMatch(entry, /运行预算|budget\.maxModules|budget\.maxNpcDecisions|budget\.totalTimeoutMs/, '运行预算卡应已删除');
 assert.doesNotMatch(entry, /世界推进预算|sandbox\.maxNewObjectsPerTurn|sandbox\.nodeWindowSlackDays/, '世界推进预算卡应已删除');
 assert.doesNotMatch(entry, /status\.showHistory|status\.showCapabilityBadge|data-setting="debug"/, '无读者的显示/调试开关应已删除');
+
+// 背景美化总管（v6.20）：总控页开关管住卡内美化脚本的 ⑨⑩ 两层整窗背景；两边必须一起发。
+assert.equal(DEFAULT_SETTINGS.ui.bgDress, true, '背景美化默认开＝现状，老玩家更新后观感不变');
+assert.match(entry, /<b>背景美化<\/b>/, '总控页要有「背景美化」开关');
+assert.match(entry, /data-setting="ui\.bgDress"/, '背景美化开关要绑到 ui.bgDress');
+{
+    const dress = await readFile(new URL('../../dev/floor-dress/doupo-floor-dress.js', import.meta.url), 'utf8');
+    assert.match(dress, /__DPD_VERSION__ = 'v6\.20'/, '卡内美化脚本要升到 v6.20（读总控开关的那版）');
+    assert.match(dress, /ui\?\.bgDress !== false/, '美化脚本要读总控的 bgDress（读不到按开处理）');
+    assert.match(dress, /body\.classList\.toggle\('doupo-window', pageOn && windowOn\)/, '窗景层要挂在 windowOn（CONFIG.window && bgDress）下');
+    assert.match(dress, /body\.classList\.toggle\('doupo-blaze', pageOn && flavorOn\)/, '焰装层要挂在 flavorOn（CONFIG.flavor && bgDress）下');
+    assert.match(dress, /if \(active && flavorOn && lastFloor\)/, '卷尾落款要跟焰装一起关');
+    assert.match(dress, /if \(active && flavorOn\) \{/, '章首焰字要跟焰装一起关');
+    assert.match(dress, /body\.classList\.toggle\('doupo-own-bg', pageOn && windowOn && !ownBg\)/, '玩家自定义背景让路逻辑要跟窗景同源');
+}
+
 console.log(`settings template smoke checks passed: ${directory}`);

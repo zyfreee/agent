@@ -19,6 +19,8 @@
  * 怎么工作的：
  *   - 只在斗破卡上生效（按世界书名 / 卡内置脚本名 / 卡名判定），换卡自动全部撤掉；
  *   - 配色跟随 agent 面板选的主题（暗金 / 玄铁 / 米纸，只读它的设置，不改动 agent 任何东西）；
+ *   - ⑨⑩ 两层背景总管在 agent 总控页的「背景美化」开关（读 doupo_agent_ui.ui.bgDress）：
+ *     关＝撤掉窗景与焰装两层整窗背景，聊天窗交还玩家自己的酒馆美化；状态栏与楼层装扮照旧；
  *   - 数据全部只读：纳戒走楼层变量（stat_data.斗破纳戒），其余走聊天元数据里
  *     agent 已落库的账（doupo_agent_state / _world / _npc / _memory / _impact）。
  *
@@ -40,8 +42,8 @@
         proseSerif: true,       // ⑥ 附：正文用书卷衬线字体（不习惯衬线就关这项）
         chrome: true,           // ⑦ 周边（名牌/头像圈/滚动条/选区/输入框聚焦光）
         crafting: true,         // ⑧ 生成中的「炼字」浮牌
-        window: true,           // ⑨ 整体窗景：聊天窗整窗换装（案台+卷轴面+顶栏+输入区随色）
-        flavor: true,           // ⑩ 斗破焰装：案台暖光/纸面晕染/章首焰字/卷尾落款
+        window: true,           // ⑨ 整体窗景：聊天窗整窗换装（案台+卷轴面+顶栏+输入区随色）；受总控「背景美化」总管
+        flavor: true,           // ⑩ 斗破焰装：案台暖光/纸面晕染/章首焰字/卷尾落款；受总控「背景美化」总管
         followAgentTheme: true, // 跟随 agent 面板的主题（暗金/玄铁/米纸）
         fallbackTheme: 'gilt',
         pollMs: 5000,           // 兜底轮询：防止“手动预览结算”这类不触发楼层重绘的更新被漏掉
@@ -61,7 +63,7 @@
     const helper = hostWindow.TavernHelper ?? window.TavernHelper ?? null;
     const getContext = () => hostWindow.SillyTavern?.getContext?.() ?? {};
     // 版本戳：控制台敲 __DPD_VERSION__ 就能确认页面跑的是哪一版
-    hostWindow.__DPD_VERSION__ = 'v6.19';
+    hostWindow.__DPD_VERSION__ = 'v6.20';
     try { console.info('[斗破美化] v6.19 已加载（观世牌：天时一行常显 + 任务/事件/势力/人物横排签页；输入条压回案台色，不再悬空）'); } catch { /* 忽略 */ }
 
     const THEME_NAMES = new Set(['gilt', 'graphite', 'parchment']);
@@ -94,6 +96,15 @@
             const ui = getContext()?.extensionSettings?.doupo_agent_ui?.ui;
             return normalizeTheme(ui?.theme);
         } catch { return 'gilt'; }
+    }
+
+    // 背景美化总管开关：agent 总控页「背景美化」（ui.bgDress）。关＝不披窗景/焰装两层背景，
+    // 状态栏与楼层装扮照旧；读不到（老面板/非 agent 环境）按开处理，维持现状。
+    function readAgentBgDress() {
+        try {
+            const ui = getContext()?.extensionSettings?.doupo_agent_ui?.ui;
+            return ui?.bgDress !== false;
+        } catch { return true; }
     }
 
     function isDoupoCard(character) {
@@ -2057,18 +2068,22 @@ body.doupo-blaze #chat::-webkit-scrollbar-thumb { background: linear-gradient(18
         else delete chatEl.dataset.dressTheme;
 
         // 页面级开关：正文排版 / 周边 / 炼字牌 / 整体窗景 / 斗破焰装都挂在 body 上（输入框这类在 #chat 外面）
-        const pageOn = active && (CONFIG.prose || CONFIG.chrome || CONFIG.crafting || CONFIG.window || CONFIG.flavor);
+        // 背景美化总管（总控页「背景美化」）只管 ⑨⑩ 两层背景；排版/周边/炼字牌/状态栏不在其内。
+        const bgDress = readAgentBgDress();
+        const windowOn = CONFIG.window && bgDress;
+        const flavorOn = CONFIG.flavor && bgDress;
+        const pageOn = active && (CONFIG.prose || CONFIG.chrome || CONFIG.crafting || windowOn || flavorOn);
         const body = doc.body;
         if (body) {
             body.classList.toggle('doupo-dress-page', pageOn);
-            body.classList.toggle('doupo-window', pageOn && CONFIG.window);
-            body.classList.toggle('doupo-blaze', pageOn && CONFIG.flavor);
+            body.classList.toggle('doupo-window', pageOn && windowOn);
+            body.classList.toggle('doupo-blaze', pageOn && flavorOn);
             // 玩家自己的聊天背景优先：酒馆设置里换成了自定义图片就不披窗景底色；输入框在深底上补齐字色。
             try {
                 const bgName = String(hostWindow.SillyTavern?.getContext?.()?.background?.name ?? '');
                 const ownBg = !bgName || /^__.*\.(png|jpg|jpeg|webp)$/i.test(bgName);
-                body.classList.toggle('doupo-own-bg', pageOn && CONFIG.window && !ownBg);
-                body.classList.toggle('doupo-desk-ink', pageOn && CONFIG.window && !ownBg);
+                body.classList.toggle('doupo-own-bg', pageOn && windowOn && !ownBg);
+                body.classList.toggle('doupo-desk-ink', pageOn && windowOn && !ownBg);
             } catch { /* 读不到就不披窗景，宁可少穿也别盖玩家的图 */ }
             if (pageOn) body.dataset.dressTheme = theme;
             else delete body.dataset.dressTheme;
@@ -2115,7 +2130,7 @@ body.doupo-blaze #chat::-webkit-scrollbar-thumb { background: linear-gradient(18
         }
 
         // ①乙 斗破焰装：卷尾落款压在正文收笔处（案台暖光/纸面晕染走 body 类，不逐楼动手）
-        if (active && CONFIG.flavor && lastFloor) {
+        if (active && flavorOn && lastFloor) {
             const tailText = buildTailText(readChatKey('doupo_agent_world'));
             const tailSig = `${lastIndex}|${tailText}`;
             if (state.tailFloor !== lastFloor || state.tailSig !== tailSig
@@ -2216,8 +2231,9 @@ body.doupo-blaze #chat::-webkit-scrollbar-thumb { background: linear-gradient(18
 
         // ④ 对话上色
         if (dressOn && lastFloor) paintQuotes(lastFloor);
-        // ④乙 章首焰字：每层正文首字落一枚焰色下沉字
-        if (active && CONFIG.flavor) {
+        // ④乙 章首焰字：每层正文首字落一枚焰色下沉字（关掉就不再落新字，已落的字随类撤掉焰装样式、
+        // 退回普通文字——span 不用摘，摘了反而多一次动正文结构的动作）
+        if (active && flavorOn) {
             chatEl.querySelectorAll(':scope > .mes .mes_text').forEach(host => ensureDropcap(host));
         }
         // 收尾贴底：这轮 sync 动手前原本贴底就回贴底，别让插卡把视口撂在半空
